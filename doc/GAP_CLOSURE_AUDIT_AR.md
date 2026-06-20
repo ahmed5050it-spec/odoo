@@ -92,3 +92,23 @@ routes, views` — **لا `behavioral_notes`**. أمّا سجلّات metamodel 
 *مبنيّ على فحص `doc/revres/facts/*.json` (لا behavioral_notes) و`doc/revres/metamodel/
 *.json` (35 ملاحظة، كلّها code-read). مكمّل لـ `METADATA_LIMITS_AR`،
 `REVERSE_ENGINEERABLE_FROM_CODE_AR`، `AGENT_WORKFLOW`. Odoo 19.0.*
+
+---
+
+## 6. تحديث (إغلاق الفجوات المتبقّية — مُنفَّذ)
+
+أُضيف مستخرِجان جديدان فأُغلقت الفجوات المتبقّية فعلياً (مُتحقَّق منه):
+
+| الفجوة | الأداة الجديدة | دليل التشغيل |
+|--------|----------------|---------------|
+| **#3 JS/OWL** | `doc/revres/extract_frontend.py` | mail: 383 ملف JS، 40 مكوّن OWL؛ web: 526 JS |
+| **#7 التكاملات الخارجية** | `doc/revres/extract_frontend.py` | mail: 6 استدعاءات HTTP، `requests`/`xmlrpc`، Twilio؛ uses_api_keys=True |
+| **#5 البيانات/الحالة الحيّة** | `doc/revres/extract_runtime.sh` (odoo shell) | base: 67 نموذجاً بأعداد حيّة (`ir.model.data`=6828، `res.country`=251) |
+| **#6 الأداء (جزئي)** | `extract_runtime.sh` (queries_for_count) | عدد الاستعلامات لكل count مُلتقَط |
+
+المُخرجات محفوظة في `doc/revres/frontend/*.json` (14 موديولاً) و`doc/revres/runtime/*.json`.
+تبقى **#4 (نتيجة QWeb الديناميكية)** الأصعب — تحتاج تصيير القالب على بيانات وقت التشغيل
+(ممكن عبر `run-odoo` لاحقاً). فبذلك انتقلنا من إغلاق فجوتين إلى **ستّ من سبع**.
+
+**الطبقات الثلاث اكتملت:** الميتاداتا (facts) + الكود (behavioral_notes/code-read) +
+**التشغيل الحيّ (frontend/runtime extractors)** — تماماً كما اشترطت `METADATA_LIMITS_AR §4`.

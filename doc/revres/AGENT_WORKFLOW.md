@@ -52,10 +52,15 @@ interpretation*. Covers both what metadata shows AND what it cannot
    read the key methods (compute, `action_*`, constraints, `_notify`/`_create`)
    and record **side-effects** metadata can't show — e.g. "`sale.order.action_confirm`
    creates `stock.picking` + `account.move`". Use Grep/Read. Tag `source: code-read`.
-3. **Runtime facts (optional, high-value):** if a live DB is useful, use the
-   **`run-odoo`** skill (`.claude/skills/run-odoo/`): `odoo shell` to confirm
-   model counts / relations, `--log-handler=odoo.sql_db:DEBUG` to capture the
-   document-chain a button press triggers. Tag `source: runtime|log-trace`.
+3. **Frontend + integration facts (static, closes gaps #3/#7):** run
+   `python3 doc/revres/extract_frontend.py <module_path>` → OWL components,
+   registry adds, patches, asset bundles (gap #3 JS/OWL) and outbound HTTP/SDK/
+   api-key usage (gap #7 external integrations). These are NOT in Python metadata.
+4. **Runtime facts (live, closes gap #5 + part of #6):** run
+   `doc/revres/extract_runtime.sh <module>` (uses the **`run-odoo`** `odoo shell`)
+   → real row counts + samples per model + per-count query cost. For deeper
+   document-chain capture use `--log-handler=odoo.sql_db:DEBUG`. Tag
+   `source: runtime|log-trace`.
 
 **Output (returned to orchestrator):**
 ```json
