@@ -18,6 +18,9 @@
                             <button class="oe_stat_button" name="action_view_value_drivers" type="object" icon="fa-star">
                                 <field name="value_driver_ids" widget="statinfo" string="Value Drivers"/>
                             </button>
+                            <button class="oe_stat_button" name="action_view_pcf_mappings" type="object" icon="fa-link">
+                                <field name="pcf_mapping_count" widget="statinfo" string="PCF Mappings"/>
+                            </button>
                         </div>
 
                         <div class="oe_title">
@@ -131,6 +134,23 @@
                                             <field name="optimization_strategy"/>
                                         </sheet>
                                     </form>
+                                </field>
+                            </page>
+
+                            <!-- PCF Mappings Tab -->
+                            <page string="PCF Framework Mappings" name="pcf_mappings">
+                                <group>
+                                    <field name="pcf_version"/>
+                                    <field name="pcf_adoption_level"/>
+                                </group>
+                                <separator string="Process Classifications"/>
+                                <field name="pcf_mapping_ids" mode="tree">
+                                    <tree>
+                                        <field name="pcf_process_id"/>
+                                        <field name="value_activity_id"/>
+                                        <field name="relevance_level"/>
+                                        <field name="process_percentage"/>
+                                    </tree>
                                 </field>
                             </page>
 

@@ -1,0 +1,380 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data>
+        <!-- PCF Category Form View -->
+        <record id="pcf_category_form_view" model="ir.ui.view">
+            <field name="name">pcf.category.form</field>
+            <field name="model">pcf.category</field>
+            <field name="arch" type="xml">
+                <form string="PCF Category">
+                    <sheet>
+                        <div class="oe_title">
+                            <label for="code" string="Category Code"/>
+                            <h1>
+                                <field name="code" placeholder="e.g., 1.0" class="oe_inline"/>
+                                <span> - </span>
+                                <field name="name" placeholder="Category Name" class="oe_inline"/>
+                            </h1>
+                        </div>
+
+                        <group>
+                            <group>
+                                <field name="parent_id"/>
+                                <field name="hierarchy_level" readonly="1"/>
+                                <field name="metrics_available"/>
+                            </group>
+                            <group>
+                                <field name="difference_index" help="Version change index"/>
+                            </group>
+                        </group>
+
+                        <notebook>
+                            <!-- Description Tab -->
+                            <page string="Description" name="description">
+                                <field name="description"/>
+                            </page>
+
+                            <!-- Changes Tab -->
+                            <page string="Version Changes" name="changes">
+                                <separator string="Change Details"/>
+                                <field name="change_details"/>
+                            </page>
+
+                            <!-- Processes Tab -->
+                            <page string="Processes" name="processes">
+                                <field name="process_ids" mode="tree">
+                                    <tree>
+                                        <field name="hierarchy_id"/>
+                                        <field name="name"/>
+                                        <field name="metrics_available"/>
+                                    </tree>
+                                </field>
+                            </page>
+
+                            <!-- Activity Mappings Tab -->
+                            <page string="Activity Mappings" name="mappings">
+                                <field name="activity_mapping_ids" mode="tree">
+                                    <tree>
+                                        <field name="pcf_process_id"/>
+                                        <field name="value_activity_id"/>
+                                        <field name="relevance_level"/>
+                                        <field name="configuration_type"/>
+                                    </tree>
+                                </field>
+                            </page>
+
+                            <!-- Sub-Categories Tab -->
+                            <page string="Sub-Categories" name="subcategories">
+                                <field name="child_ids" mode="tree">
+                                    <tree>
+                                        <field name="code"/>
+                                        <field name="name"/>
+                                        <field name="metrics_available"/>
+                                    </tree>
+                                </field>
+                            </page>
+                        </notebook>
+                    </sheet>
+                </form>
+            </field>
+        </record>
+
+        <!-- PCF Category Tree View -->
+        <record id="pcf_category_tree_view" model="ir.ui.view">
+            <field name="name">pcf.category.tree</field>
+            <field name="model">pcf.category</field>
+            <field name="arch" type="xml">
+                <tree string="PCF Categories">
+                    <field name="code"/>
+                    <field name="name"/>
+                    <field name="hierarchy_level"/>
+                    <field name="metrics_available"/>
+                    <field name="difference_index"/>
+                </tree>
+            </field>
+        </record>
+
+        <!-- PCF Category Search View -->
+        <record id="pcf_category_search_view" model="ir.ui.view">
+            <field name="name">pcf.category.search</field>
+            <field name="model">pcf.category</field>
+            <field name="arch" type="xml">
+                <search string="Search PCF Category">
+                    <field name="code" filter_domain="['|', ('code', 'ilike', self), ('name', 'ilike', self)]"/>
+                    <separator/>
+                    <filter string="With Metrics" name="with_metrics" domain="[('metrics_available', '=', True)]"/>
+                    <separator/>
+                    <group expand="0" string="Group By">
+                        <filter string="Hierarchy Level" name="level_group" context="{'group_by': 'hierarchy_level'}"/>
+                    </group>
+                </search>
+            </field>
+        </record>
+
+        <!-- PCF Process Form View -->
+        <record id="pcf_process_form_view" model="ir.ui.view">
+            <field name="name">pcf.process.form</field>
+            <field name="model">pcf.process</field>
+            <field name="arch" type="xml">
+                <form string="PCF Process">
+                    <sheet>
+                        <div class="oe_title">
+                            <label for="hierarchy_id" string="Process ID"/>
+                            <h1>
+                                <field name="hierarchy_id" placeholder="e.g., 1.1.1.1" class="oe_inline"/>
+                                <span> - </span>
+                                <field name="name" placeholder="Process Name" class="oe_inline"/>
+                            </h1>
+                        </div>
+
+                        <group>
+                            <group>
+                                <field name="pcf_id" readonly="1"/>
+                                <field name="category_id"/>
+                                <field name="parent_id"/>
+                                <field name="hierarchy_level" readonly="1"/>
+                            </group>
+                            <group>
+                                <field name="metrics_available"/>
+                                <field name="difference_index"/>
+                            </group>
+                        </group>
+
+                        <notebook>
+                            <!-- Description Tab -->
+                            <page string="Description" name="description">
+                                <field name="description"/>
+                            </page>
+
+                            <!-- Changes Tab -->
+                            <page string="Version Changes" name="changes">
+                                <separator string="Change Details"/>
+                                <field name="change_details"/>
+                            </page>
+
+                            <!-- Activity Mappings Tab -->
+                            <page string="Activity Mappings" name="mappings">
+                                <field name="activity_mapping_ids" mode="tree,form">
+                                    <tree>
+                                        <field name="value_configuration_id"/>
+                                        <field name="value_activity_id"/>
+                                        <field name="relevance_level"/>
+                                        <field name="process_percentage"/>
+                                    </tree>
+                                    <form>
+                                        <sheet>
+                                            <group>
+                                                <field name="value_configuration_id"/>
+                                                <field name="value_activity_id"/>
+                                                <field name="relevance_level"/>
+                                            </group>
+                                            <group>
+                                                <field name="process_percentage" widget="percentBigDecimal"/>
+                                                <field name="applicable_industries"/>
+                                            </group>
+                                            <separator string="Description"/>
+                                            <field name="description"/>
+                                        </sheet>
+                                    </form>
+                                </field>
+                            </page>
+
+                            <!-- Sub-Processes Tab -->
+                            <page string="Sub-Processes" name="subprocess">
+                                <field name="child_ids" mode="tree">
+                                    <tree>
+                                        <field name="hierarchy_id"/>
+                                        <field name="name"/>
+                                        <field name="metrics_available"/>
+                                    </tree>
+                                </field>
+                            </page>
+                        </notebook>
+                    </sheet>
+                </form>
+            </field>
+        </record>
+
+        <!-- PCF Process Tree View -->
+        <record id="pcf_process_tree_view" model="ir.ui.view">
+            <field name="name">pcf.process.tree</field>
+            <field name="model">pcf.process</field>
+            <field name="arch" type="xml">
+                <tree string="PCF Processes">
+                    <field name="hierarchy_id"/>
+                    <field name="name"/>
+                    <field name="category_id"/>
+                    <field name="hierarchy_level"/>
+                    <field name="metrics_available"/>
+                </tree>
+            </field>
+        </record>
+
+        <!-- PCF Activity Mapping Form View -->
+        <record id="pcf_activity_mapping_form_view" model="ir.ui.view">
+            <field name="name">pcf.activity.mapping.form</field>
+            <field name="model">pcf.activity.mapping</field>
+            <field name="arch" type="xml">
+                <form string="PCF-Activity Mapping">
+                    <sheet>
+                        <div class="oe_title">
+                            <h1>
+                                <field name="pcf_process_id" placeholder="Select PCF Process"/>
+                                <span> → </span>
+                                <field name="value_activity_id" placeholder="Select Activity"/>
+                            </h1>
+                        </div>
+
+                        <group>
+                            <group>
+                                <field name="pcf_category_id"/>
+                                <field name="value_configuration_id"/>
+                                <field name="configuration_type" readonly="1"/>
+                            </group>
+                            <group>
+                                <field name="relevance_level"/>
+                                <field name="process_percentage" widget="percentBigDecimal"/>
+                                <field name="pcf_has_metrics"/>
+                            </group>
+                        </group>
+
+                        <group>
+                            <field name="applicable_industries" placeholder="e.g., Manufacturing, Healthcare, Finance"/>
+                        </group>
+
+                        <notebook>
+                            <!-- Description Tab -->
+                            <page string="Mapping Description" name="description">
+                                <field name="description" placeholder="How does this PCF process support the value activity?"/>
+                            </page>
+
+                            <!-- KPIs Tab -->
+                            <page string="Key Performance Indicators" name="kpis">
+                                <field name="kpi_ids" mode="tree,form">
+                                    <tree editable="bottom">
+                                        <field name="sequence" widget="handle"/>
+                                        <field name="name"/>
+                                        <field name="category"/>
+                                        <field name="unit"/>
+                                        <field name="current_value"/>
+                                        <field name="target_value"/>
+                                    </tree>
+                                    <form>
+                                        <sheet>
+                                            <group>
+                                                <field name="name"/>
+                                                <field name="category"/>
+                                                <field name="unit"/>
+                                                <field name="source"/>
+                                            </group>
+                                            <group>
+                                                <field name="current_value"/>
+                                                <field name="target_value"/>
+                                                <field name="benchmark_value"/>
+                                            </group>
+                                            <separator string="Description"/>
+                                            <field name="description"/>
+                                        </sheet>
+                                    </form>
+                                </field>
+                            </page>
+
+                            <!-- Notes Tab -->
+                            <page string="Notes" name="notes">
+                                <field name="notes"/>
+                            </page>
+                        </notebook>
+                    </sheet>
+                </form>
+            </field>
+        </record>
+
+        <!-- PCF Activity Mapping Tree View -->
+        <record id="pcf_activity_mapping_tree_view" model="ir.ui.view">
+            <field name="name">pcf.activity.mapping.tree</field>
+            <field name="model">pcf.activity.mapping</field>
+            <field name="arch" type="xml">
+                <tree string="PCF-Activity Mappings">
+                    <field name="pcf_process_id"/>
+                    <field name="value_activity_id"/>
+                    <field name="value_configuration_id"/>
+                    <field name="relevance_level"/>
+                    <field name="process_percentage"/>
+                    <field name="configuration_type"/>
+                </tree>
+            </field>
+        </record>
+
+        <!-- PCF Activity Mapping Search View -->
+        <record id="pcf_activity_mapping_search_view" model="ir.ui.view">
+            <field name="name">pcf.activity.mapping.search</field>
+            <field name="model">pcf.activity.mapping</field>
+            <field name="arch" type="xml">
+                <search string="Search PCF-Activity Mapping">
+                    <field name="pcf_process_id" string="PCF Process"/>
+                    <field name="value_activity_id" string="Value Activity"/>
+                    <field name="value_configuration_id"/>
+                    <separator/>
+                    <filter string="Primary Mappings" name="primary" domain="[('relevance_level', '=', 'primary')]"/>
+                    <filter string="Secondary Mappings" name="secondary" domain="[('relevance_level', '=', 'secondary')]"/>
+                    <separator/>
+                    <filter string="With Metrics" name="with_metrics" domain="[('pcf_has_metrics', '=', True)]"/>
+                    <separator/>
+                    <group expand="0" string="Group By">
+                        <filter string="Configuration Type" name="config_group" context="{'group_by': 'configuration_type'}"/>
+                        <filter string="Relevance" name="relevance_group" context="{'group_by': 'relevance_level'}"/>
+                        <filter string="Value Configuration" name="value_config_group" context="{'group_by': 'value_configuration_id'}"/>
+                    </group>
+                </search>
+            </field>
+        </record>
+
+        <!-- Actions -->
+        <record id="pcf_category_action" model="ir.actions.act_window">
+            <field name="name">PCF Categories</field>
+            <field name="res_model">pcf.category</field>
+            <field name="view_mode">tree,form</field>
+            <field name="context">{'search_default_level_group': 1}</field>
+        </record>
+
+        <record id="pcf_process_action" model="ir.actions.act_window">
+            <field name="name">PCF Processes</field>
+            <field name="res_model">pcf.process</field>
+            <field name="view_mode">tree,form</field>
+        </record>
+
+        <record id="pcf_activity_mapping_action" model="ir.actions.act_window">
+            <field name="name">PCF-Activity Mappings</field>
+            <field name="res_model">pcf.activity.mapping</field>
+            <field name="view_mode">tree,form</field>
+        </record>
+
+        <!-- Menu Items -->
+        <menuitem
+            id="value_configuration_pcf_menu"
+            name="PCF Framework"
+            parent="value_configuration_menu"
+            sequence="10"/>
+
+        <menuitem
+            id="pcf_category_menu"
+            name="PCF Categories"
+            parent="value_configuration_pcf_menu"
+            action="pcf_category_action"
+            sequence="10"/>
+
+        <menuitem
+            id="pcf_process_menu"
+            name="PCF Processes"
+            parent="value_configuration_pcf_menu"
+            action="pcf_process_action"
+            sequence="20"/>
+
+        <menuitem
+            id="pcf_mapping_menu"
+            name="PCF-Activity Mappings"
+            parent="value_configuration_pcf_menu"
+            action="pcf_activity_mapping_action"
+            sequence="30"/>
+    </data>
+</odoo>

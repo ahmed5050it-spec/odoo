@@ -27,6 +27,8 @@
         'views/value_configuration_views.xml',
         'views/value_activity_views.xml',
         'views/value_driver_views.xml',
+        'views/pcf_views.xml',
+        'views/pcf_import_wizard_views.xml',
     ],
     'installable': True,
     'application': True,
