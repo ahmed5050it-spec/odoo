@@ -11,14 +11,14 @@
 | network | 107 | account_peppol, event, event_booth, event_booth_sale, event_crm, event_crm_sale, event_product, event_sale, event_sms, im_livechat, mail_group, marketing_card, mass_mailing, mass_mailing_crm, mass_mailing_crm_sms, mass_mailing_event, mass_mailing_event_sms, mass_mailing_event_track, mass_mailing_event_track_sms, mass_mailing_sale, mass_mailing_sale_sms, mass_mailing_slides, mass_mailing_sms, mass_mailing_themes, payment, payment_adyen, payment_aps, payment_asiapay, payment_authorize, payment_buckaroo, payment_custom, payment_demo, payment_dpo, payment_ecpay, payment_flutterwave, payment_iyzico, payment_mercado_pago, payment_mollie, payment_nuvei, payment_paymob, payment_paypal, payment_razorpay, payment_redsys, payment_stripe, payment_toss_payments, payment_worldline, payment_xendit, portal, portal_rating, pos_self_order, test_mass_mailing, theme_default, website, website_blog, website_cf_turnstile, website_crm, website_crm_iap_reveal, website_crm_livechat, website_crm_partner_assign, website_crm_sms, website_customer, website_event, website_event_booth, website_event_booth_exhibitor, website_event_booth_sale, website_event_booth_sale_exhibitor, website_event_crm, website_event_exhibitor, website_event_sale, website_event_track, website_event_track_live, website_event_track_live_quiz, website_event_track_quiz, website_forum, website_google_map, website_hr_recruitment, website_hr_recruitment_livechat, website_links, website_livechat, website_mail, website_mail_group, website_mass_mailing, website_mass_mailing_sms, website_partner, website_payment, website_profile, website_project, website_sale, website_sale_autocomplete, website_sale_collect, website_sale_collect_wishlist, website_sale_comparison, website_sale_comparison_wishlist, website_sale_gelato, website_sale_loyalty, website_sale_mass_mailing, website_sale_mondialrelay, website_sale_mrp, website_sale_slides, website_sale_stock, website_sale_stock_wishlist, website_sale_wishlist, website_slides, website_slides_forum, website_slides_survey, website_sms, website_timesheet |
 | support | 425 | account, account_add_gln, account_check_printing, account_debit_note, account_edi, account_edi_proxy_client, account_edi_ubl_cii, account_fleet, account_payment, account_peppol_advanced_fields, account_peppol_response, account_qr_code_emv, account_qr_code_sepa, account_tax_python, account_test, account_update_tax_tags, analytic, api_doc, attachment_indexation, auth_ldap, auth_oauth, auth_passkey, auth_passkey_portal, auth_password_policy, auth_password_policy_portal, auth_password_policy_signup, auth_signup, auth_timeout, auth_totp, auth_totp_mail, auth_totp_portal, barcodes, base, base_address_extended, base_automation, base_geolocalize, base_iban, base_import, base_import_module, base_install_request, base_setup, base_sparse_field, base_vat, board, bus, calendar, calendar_sms, certificate, cloud_storage, cloud_storage_azure, cloud_storage_google, cloud_storage_migration, contacts, data_recycle, digest, fleet, gamification, gamification_sale_crm, google_account, google_address_autocomplete, google_calendar, google_gmail, google_recaptcha, hr, hr_attendance, hr_calendar, hr_expense, hr_fleet, hr_gamification, hr_holidays, hr_holidays_attendance, hr_holidays_homeworking, hr_homeworking, hr_homeworking_calendar, hr_hourly_cost, hr_livechat, hr_maintenance, hr_org_chart, hr_presence, hr_recruitment, hr_recruitment_skills, hr_recruitment_sms, hr_recruitment_survey, hr_skills, hr_skills_event, hr_skills_slides, hr_skills_survey, hr_timesheet_attendance, hr_work_entry, hr_work_entry_holidays, html_builder, html_editor, http_routing, iap, iap_crm, iap_mail, iot_base, iot_box_image, iot_drivers, l10n_account_edi_ubl_cii_tests, l10n_account_withholding_tax, l10n_account_withholding_tax_pos, l10n_ae, l10n_ae_pos, l10n_anz_ubl_pint, l10n_ar, l10n_ar_pos, l10n_ar_stock, l10n_ar_website_sale, l10n_ar_withholding, l10n_at, l10n_au, l10n_bd, l10n_be, l10n_be_pos_restaurant, l10n_be_pos_sale, l10n_bf, l10n_bg, l10n_bg_ledger, l10n_bh, l10n_bj, l10n_bo, l10n_br, l10n_br_sales, l10n_br_website_sale, l10n_ca, l10n_cd, l10n_cf, l10n_cg, l10n_ch, l10n_ch_pos, l10n_ci, l10n_cl, l10n_cm, l10n_cn, l10n_cn_city, l10n_co, l10n_co_pos, l10n_cr, l10n_cy, l10n_cz, l10n_de, l10n_din5008, l10n_din5008_expense, l10n_din5008_purchase, l10n_din5008_repair, l10n_din5008_sale, l10n_din5008_stock, l10n_dk, l10n_dk_fik, l10n_dk_nemhandel, l10n_dk_nemhandel_response, l10n_dk_oioubl, l10n_do, l10n_dz, l10n_ec, l10n_ec_sale, l10n_ec_stock, l10n_ee, l10n_eg, l10n_eg_edi_eta, l10n_es, l10n_es_edi_facturae, l10n_es_edi_sii, l10n_es_edi_tbai, l10n_es_edi_tbai_pos, l10n_es_edi_verifactu, l10n_es_edi_verifactu_pos, l10n_es_pos, l10n_et, l10n_eu_oss, l10n_fi, l10n_fi_sale, l10n_fr, l10n_fr_account, l10n_fr_facturx_chorus_pro, l10n_fr_hr_holidays, l10n_fr_hr_work_entry_holidays, l10n_fr_pdp, l10n_fr_pdp_pos, l10n_fr_pos_cert, l10n_ga, l10n_gcc_invoice, l10n_gcc_invoice_stock_account, l10n_gcc_pos, l10n_gn, l10n_gq, l10n_gr, l10n_gr_edi, l10n_gt, l10n_gw, l10n_hk, l10n_hn, l10n_hr, l10n_hr_edi, l10n_hr_kuna, l10n_hu, l10n_hu_edi, l10n_id, l10n_id_efaktur_coretax, l10n_id_pos, l10n_ie, l10n_il, l10n_in, l10n_in_edi, l10n_in_ewaybill, l10n_in_ewaybill_irn, l10n_in_ewaybill_stock, l10n_in_hr_holidays, l10n_in_pos, l10n_in_purchase_stock, l10n_in_sale, l10n_in_sale_stock, l10n_in_stock, l10n_iq, l10n_it, l10n_it_edi, l10n_it_edi_doi, l10n_it_edi_sale, l10n_it_stock_ddt, l10n_jo, l10n_jo_edi, l10n_jo_edi_pos, l10n_jp, l10n_jp_ubl_pint, l10n_ke, l10n_ke_edi_tremol, l10n_kh, l10n_km, l10n_kr, l10n_kw, l10n_kz, l10n_latam_base, l10n_latam_check, l10n_latam_invoice_document, l10n_lb_account, l10n_lk, l10n_lt, l10n_lu, l10n_lv, l10n_ma, l10n_mc, l10n_ml, l10n_mn, l10n_mr, l10n_mt, l10n_mt_pos, l10n_mu_account, l10n_mx, l10n_my, l10n_my_edi, l10n_my_edi_pos, l10n_my_ubl_pint, l10n_mz, l10n_ne, l10n_ng, l10n_nl, l10n_no, l10n_nz, l10n_om, l10n_pa, l10n_pe, l10n_pe_pos, l10n_ph, l10n_pk, l10n_pl, l10n_pl_bank_verification, l10n_pl_edi, l10n_pt, l10n_qa, l10n_ro, l10n_ro_cpv_code, l10n_ro_edi, l10n_ro_edi_stock, l10n_ro_edi_stock_batch, l10n_rs, l10n_rs_edi, l10n_rw, l10n_sa, l10n_sa_edi, l10n_sa_edi_pos, l10n_sa_pos, l10n_sa_withholding_tax, l10n_se, l10n_sg, l10n_sg_ubl_pint, l10n_si, l10n_sk, l10n_sn, l10n_syscohada, l10n_td, l10n_test_pos_qr_payment, l10n_tg, l10n_th, l10n_tn, l10n_tr, l10n_tr_nilvera, l10n_tr_nilvera_base_vat, l10n_tr_nilvera_edispatch, l10n_tr_nilvera_einvoice, l10n_tr_nilvera_einvoice_extended, l10n_tw, l10n_tw_edi_ecpay, l10n_tw_edi_ecpay_website_sale, l10n_tz_account, l10n_ua, l10n_ug, l10n_uk, l10n_us, l10n_us_account, l10n_uy, l10n_uy_pos, l10n_uz, l10n_ve, l10n_vn, l10n_vn_edi_viettel, l10n_vn_edi_viettel_pos, l10n_za, l10n_zm_account, link_tracker, loyalty, lunch, mail, mail_bot, mail_bot_hr, mail_plugin, maintenance, microsoft_account, microsoft_calendar, microsoft_outlook, mrp_account, mrp_subcontracting_account, onboarding, partner_autocomplete, phone_validation, privacy_lookup, product, product_email_template, product_margin, product_matrix, purchase, purchase_edi_ubl_bis3, purchase_mrp, purchase_product_matrix, purchase_repair, purchase_requisition, purchase_requisition_sale, purchase_requisition_stock, purchase_stock, rating, resource, resource_mail, rpc, sale_expense, sales_team, sms, sms_twilio, snailmail, snailmail_account, social_media, spreadsheet, spreadsheet_account, spreadsheet_dashboard, spreadsheet_dashboard_account, spreadsheet_dashboard_event_sale, spreadsheet_dashboard_hr_expense, spreadsheet_dashboard_hr_timesheet, spreadsheet_dashboard_im_livechat, spreadsheet_dashboard_pos_hr, spreadsheet_dashboard_pos_restaurant, spreadsheet_dashboard_sale, spreadsheet_dashboard_sale_timesheet, spreadsheet_dashboard_stock_account, spreadsheet_dashboard_website_sale, spreadsheet_dashboard_website_sale_slides, stock_account, stock_landed_costs, survey, survey_crm, test_access_rights, test_action_bindings, test_assetsbundle, test_auth_custom, test_base_automation, test_convert, test_converter, test_crm_full, test_data_module, test_data_module_install, test_discuss_full, test_event_full, test_html_field_history, test_http, test_import_export, test_inherit, test_inherit_depends, test_inherits, test_inherits_depends, test_lint, test_mail, test_mail_full, test_mail_sms, test_main_flows, test_mimetypes, test_orm, test_read_group, test_resource, test_rpc, test_sale_product_configurators, test_sale_purchase_edi_ubl, test_search_panel, test_spreadsheet, test_testing_utilities, test_translation_import, test_uninstall, test_website, test_website_modules, test_website_slides_full, transifex, uom, utm, web, web_hierarchy, web_tour, web_unsplash |
 
-Activity class: support=467, primary=182
+Activity class: support=468, primary=181
 
 ## 2. APQC PCF category coverage
 
 | APQC | Records |
 |------|--------:|
 | 10.0 | 2 |
-| 13.0 | 79 |
+| 13.0 | 78 |
 | 2.0 | 5 |
 | 3.0 | 157 |
 | 4.0 | 11 |
@@ -28,7 +28,7 @@ Activity class: support=467, primary=182
 | 5.0 | 20 |
 | 6.0 | 4 |
 | 7.0 | 33 |
-| 8.0 | 42 |
+| 8.0 | 43 |
 | 9.0 | 267 |
 | 9.4 | 8 |
 
@@ -37,7 +37,7 @@ Activity class: support=467, primary=182
 | Layer | Records with it |
 |-------|----------------:|
 | metadata (facts) | 649/649 |
-| code-read (behavior) | 134/649 |
+| code-read (behavior) | 146/649 |
 | frontend (OWL/JS) | 246/649 |
 | integrations (HTTP/SDK) | 70/649 |
 | runtime (live data) | 1/649 |
@@ -78,7 +78,7 @@ Activity class: support=467, primary=182
 | pos_mercado_pago | chain | primary | 3.0 Market and Sell Pr | 0 | 2 | meta+fe+integ |
 | pos_mollie | chain | primary | 3.0 Market and Sell Pr | 0 | 2 | meta+fe |
 | pos_mrp | chain | primary | 3.0 Market and Sell Pr | 0 | 0 | meta |
-| pos_online_payment | chain | primary | 3.0 Market and Sell Pr | 0 | 9 | meta+fe |
+| pos_online_payment | chain | primary | 3.0 Market and Sell Pr | 7 | 9 | meta+code+fe |
 | pos_online_payment_self_order | chain | primary | 3.0 Market and Sell Pr | 0 | 4 | meta+fe |
 | pos_pine_labs | chain | primary | 3.0 Market and Sell Pr | 0 | 2 | meta+fe+integ |
 | pos_qfpay | chain | primary | 3.0 Market and Sell Pr | 0 | 3 | meta+fe |
@@ -171,7 +171,7 @@ Activity class: support=467, primary=182
 | payment_demo | network | support | 9.0 Manage Financial R | 0 | 3 | meta+fe |
 | payment_dpo | network | support | 9.0 Manage Financial R | 0 | 0 | meta |
 | payment_ecpay | network | support | 9.0 Manage Financial R | 0 | 0 | meta |
-| payment_flutterwave | network | support | 9.0 Manage Financial R | 0 | 1 | meta+fe |
+| payment_flutterwave | network | support | 9.0 Manage Financial R | 3 | 1 | meta+code+fe |
 | payment_iyzico | network | support | 9.0 Manage Financial R | 0 | 0 | meta |
 | payment_mercado_pago | network | support | 9.0 Manage Financial R | 3 | 1 | meta+code+fe |
 | payment_mollie | network | support | 9.0 Manage Financial R | 0 | 0 | meta |
@@ -183,7 +183,7 @@ Activity class: support=467, primary=182
 | payment_stripe | network | support | 9.0 Manage Financial R | 3 | 3 | meta+code+fe |
 | payment_toss_payments | network | support | 9.0 Manage Financial R | 0 | 1 | meta+fe |
 | payment_worldline | network | support | 9.0 Manage Financial R | 0 | 1 | meta+fe |
-| payment_xendit | network | support | 9.0 Manage Financial R | 0 | 3 | meta+fe |
+| payment_xendit | network | support | 9.0 Manage Financial R | 2 | 3 | meta+code+fe |
 | portal | network | support | 6.0 Manage Customer Se | 4 | 27 | meta+code+fe |
 | portal_rating | network | support | 6.0 Manage Customer Se | 0 | 9 | meta+fe |
 | pos_self_order | network | primary | 3.0 Market and Sell Pr | 6 | 54 | meta+code+fe |
@@ -193,7 +193,7 @@ Activity class: support=467, primary=182
 | website_blog | network | primary | 3.0 Market and Sell Pr | 4 | 15 | meta+code+fe |
 | website_cf_turnstile | network | primary | 3.0 Market and Sell Pr | 0 | 4 | meta+fe+integ |
 | website_crm | network | primary | 3.0 Market and Sell Pr | 0 | 1 | meta+fe |
-| website_crm_iap_reveal | network | primary | 3.0 Market and Sell Pr | 2 | 0 | meta |
+| website_crm_iap_reveal | network | primary | 3.0 Market and Sell Pr | 4 | 0 | meta+code |
 | website_crm_livechat | network | primary | 3.0 Market and Sell Pr | 0 | 0 | meta |
 | website_crm_partner_assign | network | primary | 3.0 Market and Sell Pr | 8 | 4 | meta+code+fe |
 | website_crm_sms | network | primary | 3.0 Market and Sell Pr | 0 | 0 | meta |
@@ -220,7 +220,7 @@ Activity class: support=467, primary=182
 | website_mail_group | network | primary | 3.0 Market and Sell Pr | 0 | 3 | meta+fe |
 | website_mass_mailing | network | primary | 3.0 Market and Sell Pr | 0 | 13 | meta+fe |
 | website_mass_mailing_sms | network | primary | 3.0 Market and Sell Pr | 0 | 0 | meta |
-| website_partner | network | primary | 3.0 Market and Sell Pr | 1 | 0 | meta |
+| website_partner | network | support | 3.0 Market and Sell Pr | 1 | 0 | meta+code |
 | website_payment | network | primary | 3.0 Market and Sell Pr | 4 | 8 | meta+code+fe |
 | website_profile | network | primary | 3.0 Market and Sell Pr | 3 | 5 | meta+code+fe |
 | website_project | network | primary | 3.0 Market and Sell Pr | 0 | 1 | meta+fe |
@@ -241,7 +241,7 @@ Activity class: support=467, primary=182
 | website_sale_wishlist | network | primary | 3.0 Market and Sell Pr | 6 | 6 | meta+code+fe |
 | website_slides | network | primary | 3.0 Market and Sell Pr | 8 | 50 | meta+code+fe+integ |
 | website_slides_forum | network | primary | 3.0 Market and Sell Pr | 0 | 1 | meta+fe |
-| website_slides_survey | network | primary | 3.0 Market and Sell Pr | 0 | 3 | meta+fe |
+| website_slides_survey | network | primary | 3.0 Market and Sell Pr | 6 | 3 | meta+code+fe |
 | website_sms | network | primary | 3.0 Market and Sell Pr | 0 | 0 | meta |
 | website_timesheet | network | primary | 3.0 Market and Sell Pr | 0 | 0 | meta |
 | crm | shop | primary | 3.0 Market and Sell Pr | 6 | 23 | meta+code+fe |
@@ -255,7 +255,7 @@ Activity class: support=467, primary=182
 | project_account | shop | primary | 5.0 Deliver Services | 0 | 0 | meta |
 | project_hr_expense | shop | primary | 5.0 Deliver Services | 0 | 0 | meta |
 | project_hr_skills | shop | primary | 5.0 Deliver Services | 0 | 0 | meta |
-| project_mail_plugin | shop | primary | 5.0 Deliver Services | 0 | 0 | meta |
+| project_mail_plugin | shop | primary | 5.0 Deliver Services ( | 0 | 0 | meta+code |
 | project_mrp | shop | primary | 5.0 Deliver Services | 0 | 0 | meta |
 | project_mrp_account | shop | primary | 5.0 Deliver Services | 0 | 0 | meta |
 | project_mrp_sale | shop | primary | 5.0 Deliver Services | 0 | 0 | meta |
@@ -289,7 +289,7 @@ Activity class: support=467, primary=182
 | analytic | support | support | 9.0 Manage Financial R | 7 | 8 | meta+code+fe |
 | api_doc | support | support | 13.0 Develop and Manag | 1 | 17 | meta+code+fe |
 | attachment_indexation | support | support | 13.0 Develop and Manag | 0 | 0 | meta |
-| auth_ldap | support | support | 8.0 Manage Information | 1 | 0 | meta |
+| auth_ldap | support | support | 8.0 Manage Information | 4 | 0 | meta+code |
 | auth_oauth | support | support | 8.0 Manage Information | 4 | 0 | meta+code+integ |
 | auth_passkey | support | support | 8.0 Manage Information | 4 | 3 | meta+code+fe |
 | auth_passkey_portal | support | support | 8.0 Manage Information | 0 | 2 | meta+fe |
@@ -313,7 +313,7 @@ Activity class: support=467, primary=182
 | base_setup | support | support | 8.0 Manage Information | 4 | 1 | meta+code+fe |
 | base_sparse_field | support | support | 8.0 Manage Information | 1 | 0 | meta |
 | base_vat | support | support | 9.0 Manage Financial R | 4 | 0 | meta+code+integ |
-| board | support | support | 13.0 Develop and Manag | 1 | 4 | meta+fe |
+| board | support | support | 13.0 Develop and Manag | 1 | 4 | meta+code+fe |
 | bus | support | support | 8.0 Manage Information | 5 | 20 | meta+code+fe |
 | calendar | support | support | 13.0 Develop and Manag | 5 | 28 | meta+code+fe |
 | calendar_sms | support | support | 13.0 Develop and Manag | 0 | 0 | meta |
@@ -593,11 +593,11 @@ Activity class: support=467, primary=182
 | loyalty | support | support | 3.0 Market and Sell Pr | 6 | 5 | meta+code+fe |
 | lunch | support | support | 7.0 Develop and Manage | 9 | 7 | meta+code+fe |
 | mail | support | support | 9.4 Manage internal co | 14 | 383 | meta+code+fe+integ |
-| mail_bot | support | support | 9.4 Manage internal co | 1 | 0 | meta |
+| mail_bot | support | support | 9.4 Manage internal co | 3 | 0 | meta+code |
 | mail_bot_hr | support | support | 9.4 Manage internal co | 0 | 0 | meta |
 | mail_plugin | support | support | 8.0 Manage Information | 3 | 0 | meta+code+integ |
 | maintenance | support | support | 10.0 Acquire, Construc | 6 | 7 | meta+code+fe |
-| microsoft_account | support | support | 13.0 Develop and Manag | 1 | 0 | meta+integ |
+| microsoft_account | support | support | 8.0 Manage Information | 2 | 0 | meta+code+integ |
 | microsoft_calendar | support | support | 8.0 Manage Information | 6 | 3 | meta+code+fe+integ |
 | microsoft_outlook | support | support | 8.0 Manage Information | 5 | 0 | meta+code+integ |
 | mrp_account | support | support | 9.0 Manage Financial R | 11 | 2 | meta+code+fe |
@@ -630,7 +630,7 @@ Activity class: support=467, primary=182
 | snailmail | support | support | 9.4 Manage internal co | 1 | 5 | meta+fe |
 | snailmail_account | support | support | 9.4 Manage internal co | 0 | 0 | meta |
 | social_media | support | support | 3.0 Market and Sell Pr | 0 | 0 | meta |
-| spreadsheet | support | support | 13.0 Develop and Manag | 1 | 100 | meta+fe |
+| spreadsheet | support | support | 13.0 Develop and Manag | 6 | 100 | meta+code+fe |
 | spreadsheet_account | support | support | 13.0 Develop and Manag | 0 | 5 | meta+fe |
 | spreadsheet_dashboard | support | support | 13.0 Develop and Manag | 3 | 14 | meta+code+fe |
 | spreadsheet_dashboard_account | support | support | 13.0 Develop and Manag | 0 | 0 | meta |

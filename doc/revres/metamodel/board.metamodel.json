@@ -14,7 +14,9 @@
       {
         "_name": "board.board",
         "_description": "Board",
-        "fields": 1
+        "fields": 1,
+        "relations": [],
+        "notes": "AbstractModel with _auto = False (no DB table). Only field is id = fields.Id() so the web client can initialize a dummy form record via onchange(). create() is overridden to a no-op returning self."
       }
     ],
     "routes": [
@@ -29,14 +31,13 @@
     "security": {
       "access_rules": 1,
       "record_rules": 0,
-      "groups": 0
+      "groups": 0,
+      "notes": "Single ACL access_board_board_all on model_board_board for base.group_user (read only: perm_read=1, write/create/unlink=0). The model is virtual; per-user customization is persisted in ir.ui.view.custom rows keyed by user_id."
     },
     "views": {
       "form": 1,
       "list": 0,
-      "tree": 0,
       "kanban": 0,
-      "search": 0,
       "pivot": 0,
       "graph": 0,
       "calendar": 0,
@@ -74,47 +75,95 @@
     },
     "behavioral_notes": [
       {
-        "element": "frontend (OWL/JS)",
-        "observation": "4 JS files, 3 OWL components, 1 registry adds; bundles ['web.assets_backend', 'web.assets_unit_tests'].",
+        "element": "board.board (_auto = False AbstractModel)",
+        "observation": "board.board is a virtual model: _auto = False means no SQL table is created, and the only field is id = fields.Id(), present solely so the web client can initialize a dummy form record via onchange() when it opens the dashboard. create() is overridden to a no-op (@api.model_create_multi returning self), so nothing is ever persisted to the model itself. The dashboard has no business record of its own — it is a form-view shell. This is invisible to row-count/schema metadata because the model deliberately has no table.",
+        "source": "code-read"
+      },
+      {
+        "element": "board.board.get_view (per-user custom arch injection)",
+        "observation": "get_view() overrides the ORM view loader: it calls super().get_view() then searches ir.ui.view.custom (sudo) for a row matching (user_id = env.uid, ref_id = view_id). If found, it swaps res['arch'] for the user's saved custom arch and returns custom_view_id. Each user therefore sees their OWN dashboard arch, stored as an ir.ui.view.custom record, not the shared base view. The arch is then run through _arch_preprocessing(), which (a) sets js_class='board' on the root node so the web client instantiates a BoardController instead of a plain FormController, and (b) strips any <action> children that are invisible/unauthorized. None of this per-user view rewriting is visible in static model metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "/board/add_to_dashboard (pin an action/view as a widget)",
+        "observation": "The add_to_dashboard controller is the pinning mechanism. It resolves the 'board.open_board_my_dash_action' xmlid, loads the current user's board arch via board.board.get_view(), finds the first <board>/<column>, and inserts a new <action> element carrying name=action_id, string=name, view_mode, context (allowed_company_ids stripped so multi-company filtering still works on the dashboard) and domain. It then writes the serialized arch into a NEW ir.ui.view.custom row (user_id=session.uid, ref_id=view_id). Effect: any list/pivot/graph/etc. view the user is looking at becomes a saved widget on their personal dashboard. The saved unit is the action reference + its search context/domain, re-resolved live at render time — not a snapshot of data.",
+        "source": "code-read"
+      },
+      {
+        "element": "BoardController + BoardAction (OWL rendering of saved widgets)",
+        "observation": "At render time BoardArchParser (board_view.js) walks the saved arch into {layout, columns:[{actions:[...]}]}, where each <action> becomes a widget descriptor (actionId, viewMode, context, domain, isFolded). BoardController (board_controller.js) lays out the columns and, for each descriptor, mounts a BoardAction (board_action.js) which calls rpc('/web/action/load', {action_id}) and embeds a full <View> (list/pivot/graph/...) with controlPanel hidden, re-fetching live data through the standard view stack. So each dashboard cell is a live mini-view, not a cached image.",
         "source": "static"
       },
       {
-        "element": "thin module",
-        "observation": "1 models, 1 routes, 144 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
-        "source": "ast"
+        "element": "Dashboard layout / drag-and-reorder UI (gap #3, OWL/JS in static/src)",
+        "observation": "The interactive dashboard behaviour lives entirely in OWL/JS under static/src and is invisible to Python metadata (metadata gap #3): useSortable in BoardController gives drag-and-drop of widgets within and across columns (moveAction), selectLayout switches column layouts (e.g. '2-1', '1-1-1'), toggleAction folds/unfolds widgets, and closeAction removes one. Every mutation calls saveBoard(), which re-renders the 'board.arch' QWeb template to XML and POSTs it to /web/view/edit_custom (custom_id = customViewId) to persist the user's ir.ui.view.custom arch, then fires an rpcBus 'CLEAR-CACHES'. AddToBoard registers an 'add-to-board' item in the cogMenu registry, shown only for ir.actions.act_window actions whose viewType is not 'form'.",
+        "source": "static"
       }
     ]
   },
   "it_architecture": {
-    "application": "board (Dashboards)",
+    "application": "board (My Dashboard framework — virtual form-view shell + OWL dashboard widget host, layered on web/spreadsheet_dashboard)",
     "software_services": [
-      "/board/add_to_dashboard"
+      "/board/add_to_dashboard (pin current action/view+context as a dashboard widget)",
+      "/web/action/load (reused by BoardAction to load each pinned widget's action)",
+      "/web/view/edit_custom (reused by saveBoard to persist per-user dashboard arch)"
     ],
     "data_objects": [
       "board.board"
     ],
-    "logical_data_erm": [],
+    "logical_data_erm": [
+      "board.board -> (virtual, _auto=False; no table)",
+      "ir.ui.view.custom.user_id -> res.users (per-user saved dashboard arch)",
+      "ir.ui.view.custom.ref_id -> ir.ui.view (board_my_dash_view base view)",
+      "saved <action> name -> ir.actions.act_window (the pinned action, resolved live)"
+    ],
     "information_flows": [
-      "depends: spreadsheet_dashboard"
+      "depends: spreadsheet_dashboard (-> web, base)",
+      "pin: user view -> AddToBoard cogMenu -> /board/add_to_dashboard -> board.board.get_view -> create ir.ui.view.custom(user_id, ref_id, arch)",
+      "render: open My Dashboard -> board.board.get_view (swap in user's custom arch) -> _arch_preprocessing sets js_class='board' -> BoardController -> per-widget BoardAction -> /web/action/load -> live View",
+      "edit: drag/layout/fold/remove (BoardController) -> saveBoard -> /web/view/edit_custom -> update ir.ui.view.custom.arch -> rpcBus CLEAR-CACHES",
+      "extends: ir.ui.view.custom (per-user view storage), cogMenu registry, views registry ('board')"
     ],
     "frontend_components": [
-      "AddToBoard",
-      "BoardAction",
-      "BoardController"
+      "BoardController (OWL dashboard root; useSortable drag-and-drop, layout/fold/remove, saveBoard)",
+      "BoardAction (one live embedded View per pinned widget; loads action via /web/action/load)",
+      "AddToBoard (cogMenu item to pin the current view+context to the dashboard)",
+      "BoardArchParser (parses saved board arch into columns/actions descriptors)",
+      "boardView (registry views:board entry, js_class='board')"
     ]
   },
   "business_architecture": {
     "capabilities": [
-      "Dashboards"
+      "Compose a personal dashboard from pinned views/actions (self-service)",
+      "Pin any non-form act_window view (list/pivot/graph/...) with its search context and domain as a widget",
+      "Arrange dashboard widgets (multi-column layout, drag-and-drop, fold, remove)",
+      "Render saved widgets as live mini-views (data re-fetched at view time, not snapshotted)",
+      "Persist each user's dashboard independently (per-user custom view arch)"
     ],
-    "value_streams": [],
+    "value_streams": [
+      "Pin-to-Dashboard: user opens a view -> Add to my dashboard -> action+context saved as widget in ir.ui.view.custom",
+      "Open-to-Render: open My Dashboard -> load user's custom arch -> mount BoardController -> per-widget live View render"
+    ],
     "information_concepts": [
-      "board.board"
+      "board.board (virtual dashboard shell)",
+      "ir.ui.view.custom (per-user saved dashboard arch — not owned by board, but the actual persistence)",
+      "pinned <action> widget (action ref + view_mode + context + domain)"
     ],
-    "organization": [],
+    "organization": [
+      "base.group_user (every internal user has read access to board.board)"
+    ],
     "products": [],
-    "policies": [],
-    "stakeholders": [],
+    "policies": [
+      "ACL grants read-only on board.board to base.group_user (no write/create/unlink on the model itself)",
+      "get_view scopes the custom arch to the current user (user_id = env.uid), so dashboards are strictly personal",
+      "_arch_preprocessing strips invisible/unauthorized <action> children before rendering (security trimming)",
+      "allowed_company_ids is removed from the saved context so multi-company filtering still applies on the dashboard"
+    ],
+    "stakeholders": [
+      "End user (builds and views their own dashboard)",
+      "Module developer (registers views or actions a user may pin)",
+      "System administrator (relies on web/spreadsheet_dashboard infrastructure board sits on)"
+    ],
     "strategy": null,
     "metrics": []
   },
@@ -122,16 +171,33 @@
     "value_model": "support",
     "activity_class": "support",
     "apqc_category": "13.0 Develop and Manage Business Capabilities",
-    "rationale": "board: thin support/support module (auto-architect baseline)."
+    "rationale": "board is a personal-productivity UI framework, not a business object of its own — Stabell & Fjeldstad 'support' and Porter support activity (firm IT infrastructure). The substance is FRONTEND (gap #3): 4 JS files / 3 QWeb templates implementing the OWL dashboard (BoardController drag/layout/fold, BoardAction live widgets, AddToBoard cogMenu), wrapped around a single virtual model (board.board, _auto=False, no table, one id field) and exactly one route (/board/add_to_dashboard). It owns no data — persistence is delegated to ir.ui.view.custom per user — and depends on spreadsheet_dashboard/web for everything underneath it. activity_class=support because it creates no primary value-chain output; it is cross-cutting tooling every app reuses. APQC 13.0 'Develop and Manage Business Capabilities' is chosen because board's purpose is personal performance/management dashboards — surfacing each user's own KPIs and views (it sits under the Spreadsheet Dashboards menu and lets users assemble their own management view of any data), which maps to 13.0's capability-development / performance-management intent rather than to building or running an IT platform. 8.0 'Manage Information Technology' was considered (board is technical UI plumbing like web) but rejected: unlike web (a concrete runtime/application platform = IT delivery), board delivers no IT service of its own — it is a thin self-service capability that lets business users compose their personal performance dashboards, which is squarely the performance-/capability-management intent of 13.0."
   },
   "fit_to_standard": {
     "standard_capabilities": [
-      "Dashboards"
+      "Per-user 'My Dashboard' assembled from pinned views",
+      "'Add to my dashboard' cog-menu action on any non-form act_window view, capturing its search context + domain",
+      "Multi-column dashboard layouts (e.g. 2-1, 1-1-1) with drag-and-drop reordering across columns",
+      "Fold/unfold and remove individual widgets",
+      "Widgets render as live embedded views (list/pivot/graph/kanban/...) re-fetching current data",
+      "Strictly personal persistence via ir.ui.view.custom (no admin setup per user)"
     ],
-    "typical_fits": [],
-    "common_gaps": [],
+    "typical_fits": [
+      "Power users building a personal KPI/working-set dashboard from existing reports",
+      "Pinning a filtered+grouped list or a pivot/graph as a recurring at-a-glance widget",
+      "Lightweight personal alternative to building a dedicated dashboard view or spreadsheet"
+    ],
+    "common_gaps": [
+      "Shared/team dashboards — board dashboards are per-user only (no sharing/publishing)",
+      "Bespoke widget types or interactivity beyond embedding an existing view (requires OWL/JS dev, gap #3)",
+      "Cross-record analytics/computed KPIs not expressible as a single act_window view (use spreadsheet_dashboard instead)",
+      "Pinning form views or non-act_window actions (AddToBoard is gated to act_window, viewType != form)"
+    ],
     "drive_hints": [
-      "odoo shell: env['board.board'].search([],limit=3)"
+      "odoo shell: env.ref('board.open_board_my_dash_action').read() to inspect the My Dashboard action wired to board.board",
+      "odoo shell: env['ir.ui.view.custom'].search([('ref_id','=',env.ref('board.board_my_dash_view').id)]) to see per-user saved dashboard archs",
+      "curl -X POST /board/add_to_dashboard (auth=user) with {action_id, context_to_save, domain, view_mode:'list', name:'Test'} to pin a widget, then confirm a new ir.ui.view.custom row",
+      "Browser: open any list view -> cog menu -> 'Add to my dashboard' -> open My Dashboard and confirm the widget renders live"
     ]
   },
   "reverse_eng_confidence": {
@@ -145,14 +211,16 @@
     "strategy": "human"
   },
   "open_questions": [
-    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+    "Interaction with spreadsheet_dashboard: board now depends on it and shares its menu root — how far the two dashboard frameworks overlap vs. complement is not evident from board's own code.",
+    "Garbage collection of ir.ui.view.custom rows when a pinned action is deleted or a user is removed (board only ever creates rows).",
+    "Whether _arch_preprocessing's invisible-<action> stripping fully enforces record-level access of the pinned actions at render time."
   ],
   "provenance": {
     "explorer_facts": "doc/revres/facts/board.facts.json",
     "tools": [
+      "code-read",
       "extract_module.py",
-      "extract_frontend.py",
-      "gen_thin.py"
+      "extract_frontend.py"
     ],
     "odoo_version": "19.0"
   }

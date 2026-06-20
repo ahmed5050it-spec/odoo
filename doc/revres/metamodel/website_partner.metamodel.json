@@ -8,13 +8,20 @@
         "website"
       ],
       "auto_install": false,
-      "application": false
+      "application": false,
+      "summary": "Partner module for website",
+      "external_dependencies": {}
     },
     "models": [
       {
         "_name": "res.partner",
-        "_description": null,
-        "fields": 3
+        "_description": "Contact (extended)",
+        "_inherit": [
+          "res.partner",
+          "website.seo.metadata"
+        ],
+        "fields": 3,
+        "relations": []
       }
     ],
     "routes": [
@@ -32,7 +39,7 @@
       "groups": 0
     },
     "views": {
-      "form": 0,
+      "form": 1,
       "list": 0,
       "tree": 0,
       "kanban": 0,
@@ -40,7 +47,8 @@
       "pivot": 0,
       "graph": 0,
       "calendar": 0,
-      "activity": 0
+      "activity": 0,
+      "qweb_templates": 2
     },
     "frontend": {
       "present": false,
@@ -65,55 +73,134 @@
     },
     "behavioral_notes": [
       {
-        "element": "thin module",
-        "observation": "1 models, 1 routes, 86 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
-        "source": "ast"
+        "element": "res.partner _inherit website.seo.metadata + website.published.mixin fields",
+        "observation": "The module turns every res.partner into a publishable website document. By inheriting website.seo.metadata it gains SEO meta fields, and it adds is_published (tracking=True), website_description (Html, sanitize_overridable, html_translate) and website_short_description (Text, translatable). The related website_published field and the publish toggle come from website.published.mixin (website/models/mixins.py: website_published is a Boolean related='is_published'; website_url is a computed Char with a 'View on website' button). So a back-office contact becomes a front-end profile purely by flipping is_published -- a publishing semantic invisible from the bare schema.",
+        "source": "code-read"
+      },
+      {
+        "element": "res.partner._compute_website_url override",
+        "observation": "_compute_website_url() calls super() then, for any persisted partner, overrides website_url to '/partners/%s' % ir.http._slug(partner). This wires the generic website.published.mixin redirect button (registered as the website_redirect_button widget on the contact form, see res_partner_views.xml) to the public detail route, so editors jump from the contact form straight to the rendered public page. The slug embeds the partner id + a human-readable display-name segment.",
+        "source": "code-read"
+      },
+      {
+        "element": "WebsitePartnerPage.partners_detail controller (/partners/<partner_id>)",
+        "observation": "The public detail route is deliberately NON-semantic (raw <partner_id> string, not a model converter) because it browses with sudo()/SUPERUSER_ID. It _unslug()s the id, sudo-browses the partner, and renders 'website_partner.partner_page' ONLY if the partner exists AND (partner.website_published OR the visitor has website.group_website_restricted_editor); otherwise raise request.not_found(). It also canonicalises the URL: if the recomputed slug differs from the requested one it redirects to the canonical /partners/<slug> (SEO de-duplication). This published-or-editor access gate is the security boundary for the whole public profile, enforced in code, not via ir.rule.",
+        "source": "code-read"
+      },
+      {
+        "element": "_track_subtype -> chatter publish/unpublish log",
+        "observation": "Because is_published has tracking=True, _track_subtype() is overridden so that toggling publication posts a dedicated mail.message.subtype in the contact chatter: website_partner.mt_partner_published when turned on, mt_partner_unpublished when turned off (both defined noupdate in data/website_partner_data.xml). A pure data change (publish flag) thus produces an audit/social side-effect in mail -- a cross-model effect not derivable from field metadata. The same data file force-publishes base.main_partner so the company profile is live out of the box.",
+        "source": "code-read"
+      },
+      {
+        "element": "partner_page / partner_detail QWeb templates as the shared, extensible base page",
+        "observation": "This module owns only the skeleton: partner_page wraps website.layout with two oe_structure editable drop-zones ('DROP BUILDING BLOCKS HERE TO MAKE THEM AVAILABLE ACROSS ALL PARTNERS') and t-calls partner_detail. partner_detail renders the image, a schema.org Organization microdata block, a contact widget (address/website/phone/email) and website_description, and crucially exposes empty left_column / right_column slots. Downstream modules extend THIS base by xpath-inheriting partner_detail and t-set-ing those slots: website_customer fills implemented_by_block / references_block; website_crm_partner_assign adds grade/reseller blocks plus the /partners listing and /partners/grade/.../country/... faceted routes and its own _get_partners_response; event reuses the same published-partner profile. website_partner itself ships no listing route -- only the detail page -- making it the minimal shared base the channel/customer/event apps build on.",
+        "source": "code-read"
+      },
+      {
+        "element": "frontend (no own OWL/JS; reuses website builder)",
+        "observation": "extract_frontend reports present=false: zero JS files, zero OWL components, zero asset bundles, zero registry adds of its own. The editing UX (drag-and-drop snippets into the oe_structure zones, the publish toggle widget) is entirely inherited from the parent website module's client-side builder; this module contributes only server-side QWeb templates and the is_published form widget reference. All interactivity is borrowed, not defined here.",
+        "source": "static"
       }
     ]
   },
   "it_architecture": {
-    "application": "website_partner (Website Partner)",
+    "application": "website_partner (public partner-profile publishing base -- the shared /partners/<id> detail page)",
     "software_services": [
-      "/partners/<partner_id>"
+      "/partners/<partner_id> (public partner profile detail page; published-or-editor gated, canonical-slug redirecting)"
     ],
     "data_objects": [
-      "res.partner"
+      "res.partner (extended: is_published, website_description, website_short_description + website.seo.metadata)"
     ],
-    "logical_data_erm": [],
+    "logical_data_erm": [
+      "res.partner -> website.published.mixin (website_published related is_published; website_url compute)",
+      "res.partner -> website.seo.metadata (SEO meta fields for the public page)",
+      "res.partner.is_published -> mail.message.subtype (mt_partner_published / mt_partner_unpublished via _track_subtype)",
+      "website_partner.partner_page / partner_detail -> ir.ui.view (QWeb templates, base for downstream xpath inheritance)"
+    ],
     "information_flows": [
-      "depends: website"
+      "depends: website (which pulls web, portal, mail, http_routing, html_builder, ...)",
+      "side-effect: HTTP GET /partners/<id> -> sudo browse res.partner -> access gate (website_published or restricted_editor) -> QWeb render website_partner.partner_page (else 404)",
+      "side-effect: non-canonical slug -> redirect to /partners/<canonical-slug> (SEO de-dup)",
+      "side-effect: toggle is_published -> _track_subtype -> chatter message (published/unpublished subtype) on res.partner",
+      "extension point: partner_detail left_column/right_column slots + oe_structure zones consumed by website_customer, website_crm_partner_assign, event"
     ],
     "frontend_components": []
   },
   "business_architecture": {
     "capabilities": [
-      "Website Partner"
+      "Publish Partner Public Profile (toggle a contact live on the website)",
+      "Render Shared Partner Detail Page (/partners/<id> with image, contact card, description)",
+      "Partner Profile SEO & Canonical URL Management",
+      "Editable Partner Profile Content (rich website_description + drop-zone snippets)",
+      "Provide Extensible Base Page for Channel / Customer / Event Profiles"
     ],
-    "value_streams": [],
+    "value_streams": [
+      "Publish-to-Public: edit contact -> write website_description -> toggle is_published -> /partners/<id> live (chatter logs publish)",
+      "Visitor-to-Profile: visitor requests /partners/<slug> -> access gate -> canonical redirect -> rendered public profile"
+    ],
     "information_concepts": [
-      "res.partner"
+      "res.partner (as publishable website document)",
+      "website.published.mixin (publish state)",
+      "website.seo.metadata (SEO metadata)",
+      "ir.ui.view (partner_page / partner_detail QWeb templates)"
     ],
-    "organization": [],
+    "organization": [
+      "website.group_website_restricted_editor (can preview unpublished profiles)",
+      "base.group_public (anonymous visitor viewing published profiles)"
+    ],
     "products": [],
-    "policies": [],
-    "stakeholders": [],
+    "policies": [
+      "Public visibility gate enforced in controller code: render only if website_published OR caller is website restricted editor (no ir.rule)",
+      "Canonical-URL policy: non-canonical slug redirects to the slug derived from partner id + display name",
+      "Audit policy: publish/unpublish state changes are tracked and logged to the contact chatter via dedicated subtypes"
+    ],
+    "stakeholders": [
+      "Website Visitor (public user browsing partner profiles)",
+      "Website Editor / Publisher (res.users toggling and editing profiles)",
+      "Partner / Contact being published (reseller, customer, event organizer)",
+      "Marketing / Channel manager (curates the public partner directory downstream)"
+    ],
     "strategy": null,
-    "metrics": []
+    "metrics": [
+      "is_published count (number of partners live on the website)",
+      "partner publish/unpublish chatter events (tracking history per contact)"
+    ]
   },
   "classification": {
     "value_model": "network",
-    "activity_class": "primary",
+    "activity_class": "support",
     "apqc_category": "3.0 Market and Sell Products and Services",
-    "rationale": "website_partner: thin network/primary module (auto-architect baseline)."
+    "rationale": "value_model is network (Stabell & Fjeldstad mediating technology), inherited from and consistent with its parent website: this module extends the web platform that mediates between the organization and an open population of visitors, here by exposing res.partner records as public profile pages. Its worth is mediating-and-infrastructure -- it connects visitors to partners (resellers, customers, event organizers) and provides the shared, reusable /partners/<id> page that downstream channel/customer/event modules plug into; value grows with the number of published partners and consuming apps, the hallmark of a network rather than a sequential transformation (chain) or a problem-solving cycle (shop). activity_class is support (NOT primary, unlike the parent website): website_partner is a thin, application:false base library -- a single inherited model, one detail route, no listing, no own UX. It does not itself deliver the market presence; it provisions a shared publishing capability that the truly customer-facing modules (website_crm_partner_assign reseller directory, website_customer references, event) build their primary service upon. apqc_category 3.0 Market and Sell Products and Services because publishing partners/channel members as public web profiles is a demand-side marketing/channel-publishing activity (promoting the partner network and channel ecosystem to the market); 13.0 Develop and Manage Business Capabilities was considered (it is reusable enabling infrastructure) but rejected because the artifact produced -- an outward-facing marketing profile page in the website channel -- is squarely market-and-sell content, not an internal capability-management asset.",
+    "apqc_alternative_considered": "13.0 Develop and Manage Business Capabilities (reusable enabling base) -- rejected: output is outward-facing marketing/channel content, so 3.0 fits the delivered value."
   },
+  "apqc_category": "3.0 Market and Sell Products and Services",
   "fit_to_standard": {
     "standard_capabilities": [
-      "Website Partner"
+      "one-click publish/unpublish of any contact to the website (is_published toggle + redirect button on the contact form)",
+      "shared, themeable public partner profile page at /partners/<id> (image, contact card with schema.org microdata, rich description)",
+      "SEO meta + canonical-slug redirect on the partner page (website.seo.metadata)",
+      "in-builder editable drop-zones (oe_structure) applied across all partner pages",
+      "left_column/right_column extension slots reused by website_customer, website_crm_partner_assign, event",
+      "publish-state change tracked in the contact chatter"
     ],
-    "typical_fits": [],
-    "common_gaps": [],
+    "typical_fits": [
+      "company / about-us profile (base.main_partner published by default)",
+      "reseller or partner directory base (extended by website_crm_partner_assign)",
+      "customer reference profiles (extended by website_customer)",
+      "event organizer / sponsor profiles (extended by event modules)"
+    ],
+    "common_gaps": [
+      "no partner LISTING / directory route in the base (must add website_crm_partner_assign or a custom /partners index)",
+      "access control is published-or-editor only -- no per-partner or group-restricted profile visibility out of the box",
+      "no own snippets/OWL; bespoke profile interactivity needs custom website assets",
+      "no built-in moderation/approval workflow before a profile goes public"
+    ],
     "drive_hints": [
-      "odoo shell: env['res.partner'].search([],limit=3)"
+      "odoo shell: env['res.partner'].search([('is_published','=',True)]).mapped(lambda p: (p.display_name, p.website_url))",
+      "odoo shell: p=env.ref('base.main_partner'); (p.is_published, p.website_url)",
+      "curl -s http://localhost:8069/partners/1 | head",
+      "curl -s -o /dev/null -w '%{http_code}\\n' http://localhost:8069/partners/999999  # expect 404 for unpublished/missing"
     ]
   },
   "reverse_eng_confidence": {
@@ -124,17 +211,22 @@
     "value_streams": "inferred",
     "policies": "inferred",
     "metrics": "inferred",
+    "stakeholders": "inferred",
     "strategy": "human"
   },
   "open_questions": [
-    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+    "Live count of published partners (is_published=True) and which model converters downstream listing routes attach (extract_runtime.sh not run).",
+    "Exact set of downstream modules consuming partner_detail slots in a given install (website_customer, website_crm_partner_assign, event confirmed by code; others possible).",
+    "Whether any deployment layers ir.rule-level visibility on top of the controller's published-or-editor gate."
   ],
   "provenance": {
     "explorer_facts": "doc/revres/facts/website_partner.facts.json",
     "tools": [
-      "extract_module.py",
+      "code-read",
       "extract_frontend.py",
-      "gen_thin.py"
+      "extract_module.py",
+      "Grep",
+      "Read"
     ],
     "odoo_version": "19.0"
   }

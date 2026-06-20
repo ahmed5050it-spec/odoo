@@ -4,6 +4,8 @@
     "manifest": {
       "name": "Lead Generation From Website Visits",
       "category": "Sales/CRM",
+      "version": "1.1",
+      "summary": "Generate Leads/Opportunities from your website's traffic",
       "depends": [
         "iap_crm",
         "iap_mail",
@@ -17,12 +19,42 @@
       {
         "_name": "crm.reveal.rule",
         "_description": "CRM Lead Generation Rules",
-        "fields": 26
+        "fields": 26,
+        "relations": [
+          "country_ids->res.country",
+          "state_ids->res.country.state",
+          "website_id->website",
+          "industry_tag_ids->crm.iap.lead.industry",
+          "preferred_role_id->crm.iap.lead.role",
+          "other_role_ids->crm.iap.lead.role",
+          "seniority_id->crm.iap.lead.seniority",
+          "team_id->crm.team",
+          "tag_ids->crm.tag",
+          "user_id->res.users",
+          "lead_ids->crm.lead"
+        ]
       },
       {
         "_name": "crm.reveal.view",
         "_description": "CRM Reveal View",
-        "fields": 4
+        "fields": 4,
+        "relations": [
+          "reveal_rule_id->crm.reveal.rule"
+        ]
+      },
+      {
+        "_name": "crm.lead",
+        "_description": "Lead (inherited)",
+        "fields": 3,
+        "relations": [
+          "reveal_rule_id->crm.reveal.rule"
+        ]
+      },
+      {
+        "_name": "ir.http",
+        "_description": "HTTP Routing (inherited)",
+        "fields": 0,
+        "relations": []
       }
     ],
     "routes": [],
@@ -69,69 +101,146 @@
     },
     "behavioral_notes": [
       {
-        "element": "thin module",
-        "observation": "2 models, 0 routes, 858 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
-        "source": "ast"
+        "element": "ir.http._serve_page (anonymous visitor IP capture hook)",
+        "observation": "The module overrides ir.http._serve_page so that on every successful (200) page view by a PUBLIC/anonymous user it resolves the website.visitor and — only if that visitor has not already produced a lead (e.g. via website_form) — reads the GeoIP country/state, the request URL and the client remote_addr (IP), then calls crm.reveal.view._create_reveal_view to queue that IP for reveal. A 'rule_ids' cookie tracks rules already matched for this visitor to avoid re-queueing across page views. The whole block is wrapped in try/except ('we never want to crash a page view'), so reveal is best-effort and silent on failure. This passive IP-harvesting on page render is invisible to metadata: there is no HTTP route, it is a framework dispatch override.",
+        "source": "code-read"
+      },
+      {
+        "element": "crm.reveal.rule._match_url / _get_active_rules / crm.reveal.view._create_reveal_view (criteria matching)",
+        "observation": "Active rules are cached (ormcache _get_active_rules, invalidated on create/write/unlink of country_ids/regex_url/active) and indexed by GeoIP country code. _match_url filters candidate rules by country+state, optional website_id scope and a regex against the URL (empty regex = '.*' whole site, '/' = homepage). Each rule carries the company-criteria filter (industry_tag_ids reveal mapping, filter_on_size + company_size_min/max), the contact filter (contact_filter_type role|seniority, preferred/other roles, seniority, extra_contacts 1-5 enforced by a DB CHECK constraint) and the output shape (lead_for companies|people, lead_type lead|opportunity, team/user/tags/priority/suffix, sequence ordering). _create_reveal_view bulk-inserts one crm.reveal.view per matched rule via raw SQL with ON CONFLICT DO NOTHING against a UNIQUE (reveal_rule_id, reveal_ip) index, so an IP is never queued twice for the same rule. No external call happens at this stage — it only records intent to reveal.",
+        "source": "code-read"
+      },
+      {
+        "element": "crm.reveal.rule._process_lead_generation cron (IP-to-company IAP reveal + lead creation)",
+        "observation": "The scheduled _process_lead_generation cron drives the acquisition: it cleans old crm.reveal.view rows (_clean_reveal_views, >5 weeks not_found), unlinks views whose IP already produced a lead within reveal.lead_month_valid (default 6 months) so a company is not re-revealed, then loops in batches of DEFAULT_REVEAL_BATCH_LIMIT=25 distinct IPs. Each batch builds an IAP payload (_prepare_iap_payload/_get_rules_payload: an ips->rule-ids map plus per-rule criteria incl. industry reveal_ids and contact role/seniority) and POSTs to the EXTERNAL IAP reveal endpoint (reveal.endpoint, default https://iap-services.odoo.com, path /iap/clearbit/1/reveal) via iap_tools.iap_jsonrpc using the iap.account 'reveal' account_token. For each returned company (_create_lead_from_response) it creates a crm.lead and deletes that IP's reveal_view; not_found IPs are marked so they age out; a credit_error halts the loop and triggers a no-credit notice. autocommit commits each batch for resumability. Metadata cannot show this: the leads are materialized purely from an outbound HTTP round-trip, not an internal document flow.",
+        "source": "code-read"
+      },
+      {
+        "element": "crm.reveal.rule._create_lead_from_response / _lead_vals_from_response (dedup + enrichment + credit stamping)",
+        "observation": "Before creating a lead the cron dedups against the global reveal_id space: a search_count on crm.lead.reveal_id == result['clearbit_id'] skips any company already in CRM from any reveal/mine source, on top of the per-IP 6-month window, the (rule,IP) unique index and the visitor cookie. Lead vals are built by the shared crm.iap.lead.helpers.lead_vals_from_response (company + first-contact mapping) then stamped with reveal_ip, reveal_rule_id, referred='Website Visitor', and reveal_iap_credits=result['credit'] (credits consumed for that reveal); an optional rule suffix is appended to the lead name. Each created lead gets a message_post_with_source('iap_mail.enrich_company') note rendering the full company profile. The acquired crm.lead then enters the standard base-crm pipeline (scoring/stage/convert); reveal_* fields are added to crm.lead._merge_get_fields so they survive lead/opportunity merge.",
+        "source": "code-read"
+      },
+      {
+        "element": "external integration (gap #7) — IAP Reveal / Clearbit IP-to-company provider",
+        "observation": "Single outbound integration: iap_tools.iap_jsonrpc POST to the Odoo IAP gateway (reveal.endpoint, default https://iap-services.odoo.com) path /iap/clearbit/1/reveal, sending the batch of website-visitor IPs plus per-rule criteria. Auth is the iap.account 'reveal' account_token brokered by the iap framework; no third-party SDK is imported and no raw api-key is stored in the module. This is the SOLE source of company identity behind anonymous traffic — without IAP credits/connectivity the module harvests IPs (crm.reveal.view) but produces no leads. Economics are pay-per-reveal: reveal_iap_credits is recorded per lead, and credit_error halts the batch and emails record creators via crm.iap.lead.helpers._notify_no_more_credit (rate-limited by the reveal.already_notified config flag).",
+        "source": "static"
       }
     ]
   },
   "it_architecture": {
-    "application": "website_crm_iap_reveal (Lead Generation From Website Visits)",
+    "application": "website_crm_iap_reveal (Lead Generation from website visits — IAP Reveal add-on bridging website traffic and CRM)",
     "software_services": [],
     "data_objects": [
       "crm.reveal.rule",
-      "crm.reveal.view"
+      "crm.reveal.view",
+      "crm.lead",
+      "ir.http"
     ],
     "logical_data_erm": [
-      "crm.reveal.rule -> crm.iap.lead.industry",
-      "crm.reveal.rule -> crm.iap.lead.role",
-      "crm.reveal.rule -> crm.iap.lead.seniority",
-      "crm.reveal.rule -> crm.lead",
-      "crm.reveal.rule -> crm.tag",
-      "crm.reveal.rule -> crm.team",
-      "crm.reveal.rule -> res.country",
-      "crm.reveal.rule -> res.country.state",
-      "crm.reveal.rule -> res.users",
-      "crm.reveal.rule -> website",
-      "crm.reveal.view -> crm.reveal.rule"
+      "crm.reveal.rule -> crm.reveal.view (one IP-queue row per matched rule)",
+      "crm.reveal.view -> crm.reveal.rule (many2one reveal_rule_id, unique on (reveal_rule_id, reveal_ip))",
+      "crm.lead -> crm.reveal.rule (many2one reveal_rule_id, one2many lead_ids back-link)",
+      "crm.reveal.rule -> res.country / res.country.state (GeoIP traffic filter)",
+      "crm.reveal.rule -> website (website scope)",
+      "crm.reveal.rule -> crm.iap.lead.industry (industry reveal mapping)",
+      "crm.reveal.rule -> crm.iap.lead.role / crm.iap.lead.seniority (contact filter)",
+      "crm.reveal.rule -> crm.team / res.users / crm.tag (lead routing)"
     ],
     "information_flows": [
-      "depends: iap_crm, iap_mail, crm_iap_mine, website_crm"
+      "depends: crm_iap_mine (crm.iap.lead.industry/role/seniority, lead_vals_from_response, _notify_no_more_credit), iap_crm (reveal_id dedup glue), iap_mail (enrich_company note + no-credit mail), website_crm (website.visitor, web-to-lead)",
+      "inbound: ir.http._serve_page on anonymous 200 page view -> GeoIP+IP -> crm.reveal.rule._match_url -> crm.reveal.view queued (cookie tracks matched rules)",
+      "outbound: crm.reveal.rule._process_lead_generation cron -> IAP reveal service (https://iap-services.odoo.com /iap/clearbit/1/reveal) authenticated by iap.account 'reveal' token, batches of 25 IPs",
+      "side-effect: reveal response -> crm.lead.create (lead/opportunity) + iap_mail.enrich_company log + reveal_view unlink + reveal_iap_credits stamped",
+      "side-effect: dedup -> skip if reveal_id already on a crm.lead, or IP produced a lead within 6 months, or (rule,IP) already queued",
+      "side-effect: credit_error from IAP -> halt batch + _notify_no_more_credit email to record creators",
+      "downstream: created crm.lead enters standard crm pipeline (scoring, stage progression, convert, won/lost)"
     ],
     "frontend_components": []
   },
   "business_architecture": {
     "capabilities": [
-      "Lead Generation From Website Visits"
+      "Identify Companies Behind Anonymous Website Traffic (IP-to-company reveal)",
+      "Define Website Lead-Generation Rules (country/state/URL, size, industry criteria)",
+      "Convert Web Visits into CRM Leads/Opportunities",
+      "Contact Discovery & Company Enrichment (role/seniority, enrich note)",
+      "IAP Credit Metering for Reveal & Deduplication of Acquired Companies",
+      "Feed Acquired Leads into the CRM Pipeline"
     ],
-    "value_streams": [],
+    "value_streams": [
+      "Anonymous visit -> GeoIP/URL rule match -> queue IP -> cron reveal -> create lead/opportunity -> enrich -> hand to CRM pipeline",
+      "Credit lifecycle: debit per reveal (reveal_iap_credits) -> credit_error halts batch -> notify creators",
+      "Dedup lifecycle: cookie + unique (rule,IP) index + 6-month IP window + global reveal_id check"
+    ],
     "information_concepts": [
-      "crm.reveal.rule",
-      "crm.reveal.view"
+      "crm.reveal.rule (website lead-generation rule / criteria)",
+      "crm.reveal.view (queued visitor IP awaiting reveal)",
+      "crm.lead (acquired lead/opportunity)",
+      "crm.iap.lead.industry (industry filter / reveal mapping)",
+      "crm.iap.lead.role / crm.iap.lead.seniority (contact filters)"
     ],
     "organization": [],
     "products": [],
     "policies": [
-      "4 record rules"
+      "4 access rules + 4 record rules scoping reveal rules/views; no module-specific groups (reuses crm/sales_team groups)",
+      "matching policy: GeoIP country+state whitelist, optional website scope, URL regex, sequence ordering of rules",
+      "guardrails: DEFAULT_REVEAL_BATCH_LIMIT=25 IPs/batch, extra_contacts CHECK 1-5, filter_on_size company-size bounds",
+      "dedup policy: unique (reveal_rule_id, reveal_ip) index, reveal.lead_month_valid (6 mo) IP re-reveal block, reveal_id global skip, 'rule_ids' cookie",
+      "retention policy: reveal.view_weeks_valid (5 wk) cleanup of not_found views",
+      "credit policy: pay-per-reveal on iap.account 'reveal'; credit_error halts and notifies (rate-limited via reveal.already_notified)"
     ],
-    "stakeholders": [],
+    "stakeholders": [
+      "Anonymous Website Visitor / Prospect company (acquired lead)",
+      "Salesperson (res.users / user_id)",
+      "Sales Team (crm.team)",
+      "Sales Manager (configures crm.reveal.rule)",
+      "Odoo IAP / Reveal (Clearbit / D&B) data provider (external)"
+    ],
     "strategy": null,
-    "metrics": []
+    "metrics": [
+      "lead_count / opportunity_count (generated per rule, computed)",
+      "reveal_iap_credits (credits consumed per acquired lead)",
+      "crm.reveal.view backlog by reveal_state (to_process / not_found)"
+    ]
   },
   "classification": {
     "value_model": "network",
     "activity_class": "primary",
-    "apqc_category": "3.0 Market and Sell Products and Services",
-    "rationale": "website_crm_iap_reveal: thin network/primary module (auto-architect baseline)."
+    "apqc_category": "3.0 Market and Sell Products and Services (3.1 / 3.5.1 Generate / manage leads)",
+    "rationale": "website_crm_iap_reveal is best read as a value network (Stabell & Fjeldstad): its core function is mediation — it sits between two populations (anonymous website visitors on one side, the external IAP Reveal / Clearbit-D&B identity network on the other) and creates value by brokering an identity match between an IP address and a real company, then routing the result into CRM as a lead. The network logic is explicit in the code: passive IP harvesting on every page view (ir.http._serve_page), a queue of would-be matches (crm.reveal.view), batched calls into the shared external data network keyed by account_token, and mediation/dedup so the same company/IP is matched only once. Value scales with the reach and quality of the external network, not with any internal transformation. It is a primary activity because it directly produces the pipeline input (crm.lead) that downstream sale (chain) monetizes, mapping to APQC 3.0 Market and Sell (3.1/3.5 lead generation). Shop was considered (it is a CRM-adjacent acquisition add-on, like the parent crm value-shop) but rejected: this module does not run the iterative diagnose/qualify/nurture problem-solving loop itself — it hands the lead off to base crm for that; its own contribution is the network-mediated IP->company match. Support was also considered (auto_install=false bolt-on, no routes, a dispatch override) and rejected: the function is value-creating customer acquisition, not internal enablement.",
+    "value_model_alternative_considered": "shop"
   },
   "fit_to_standard": {
     "standard_capabilities": [
-      "Lead Generation From Website Visits"
+      "identify the company behind anonymous website traffic via IAP Reveal (IP-to-company)",
+      "rule-based lead generation by GeoIP country/state, website, URL regex, company size and industry",
+      "company-only or company-and-contacts tracking filtered by role/seniority",
+      "automatic creation of leads or opportunities routed to a team/salesperson with tags/priority/suffix",
+      "company enrichment note on each acquired lead (iap_mail.enrich_company)",
+      "credit-metered reveal with no-credit email notification",
+      "multi-layer deduplication (cookie, unique IP/rule index, 6-month IP window, global reveal_id)",
+      "batched cron processing with old-view cleanup and retention windows"
     ],
-    "typical_fits": [],
-    "common_gaps": [],
+    "typical_fits": [
+      "B2B sites wanting to turn unconverted anonymous traffic into pipeline",
+      "targeting specific markets via country/state + URL-section rules (e.g. /pricing visitors)",
+      "manager-defined rules feeding leads straight into standard crm scoring/conversion",
+      "enriching leads with company + key-contact data without manual research"
+    ],
+    "common_gaps": [
+      "dependence on Odoo IAP credits and connectivity — unusable air-gapped or without a funded reveal account",
+      "reveal coverage/accuracy varies (many IPs return not_found; residential/VPN traffic unidentifiable)",
+      "GeoIP must be configured for country/state matching to work at all",
+      "privacy/consent considerations of identifying visitors are left to the deployer",
+      "no UI to preview/estimate credit spend before the cron runs; batch limit 25 fixed in code",
+      "alternative / 3rd-party reveal providers require custom development"
+    ],
     "drive_hints": [
-      "odoo shell: env['crm.reveal.rule'].search([],limit=3)"
+      "odoo shell: r = env['crm.reveal.rule'].create({'name':'Demo','regex_url':'/','lead_type':'opportunity','contact_filter_type':'role'}); env['crm.reveal.rule']._get_active_rules()  # inspect cached country/url matching without spending credits",
+      "odoo shell: env['crm.reveal.rule']._match_url(env['website'].search([],limit=1).id, 'https://x/', 'US', None, [])  # test rule matching",
+      "odoo shell: env['ir.config_parameter'].sudo().get_param('reveal.endpoint','https://iap-services.odoo.com')  # external endpoint",
+      "odoo shell: env['iap.account'].get('reveal').account_token  # confirm reveal wallet is configured",
+      "odoo shell: env['crm.reveal.view'].search_count([('reveal_state','=','to_process')])  # queued IPs awaiting reveal",
+      "UI: Website > Configuration > Lead Generation Rules to define a crm.reveal.rule"
     ]
   },
   "reverse_eng_confidence": {
@@ -145,14 +254,17 @@
     "strategy": "human"
   },
   "open_questions": [
-    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+    "Exact remote semantics of /iap/clearbit/1/reveal (result schema, not_found rate, per-IP credit cost) — only the client side is in-repo.",
+    "Real per-reveal credit cost vs. the stamped reveal_iap_credits (authoritative debit happens server-side on IAP).",
+    "How website.visitor lead_ids interplay with reveal dedup when leads originate from website_form vs reveal in the same session."
   ],
   "provenance": {
     "explorer_facts": "doc/revres/facts/website_crm_iap_reveal.facts.json",
     "tools": [
+      "code-read",
       "extract_module.py",
       "extract_frontend.py",
-      "gen_thin.py"
+      "Grep/Read"
     ],
     "odoo_version": "19.0"
   }

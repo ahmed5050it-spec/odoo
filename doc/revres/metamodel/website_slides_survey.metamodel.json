@@ -11,7 +11,60 @@
       "auto_install": true,
       "application": false
     },
-    "models": [],
+    "models": [
+      {
+        "_name": "slide.slide",
+        "_inherit": "slide.slide",
+        "_description": "Slides (certification extension)",
+        "fields": 6,
+        "relations": [
+          "survey_id->survey.survey"
+        ]
+      },
+      {
+        "_name": "slide.slide.partner",
+        "_inherit": "slide.slide.partner",
+        "_description": "Slide / Partner decorated m2m (certification attempts)",
+        "fields": 2,
+        "relations": [
+          "user_input_ids->survey.user_input"
+        ]
+      },
+      {
+        "_name": "slide.channel",
+        "_inherit": "slide.channel",
+        "_description": "Course (certification stats)",
+        "fields": 2,
+        "relations": []
+      },
+      {
+        "_name": "slide.channel.partner",
+        "_inherit": "slide.channel.partner",
+        "_description": "Channel / Partners (certification flag)",
+        "fields": 2,
+        "relations": []
+      },
+      {
+        "_name": "survey.survey",
+        "_inherit": "survey.survey",
+        "_description": "Survey (eLearning links)",
+        "fields": 3,
+        "relations": [
+          "slide_ids->slide.slide",
+          "slide_channel_ids->slide.channel"
+        ]
+      },
+      {
+        "_name": "survey.user_input",
+        "_inherit": "survey.user_input",
+        "_description": "Survey User Input (slide linkage)",
+        "fields": 2,
+        "relations": [
+          "slide_id->slide.slide",
+          "slide_partner_id->slide.slide.partner"
+        ]
+      }
+    ],
     "routes": [
       {
         "paths": [
@@ -26,11 +79,6 @@
         ],
         "auth": "user",
         "type": "jsonrpc"
-      },
-      {
-        "paths": [],
-        "auth": null,
-        "type": null
       }
     ],
     "security": {
@@ -41,13 +89,10 @@
     "views": {
       "form": 1,
       "list": 0,
-      "tree": 0,
       "kanban": 0,
       "search": 0,
       "pivot": 0,
-      "graph": 0,
-      "calendar": 0,
-      "activity": 0
+      "graph": 0
     },
     "frontend": {
       "present": true,
@@ -78,59 +123,154 @@
     },
     "behavioral_notes": [
       {
-        "element": "frontend (OWL/JS)",
-        "observation": "3 JS files, 0 OWL components, 0 registry adds; bundles ['web.assets_frontend', 'survey.survey_assets'].",
-        "source": "static"
+        "element": "slide.slide.survey_id + slide_category='certification' (bridge model)",
+        "observation": "The module adds a 'certification' value to slide.slide.slide_category and slide_type, gated by a SQL CHECK constraint (_check_survey_id) that a certification slide MUST carry a survey_id->survey.survey, plus a second CHECK (_check_certification_preview) forbidding preview. slide.slide.create() auto-flips any slide given a survey_id to slide_category='certification' and calls _ensure_challenge_category, which retags the survey's certification_badge_id challenge to challenge_category='slides' so the badge surfaces under the eLearning ranks/badges page (reset to 'certification' on unlink). _compute_mark_complete_actions forces can_self_mark_completed/uncompleted=False so a certification slide can NEVER be hand-marked done - completion is earned only by passing the survey. None of this polymorphic content-type linkage or constraint logic is visible in metadata.",
+        "source": "code-read"
       },
       {
-        "element": "thin module",
-        "observation": "0 models, 3 routes, 900 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
-        "source": "ast"
+        "element": "slide.slide._generate_certification_url + controllers/slides.py /slides_survey/slide/get_certification_url",
+        "observation": "Launching a certification builds/reuses a survey.user_input attempt. For a course member with no prior attempt it sudo()._create_answer on the linked survey passing slide_id + slide_partner_id and a fresh invite_token (a new invite_token starts a distinct attempt pool per enrollment); an existing not-done attempt is resumed via its get_start_url(); a non-member gets a throwaway test_entry user_input. The HTTP route /slides_survey/slide/get_certification_url marks the slide viewed (action_set_viewed) then 302-redirects the learner into the survey's /survey/start flow. This attempt-pool bookkeeping spanning slide.slide -> survey.user_input is pure Python.",
+        "source": "code-read"
+      },
+      {
+        "element": "slide.slide.partner._compute_survey_scoring_success + _compute_field_value + _recompute_completion (pass -> complete -> certify)",
+        "observation": "When a survey.user_input reaches scoring_success=True, slide.slide.partner.survey_scoring_success recomputes True; the _compute_field_value override then writes completed=True on that slide.slide.partner (this is how passing the certification marks the certification slide complete, feeding the channel-level completion/karma chain already in website_slides). _recompute_completion then propagates: for every (partner, channel) whose certification slide now succeeded, it sets slide.channel.partner.survey_certification_success=True, i.e. the attendee becomes 'Certified' for that course. slide.channel.members_certified_count read-groups those flags. This three-hop pass->complete->certify cascade exists only in code.",
+        "source": "code-read"
+      },
+      {
+        "element": "survey.user_input._check_for_failed_attempt (fail -> un-enroll, the 're-purchase' certification flow)",
+        "observation": "On create and on state-write, a done user_input with scoring_success=False and a slide_partner_id triggers _check_for_failed_attempt: if the survey reports no attempts left (_has_attempts_left), it emails website_slides_survey.mail_template_user_input_certification_failed and calls slide.channel._remove_membership to drop the learner from the course, forcing a re-enroll before retrying. slide.channel._remove_membership first detaches user_input.slide_partner_id (=False) so prior attempts are preserved but no longer counted against the new pool. This fail-and-evict gating is invisible to metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "survey.survey._unlink_except_linked_to_course + certificate aggregation (controllers/slides.py, controllers/survey.py)",
+        "observation": "A survey used as a course certification cannot be deleted (@api.ondelete raises a ValidationError listing the dependent courses). Frontend bridges: /slides_survey/certification/search_read lists certification=True surveys for the upload dialog; create_slide auto-creates a scoring survey (attempts_limit=1, scoring_without_answers, scoring_success_min=70, certification=True, certification mail template) when authoring a new certification; the survey 'finished' and 'retry' controllers thread channel_id/slide_id/slide_partner_id back so the survey result page links to the course; and _get_users_certificates aggregates passed user_inputs onto learner profile and the all-users page (certification_count). These cross-module wirings are code-only.",
+        "source": "code-read"
+      },
+      {
+        "element": "frontend (OWL/JS patches + fullscreen player)",
+        "observation": "3 JS files and 3 XML templates, no new OWL components - instead it patches the parent eLearning upload UI (SlideUploadCategory.prototype, SlideUploadDialog.prototype) to add the Certification content category and survey picker, plus a fullscreen course-player script (slides_course_fullscreen_player.js) that drives the embedded certification launch. Assets ride web.assets_frontend (4) and survey.survey_assets (1, result SCSS). This is a thin patch-based frontend not reflected in Python metadata.",
+        "source": "static"
       }
     ]
   },
   "it_architecture": {
-    "application": "website_slides_survey (Course Certifications)",
+    "application": "website_slides_survey (eLearning Course Certifications bridge between website_slides and survey)",
     "software_services": [
-      "/slides_survey/certification/search_read",
-      "/slides_survey/slide/get_certification_url"
+      "/slides_survey/slide/get_certification_url (launch/resume a certification attempt, redirect to survey)",
+      "/slides_survey/certification/search_read (list certification surveys for the upload dialog)"
     ],
-    "data_objects": [],
-    "logical_data_erm": [],
+    "data_objects": [
+      "slide.slide (survey_id + certification category)",
+      "slide.slide.partner (user_input_ids + survey_scoring_success)",
+      "slide.channel (nbr_certification + members_certified_count)",
+      "slide.channel.partner (survey_certification_success)",
+      "survey.survey (slide_ids + slide_channel_ids)",
+      "survey.user_input (slide_id + slide_partner_id)"
+    ],
+    "logical_data_erm": [
+      "slide.slide -> survey.survey (survey_id: the certification behind a slide)",
+      "survey.user_input -> slide.slide (slide_id: attempt against a course slide)",
+      "survey.user_input -> slide.slide.partner (slide_partner_id: attempt tied to a membership/attempt-pool)",
+      "slide.slide.partner -> survey.user_input (user_input_ids: certification attempts)",
+      "survey.survey -> slide.channel (slide_channel_ids: courses using this certification, computed)",
+      "slide.channel.partner.survey_certification_success (member is Certified for the course)"
+    ],
     "information_flows": [
-      "depends: website_slides, survey"
+      "depends: website_slides, survey",
+      "side-effect: survey.user_input.scoring_success -> slide.slide.partner.survey_scoring_success -> completed=True -> slide.channel completion/karma chain (parent website_slides)",
+      "side-effect: passing certification -> slide.channel.partner.survey_certification_success=True (attendee Certified)",
+      "side-effect: failed last attempt -> certification-failed mail + slide.channel._remove_membership (un-enroll to retry)",
+      "side-effect: certification slide -> survey.certification_badge_id challenge retagged challenge_category='slides' (gamification.badge surfaces on ranks/badges page)"
     ],
-    "frontend_components": []
+    "frontend_components": [
+      "SlideUploadCategory.prototype (patched: adds Certification category)",
+      "SlideUploadDialog.prototype (patched: survey picker / create certification)",
+      "slides_course_fullscreen_player.js (embedded certification launch)"
+    ]
   },
   "business_architecture": {
     "capabilities": [
-      "Course Certifications"
+      "Gate Course/Slide Completion on Passing a Certification Survey",
+      "Issue & Track Course Certifications (per-learner pass/fail)",
+      "Manage Certification Attempt Pools (per-enrollment, attempts-limited)",
+      "Enforce Re-enrollment after Failed Certification ('re-purchase' flow)",
+      "Award & Surface Certification Badges on eLearning Profiles",
+      "Author Certification Content (link or create a scoring survey from the slide editor)"
     ],
-    "value_streams": [],
-    "information_concepts": [],
-    "organization": [],
+    "value_streams": [
+      "Certify-a-Learner: enroll -> launch certification (survey.user_input attempt) -> pass (scoring_success) -> certification slide completed + member marked Certified + badge granted; fail-last-attempt -> notify + un-enroll to retry",
+      "Author-a-Certification: create certification slide -> link or auto-create a scoring survey (attempts=1, success>=70%) -> badge challenge retagged to eLearning"
+    ],
+    "information_concepts": [
+      "slide.slide (certification slide)",
+      "survey.survey (certification)",
+      "survey.user_input (certification attempt)",
+      "slide.slide.partner (per-learner certification result)",
+      "slide.channel.partner (Certified attendee)"
+    ],
+    "organization": [
+      "website_slides.group_website_slides_officer (inherited; gates slide_channel_ids/count visibility on survey.survey)",
+      "website_slides.group_website_slides_manager (inherited)",
+      "survey.group_survey_user (inherited)"
+    ],
     "products": [],
     "policies": [
-      "5 record rules"
+      "5 record rules + 5 access rules bridging eLearning <-> survey ACLs (no new security groups)",
+      "SQL CHECK: a 'certification' slide requires survey_id; a certification slide cannot be set is_preview",
+      "certification slides cannot be self-marked complete/uncomplete - completion only via a passed survey",
+      "failed last attempt removes course membership (re-enroll required to retry); attempts limited per enrollment via invite_token pools",
+      "@api.ondelete blocks deleting a survey still used as a course certification"
     ],
-    "stakeholders": [],
+    "stakeholders": [
+      "Learner / Certification Candidate (res.partner)",
+      "Course Responsible / Instructor (group_website_slides_officer)",
+      "eLearning Manager (group_website_slides_manager)",
+      "Survey Officer (group_survey_user, authors the assessment)"
+    ],
     "strategy": null,
-    "metrics": []
+    "metrics": [
+      "slide.channel.members_certified_count (# Certified Attendees)",
+      "slide.channel.nbr_certification / slide.slide.nbr_certification",
+      "survey.survey.slide_channel_count (courses using a certification)",
+      "per-learner certification_count (learner profile / all-users page)"
+    ]
   },
   "classification": {
     "value_model": "network",
     "activity_class": "primary",
     "apqc_category": "3.0 Market and Sell Products and Services",
-    "rationale": "website_slides_survey: thin network/primary module (auto-architect baseline)."
+    "rationale": "website_slides_survey is a thin bridge (6 inherited models, 0 new models, 2 routes) that extends its parent value network rather than forming an independent configuration, so it inherits website_slides' Stabell & Fjeldstad 'network' classification: the eLearning platform is mediating infrastructure connecting content/certification providers (officers who author certifications) with consumers (learners), and a credible, badge-backed certification raises the value of platform membership for both sides (community-engagement / network-effect: certificates, badges, leaderboards, learner profiles). This module's specific contribution - gating completion on a passed assessment and issuing a verifiable certification - is an engagement/credentialing service layered on that network, not a sequential transform (not chain) and not a reusable horizontal support engine (the survey module itself is 'support'; here it is consumed by the primary eLearning offering). It is primary because certified course delivery is a core, monetizable line of an eLearning business (the failed-attempt 're-purchase' flow is explicitly framed in-code as letting a user re-purchase a certification). APQC best fit is 3.0 Market and Sell Products and Services, matching the parent website_slides: the certification is part of the public-facing eLearning product/demand offering and a conversion/retention lever; the secondary reading is 7.0 Develop and Manage Human Capital (assess employee competency / corporate L&D credentialing) when the academy is used internally for workforce certification - but the out-of-box surface is the external eLearning website, so 3.0 is primary with 7.x secondary."
   },
   "fit_to_standard": {
     "standard_capabilities": [
-      "Course Certifications"
+      "'Certification' slide content type linking a course slide to a survey.survey assessment",
+      "Completion gating: a certification slide is completed only by passing its survey (scoring_success >= success %)",
+      "Per-course Certified-attendee tracking and counts (members_certified_count)",
+      "Attempts-limited certification with per-enrollment attempt pools (invite_token)",
+      "Failed-attempt flow: notification email + automatic un-enrollment to allow retry/re-enroll",
+      "Certification badges (gamification.badge) surfaced on the eLearning ranks/badges and learner profile pages",
+      "Author-time helper that links an existing certification survey or auto-creates a scoring one (attempts=1, >=70%) from the slide upload dialog"
     ],
-    "typical_fits": [],
-    "common_gaps": [],
+    "typical_fits": [
+      "Public online academy issuing course completion certificates / diplomas",
+      "Internal corporate training with mandatory certification (channel_type='training')",
+      "Paid certification courses where a failed candidate re-enrolls to re-attempt",
+      "Badge/credential-driven learner engagement out of the box"
+    ],
+    "common_gaps": [
+      "Expiring / time-bound certifications and renewal workflows (no expiry model out of box)",
+      "Verifiable external certificate registry or third-party credential standards (Open Badges export)",
+      "Multiple-certification-per-course or weighted final-grade rules beyond single survey pass/fail",
+      "Proctoring / anti-cheat beyond survey attempt & time limits",
+      "Bespoke certificate PDF layouts beyond the survey module's templates"
+    ],
     "drive_hints": [
-      "n/a"
+      "odoo shell: env['slide.slide'].search([('slide_category','=','certification')], limit=5).mapped(('name','channel_id','survey_id'))",
+      "odoo shell: env['slide.channel.partner'].search([('survey_certification_success','=',True)], limit=5).mapped(('partner_id','channel_id'))",
+      "odoo shell: env['survey.user_input'].search([('slide_id','!=',False),('state','=','done')], limit=5).mapped(('scoring_success','slide_id','slide_partner_id'))",
+      "odoo shell: env['slide.channel'].search([('nbr_certification','>',0)]).mapped(('name','members_certified_count'))",
+      "curl (member, logged in): GET /slides_survey/slide/get_certification_url?slide_id=<id>  -> 302 to /survey/start/<token>"
     ]
   },
   "reverse_eng_confidence": {
@@ -141,17 +281,23 @@
     "value_streams": "inferred",
     "policies": "inferred",
     "metrics": "inferred",
+    "stakeholders": "inferred",
     "strategy": "human"
   },
   "open_questions": [
-    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+    "Default auto-created certification thresholds (attempts_limit=1, scoring_success_min=70) are configurable per survey - real tuned values need runtime inspection.",
+    "Live counts of issued certifications / certified attendees were not captured (runtime models_with_data = 0).",
+    "Whether the 're-purchase after failure' un-enroll flow is paired with website_sale_slides paid courses in a given install is outside this module's code.",
+    "Exact karma/badge amounts awarded on certification depend on the linked survey's gamification.badge + challenge config (parent survey + gamification modules)."
   ],
   "provenance": {
     "explorer_facts": "doc/revres/facts/website_slides_survey.facts.json",
     "tools": [
-      "extract_module.py",
+      "code-read",
       "extract_frontend.py",
-      "gen_thin.py"
+      "extract_module.py",
+      "extract_runtime.sh",
+      "run-odoo (odoo shell)"
     ],
     "odoo_version": "19.0"
   }

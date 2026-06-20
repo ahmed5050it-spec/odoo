@@ -4,6 +4,7 @@
     "manifest": {
       "name": "OdooBot",
       "category": "Productivity/Discuss",
+      "summary": "Add OdooBot in discussions",
       "depends": [
         "mail"
       ],
@@ -14,31 +15,61 @@
       {
         "_name": "mail.bot",
         "_description": "Mail Bot",
-        "fields": 0
+        "_inherit": null,
+        "fields": 0,
+        "methods": 5,
+        "relations": [
+          "(AbstractModel - no stored fields; operates on discuss.channel + res.users via env)"
+        ]
+      },
+      {
+        "_name": "discuss.channel",
+        "_description": "Discussion Channel (inherited)",
+        "_inherit": [
+          "discuss.channel"
+        ],
+        "fields": 0,
+        "methods": 2,
+        "relations": [
+          "channel_member_ids->discuss.channel.member",
+          "message_ids->mail.message"
+        ]
+      },
+      {
+        "_name": "res.users",
+        "_description": "Users (inherited)",
+        "_inherit": [
+          "res.users"
+        ],
+        "fields": 2,
+        "methods": 3,
+        "relations": [
+          "partner_id->res.partner"
+        ]
       }
     ],
     "routes": [
       {
-        "paths": [],
-        "auth": null,
-        "type": null
+        "paths": [
+          "/mail/message/post"
+        ],
+        "auth": "public",
+        "type": "jsonrpc",
+        "note": "ThreadController override of mail.controllers.thread.ThreadController.mail_message_post - forwards canned_response_ids into request context so the onboarding_canned step can detect canned-response usage"
       }
     ],
     "security": {
       "access_rules": 0,
       "record_rules": 0,
-      "groups": 0
+      "groups": 0,
+      "note": "mail_bot defines NO own security artifacts; the odoobot_state field is exposed only under base.group_no_one in the inherited res.users form and the partner is base.partner_root (OdooBot)"
     },
     "views": {
-      "form": 0,
+      "form": 1,
       "list": 0,
-      "tree": 0,
       "kanban": 0,
       "search": 0,
-      "pivot": 0,
-      "graph": 0,
-      "calendar": 0,
-      "activity": 0
+      "note": "single inherited res.users form extension adding odoobot_state (debug-only, invisible for share users)"
     },
     "frontend": {
       "present": true,
@@ -72,53 +103,139 @@
     },
     "behavioral_notes": [
       {
-        "element": "thin module",
-        "observation": "1 models, 1 routes, 446 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
-        "source": "ast"
+        "element": "mail.bot._apply_logic / _get_answer (state machine)",
+        "observation": "mail_bot.py:14/54 - OdooBot is a scripted, rule-based reply engine (NO LLM/AI). _apply_logic short-circuits unless the message is a non-bot 'comment' (or a command); it lowercases/normalizes the body, then _get_answer branches ONLY when channel.channel_type=='chat' AND base.partner_root is a member. Replies are keyed jointly on res.users.odoobot_state and on message content: onboarding_emoji needs _body_contains_emoji, onboarding_command needs command=='help', onboarding_ping needs OdooBot's partner id in values['partner_ids'], onboarding_attachement needs values['attachment_ids'], onboarding_canned needs context['canned_response_ids']; each matched step advances odoobot_state and clears odoobot_failed, then posts the next scripted Markup message. Mismatches set odoobot_failed=True and re-prompt; 'idle' yields help/easter-egg replies. None of this branching logic is visible in metadata - it lives entirely in Python.",
+        "source": "code-read"
+      },
+      {
+        "element": "discuss.channel._message_post_after_hook (trigger)",
+        "observation": "discuss_channel.py:13 - mail_bot inherits discuss.channel and overrides _message_post_after_hook to call self.env['mail.bot']._apply_logic(self, msg_vals) on EVERY message posted to ANY channel, BEFORE super(). The bot's own _apply_logic then self-filters (author != odoobot, type=='comment', chat channel with odoobot member), so the reply is a side-effect of a normal user message_post - the bot's answer is itself posted via channel.sudo().message_post(author_id=odoobot, silent=True). execute_command_help is also overridden so the '/help' slash command feeds _apply_logic with command='help' (drives the onboarding_command step).",
+        "source": "code-read"
+      },
+      {
+        "element": "res.users._init_odoobot / _on_webclient_bootstrap (setup + partner)",
+        "observation": "res_users.py:28/33 - OdooBot is the existing base.partner_root partner (resolved via ir.model.data _xmlid_to_res_id('base.partner_root')); there is no dedicated bot user creation. _on_webclient_bootstrap fires _init_odoobot the first time an internal user (_is_internal) loads the webclient while odoobot_state is False/not_initialized: it _get_or_create_chat between odoobot and the user's partner, posts the 'Hello / Try to send me an emoji :)' greeting, and sets odoobot_state='onboarding_emoji', launching the onboarding tour. mailbot_data.xml sets base.user_root's odoobot_state='disabled' so the admin/root user is excluded from onboarding.",
+        "source": "code-read"
+      },
+      {
+        "element": "onboarding side-effects (canned response + state field)",
+        "observation": "mail_bot.py:89-118 - the onboarding_attachement step CREATES a temporary mail.canned.response ('Thanks' -> 'Thanks for your feedback. Goodbye!') so the user can try '::'; the onboarding_canned step UNLINKS that temporary canned response (filtered by create_uid + source) once used, then sets odoobot_state='idle'. odoobot_state (Selection) and odoobot_failed (Boolean) are stored, readonly res.users fields; odoobot_state is added to SELF_READABLE_FIELDS so the web client can read its own onboarding progress. Re-running 'start the tour' from idle restarts at onboarding_emoji.",
+        "source": "code-read"
+      },
+      {
+        "element": "frontend (OWL/JS)",
+        "observation": "0 JS files, 0 OWL components, 0 registry registrations, 0 patches; only static asset is mail_bot/static/src/scss/odoobot_style.scss in web.assets_backend (styles the o_odoobot_command span used in scripted replies). All chat UI is inherited from the mail (Discuss) frontend; mail_bot ships no client components of its own.",
+        "source": "static"
+      },
+      {
+        "element": "external integrations",
+        "observation": "0 outbound HTTP call sites; no SDK imports; uses_api_keys=False. The only external references are inert documentation/help URLs embedded in scripted replies (odoo.com/documentation, odoo.com/slides) and the manifest website (odoo.com/app/discuss) - rendered as links, never called server-side.",
+        "source": "static"
       }
     ]
   },
   "it_architecture": {
-    "application": "mail_bot (OdooBot)",
-    "software_services": [],
+    "application": "mail_bot (OdooBot - scripted onboarding chatbot layered on the Discuss/mail messaging subsystem)",
+    "software_services": [
+      "/mail/message/post (override: canned_response_ids -> context passthrough)"
+    ],
     "data_objects": [
-      "mail.bot"
+      "mail.bot",
+      "discuss.channel (inherited)",
+      "res.users (inherited: odoobot_state, odoobot_failed)"
     ],
-    "logical_data_erm": [],
+    "logical_data_erm": [
+      "mail.bot -> discuss.channel (operates on, no FK; AbstractModel)",
+      "res.users.odoobot_state/odoobot_failed -> drives mail.bot reply branch",
+      "discuss.channel -> mail.message (bot reply posted as author_id=base.partner_root)",
+      "res.users -> res.partner (partner_id used to open the OdooBot chat)"
+    ],
     "information_flows": [
-      "depends: mail"
+      "depends: mail",
+      "side-effect: user message_post on a chat channel -> discuss.channel._message_post_after_hook -> mail.bot._apply_logic -> (if matched) odoobot reply message_post",
+      "side-effect: first webclient bootstrap (internal user) -> res.users._init_odoobot -> create OdooBot chat + greeting + odoobot_state='onboarding_emoji'",
+      "side-effect: onboarding_attachement step -> create temporary mail.canned.response; onboarding_canned step -> unlink it",
+      "control-flow: odoobot_state (res.users) is the conversation-state variable threading every scripted step"
     ],
-    "frontend_components": []
+    "frontend_components": [],
+    "external_integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "endpoints": [
+        "https://www.odoo.com/app/discuss",
+        "https://www.odoo.com/documentation",
+        "https://www.odoo.com/slides"
+      ]
+    }
   },
   "business_architecture": {
     "capabilities": [
-      "OdooBot"
+      "User Onboarding / Product Discovery (scripted Discuss tour)",
+      "Conversational Assistance (rule-based OdooBot replies, help links)",
+      "Onboarding Progress Tracking (per-user odoobot_state lifecycle)",
+      "Feature Walkthrough Orchestration (emoji -> command -> ping -> attachment -> canned response)"
     ],
-    "value_streams": [],
+    "value_streams": [
+      "Onboard-New-User: first webclient load -> auto-open OdooBot chat + greeting -> guide through emoji/command/ping/attachment/canned steps -> mark idle (onboarding complete)",
+      "Assist-On-Demand: user message/'/help' in OdooBot chat -> match state+content -> scripted reply or documentation/video links"
+    ],
     "information_concepts": [
-      "mail.bot"
+      "mail.bot (bot reply engine)",
+      "res.users.odoobot_state (onboarding state)",
+      "discuss.channel (OdooBot chat conversation)"
     ],
-    "organization": [],
+    "organization": [
+      "base.group_user (internal users - onboarding audience, via _is_internal)",
+      "base.group_no_one (debug - only context that exposes odoobot_state in the user form)",
+      "(mail_bot defines no own res.groups)"
+    ],
     "products": [],
-    "policies": [],
-    "stakeholders": [],
+    "policies": [
+      "Onboarding runs only for internal users (_is_internal) with odoobot_state in {False, not_initialized}; share/portal users excluded",
+      "base.user_root is hard-set to odoobot_state='disabled' (admin excluded from onboarding)",
+      "Bot replies only in channel_type=='chat' channels where base.partner_root is a member, and never to its own messages",
+      "Each scripted step gates on both odoobot_state and message content; failure sets odoobot_failed and re-prompts"
+    ],
+    "stakeholders": [
+      "New internal user (onboarding audience)",
+      "OdooBot (base.partner_root - the scripted assistant persona)",
+      "System/admin (root user, explicitly disabled)"
+    ],
     "strategy": null,
-    "metrics": []
+    "metrics": [
+      "res.users.odoobot_state distribution (onboarding funnel: emoji -> command -> ping -> attachment -> canned -> idle)",
+      "res.users.odoobot_failed counts (users stuck / re-prompted at a step)"
+    ]
   },
   "classification": {
     "value_model": "support",
     "activity_class": "support",
     "apqc_category": "9.4 Manage internal communications",
-    "rationale": "mail_bot: thin support/support module (auto-architect baseline)."
+    "rationale": "mail_bot (OdooBot) is a cross-cutting SUPPORT subsystem (Stabell & Fjeldstad): it owns no business object of its own (mail.bot is an AbstractModel; it only adds two state fields to res.users and hooks discuss.channel), and produces no product or revenue document. Its entire purpose is internal onboarding and self-service assistance on top of the messaging layer - guiding new internal users through Discuss features via a scripted state machine. This is internal-communications / employee-enablement infrastructure consumed by users of every primary activity, never part of a primary value chain. APQC best fit is 9.4 'Manage internal communications' (user onboarding/assistance broadcast to internal staff); a defensible alternative is 13.0 'Develop and Manage Business Capabilities' (knowledge/enablement), but 9.4 is closer because the deliverable is a guided internal conversation, not a managed capability asset. activity_class=support follows directly: it is enabling infrastructure, not a customer-facing or production primary activity."
   },
   "fit_to_standard": {
     "standard_capabilities": [
-      "OdooBot"
+      "Auto-launched OdooBot onboarding chat on first webclient load for internal users",
+      "Scripted, content+state keyed walkthrough: emoji -> /command -> @ping -> attachment -> :: canned response -> idle",
+      "Rule-based help/easter-egg replies with links to Odoo documentation and video slides",
+      "Per-user onboarding progress tracked in res.users.odoobot_state (re-runnable via 'start the tour')",
+      "Temporary canned-response creation/cleanup to demonstrate the '::' feature"
     ],
-    "typical_fits": [],
-    "common_gaps": [],
+    "typical_fits": [
+      "Out-of-the-box new-employee Discuss onboarding with zero configuration (auto_install with mail)",
+      "Disable onboarding for a user by setting odoobot_state='disabled' (as done for base.user_root)"
+    ],
+    "common_gaps": [
+      "No real NLU/AI - replies are hard-coded string/state matches; cannot answer free-form questions",
+      "Onboarding script content/branches are not configurable from the UI (Python-defined)",
+      "Single fixed persona (base.partner_root); no per-company or branded bot",
+      "Emoji detection relies on a static hard-coded Unicode range list that can drift from newer emoji sets"
+    ],
     "drive_hints": [
-      "odoo shell: env['mail.bot'].search([],limit=3)"
+      "odoo shell: u = env.ref('base.user_root'); print(u.odoobot_state)  # expect 'disabled'",
+      "odoo shell: env['res.users'].read_group([], ['id'], ['odoobot_state'])  # onboarding funnel distribution",
+      "odoo shell: u = env['res.users'].search([('share','=',False)], limit=1); u.odoobot_state='not_initialized'; u._init_odoobot()  # force-open the OdooBot chat",
+      "odoo shell: ch = env['discuss.channel']._get_or_create_chat([env.ref('base.partner_root').id, env.user.partner_id.id]); ch.message_post(body='start the tour', message_type='comment')  # exercise the bot reply"
     ]
   },
   "reverse_eng_confidence": {
@@ -132,14 +249,16 @@
     "strategy": "human"
   },
   "open_questions": [
-    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+    "Whether onboarding completion/abandonment is reported anywhere beyond the raw odoobot_state field (no dedicated analytics view found).",
+    "Interaction with mail_bot_extra / localized onboarding variants (not present in this module).",
+    "Exact set of slash commands routed through execute_command_help vs other discuss.channel command hooks."
   ],
   "provenance": {
     "explorer_facts": "doc/revres/facts/mail_bot.facts.json",
     "tools": [
+      "code-read (models/mail_bot.py, models/res_users.py, models/discuss_channel.py, controllers/thread.py, data/mailbot_data.xml)",
       "extract_module.py",
-      "extract_frontend.py",
-      "gen_thin.py"
+      "extract_frontend.py"
     ],
     "odoo_version": "19.0"
   }

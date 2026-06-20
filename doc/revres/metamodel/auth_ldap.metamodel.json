@@ -9,13 +9,52 @@
         "base_setup"
       ],
       "auto_install": false,
-      "application": false
+      "application": false,
+      "author": "Odoo S.A.",
+      "license": "LGPL-3",
+      "external_dependencies": {
+        "python": [
+          "python-ldap"
+        ],
+        "apt": {
+          "python-ldap": "python3-ldap"
+        }
+      }
     },
     "models": [
       {
         "_name": "res.company.ldap",
         "_description": "Company LDAP configuration",
-        "fields": 11
+        "fields": 11,
+        "relations": [
+          "company->res.company (Many2one, required, ondelete=cascade)",
+          "user->res.users (Many2one, optional Template User copied on create)",
+          "res.company.ldaps (One2many inverse) <- res.company"
+        ]
+      },
+      {
+        "_name": "res.company (extension)",
+        "_description": "Adds ldaps One2many to res.company.ldap (copy=True, groups=base.group_system) — per-company ordered list of LDAP configs",
+        "fields": 1,
+        "relations": [
+          "ldaps->res.company.ldap (One2many on 'company')"
+        ]
+      },
+      {
+        "_name": "res.config.settings (extension)",
+        "_description": "Adds ldaps One2many related='company_id.ldaps' (readonly=False) so LDAP servers are edited from the General Settings page",
+        "fields": 1,
+        "relations": [
+          "ldaps related-> company_id.ldaps"
+        ]
+      },
+      {
+        "_name": "res.users (extension)",
+        "_description": "Overrides _login / _check_credentials to fall back to LDAP bind, change_password to propagate to the directory, plus _set_empty_password (4 methods, no new stored fields)",
+        "fields": 0,
+        "relations": [
+          "delegates to res.company.ldap for bind/provision"
+        ]
       }
     ],
     "routes": [],
@@ -58,56 +97,150 @@
     },
     "behavioral_notes": [
       {
-        "element": "thin module",
-        "observation": "1 models, 0 routes, 534 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
-        "source": "ast"
+        "element": "res.company.ldap (per-server LDAP/AD directory configuration record)",
+        "observation": "res.company.ldap is a pure-configuration model (_order='sequence', _rec_name='ldap_server') that stores one directory's connection wiring: ldap_server (default 127.0.0.1) + ldap_server_port (default 389), ldap_tls (request STARTTLS encryption on connect), ldap_binddn / ldap_password (the service account used to QUERY the directory — empty binddn means anonymous bind), ldap_base (DN of the user-search subtree scope) and ldap_filter (an arbitrary LDAP filter where each '%s' placeholder is substituted with the supplied login, e.g. '(&(objectCategory=person)(objectClass=user)(sAMAccountName=%s))' for Active Directory or '(|(mail=%s)(uid=%s))'; the filter MUST resolve to exactly one entry or the login is rejected). create_user (default True) decides whether a missing local account is auto-provisioned, and user is an optional Template User copied when provisioning. ldaps is a One2many on res.company so each company holds an ordered (sequence) list of directories tried in turn. The single ACL (ir.model.access) plus the group_system on the company.ldaps field means only system administrators may read/write these records — credentials are never exposed to ordinary users.",
+        "source": "code-read"
+      },
+      {
+        "element": "res.users._login / _check_credentials -> res.company.ldap._authenticate (LDAP bind fallback authentication)",
+        "observation": "auth_ldap layers directory auth UNDER Odoo's native login: res.users._login first calls super()._login (local password check) and only on AccessDenied falls through to LDAP — and only if no local res_users row already exists for that login (an existing local user keeps its local credential, re-raising AccessDenied). It then iterates res.company.ldap._get_ldap_dicts() (sudo search_read of every configured server ordered by sequence) and calls _authenticate(conf, login, password) on each. _authenticate explicitly rejects an empty password up front (RFC 4513 — prevents an 'unauthenticated authentication' anonymous bind succeeding with a valid DN + blank password), resolves the user's DN via _get_entry, then opens a SECOND connection and does conn.simple_bind_s(dn, password): a successful bind IS the proof of identity (the directory, not Odoo, verifies the password). The first matching server wins, returning auth_method='ldap', mfa='default'. _check_credentials provides the same LDAP fallback for an already-known uid (re-auth / RPC), gated by env['interactive'] or not _rpc_api_keys_only() and only for credential type 'password'.",
+        "source": "code-read"
+      },
+      {
+        "element": "res.company.ldap._get_or_create_user + _map_ldap_attributes (just-in-time provisioning & attribute mapping)",
+        "observation": "After a successful bind, _get_or_create_user(conf, login, ldap_entry) maps the external identity to a local res.users: it lower()/strip()s the login, runs a raw SQL 'SELECT id, active FROM res_users WHERE lower(login)=%s' and, if an ACTIVE row exists, returns it (idempotent login). If no row exists AND conf['create_user'] is set, it provisions a new user via _map_ldap_attributes — name comes from the LDAP 'cn' attribute (ldap_entry[1]['cn'][0]), login is the supplied login, company_id is the config's company, and email is filled only when the login itself is a valid email (tools.single_email_re). Creation runs as sudo() with no_reset_password context; if a Template User is configured it copy()s that user (inheriting groups/preferences), otherwise it plain create()s. If the user is absent and create_user is False it raises AccessDenied('No local user found ... and not configured to create one'). This is JIT account creation: the directory is the system of record for who may log in, Odoo mirrors only a thin local shadow account.",
+        "source": "code-read"
+      },
+      {
+        "element": "res.users.change_password -> res.company.ldap._change_password + _set_empty_password (password propagation to the directory & local-credential neutralisation)",
+        "observation": "change_password is overridden so an LDAP user changing their password writes through to the directory: for each configured server it calls _change_password(conf, login, old, new) which resolves the DN, binds with the OLD password and issues ldap.passwd_s(dn, old, new) (the python-ldap extended PASSWD operation). On the first directory that accepts the change it calls _set_empty_password() — a raw 'UPDATE res_users SET password=NULL WHERE id=%s' that NULLs the local password column (with flush/invalidate around it) so the only valid credential remains the directory's; it then returns True without falling through to super(). If no directory accepts it, it defers to the standard local change_password. Net effect: LDAP-managed accounts never keep a usable local password hash, forcing every authentication back through the bind path.",
+        "source": "code-read"
+      },
+      {
+        "element": "res.company.ldap._connect / _query / test_ldap_connection (connection handling, referral/TLS options, admin test)",
+        "observation": "_connect builds 'ldap://server:port', honours the auth_ldap.disable_chase_ref ICP (default True -> set OPT_REFERRALS OFF to stop AD referral chasing that breaks anonymous follow-ups), and calls start_tls_s() when ldap_tls is set; it returns an LDAPWrapper thin proxy exposing simple_bind_s/search_st/passwd_s/unbind. _query binds with the SERVICE account (binddn/password, defaulting to empty=anonymous) and runs search_st over ldap_base with SCOPE_SUBTREE and a 60s timeout, swallowing INVALID_CREDENTIALS/LDAPError into logged errors (returns [] on failure rather than raising). test_ldap_connection is an admin-facing action that attempts a bind with the configured service credentials and returns a display_notification (success / server-down / invalid-credentials / timeout / generic error) so an administrator can validate server reachability and the bind DN before going live.",
+        "source": "code-read"
+      },
+      {
+        "element": "frontend (static assets)",
+        "observation": "No client-side footprint at all: extract_frontend reports present=false — zero JS/OWL components, registry adds, services, patches or asset bundles. The entire UI is the server-rendered res.config.settings General Settings page plus the res.company.ldap list/form views (1 list + 1 form) where an administrator enters server/port/TLS, bind DN, base DN and filter and clicks the Test Connection button. There is no login-page widget — LDAP is invisible to the end user, who simply types their normal login/password into the standard web login form and is transparently authenticated against the directory.",
+        "source": "static"
+      },
+      {
+        "element": "external LDAP/Active Directory directory integration (gap #7: outbound directory binds)",
+        "observation": "auth_ldap is an outbound-integration module whose integration is NOT over HTTP, so extract_frontend's HTTP-oriented scan reports http_call_sites=0 / sdk_imports=[] / endpoints=[]. The real external dependency is the python-ldap library ('import ldap', declared in the manifest external_dependencies.python=['python-ldap'], apt python3-ldap): every authentication makes server-to-server LDAP-protocol binds/searches (ldap.initialize -> start_tls_s -> simple_bind_s -> search_st -> passwd_s) against a corporate directory — OpenLDAP, Microsoft Active Directory / Entra-on-prem, FreeIPA, 389-DS, etc. The target servers are admin-configured per res.company.ldap record (ldap_server:ldap_server_port, optionally TLS), not hardcoded; uses_api_keys=true reflects the stored service-account bind credentials (ldap_binddn/ldap_password). This is the trust pivot: a successful simple_bind_s with the user's own credentials at the directory is what authenticates them — Odoo delegates password verification entirely to the directory.",
+        "source": "static"
       }
     ]
   },
   "it_architecture": {
-    "application": "auth_ldap (Authentication via LDAP)",
-    "software_services": [],
+    "application": "auth_ldap (LDAP / Active Directory authentication: transparently authenticate Odoo logins against a corporate directory via python-ldap simple-bind, with just-in-time local-user provisioning and password write-through)",
+    "software_services": [
+      "(no HTTP routes) — auth_ldap exposes no controllers; it hooks the credential pipeline via res.users._login / _check_credentials / change_password",
+      "res.company.ldap.test_ldap_connection (admin action: bind with the configured service account and report reachability via display_notification)"
+    ],
     "data_objects": [
-      "res.company.ldap"
+      "res.company.ldap",
+      "res.company (ldaps One2many)",
+      "res.config.settings (ldaps related, Settings editing)",
+      "res.users (LDAP bind fallback + JIT provisioning hooks)"
     ],
     "logical_data_erm": [
-      "res.company.ldap -> res.company",
-      "res.company.ldap -> res.users"
+      "res.company -1::N-> res.company.ldap (ldaps; ordered list of directories per company, tried by sequence)",
+      "res.company.ldap.company -N::1-> res.company (required, ondelete=cascade)",
+      "res.company.ldap.user -N::1-> res.users (optional Template User copied on JIT provisioning)",
+      "res.config.settings.ldaps related-> res.company.ldap via company_id.ldaps (Settings-page editing)",
+      "res.users <- res.company.ldap._get_or_create_user (login-keyed local shadow account, matched by lower(login))"
     ],
     "information_flows": [
-      "depends: base, base_setup"
+      "depends: base, base_setup (extends res.users credential pipeline + res.config.settings Settings UI)",
+      "login: res.users._login -> super (local password) -> on AccessDenied + no local row -> res.company.ldap._get_ldap_dicts() -> _authenticate per server",
+      "bind: _authenticate -> _get_entry (_query service-bind + search_st by ldap_filter) -> _connect -> simple_bind_s(dn, user_password) at the external directory",
+      "provision: successful bind -> _get_or_create_user -> SQL match by lower(login) | _map_ldap_attributes (name<-cn, email<-login) -> sudo create()/copy(Template User)",
+      "re-auth: res.users._check_credentials -> on AccessDenied (type=password) -> LDAP fallback for the known uid (gated interactive / not rpc_api_keys_only)",
+      "password write-through: res.users.change_password -> _change_password (bind old + passwd_s) -> _set_empty_password (NULL local password) so only the directory credential remains",
+      "config: res.config.settings.ldaps (related company_id.ldaps) -> res.company.ldap records (server/port/tls/binddn/base/filter); ICP auth_ldap.disable_chase_ref toggles AD referral chasing"
     ],
     "frontend_components": []
   },
   "business_architecture": {
     "capabilities": [
-      "Authentication via LDAP"
+      "Directory-Based Authentication (LDAP / Active Directory simple-bind delegation)",
+      "Directory Connection Configuration (server/port/TLS, base DN, bind DN, user filter, per company)",
+      "External-to-Local Identity Mapping & Just-in-Time User Provisioning (login -> res.users via cn/email mapping)",
+      "Password Write-Through / Directory-Synchronised Credential Management",
+      "Service-Account Directory Query & Connection Validation (Test Connection)"
     ],
-    "value_streams": [],
+    "value_streams": [
+      "Configure-Directory: admin enters server/port/TLS + bind DN + base DN + filter -> Test Connection -> directory becomes an authentication source for the company",
+      "Login-to-Session: user types login/password -> local check fails/absent -> LDAP service-query resolves DN -> simple-bind with user password -> match-or-provision res.users -> authenticated session"
+    ],
     "information_concepts": [
-      "res.company.ldap"
+      "res.company.ldap (directory connection configuration)",
+      "ldap_binddn / ldap_password (service account that queries the directory)",
+      "ldap_base (user-search subtree DN scope)",
+      "ldap_filter (login-to-entry matching rule, must resolve to exactly one)",
+      "res.users (local shadow account mirroring the directory identity)"
     ],
     "organization": [],
+    "policies": [
+      "Single ACL + group_system on res.company.ldap / res.company.ldaps: only system administrators may read/write directory configs and their stored service credentials",
+      "Bind-is-truth policy: identity is proven by a successful simple_bind_s with the user's own password at the directory; empty passwords are rejected (RFC 4513, no unauthenticated authentication)",
+      "Local-first, LDAP-fallback policy: native local auth runs first; LDAP is only tried on AccessDenied, and an existing local-only user is NOT overridden by LDAP",
+      "Provisioning policy: a missing local user is auto-created only when create_user is set (optionally copying a Template User); otherwise AccessDenied",
+      "Filter-uniqueness policy: ldap_filter must resolve to exactly one directory entry or the login is rejected",
+      "Credential-neutralisation policy: on directory password change the local password is NULLed (_set_empty_password) so the directory remains the sole credential authority"
+    ],
     "products": [],
-    "policies": [],
-    "stakeholders": [],
+    "stakeholders": [
+      "End user / employee (logs in with their normal corporate directory credentials, transparently)",
+      "System / security administrator (registers LDAP servers, supplies bind DN/base/filter, runs Test Connection, sets create_user/Template User)",
+      "External directory service (OpenLDAP, Microsoft Active Directory / Entra on-prem, FreeIPA, 389-DS — the trusted password authority)",
+      "Module developer (overrides _authenticate / _map_ldap_attributes / _get_or_create_user for custom attribute mapping or group sync)"
+    ],
     "strategy": null,
-    "metrics": []
+    "metrics": [
+      "count of configured res.company.ldap servers (directory coverage / per-company breadth)",
+      "count of res.users provisioned via LDAP (JIT-created accounts with NULL local password)",
+      "Test Connection success/failure outcomes (directory reachability / bind-DN validity signal)"
+    ]
   },
   "classification": {
     "value_model": "support",
     "activity_class": "support",
     "apqc_category": "8.0 Manage Information Technology",
-    "rationale": "auth_ldap: thin support/support module (auto-architect baseline)."
+    "rationale": "auth_ldap is IT identity-and-access infrastructure (Porter support activity; Stabell & Fjeldstad 'support'). It owns no business object of its own: its single real model res.company.ldap is pure connection configuration (server/port/TLS, bind DN, base DN, user filter), and everything else is an extension of res.users (credential-pipeline hooks), res.company and res.config.settings. It exists solely to let users authenticate to Odoo against an EXTERNAL corporate directory (OpenLDAP / Active Directory / Entra on-prem / FreeIPA) by delegating password verification to a server-to-server LDAP simple-bind, sitting beneath the login that every other module relies on. It creates no document chain, holds no customer/order/product/ledger data, and produces no primary-activity output, so it is 'support' rather than chain/shop/network. APQC 8.0 'Manage Information Technology' is the precise fit: this is the 'identity & access management' / 'external system integration' capability — a concrete running access-control runtime (LDAP bind fallback, service-account directory query, external-to-local identity mapping, JIT provisioning, password write-through). 11.0 'Manage Enterprise Risk, Compliance and Resiliency' was considered because directory auth touches account-security governance, but rejected: 11.0 is the governance layer (control frameworks, audits, policy management), whereas auth_ldap is the technical implementation IT builds and operates — APQC places that under 8.0 (Develop and manage IT security / identity & access management). The classification mirrors the sibling auth_oauth / auth_totp / web records (all 8.0 / support)."
   },
   "fit_to_standard": {
     "standard_capabilities": [
-      "Authentication via LDAP"
+      "Transparent LDAP / Active Directory authentication delegated to the directory via python-ldap simple-bind (user keeps the standard Odoo login form)",
+      "Per-company, sequence-ordered list of directory servers (res.company.ldap) configured from General Settings: server/port, TLS (STARTTLS), bind DN + password, base DN, login filter",
+      "Service-account directory query with subtree-scoped search and a login-to-entry LDAP filter (each '%s' replaced by the login; must resolve to exactly one entry)",
+      "Just-in-time local user provisioning on first directory login (name from cn, email from login, optional Template User copy)",
+      "Local-first / LDAP-fallback ordering — native password auth runs first; LDAP only on AccessDenied; existing local-only users untouched",
+      "Password write-through to the directory (passwd_s) on change_password, NULLing the local password so the directory stays the sole credential",
+      "Admin Test Connection action and an AD-referral-chasing toggle (auth_ldap.disable_chase_ref ICP)"
     ],
-    "typical_fits": [],
-    "common_gaps": [],
+    "typical_fits": [
+      "Letting employees log in to Odoo with their existing Active Directory / corporate LDAP credentials out of the box (set server/base/filter, create_user=True)",
+      "Centralising password policy and account lifecycle in the corporate directory while Odoo holds only thin shadow accounts",
+      "Multi-company deployments where each company points at its own directory (ordered res.company.ldap list)",
+      "Securing the connection with STARTTLS and a dedicated read-only service bind DN for directory queries"
+    ],
+    "common_gaps": [
+      "Simple-bind / STARTTLS only — no out-of-box ldaps:// (port 636 implicit SSL), Kerberos/GSSAPI/SASL or certificate-based bind without customisation",
+      "No automatic LDAP-group -> Odoo-group/role mapping and no de-provisioning (disabling/deleting a user in the directory does NOT deactivate the Odoo shadow account)",
+      "Attribute mapping is hardcoded (name<-cn, email<-login-if-email-shaped) — richer profile sync (givenName/sn/department/phone) needs an _map_ldap_attributes override",
+      "ldap_filter must resolve to exactly one entry; ambiguous/duplicate directory entries silently fail the login",
+      "Stored service-account password is plain config (group_system-gated) — no vault/secret-manager integration; anonymous bind requires the directory to permit it",
+      "No connection pooling/caching — each authentication opens fresh binds; no failover beyond trying the next configured server in sequence"
+    ],
     "drive_hints": [
-      "odoo shell: env['res.company.ldap'].search([],limit=3)"
+      "odoo shell: env['res.company.ldap'].search_read([], ['ldap_server','ldap_server_port','ldap_tls','ldap_base','ldap_filter','create_user'])  # list configured directories",
+      "odoo shell: env['res.company.ldap'].create({'company': env.company.id, 'ldap_server':'127.0.0.1','ldap_server_port':389,'ldap_base':'dc=example,dc=com','ldap_filter':'(uid=%s)'})  # add a directory",
+      "odoo shell: env['res.company.ldap'].browse(1).test_ldap_connection()  # bind with the service account and report reachability",
+      "odoo shell: env['res.users'].search_read([('login','!=','admin')], ['login','company_id'])  # spot JIT-provisioned shadow accounts",
+      "python3 -c 'import ldap; print(ldap.__version__)'  # confirm the python-ldap external dependency is installed (apt python3-ldap)"
     ]
   },
   "reverse_eng_confidence": {
@@ -121,14 +254,16 @@
     "strategy": "human"
   },
   "open_questions": [
-    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+    "Real directory adoption (which servers are configured, count of LDAP-provisioned users) requires runtime data — extract_runtime not run; models empty at capture.",
+    "Whether deployments rely on create_user JIT provisioning vs. pre-created accounts, and how Template Users carry default group assignment, is config-specific and not captured.",
+    "Interplay with sibling auth modules (auth_oauth/auth_totp MFA, password policy) and any custom _map_ldap_attributes overrides for group sync lives outside this module and is not traced."
   ],
   "provenance": {
     "explorer_facts": "doc/revres/facts/auth_ldap.facts.json",
     "tools": [
+      "code-read",
       "extract_module.py",
-      "extract_frontend.py",
-      "gen_thin.py"
+      "extract_frontend.py"
     ],
     "odoo_version": "19.0"
   }
