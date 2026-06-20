@@ -15,8 +15,27 @@
     "models": [
       {
         "_name": "gamification.badge",
-        "_description": null,
-        "fields": 0
+        "_description": "(extension) gamification.badge + website.published.mixin",
+        "fields": 0,
+        "relations": [
+          "_inherit: gamification.badge",
+          "_inherit: website.published.mixin"
+        ]
+      },
+      {
+        "_name": "res.users",
+        "_description": "(extension)",
+        "fields": 0,
+        "relations": [
+          "rank_id->gamification.karma.rank",
+          "partner_id->res.partner"
+        ]
+      },
+      {
+        "_name": "website",
+        "_description": "(extension)",
+        "fields": 1,
+        "relations": []
       }
     ],
     "routes": [
@@ -86,7 +105,6 @@
     "views": {
       "form": 2,
       "list": 0,
-      "tree": 0,
       "kanban": 0,
       "search": 0,
       "pivot": 0,
@@ -94,6 +112,33 @@
       "calendar": 0,
       "activity": 0
     },
+    "behavioral_notes": [
+      {
+        "element": "WebsiteProfile._check_user_profile_access / _check_avatar_access (controllers/main.py)",
+        "observation": "Public /profile/user/<id> and /profile/avatar/<id> enforce a code-only privacy policy invisible to metadata: a user always sees their own profile; otherwise the target must be website_published (else 'This profile is private!'), and the requesting user's karma must be >= request.website.karma_profile_min (default 150) or access is denied 'Not have enough karma to view other users' profile'. Avatars are streamed sudo only when the target is published AND karma > 0 (i.e. has participated in forum/eLearning); the image field is whitelisted to image/avatar 128/256 else Forbidden. This is the visibility gate the whole public-profile layer rests on.",
+        "source": "code-read"
+      },
+      {
+        "element": "WebsiteProfile.view_all_users_page leaderboard (controllers/main.py)",
+        "observation": "/profile/users builds a karma leaderboard over res.users filtered by karma>1 AND website_published. Default order is karma DESC, id DESC; with group_by=week/month it instead calls res.users._get_user_ids_ranked_by_karma(), a raw SQL aggregation summing gamification_karma_tracking.(new_value-old_value) over the period (LEFT JOIN tracking, GROUP BY user, ORDER BY karma gain DESC). Absolute positions come from _get_karma_position / _get_tracking_karma_gain_position (window-function row_number over the same domain), and the signed-in user is appended with their real position even when off the page. top3_users feeds the podium. None of this ranking math is derivable from metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "res.users karma/rank progression + /profile/ranks_badges (models/res_users.py, models/gamification_badge.py, gamification.karma.rank)",
+        "observation": "website_profile widens res.users self-readable/writable fields (exposes 'karma' for read; allows self-edit of country_id/city/website/website_description/website_published) and re-declares gamification.badge with website.published.mixin so badges become individually publishable to the public page. The karma ledger and rank engine live in gamification: /profile/ranks_badges reads gamification.karma.rank (sudo, order karma_min DESC) and published gamification.badge (sorted by granted_users_count). Rank assignment is gamification.res.users._recompute_rank, mapping karma to the highest karma.rank whose karma_min is met and storing next_rank_id (the rank above) that the 'next rank' progress card renders. The publish flag and rank thresholds are the levers the public reputation page exposes.",
+        "source": "code-read"
+      },
+      {
+        "element": "res.users email validation -> karma grant (models/res_users.py)",
+        "observation": "/profile/send_validation_email sends a tokenised mail (validation_email template) via _send_profile_validation_email; the token is a daily-rotating SHA-256 over a secret ir.config_parameter 'website_profile.uuid' + user_id + email. /profile/validate_email calls _process_profile_validation_token, and only if the token matches AND the user's karma is still 0 does it write karma = VALIDATION_KARMA_GAIN (3). This one-time email-confirmation reward and its token scheme exist only in code; session flags validation_email_sent/done drive the UI banner, and portal.py resets validation_email_sent when the partner's email changes.",
+        "source": "code-read"
+      },
+      {
+        "element": "frontend (gap #3)",
+        "observation": "Ships 5 JS files, 1 XML template, 1 OWL component (ProfileDialog) and 4 website public.interactions registry adds (profile_editor, its .edit variant for the builder iframe, next_rank_card, profile_validation). Assets target web.assets_frontend (6), website.assets_inside_builder_iframe (1) and web.assets_tests (1); the editor interaction is excluded from the public bundle via ('remove', '**/*.edit.js'). The next-rank card and the in-page profile editor (with file_handler image upload + html_editor description) are the rich client widgets layered on the gamification data.",
+        "source": "static"
+      }
+    ],
     "frontend": {
       "present": true,
       "js_files": 5,
@@ -125,39 +170,36 @@
     "runtime": {
       "models_with_data": 0,
       "top": []
-    },
-    "behavioral_notes": [
-      {
-        "element": "frontend (OWL/JS)",
-        "observation": "5 JS files, 1 OWL components, 4 registry adds; bundles ['web.assets_frontend', 'website.assets_inside_builder_iframe', 'web.assets_tests'].",
-        "source": "static"
-      },
-      {
-        "element": "thin module",
-        "observation": "1 models, 8 routes, 613 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
-        "source": "ast"
-      }
-    ]
+    }
   },
   "it_architecture": {
-    "application": "website_profile (Website profile)",
+    "application": "website_profile (Public Website Profile application component)",
     "software_services": [
-      "/profile/avatar/<int:user_id>",
-      "/profile/ranks_badges",
-      "/profile/send_validation_email",
       "/profile/user/<int:user_id>",
+      "/profile/avatar/<int:user_id>",
+      "/profile/users (+ /page/<int:page>)",
+      "/profile/ranks_badges",
       "/profile/user/save",
-      "/profile/users",
-      "/profile/users/page/<int:page>",
-      "/profile/validate_email",
-      "/profile/validate_email/close"
+      "/profile/send_validation_email",
+      "/profile/validate_email (+ /close)"
     ],
     "data_objects": [
-      "gamification.badge"
+      "gamification.badge",
+      "res.users",
+      "website"
     ],
-    "logical_data_erm": [],
+    "logical_data_erm": [
+      "res.users -> gamification.karma.rank (rank_id)",
+      "res.users -> res.partner (partner_id)",
+      "gamification.badge -> website.published.mixin (publishable)",
+      "website -> karma_profile_min (Integer threshold)"
+    ],
     "information_flows": [
-      "depends: html_editor, website_partner, gamification"
+      "depends: html_editor (rich description editing), website_partner (partner-website link), gamification (karma/ranks/badges)",
+      "side-effect: /profile/user/<id> -> visibility gated by website_published + viewer karma >= website.karma_profile_min",
+      "side-effect: /profile/users -> leaderboard via res.users._get_user_ids_ranked_by_karma (SQL over gamification.karma.tracking)",
+      "side-effect: /profile/validate_email -> res.users.write{karma=3} (one-time email-confirmation reward)",
+      "consumed-by: website_forum, website_slides (public reputation pages + karma redirection)"
     ],
     "frontend_components": [
       "ProfileDialog"
@@ -165,33 +207,76 @@
   },
   "business_architecture": {
     "capabilities": [
-      "Website profile"
+      "Publish Public Member Profiles (privacy-gated)",
+      "Display Karma, Ranks & Badges",
+      "Member Karma Leaderboard (all-time / weekly / monthly)",
+      "Self-Service Profile Editing & Email Validation"
     ],
-    "value_streams": [],
+    "value_streams": [
+      "Reputation loop: participate (earn karma) -> publish profile -> climb leaderboard / rank up -> badges & next-rank motivation surfaced publicly"
+    ],
     "information_concepts": [
-      "gamification.badge"
+      "res.users (public member profile)",
+      "gamification.karma.rank (rank)",
+      "gamification.badge (publishable badge)",
+      "website (karma_profile_min policy)",
+      "res.partner (identity)"
     ],
-    "organization": [],
+    "organization": [
+      "website.group_website_restricted_editor (manage karma ranks on the website)",
+      "base.group_public (anonymous profile / leaderboard viewers)",
+      "base.group_portal / base.group_user (members owning a profile)"
+    ],
     "products": [],
-    "policies": [],
-    "stakeholders": [],
+    "policies": [
+      "privacy: a profile is visible to others only if website_published AND viewer karma >= website.karma_profile_min (default 150)",
+      "avatar served publicly only for published users with karma > 0",
+      "self-edit limited to own privacy/profile fields (SELF_WRITEABLE_FIELDS); admin may edit others",
+      "email validation grants karma (3) only once, when karma == 0, via a daily-rotating SHA-256 token"
+    ],
+    "stakeholders": [
+      "Public visitor (base.group_public)",
+      "Community member (res.users with karma)",
+      "Website editor / community manager (website.group_website_restricted_editor)"
+    ],
     "strategy": null,
-    "metrics": []
+    "metrics": [
+      "karma totals and per-period karma gain (leaderboard position)",
+      "rank distribution (rank_users_count) and next-rank progress",
+      "badge counts per user (badge_ids) and granted_users_count per badge"
+    ]
   },
   "classification": {
     "value_model": "network",
     "activity_class": "primary",
     "apqc_category": "3.0 Market and Sell Products and Services",
-    "rationale": "website_profile: thin network/primary module (auto-architect baseline)."
+    "rationale": "website_profile is a community profile/reputation layer that mediates member visibility and standing rather than producing a good (chain) or matching buyers and sellers (shop). Per Stabell & Fjeldstad it is a value-network configuration: its value is the network of published members and the karma/rank/badge reputation that links them, exposed through public /profile pages, a karma leaderboard and per-member rank progression. It underpins the community front-ends (forum, eLearning/website_slides), so it is the primary member-facing activity of that engagement stack -- an audience-building / community-marketing capability under APQC 3.0 Market and Sell (build and manage the customer/member community), as distinct from the gamification engine it consumes, which is the HR-support (7.0) reward machinery."
   },
   "fit_to_standard": {
     "standard_capabilities": [
-      "Website profile"
+      "public user profile pages with avatar, bio (html_editor) and stats",
+      "karma/rank display with a motivational next-rank card",
+      "published badge catalog on the profile and /profile/ranks_badges page",
+      "member leaderboard with all-time and weekly/monthly karma-gain ranking and pagination",
+      "self-service profile editing and one-time email validation (karma reward)",
+      "privacy gating via website_published + per-website minimum karma to view others"
     ],
-    "typical_fits": [],
-    "common_gaps": [],
+    "typical_fits": [
+      "forum / Q&A community reputation pages",
+      "eLearning (website_slides) learner profiles and rankings",
+      "any website community surfacing member karma and badges"
+    ],
+    "common_gaps": [
+      "custom profile fields or layout beyond name/bio/location/badges",
+      "alternative reputation/scoring rules (karma point values are defined by consumer modules, not here)",
+      "richer privacy tiers beyond the single karma_profile_min threshold",
+      "leaderboard segmentation/filters beyond all-time / week / month"
+    ],
     "drive_hints": [
-      "odoo shell: env['gamification.badge'].search([],limit=3)"
+      "odoo shell: env['res.users'].search([('karma','>',1),('website_published','=',True)], order='karma desc', limit=5).mapped(('login','karma','rank_id.name'))",
+      "odoo shell: env['gamification.karma.rank'].search([], order='karma_min desc').mapped(('name','karma_min'))",
+      "odoo shell: env['website'].browse(1).karma_profile_min",
+      "curl public: GET /profile/ranks_badges and /profile/users (published, karma>1 only)"
     ]
   },
   "reverse_eng_confidence": {
@@ -205,14 +290,18 @@
     "strategy": "human"
   },
   "open_questions": [
-    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+    "Exact karma point values that drive ranks/leaderboard are set by consumer modules (forum/website_slides), not website_profile.",
+    "How website_forum / website_slides extend the profile page (badge_category filters, extra tabs) beyond the base hooks.",
+    "Whether karma_profile_min is commonly retuned per deployment from its default of 150."
   ],
   "provenance": {
     "explorer_facts": "doc/revres/facts/website_profile.facts.json",
     "tools": [
-      "extract_module.py",
+      "code-read",
       "extract_frontend.py",
-      "gen_thin.py"
+      "extract_module.py",
+      "extract_runtime.sh",
+      "run-odoo (odoo shell)"
     ],
     "odoo_version": "19.0"
   }

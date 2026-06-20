@@ -17,17 +17,69 @@
       {
         "_name": "account_peppol.service",
         "_description": "Peppol Service",
-        "fields": 4
+        "fields": 4,
+        "relations": [
+          "wizard_id->peppol.config.wizard"
+        ]
       },
       {
         "_name": "peppol.config.wizard",
         "_description": "Peppol Configuration Wizard",
-        "fields": 11
+        "fields": 11,
+        "relations": [
+          "company_id->res.company",
+          "service_ids->account_peppol.service"
+        ]
       },
       {
         "_name": "peppol.registration",
         "_description": "Peppol Registration",
-        "fields": 24
+        "fields": 24,
+        "relations": [
+          "company_id->res.company",
+          "edi_user_id->account_edi_proxy_client.user"
+        ]
+      },
+      {
+        "_name": "account_edi_proxy_client.user",
+        "_description": "(extension) adds the 'peppol' proxy_type + all Peppol Access Point API calls (register/send/receive/poll)",
+        "fields": 1,
+        "relations": [
+          "company_id->res.company"
+        ]
+      },
+      {
+        "_name": "res.company",
+        "_description": "(extension) Peppol participant identity (EAS/endpoint), proxy registration state machine + SML/SMP lookup",
+        "fields": 15,
+        "relations": [
+          "account_peppol_edi_user->account_edi_proxy_client.user",
+          "peppol_purchase_journal_id->account.journal"
+        ]
+      },
+      {
+        "_name": "res.partner",
+        "_description": "(extension) recipient Peppol reachability verification (peppol_verification_state) via SML lookup",
+        "fields": 5,
+        "relations": []
+      },
+      {
+        "_name": "account.move",
+        "_description": "(extension) per-invoice Peppol transmission status (peppol_message_uuid, peppol_move_state)",
+        "fields": 3,
+        "relations": []
+      },
+      {
+        "_name": "account.move.send",
+        "_description": "(extension) sends the UBL XML over Peppol as an extra sending method on Send & Print",
+        "fields": 0,
+        "relations": []
+      },
+      {
+        "_name": "account.journal",
+        "_description": "(extension) flags the journal that receives inbound Peppol bills (is_peppol_journal)",
+        "fields": 2,
+        "relations": []
       }
     ],
     "routes": [
@@ -122,83 +174,157 @@
     },
     "behavioral_notes": [
       {
-        "element": "frontend (OWL/JS)",
-        "observation": "7 JS files, 1 OWL components, 5 registry adds; bundles ['web.assets_backend', 'web.assets_frontend'].",
-        "source": "static"
+        "element": "account_edi_proxy_client.user._call_peppol_proxy / _make_request (Peppol Access Point API)",
+        "observation": "This is the network bridge. Every Peppol operation is an authenticated HTTPS call to Odoo's Peppol IAP proxy (peppol.api.odoo.com / peppol.test.odoo.com), which fronts a certified Peppol Access Point. _call_peppol_proxy hits versioned endpoints '/api/peppol/1/{send_document,get_all_documents,get_document,ack,register_sender_as_receiver,cancel_peppol_registration,unregister_to_sender}' and '/api/peppol/2/{participant_status,get_services,remove_services,set_webhook}', signing requests with the EDI proxy user's asymmetric key. It defends the link: an 'invalid_signature' reply marks the connection out-of-sync (token desync, refresh_token cleared) and forces a 'Reconnect this database' in Settings; a 'no_such_user' on an inactive user resets the company to 'not_registered'. None of this request/response machinery or its error-recovery is visible in metadata.",
+        "source": "code-read"
       },
       {
-        "element": "external integrations",
-        "observation": "3 HTTP call sites; SDKs ['requests']; api_keys=False.",
-        "source": "static"
+        "element": "account.move.send._call_web_service_after_invoice_pdf_render -> _send_peppol_documents",
+        "observation": "Outbound transmission side-effect of Send & Print: after the invoice PDF/UBL is rendered, applicable moves (partner peppol_verification_state=='valid', company in PEPPOL_LIST, proxy_state can-send) are base64-encoded and POSTed in a batch to '1/send_document' addressed to '{peppol_eas}:{peppol_endpoint}'. The proxy returns only message UUIDs, so the code zips them back onto the moves by order, sets peppol_message_uuid + peppol_move_state='processing', logs the sent attachments on the chatter, locks the records, commits, and schedules ir_cron_peppol_get_message_status +5 min. A 64 MB size guard and a ParticipantNotReady error path gate the send. Invoices >'processing'/'done' can no longer be cancelled (action_cancel_peppol_documents guards on peppol_is_sent).",
+        "source": "code-read"
       },
       {
-        "element": "thin module",
-        "observation": "3 models, 4 routes, 5535 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
-        "source": "ast"
+        "element": "account_edi_proxy_client.user._peppol_get_new_documents / _peppol_import_invoice (inbound reception)",
+        "observation": "Inbound reception side-effect driven by cron: _cron_peppol_get_new_documents polls '1/get_all_documents' (direction=incoming) for receiver companies, pulls payloads via '1/get_document', AES-decrypts each with _decrypt_data(enc_key), materialises an ir.attachment, and _peppol_import_invoice creates an account.move in the company's peppol_purchase_journal_id (in_invoice) -- or, on a self-billing InvoiceTypeCode 389/527 / CreditNoteTypeCode 261, an out_invoice in a sale journal -- then _extend_with_attachments + _autopost_bill parse the UBL into lines (reusing account_edi_ubl_cii) and the message is ACKed via '1/ack'. Post-processing notifies the journal and verifies sender partners. Acknowledgement is deliberate: only successfully saved documents are ACKed so nothing is lost on error.",
+        "source": "code-read"
+      },
+      {
+        "element": "account_edi_proxy_client.user._peppol_register_sender_as_receiver / _peppol_get_participant_status (participant lifecycle + status polling cron)",
+        "observation": "Participant registration is a multi-step state machine over the proxy: a company moves not_registered -> sender -> smp_registration -> receiver (also rejected), where registering as receiver POSTs the migration_key + supported document identifiers (Peppol BIS Billing UBL Invoice/CreditNote, self-billing, NLCIUS) to '1/register_sender_as_receiver' and flips state to smp_registration. _cron_peppol_get_participant_status (weekly, but self-re-triggered hourly while any company is in smp_registration) calls '2/participant_status' to learn when the SMP publication completes and promotes the company to 'receiver', or archives/resets the user on a 'client_gone'. _get_company_info_on_peppol additionally queries the live SMP service to detect if the identifier is already registered under another (non-Odoo) access-point provider and blocks double-registration.",
+        "source": "code-read"
+      },
+      {
+        "element": "res.partner._peppol_lookup_participant / button_account_peppol_check_partner_endpoint (recipient reachability via SML/SMP)",
+        "observation": "Before any send, the recipient is verified against the live Peppol network: _peppol_lookup_participant does a NAPTR-DNS-based SML lookup (through the Odoo proxy '1/lookup', with a legacy direct hash/base32 SMP URL on edelivery.tech.ec.europa.eu) and _check_document_type_support confirms the partner's SMP advertises the exact CustomizationID for the chosen format. The result is cached company-dependently on res.partner.peppol_verification_state (valid / not_valid / not_valid_format / not_verified) and drives both the Send & Print alerts and whether 'peppol' is even offered as a sending method. This is a real external lookup, not a stored attribute.",
+        "source": "code-read"
+      },
+      {
+        "element": "external integrations (gap #7) — Peppol Access Point / EDI proxy",
+        "observation": "account_peppol is a canonical gap #7 external-integration module: 3 outbound HTTP call sites using the `requests` SDK (no stored API keys; auth is via the EDI proxy user's asymmetric signing) talk to Odoo's Peppol IAP at https://peppol.api.odoo.com (prod) / https://peppol.test.odoo.com (test) plus the European SML/SMP DNS infrastructure, and 4 inbound webhook controllers (/peppol/webhook/new-message, message-state-update, user-state-update, public; /peppol/authentication/callback, user) let the access point push message/participant state changes back. The whole module's reason to exist is this connection to the Peppol four-corner network; the sibling account_edi_ubl_cii only builds the XML and explicitly defers transmission to here.",
+        "source": "static"
       }
     ]
   },
   "it_architecture": {
-    "application": "account_peppol (Peppol)",
+    "application": "account_peppol (Peppol Access Point connector: sends/receives e-invoices over the Peppol network via the Odoo EDI proxy)",
     "software_services": [
-      "/peppol/authentication/callback",
-      "/peppol/webhook/message-state-update",
       "/peppol/webhook/new-message",
-      "/peppol/webhook/user-state-update"
+      "/peppol/webhook/message-state-update",
+      "/peppol/webhook/user-state-update",
+      "/peppol/authentication/callback"
     ],
     "data_objects": [
       "account_peppol.service",
       "peppol.config.wizard",
-      "peppol.registration"
+      "peppol.registration",
+      "account_edi_proxy_client.user (peppol)",
+      "res.company (peppol identity/state)",
+      "res.partner (peppol_verification_state)",
+      "account.move (peppol transmission status)"
     ],
     "logical_data_erm": [
-      "account_peppol.service -> peppol.config.wizard",
-      "peppol.config.wizard -> account_peppol.service",
-      "peppol.config.wizard -> company_id.account_peppol_edi_user",
-      "peppol.config.wizard -> company_id.peppol_self_billing_reception_journal_id",
-      "peppol.config.wizard -> res.company",
-      "peppol.registration -> account_edi_proxy_client.user",
-      "peppol.registration -> parent_company_id",
-      "peppol.registration -> res.company"
+      "res.company -> account_edi_proxy_client.user (account_peppol_edi_user; one peppol user per company)",
+      "res.company -> account.journal (peppol_purchase_journal_id, inbound bills)",
+      "peppol.registration -> res.company + account_edi_proxy_client.user (drives registration)",
+      "peppol.config.wizard -> account_peppol.service (one2many, document types to register)",
+      "account.move -> account_edi_proxy_client.user (sent via company's peppol user; peppol_message_uuid)",
+      "res.partner -> peppol_verification_state (company-dependent reachability cache)"
     ],
     "information_flows": [
-      "depends: account_edi_proxy_client, account_edi_ubl_cii"
+      "depends: account_edi_proxy_client (signed proxy transport), account_edi_ubl_cii (the UBL/CII XML it ships)",
+      "outbound: account.move.send (Send & Print) -> _send_peppol_documents -> HTTPS '1/send_document' to Peppol IAP -> Access Point -> recipient corner; status polled back via '1/get_document' + cron",
+      "inbound: _cron_peppol_get_new_documents -> '1/get_all_documents'+'1/get_document' (decrypt) -> account.move in peppol_purchase_journal_id -> _autopost_bill (parses UBL via account_edi_ubl_cii)",
+      "registration: peppol.registration -> proxy '1/register_sender_as_receiver' -> state machine not_registered->sender->smp_registration->receiver; participant_status polled by cron",
+      "verification: res.partner.button_account_peppol_check_partner_endpoint -> SML/SMP lookup ('1/lookup') -> peppol_verification_state",
+      "push-back: Peppol IAP -> webhook controllers (/peppol/webhook/*) -> new-message / message-state / user-state updates"
     ],
     "frontend_components": [
-      "WhatIsPeppol"
+      "WhatIsPeppol (OWL dialog explaining/activating Peppol on Send & Print)"
+    ],
+    "external_integrations": [
+      "Odoo Peppol IAP proxy (prod https://peppol.api.odoo.com, test https://peppol.test.odoo.com) fronting a certified Peppol Access Point — register/send/receive/ack/participant_status/lookup over signed HTTPS (account_edi_proxy_client asymmetric key, requests SDK, no stored API key)",
+      "European SML/SMP service-discovery infrastructure (NAPTR DNS, *.edelivery.tech.ec.europa.eu) for participant + capability lookup",
+      "Inbound webhooks from the access point: /peppol/webhook/new-message, /peppol/webhook/message-state-update, /peppol/webhook/user-state-update (public, signed token) and /peppol/authentication/callback (user)"
     ]
   },
   "business_architecture": {
     "capabilities": [
-      "Peppol"
+      "Register as a Peppol participant (sender / receiver) via the Odoo Access Point",
+      "Send invoices & credit notes over the Peppol network",
+      "Receive vendor bills (and self-billed invoices) over the Peppol network into accounting journals",
+      "Verify trading-partner reachability & supported formats on Peppol (SML/SMP lookup)",
+      "Track per-document delivery status (processing / done / error) and participant status"
     ],
-    "value_streams": [],
+    "value_streams": [
+      "Onboard to Peppol: configure EAS/endpoint -> register sender -> register as receiver -> SMP publication -> can send & receive",
+      "Outbound: posted customer invoice -> verify recipient on Peppol -> UBL built (account_edi_ubl_cii) -> transmitted via Access Point -> delivery status reconciled onto the move",
+      "Inbound: peer sends document -> cron/webhook fetch -> decrypt -> vendor bill (or self-billed customer invoice) created & parsed in the Peppol journal -> ACK"
+    ],
     "information_concepts": [
-      "account_peppol.service",
-      "peppol.config.wizard",
-      "peppol.registration"
+      "account_peppol.service (registrable Peppol document type)",
+      "peppol.config.wizard (configuration session)",
+      "peppol.registration (registration session)",
+      "account_edi_proxy_client.user (the company's Peppol network identity/credential)",
+      "res.company (Peppol participant identity + proxy state)",
+      "res.partner (trading-partner Peppol reachability)",
+      "account.move (e-invoice with Peppol transmission status)"
     ],
     "organization": [],
     "products": [],
-    "policies": [],
-    "stakeholders": [],
+    "policies": [
+      "Peppol offered as a sending method only when company country is in PEPPOL_LIST and proxy state is sender/smp_registration/receiver (not not_registered/in_verification/rejected)",
+      "A document is sent over Peppol only if the recipient's peppol_verification_state is 'valid' (live SML check); else a Send & Print alert is raised",
+      "Connection-integrity policy: invalid_signature -> mark connection out-of-sync + require 'Reconnect this database'; superseded -> disconnect & re-register",
+      "Only successfully-saved inbound documents are ACKed; participant-status cron self-throttles (hourly during smp_registration, weekly otherwise)",
+      "Sent (processing/done) invoices can no longer be cancelled"
+    ],
+    "stakeholders": [
+      "Accountant / AR clerk (sends compliant e-invoices, monitors delivery status)",
+      "AP clerk (receives and auto-posts vendor bills from Peppol)",
+      "Customer / supplier trading partner (the receiving/sending corner on Peppol)",
+      "Odoo Peppol IAP / certified Access Point operator (the service provider corner)",
+      "Peppol Authority / national tax mandates (regulatory driver behind the network)"
+    ],
     "strategy": null,
-    "metrics": []
+    "metrics": [
+      "Per-move peppol_move_state (processing/done/error) — delivery success",
+      "account_peppol_proxy_state — onboarding/registration progress",
+      "res.partner.peppol_verification_state distribution — reachable trading partners"
+    ]
   },
   "classification": {
-    "value_model": "support",
+    "value_model": "network",
     "activity_class": "support",
     "apqc_category": "9.0 Manage Financial Resources",
-    "rationale": "account_peppol: thin support/support module (auto-architect baseline)."
+    "rationale": "value_model 'network' (Stabell & Fjeldstad mediating/value-network logic): account_peppol's entire reason to exist is to connect the company to its trading partners over the Peppol four-corner e-delivery network through a certified Access Point (the Odoo EDI proxy at peppol.api.odoo.com). It performs the three signature activities of a mediating technology — (1) network promotion & contract management = participant registration and the SML/SMP capability lookup that establishes who can be reached (peppol.registration, _peppol_register_sender_as_receiver, _peppol_lookup_participant); (2) service provisioning = relaying invoices/credit-notes/bills between corners (_send_peppol_documents, _peppol_get_new_documents); (3) network infrastructure operation = maintaining the signed proxy connection, webhooks and the status-polling crons. Value rises with the size of the reachable Peppol network (a classic network-effect mediator), and the module mediates between many parties rather than transforming inputs (chain) or solving a client problem (shop). It is deliberately distinguished from its sibling account_edi_ubl_cii, which only serializes/parses the XML (support) and explicitly defers network transmission to here. activity_class is 'support': although it has network value-configuration logic, within the firm it is an infrastructure/compliance enabler bolted onto Accounting (no app, headless except a Send & Print dialog, no primary revenue activity of its own). APQC 9.0 Manage Financial Resources — specifically the document-exchange edge of 9.2.x process accounts receivable (transmit customer invoices) and 9.5.x process accounts payable (receive vendor bills); it transports the statutory documents that 'account' posts."
   },
   "fit_to_standard": {
     "standard_capabilities": [
-      "Peppol"
+      "Register a company as a Peppol sender, then as a receiver, through Odoo's built-in certified Access Point (no third-party AP contract needed)",
+      "Send customer invoices & credit notes over Peppol directly from Send & Print (UBL BIS 3 / NLCIUS built by account_edi_ubl_cii)",
+      "Receive and auto-post vendor bills (and self-billed invoices) from Peppol into a dedicated purchase/sale journal via cron",
+      "Live trading-partner reachability + format-support check against the SML/SMP before sending",
+      "Per-document delivery-status tracking and connection self-healing (out-of-sync detection, reconnect, webhooks)"
     ],
-    "typical_fits": [],
-    "common_gaps": [],
+    "typical_fits": [
+      "EU/EEA company in a Peppol-mandate country (BE, NL, NO, SE, FI, LU, LV, ...) that must send/receive structured e-invoices",
+      "Company that wants turnkey Peppol access without procuring its own Access Point (uses the Odoo IAP)",
+      "Automatic vendor-bill capture from suppliers already on Peppol",
+      "Self-billing exchange where the customer issues the invoice over Peppol"
+    ],
+    "common_gaps": [
+      "Connecting via a non-Odoo / external Access Point provider (the module is built around the Odoo IAP; an already-registered external provider is detected and blocks re-registration)",
+      "Peppol document types beyond invoicing (orders, despatch advice, etc.) — only the billing BIS/NLCIUS identifiers are registered by default",
+      "Country-specific clearance/CTC models that sit alongside or instead of Peppol (e.g. national platforms)",
+      "Air-gapped / on-prem deployments where outbound HTTPS to peppol.api.odoo.com is unavailable",
+      "Custom routing of inbound self-billed vs standard documents beyond the default journal logic"
+    ],
     "drive_hints": [
-      "odoo shell: env['account_peppol.service'].search([],limit=3)"
+      "odoo shell: c = env.company; print(c.account_peppol_proxy_state, c.peppol_eas, c.peppol_endpoint)  # participant identity + registration state",
+      "odoo shell: u = c.account_peppol_edi_user; print(bool(u), u.edi_mode if u else None)  # is there a Peppol proxy user, prod/test/demo",
+      "odoo shell: p = env['res.partner'].browse(ID); p.button_account_peppol_check_partner_endpoint(); print(p.with_company(c).peppol_verification_state)  # live SML reachability check (needs network)",
+      "odoo shell (demo, offline): set company peppol_eas='odemo' to exercise the registration/send flow against the 'demo' proxy via handle_demo, without real network calls",
+      "UI: Settings > Accounting > Electronic Invoicing (Peppol) -> register; then on a posted customer invoice use Send & Print -> 'by Peppol'"
     ]
   },
   "reverse_eng_confidence": {
@@ -212,14 +338,17 @@
     "strategy": "human"
   },
   "open_questions": [
-    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+    "Exact Peppol IAP API contract & SLA behind peppol.api.odoo.com (server-side Access Point), which is out of repo scope.",
+    "How webhook-driven updates (/peppol/webhook/*) interleave with the polling crons in production, and the dedup/ordering guarantees.",
+    "Full set of registrable document identifiers once country/extra modules extend _peppol_modules_document_types beyond the default billing set.",
+    "Behaviour of the asymmetric token desync / reconnect flow across DB duplication and multi-database neutralization in real deployments."
   ],
   "provenance": {
     "explorer_facts": "doc/revres/facts/account_peppol.facts.json",
     "tools": [
       "extract_module.py",
       "extract_frontend.py",
-      "gen_thin.py"
+      "code-read (account_edi_proxy_user.py, account_move_send.py, res_company.py, res_partner.py, account_move.py, tools/peppol_iap_connector.py, data/cron.xml)"
     ],
     "odoo_version": "19.0"
   }
