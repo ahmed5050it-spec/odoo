@@ -1,0 +1,118 @@
+{
+  "subsystem": "mrp",
+  "evidence": {
+    "manifest": {
+      "name": "Manufacturing", "category": "Supply Chain/Manufacturing",
+      "depends": ["product", "stock", "resource"],
+      "auto_install": false, "application": true
+    },
+    "models": [
+      {"_name": "mrp.production", "_description": "Manufacturing Order", "fields": 78,
+       "relations": ["product_id->product.product", "bom_id->mrp.bom", "move_raw_ids->stock.move", "move_finished_ids->stock.move", "workorder_ids->mrp.workorder", "picking_type_id->stock.picking.type", "location_src_id->stock.location", "location_dest_id->stock.location"]},
+      {"_name": "mrp.bom", "_description": "Bill of Material", "fields": 24,
+       "relations": ["product_tmpl_id->product.template", "product_id->product.product", "bom_line_ids->mrp.bom.line", "byproduct_ids->mrp.bom.byproduct", "operation_ids->mrp.routing.workcenter", "picking_type_id->stock.picking.type"]},
+      {"_name": "mrp.bom.line", "_description": "Bill of Material Line", "fields": 17,
+       "relations": ["product_id->product.product", "bom_id->mrp.bom", "child_bom_id->mrp.bom", "operation_id->mrp.routing.workcenter"]},
+      {"_name": "mrp.bom.byproduct", "_description": "Byproduct", "fields": 11,
+       "relations": ["product_id->product.product", "bom_id->mrp.bom", "operation_id->mrp.routing.workcenter"]},
+      {"_name": "mrp.workorder", "_description": "Work Order", "fields": 49,
+       "relations": ["production_id->mrp.production", "workcenter_id->mrp.workcenter", "operation_id->mrp.routing.workcenter", "blocked_by_workorder_ids->mrp.workorder", "time_ids->mrp.workcenter.productivity"]},
+      {"_name": "mrp.workcenter", "_description": "Work Center", "fields": 32,
+       "relations": ["routing_line_ids->mrp.routing.workcenter", "order_ids->mrp.workorder", "capacity_ids->mrp.workcenter.capacity", "alternative_workcenter_ids->mrp.workcenter"]},
+      {"_name": "mrp.routing.workcenter", "_description": "Work Center Usage (Operation)", "fields": 23,
+       "relations": ["workcenter_id->mrp.workcenter", "bom_id->mrp.bom", "blocked_by_operation_ids->mrp.routing.workcenter"]},
+      {"_name": "mrp.workcenter.productivity", "_description": "Workcenter Productivity Log", "fields": 11,
+       "relations": ["workorder_id->mrp.workorder", "workcenter_id->mrp.workcenter", "loss_id->mrp.workcenter.productivity.loss"]},
+      {"_name": "mrp.unbuild", "_description": "Unbuild Order", "fields": 16,
+       "relations": ["mo_id->mrp.production", "bom_id->mrp.bom", "consume_line_ids->stock.move", "produce_line_ids->stock.move"]}
+    ],
+    "routes": [],
+    "security": {"access_rules": 54, "record_rules": 9, "groups": 7},
+    "views": {"form": 12, "list": 17, "kanban": 8, "search": 9, "pivot": 4, "graph": 5, "calendar": 2, "activity": 1},
+    "behavioral_notes": [
+      {"element": "mrp.production.action_confirm",
+       "observation": "Releasing an MO confirms its raw-material and finished stock.move records (_action_confirm), adjusts their procure_method, confirms work orders, confirms component pickings, and triggers the procurement scheduler for forecasted-short components; draft MOs transition state to 'confirmed'. The downstream document chain is created via stock, invisible in metadata.",
+       "source": "code-read"},
+      {"element": "mrp.production.button_mark_done / _post_inventory",
+       "observation": "Completing an MO posts inventory: raw-material moves are consumed via stock.move._action_done (decrementing component quants), finished/byproduct moves are produced into the destination location, work-order durations are finalized and order._cal_price assigns the manufacturing cost (component cost + workcenter cost) to the produced goods, updating stock valuation. State becomes 'done' and the order is locked.",
+       "source": "code-read"},
+      {"element": "mrp.bom.explode",
+       "observation": "Explodes a BoM for a given quantity, recursively resolving phantom (kit) sub-BoMs via _bom_find(bom_type='phantom'), producing the component and operation lists that seed an MO's move_raw_ids and workorders. Pure Python recursion not derivable from field metadata.",
+       "source": "code-read"},
+      {"element": "stock.rule._run_manufacture",
+       "observation": "The 'manufacture' stock.rule action (wired on stock.warehouse via manufacture_pull_id) reacts to a procurement by finding the matching BoM (_get_matching_bom) and creating an mrp.production via _prepare_mo_vals. This is how a sale order / reordering rule / MTO demand auto-spawns a production order.",
+       "source": "code-read"},
+      {"element": "mrp.production.button_plan / _plan_workorders",
+       "observation": "Scheduling explodes operations into work orders, links operation dependencies (blocked_by_workorder_ids) and moves to work orders, then reserves finite workcenter capacity by allocating resource.calendar.leaves slots back-to-front from the final operation, setting MO date_start/date_finished.",
+       "source": "code-read"},
+      {"element": "mrp.workorder.button_start / button_finish + mrp.workcenter.productivity",
+       "observation": "Starting/finishing a work order writes mrp.workcenter.productivity time logs (productive vs. loss buckets) that feed the workcenter OEE/performance KPIs; durations recorded here drive the labor-cost portion applied at _post_inventory.",
+       "source": "code-read"}
+    ]
+  },
+
+  "it_architecture": {
+    "application": "mrp (Manufacturing application component)",
+    "software_services": [],
+    "data_objects": ["mrp.production", "mrp.bom", "mrp.bom.line", "mrp.bom.byproduct", "mrp.workorder", "mrp.workcenter", "mrp.routing.workcenter", "mrp.workcenter.productivity", "mrp.unbuild"],
+    "logical_data_erm": ["mrp.production -> mrp.bom", "mrp.production -> product.product", "mrp.production -> stock.move (move_raw_ids / move_finished_ids)", "mrp.production -> mrp.workorder", "mrp.bom -> mrp.bom.line", "mrp.bom -> mrp.routing.workcenter (operations)", "mrp.workorder -> mrp.workcenter", "mrp.workorder -> mrp.workcenter.productivity"],
+    "information_flows": ["depends: product, stock, resource",
+      "side-effect: stock.rule._run_manufacture (procurement) -> creates mrp.production",
+      "side-effect: mrp.production.action_confirm -> confirms stock.move (raw + finished) + work orders + component pickings",
+      "side-effect: mrp.production.button_mark_done/_post_inventory -> consumes component quants + produces finished/byproduct quants + stock valuation (component + workcenter cost)",
+      "side-effect: mrp.workorder time logs -> mrp.workcenter.productivity -> OEE/performance KPIs"]
+  },
+
+  "business_architecture": {
+    "capabilities": ["Define Bills of Material (incl. kits/phantom & byproducts)", "Define Routings, Work Centers & Operations", "Plan & Schedule Production (finite workcenter capacity)", "Release & Execute Manufacturing Orders", "Execute & Track Work Orders (shop-floor / productivity)", "Backorder & Split Production", "Unbuild / Disassemble", "Manufacturing Cost Roll-up", "BOM & MO Overview reporting"],
+    "value_streams": ["Plan-to-Produce: procurement/demand -> MO created (manufacture rule) -> scheduled (work orders) -> released (action_confirm reserves components) -> executed (work orders) -> marked done (_post_inventory consumes raw, produces finished, values output)"],
+    "information_concepts": ["mrp.production (Manufacturing Order)", "mrp.bom (Bill of Material)", "mrp.bom.line", "mrp.bom.byproduct", "mrp.workorder", "mrp.workcenter", "mrp.routing.workcenter (Operation)", "mrp.workcenter.productivity", "mrp.unbuild", "product.product (manufactured / component item)"],
+    "organization": ["group_mrp_user", "group_mrp_manager", "group_mrp_routings", "group_mrp_byproducts", "group_mrp_workorder_dependencies", "group_mrp_reception_report", "group_unlocked_by_default"],
+    "products": [],
+    "policies": ["9 record rules: multi-company scoping on MO/BoM/workcenter documents", "consumption policy (flexible/warning/strict) enforces component over/under-use via mrp.consumption.warning", "BoM 'ready_to_produce' policy (all components / when components available)", "manufacture_steps warehouse policy (1/2/3-step manufacturing with PBM/SAM locations)"],
+    "stakeholders": ["Manufacturing Operator (res.users / group_mrp_user)", "Manufacturing Manager (group_mrp_manager)", "Planner / Scheduler", "Shop-floor Work Center"],
+    "strategy": null,
+    "metrics": ["report.mrp.report_mo_overview (MO Overview: cost, availability, delays)", "report.mrp.report_bom_structure (BOM Overview/Cost)", "mrp.workcenter OEE / performance / workcenter_load", "mrp.workcenter.productivity (productive vs. loss time)"]
+  },
+
+  "classification": {
+    "value_model": "chain",
+    "activity_class": "primary",
+    "apqc_category": "4.3 Produce/Manufacture/Deliver Product",
+    "rationale": "mrp is the Operations transform step of the value chain (Stabell & Fjeldstad 'chain'): it consumes raw-material inputs and converts them, via routed work-center operations, into finished-goods output, updating inventory and valuation. It is a primary activity that sits between procurement (inbound) and stock delivery (outbound). Per apqc_odoo_map.tsv it maps to APQC 4.3 Produce/Manufacture, specifically 4.3.1.4 (schedule production orders and create lots: mrp.production create/schedule) and 4.3.1.7 (release production orders: mrp.production.action_confirm)."
+  },
+
+  "fit_to_standard": {
+    "standard_capabilities": ["multi-level BoMs with kits (phantom) and byproducts", "routings with work centers, operations and operation dependencies", "finite-capacity scheduling (work orders against workcenter calendars)", "1/2/3-step manufacturing routes via warehouse config", "component reservation & consumption policies (flexible/warning/strict)", "backorders, splitting, scrap and unbuild", "lot/serial tracking of components and finished goods", "manufacturing cost roll-up (material + workcenter) into valuation", "workcenter productivity / OEE tracking", "MO and BoM overview reports"],
+    "typical_fits": ["make-to-stock and make-to-order manufacturing driven by reordering rules or sale orders", "assembly with kit/phantom sub-BoMs", "shop-floor work-order execution with time tracking", "standard manufacturing cost capture"],
+    "common_gaps": ["MPS / master production scheduling (separate module mrp_mps)", "engineering change / PLM versioning (mrp_plm)", "subcontracting (mrp_subcontracting)", "quality control checks (quality_control)", "industry-specific finite scheduling / APS optimization", "custom co-product cost-share or yield models"],
+    "drive_hints": [
+      "odoo shell: env['mrp.production'].search([], limit=5).mapped(('name','state'))",
+      "odoo shell: mo = env['mrp.production'].create({'product_id': p.id, 'product_qty': 1, 'bom_id': b.id}); mo.action_confirm(); mo.state  # observe component stock.move confirmation",
+      "odoo shell --log-handler=odoo.sql_db:DEBUG: mo.button_mark_done()  # trace raw-material consumption + finished-goods valuation moves"
+    ]
+  },
+
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+
+  "open_questions": [
+    "Exact mrp.production state machine (draft->confirmed->progress->to_close->done) and every action that drives transitions.",
+    "Full cost algorithm in _cal_price: how component cost, workcenter costs_hour and byproduct cost_share split onto finished goods.",
+    "How manufacture_steps (1/2/3-step) generates intermediate PBM/SAM pickings and locations at warehouse level."
+  ],
+
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/mrp.facts.json",
+    "tools": ["extract_module.py", "code-read"],
+    "odoo_version": "19.0"
+  }
+}

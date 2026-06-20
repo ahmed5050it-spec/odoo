@@ -1,0 +1,129 @@
+{
+  "subsystem": "account",
+  "evidence": {
+    "manifest": {
+      "name": "Invoicing", "category": "Accounting/Accounting",
+      "summary": "Invoices & Payments",
+      "depends": ["base_setup", "onboarding", "product", "analytic", "portal", "digest"],
+      "auto_install": false, "application": true
+    },
+    "models": [
+      {"_name": "account.move", "_description": "Journal Entry", "fields": 142,
+       "relations": ["journal_id->account.journal", "company_id->res.company", "partner_id->res.partner", "line_ids->account.move.line", "invoice_line_ids->account.move.line", "reversed_entry_id->account.move", "origin_payment_id->account.payment", "fiscal_position_id->account.fiscal.position"]},
+      {"_name": "account.move.line", "_description": "Journal Item", "fields": 89,
+       "relations": ["move_id->account.move", "account_id->account.account", "partner_id->res.partner", "tax_ids->account.tax", "full_reconcile_id->account.full.reconcile", "matched_debit_ids->account.partial.reconcile", "payment_id->account.payment"]},
+      {"_name": "account.payment", "_description": "Payments", "fields": 44,
+       "relations": ["move_id->account.move", "journal_id->account.journal", "partner_id->res.partner", "invoice_ids->account.move", "payment_method_line_id->account.payment.method.line", "outstanding_account_id->account.account"]},
+      {"_name": "account.journal", "_description": "Journal", "fields": 44,
+       "relations": ["default_account_id->account.account", "company_id->res.company", "bank_account_id->res.partner.bank", "inbound_payment_method_line_ids->account.payment.method.line"]},
+      {"_name": "account.account", "_description": "Account", "fields": 29,
+       "relations": ["currency_id->res.currency", "tax_ids->account.tax", "group_id->account.group", "company_ids->res.company"]},
+      {"_name": "account.tax", "_description": "Tax", "fields": 30,
+       "relations": ["tax_group_id->account.tax.group", "children_tax_ids->account.tax", "fiscal_position_ids->account.fiscal.position", "repartition_line_ids->account.tax.repartition.line"]},
+      {"_name": "account.partial.reconcile", "_description": "Partial Reconcile", "fields": 13,
+       "relations": ["debit_move_id->account.move.line", "credit_move_id->account.move.line", "full_reconcile_id->account.full.reconcile", "exchange_move_id->account.move"]},
+      {"_name": "account.bank.statement.line", "_description": "Bank Statement Line", "fields": 25,
+       "relations": ["move_id->account.move", "statement_id->account.bank.statement", "payment_ids->account.payment"]},
+      {"_name": "account.report", "_description": "Accounting Report", "fields": 36,
+       "relations": ["line_ids->account.report.line", "column_ids->account.report.column", "root_report_id->account.report"]},
+      {"_name": "account.invoice.report", "_description": "Invoices Statistics", "fields": 27,
+       "relations": ["move_id->account.move", "partner_id->res.partner", "product_id->product.product"]}
+    ],
+    "routes": [
+      {"paths": ["/my/invoices", "/my/invoices/page/<int:page>", "/my/invoices/<int:invoice_id>"], "auth": "user|public", "type": "http"},
+      {"paths": ["/terms"], "auth": "public", "type": "http"},
+      {"paths": ["/account/download_invoice_attachments", "/account/download_invoice_documents", "/account/download_move_attachments"], "auth": "user", "type": "http"},
+      {"paths": ["/product/catalog/get_sections", "/product/catalog/create_section", "/product/catalog/resequence_sections"], "auth": "user", "type": "jsonrpc"}
+    ],
+    "security": {"access_rules": 145, "record_rules": 31, "groups": 10},
+    "views": {"form": 25, "list": 32, "kanban": 10, "search": 19, "pivot": 2, "graph": 3, "activity": 1},
+    "behavioral_notes": [
+      {"element": "account.move._post / action_post",
+       "observation": "Posting transitions state draft->posted, assigns the legal sequential number (via sequence.mixin / inalterable_hash for secured journals), validates the entry is balanced and complete, and freezes hash-locked fields. Requires group_account_invoice. Gives the document its accounting reality; not visible in metadata.",
+       "source": "code-read"},
+      {"element": "account.payment.action_post + _synchronize_to_moves",
+       "observation": "account.payment is backed by an account.move: posting a payment drives state (draft->in_process->paid) and the model keeps its journal entry in sync via _synchronize_to_moves / _prepare_move_line_default_vals, debiting/crediting the journal's outstanding and liquidity accounts. The payment is a UI facade over a balanced move.",
+       "source": "code-read"},
+      {"element": "account.move.line.reconcile / _reconcile_plan",
+       "observation": "Reconciling matches debit and credit move lines, creating account.partial.reconcile rows and, when fully matched, an account.full.reconcile; cross-currency matches spawn exchange-difference moves (_create_exchange_difference_moves). This is how invoices get marked paid and AR/AP residuals are cleared. Pure Python side-effect.",
+       "source": "code-read"},
+      {"element": "account.move.button_draft / button_cancel",
+       "observation": "Resetting to draft unlinks analytic lines, detaches the generated invoice PDF for regeneration, and is blocked for hash-secured entries (need_cancel_request). Demonstrates the legal immutability constraints metadata cannot express.",
+       "source": "code-read"},
+      {"element": "account.report (engine-driven financial reports)",
+       "observation": "account.report + account.report.line/expression form a declarative reporting engine: expressions carry formulas (domain/account_codes/aggregation/tax_tags engines) evaluated at render time to produce Balance Sheet, P&L, Tax and Aged reports. The numbers live in formulas, not stored fields.",
+       "source": "code-read"}
+    ]
+  },
+
+  "it_architecture": {
+    "application": "account (Invoicing / Accounting application component)",
+    "software_services": ["/my/invoices/*", "/terms", "/account/download_invoice_*", "/product/catalog/*"],
+    "data_objects": ["account.move", "account.move.line", "account.payment", "account.journal", "account.account", "account.tax", "account.partial.reconcile", "account.full.reconcile", "account.bank.statement.line", "account.report", "account.invoice.report"],
+    "logical_data_erm": ["account.move -> account.journal", "account.move -> res.partner", "account.move.line -> account.move", "account.move.line -> account.account", "account.move.line -> account.tax", "account.payment -> account.move", "account.partial.reconcile -> account.move.line", "account.account -> account.tax"],
+    "information_flows": ["depends: base_setup, onboarding, product, analytic, portal, digest",
+      "side-effect: account.move.action_post -> assigns sequence + inalterable_hash, balances ledger",
+      "side-effect: account.payment.action_post -> synchronizes a balanced account.move (outstanding + liquidity)",
+      "side-effect: account.move.line.reconcile -> account.partial.reconcile / account.full.reconcile + exchange-diff moves",
+      "inbound: sale/purchase create account.move (customer invoices / vendor bills); bank statements feed account.bank.statement.line"]
+  },
+
+  "business_architecture": {
+    "capabilities": ["Manage General Ledger & Journals", "Customer Invoicing (Accounts Receivable)", "Vendor Bills (Accounts Payable)", "Register & Reconcile Payments", "Tax Determination & Reporting", "Bank Reconciliation", "Financial Reporting (Balance Sheet / P&L / Tax)"],
+    "value_streams": ["Invoice-to-Cash: draft invoice -> post (AR) -> register payment -> reconcile -> paid",
+      "Bill-to-Pay: vendor bill -> post (AP) -> payment -> reconcile",
+      "Record-to-Report: journal entries -> posted ledger -> account.report (financial statements)"],
+    "information_concepts": ["account.move (journal entry/invoice/bill)", "account.move.line (journal item)", "account.account (ledger account)", "account.journal", "account.payment", "account.tax", "res.partner (customer/vendor)"],
+    "organization": ["group_account_invoice", "group_account_user", "group_account_manager", "group_account_readonly", "group_account_basic", "group_account_secured", "group_cash_rounding", "group_validate_bank_account", "group_delivery_invoice_address", "group_partial_purchase_deductibility"],
+    "products": [],
+    "policies": ["31 record rules: multi-company scoping on moves/payments/accounts",
+      "Lock dates (account.lock_exception) and hash-secured journals enforce period close & legal immutability",
+      "Posting requires group_account_invoice; bank-account trust gating on outbound payments"],
+    "stakeholders": ["Accountant (group_account_user)", "Accounting Manager (group_account_manager)", "Auditor (audit trail / hash)", "Customer & Vendor (res.partner)", "Tax authority (account.report)"],
+    "strategy": null,
+    "metrics": ["account.invoice.report (Invoices Statistics: amounts, margins, volumes)", "account.report engine (Balance Sheet, P&L, Tax, Aged Receivable/Payable)", "digest KPIs (depends: digest)"]
+  },
+
+  "classification": {
+    "value_model": "support",
+    "activity_class": "support",
+    "apqc_category": "9.0 Manage Financial Resources",
+    "rationale": "account is the financial backbone / system of record, not a primary value-creating activity. It is a support activity in Porter/APQC terms: it records the financial consequences of primary activities (sale -> customer invoice, purchase -> vendor bill, stock -> valuation) into a double-entry ledger. APQC 9.0 Manage Financial Resources, specifically 9.2.x Process accounts receivable (account.move customer invoice action_post) and 9.5.x Process accounts payable (account.payment register payment), plus 9.x general accounting / reporting via the account.report engine."
+  },
+
+  "fit_to_standard": {
+    "standard_capabilities": ["double-entry journal entries with legal numbering & hashing", "customer invoices / vendor bills lifecycle (draft->post->paid)", "payment registration and invoice/bill reconciliation", "multi-currency with exchange-difference handling", "configurable taxes, fiscal positions & tax reports", "bank statement import & reconciliation models", "chart-of-accounts templates (localizations)", "declarative financial reports (Balance Sheet / P&L / Tax / Aged)"],
+    "typical_fits": ["standard invoice-to-cash and bill-to-pay flows", "country chart-of-accounts + tax localization packages", "multi-company consolidation via record rules", "period lock dates and audit-trail/hash compliance"],
+    "common_gaps": ["country-specific e-invoicing / EDI formats (separate l10n modules)", "advanced analytic / cost accounting beyond analytic.mixin", "bespoke approval workflows on posting", "industry-specific statutory reports not in the standard report engine", "deferred revenue/expense automation (often add-on)"],
+    "drive_hints": [
+      "odoo shell: env['account.move'].search([('move_type','=','out_invoice')], limit=5).mapped(('name','state','payment_state'))",
+      "odoo shell: inv = env['account.move'].create({...}); inv.action_post(); print(inv.name, inv.state)  # sequence assigned on post",
+      "odoo shell: env['account.journal'].search([]).mapped(('name','type'))  # sale/purchase/bank/cash/general",
+      "curl http(s)://host/my/invoices  (portal, auth=user) to see the customer AR portal"
+    ]
+  },
+
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+
+  "open_questions": [
+    "Exact account.move state machine and the full set of legal constraints fired on _post (sequence gaps, hash chain, lock dates).",
+    "How account.payment's _synchronize_to_moves chooses outstanding vs liquidity accounts per payment method line.",
+    "Reconciliation matching algorithm (_reconcile_plan) and when exchange-difference / cash-basis tax moves are generated.",
+    "Which downstream modules (sale, purchase, stock, l10n_*) inject the invoices/bills and tax rules that account merely records."
+  ],
+
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/account.facts.json",
+    "tools": ["extract_module.py", "code-read (account_move.py, account_payment.py, account_move_line.py)", "apqc_odoo_map.tsv"],
+    "odoo_version": "19.0"
+  }
+}
