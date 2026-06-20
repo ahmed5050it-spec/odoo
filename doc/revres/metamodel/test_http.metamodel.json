@@ -1,0 +1,385 @@
+{
+  "subsystem": "test_http",
+  "evidence": {
+    "manifest": {
+      "name": "Test HTTP",
+      "category": "Hidden/Tests",
+      "depends": [
+        "web",
+        "web_tour",
+        "mail",
+        "rpc"
+      ],
+      "auto_install": false,
+      "application": false
+    },
+    "models": [
+      {
+        "_name": "test_http.galaxy",
+        "_description": "Galaxy",
+        "fields": 4
+      },
+      {
+        "_name": "test_http.stargate",
+        "_description": "Stargate",
+        "fields": 12
+      }
+    ],
+    "routes": [
+      {
+        "paths": [
+          "/test_http/greeting",
+          "/test_http/greeting-none"
+        ],
+        "auth": null,
+        "type": null
+      },
+      {
+        "paths": [
+          "/test_http/greeting-public"
+        ],
+        "auth": "public",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/test_http/greeting-user"
+        ],
+        "auth": "user",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/test_http/greeting-bearer"
+        ],
+        "auth": "bearer",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/test_http/wsgi_environ"
+        ],
+        "auth": "none",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/test_http/echo-http-get"
+        ],
+        "auth": "none",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/test_http/echo-http-post"
+        ],
+        "auth": "none",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/test_http/echo-http-csrf"
+        ],
+        "auth": "none",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/test_http/echo-http-context-lang"
+        ],
+        "auth": "public",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/test_http/echo-json"
+        ],
+        "auth": "none",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/test_http/echo-json-context"
+        ],
+        "auth": "user",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/test_http/echo-json-over-http"
+        ],
+        "auth": "none",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/test_http/<model("
+        ],
+        "auth": null,
+        "type": null
+      },
+      {
+        "paths": [
+          "/test_http/<model("
+        ],
+        "auth": null,
+        "type": null
+      },
+      {
+        "paths": [
+          "/test_http/<model("
+        ],
+        "auth": null,
+        "type": null
+      },
+      {
+        "paths": [
+          "/test_http/cors_http_default"
+        ],
+        "auth": "none",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/test_http/cors_http_methods"
+        ],
+        "auth": "none",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/test_http/cors_json"
+        ],
+        "auth": "none",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/test_http/ensure_db"
+        ],
+        "auth": "none",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/test_http/geoip"
+        ],
+        "auth": "none",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/test_http/save_session"
+        ],
+        "auth": "none",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/test_http/fail"
+        ],
+        "auth": "none",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/test_http/json_value_error"
+        ],
+        "auth": "none",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/test_http/hide_errors/decorator"
+        ],
+        "auth": "none",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/test_http/hide_errors/context-manager"
+        ],
+        "auth": "none",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/test_http/upload_file"
+        ],
+        "auth": "none",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/test_http/concurrency_error"
+        ],
+        "auth": "none",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/test_http/httprequest_attrs"
+        ],
+        "auth": "none",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/test_http/httprequest_environ"
+        ],
+        "auth": "none",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/test_http/f2qs"
+        ],
+        "auth": null,
+        "type": null
+      },
+      {
+        "paths": [
+          "/test_http/f2qs/step1/no-operation-to-perform"
+        ],
+        "auth": "none",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/test_http/f2qs/step2/1-var-in-fragment"
+        ],
+        "auth": "none",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/test_http/f2qs/step3/3-var-in-fragment"
+        ],
+        "auth": "none",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/test_http/f2qs/step4/empty-query-3-var-in-frag"
+        ],
+        "auth": "none",
+        "type": "http"
+      }
+    ],
+    "security": {
+      "access_rules": 0,
+      "record_rules": 0,
+      "groups": 0
+    },
+    "views": {},
+    "frontend": {
+      "present": true,
+      "js_files": 0,
+      "xml_templates": 0,
+      "owl_components": [],
+      "registry_adds": [],
+      "patches": [],
+      "services": [],
+      "asset_bundles": {}
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": true,
+      "endpoints": [],
+      "files": []
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    },
+    "behavioral_notes": [
+      {
+        "element": "thin module",
+        "observation": "2 models, 34 routes, 4265 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
+        "source": "ast"
+      }
+    ]
+  },
+  "it_architecture": {
+    "application": "test_http (Test HTTP)",
+    "software_services": [
+      "/test_http/<model(",
+      "/test_http/concurrency_error",
+      "/test_http/cors_http_default",
+      "/test_http/cors_http_methods",
+      "/test_http/cors_json",
+      "/test_http/echo-http-context-lang",
+      "/test_http/echo-http-csrf",
+      "/test_http/echo-http-get",
+      "/test_http/echo-http-post",
+      "/test_http/echo-json"
+    ],
+    "data_objects": [
+      "test_http.galaxy",
+      "test_http.stargate"
+    ],
+    "logical_data_erm": [
+      "test_http.galaxy -> test_http.stargate",
+      "test_http.stargate -> test_http.galaxy"
+    ],
+    "information_flows": [
+      "depends: web, web_tour, mail, rpc"
+    ],
+    "frontend_components": []
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Test HTTP"
+    ],
+    "value_streams": [],
+    "information_concepts": [
+      "test_http.galaxy",
+      "test_http.stargate"
+    ],
+    "organization": [],
+    "products": [],
+    "policies": [],
+    "stakeholders": [],
+    "strategy": null,
+    "metrics": []
+  },
+  "classification": {
+    "value_model": "support",
+    "activity_class": "support",
+    "apqc_category": "13.0 Develop and Manage Business Capabilities",
+    "rationale": "test_http: thin support/support module (auto-architect baseline)."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "Test HTTP"
+    ],
+    "typical_fits": [],
+    "common_gaps": [],
+    "drive_hints": [
+      "odoo shell: env['test_http.galaxy'].search([],limit=3)"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/test_http.facts.json",
+    "tools": [
+      "extract_module.py",
+      "extract_frontend.py",
+      "gen_thin.py"
+    ],
+    "odoo_version": "19.0"
+  }
+}

@@ -1,0 +1,159 @@
+{
+  "subsystem": "board",
+  "evidence": {
+    "manifest": {
+      "name": "Dashboards",
+      "category": "Productivity",
+      "depends": [
+        "spreadsheet_dashboard"
+      ],
+      "auto_install": false,
+      "application": false
+    },
+    "models": [
+      {
+        "_name": "board.board",
+        "_description": "Board",
+        "fields": 1
+      }
+    ],
+    "routes": [
+      {
+        "paths": [
+          "/board/add_to_dashboard"
+        ],
+        "auth": "user",
+        "type": "jsonrpc"
+      }
+    ],
+    "security": {
+      "access_rules": 1,
+      "record_rules": 0,
+      "groups": 0
+    },
+    "views": {
+      "form": 1,
+      "list": 0,
+      "tree": 0,
+      "kanban": 0,
+      "search": 0,
+      "pivot": 0,
+      "graph": 0,
+      "calendar": 0,
+      "activity": 0
+    },
+    "frontend": {
+      "present": true,
+      "js_files": 4,
+      "xml_templates": 3,
+      "owl_components": [
+        "AddToBoard",
+        "BoardAction",
+        "BoardController"
+      ],
+      "registry_adds": [
+        "views:board"
+      ],
+      "patches": [],
+      "services": [],
+      "asset_bundles": {
+        "web.assets_backend": 3,
+        "web.assets_unit_tests": 1
+      }
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": false,
+      "endpoints": [],
+      "files": []
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    },
+    "behavioral_notes": [
+      {
+        "element": "frontend (OWL/JS)",
+        "observation": "4 JS files, 3 OWL components, 1 registry adds; bundles ['web.assets_backend', 'web.assets_unit_tests'].",
+        "source": "static"
+      },
+      {
+        "element": "thin module",
+        "observation": "1 models, 1 routes, 144 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
+        "source": "ast"
+      }
+    ]
+  },
+  "it_architecture": {
+    "application": "board (Dashboards)",
+    "software_services": [
+      "/board/add_to_dashboard"
+    ],
+    "data_objects": [
+      "board.board"
+    ],
+    "logical_data_erm": [],
+    "information_flows": [
+      "depends: spreadsheet_dashboard"
+    ],
+    "frontend_components": [
+      "AddToBoard",
+      "BoardAction",
+      "BoardController"
+    ]
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Dashboards"
+    ],
+    "value_streams": [],
+    "information_concepts": [
+      "board.board"
+    ],
+    "organization": [],
+    "products": [],
+    "policies": [],
+    "stakeholders": [],
+    "strategy": null,
+    "metrics": []
+  },
+  "classification": {
+    "value_model": "support",
+    "activity_class": "support",
+    "apqc_category": "13.0 Develop and Manage Business Capabilities",
+    "rationale": "board: thin support/support module (auto-architect baseline)."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "Dashboards"
+    ],
+    "typical_fits": [],
+    "common_gaps": [],
+    "drive_hints": [
+      "odoo shell: env['board.board'].search([],limit=3)"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/board.facts.json",
+    "tools": [
+      "extract_module.py",
+      "extract_frontend.py",
+      "gen_thin.py"
+    ],
+    "odoo_version": "19.0"
+  }
+}

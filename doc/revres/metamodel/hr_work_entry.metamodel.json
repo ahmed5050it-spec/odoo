@@ -1,0 +1,187 @@
+{
+  "subsystem": "hr_work_entry",
+  "evidence": {
+    "manifest": {
+      "name": "Work Entries",
+      "category": "Human Resources/Employees",
+      "depends": [
+        "hr"
+      ],
+      "auto_install": false,
+      "application": false
+    },
+    "models": [
+      {
+        "_name": "hr.user.work.entry.employee",
+        "_description": "Work Entries Employees",
+        "fields": 4
+      },
+      {
+        "_name": "hr.work.entry",
+        "_description": "HR Work Entry",
+        "fields": 18
+      },
+      {
+        "_name": "hr.work.entry.regeneration.wizard",
+        "_description": "Regenerate Employee Work Entries",
+        "fields": 10
+      },
+      {
+        "_name": "hr.work.entry.type",
+        "_description": "HR Work Entry Type",
+        "fields": 13
+      }
+    ],
+    "routes": [],
+    "security": {
+      "access_rules": 6,
+      "record_rules": 3,
+      "groups": 0
+    },
+    "views": {
+      "form": 3,
+      "list": 2,
+      "tree": 0,
+      "kanban": 1,
+      "search": 2,
+      "pivot": 1,
+      "graph": 0,
+      "calendar": 1,
+      "activity": 0
+    },
+    "frontend": {
+      "present": true,
+      "js_files": 12,
+      "xml_templates": 10,
+      "owl_components": [
+        "WorkEntryType"
+      ],
+      "registry_adds": [
+        "fields:many2many_avatar_employee_class",
+        "fields:many2one_work_entry_type",
+        "fields:work_entry_source_field",
+        "views:work_entries_calendar"
+      ],
+      "patches": [],
+      "services": [
+        "color",
+        "display_code",
+        "employee_id",
+        "resource_calendar_id"
+      ],
+      "asset_bundles": {
+        "web.assets_backend": 1,
+        "web.assets_unit_tests": 1
+      }
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": false,
+      "endpoints": [],
+      "files": []
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    },
+    "behavioral_notes": [
+      {
+        "element": "frontend (OWL/JS)",
+        "observation": "12 JS files, 1 OWL components, 4 registry adds; bundles ['web.assets_backend', 'web.assets_unit_tests'].",
+        "source": "static"
+      },
+      {
+        "element": "thin module",
+        "observation": "4 models, 0 routes, 2293 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
+        "source": "ast"
+      }
+    ]
+  },
+  "it_architecture": {
+    "application": "hr_work_entry (Work Entries)",
+    "software_services": [],
+    "data_objects": [
+      "hr.user.work.entry.employee",
+      "hr.work.entry",
+      "hr.work.entry.regeneration.wizard",
+      "hr.work.entry.type"
+    ],
+    "logical_data_erm": [
+      "hr.user.work.entry.employee -> hr.employee",
+      "hr.user.work.entry.employee -> res.users",
+      "hr.work.entry -> hr.department",
+      "hr.work.entry -> hr.employee",
+      "hr.work.entry -> hr.version",
+      "hr.work.entry -> hr.work.entry.type",
+      "hr.work.entry -> res.company",
+      "hr.work.entry -> res.country",
+      "hr.work.entry.regeneration.wizard -> hr.employee",
+      "hr.work.entry.type -> res.country"
+    ],
+    "information_flows": [
+      "depends: hr"
+    ],
+    "frontend_components": [
+      "WorkEntryType"
+    ]
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Work Entries"
+    ],
+    "value_streams": [],
+    "information_concepts": [
+      "hr.user.work.entry.employee",
+      "hr.work.entry",
+      "hr.work.entry.regeneration.wizard",
+      "hr.work.entry.type"
+    ],
+    "organization": [],
+    "products": [],
+    "policies": [
+      "3 record rules"
+    ],
+    "stakeholders": [],
+    "strategy": null,
+    "metrics": []
+  },
+  "classification": {
+    "value_model": "support",
+    "activity_class": "support",
+    "apqc_category": "7.0 Develop and Manage Human Capital",
+    "rationale": "hr_work_entry: thin support/support module (auto-architect baseline)."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "Work Entries"
+    ],
+    "typical_fits": [],
+    "common_gaps": [],
+    "drive_hints": [
+      "odoo shell: env['hr.user.work.entry.employee'].search([],limit=3)"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/hr_work_entry.facts.json",
+    "tools": [
+      "extract_module.py",
+      "extract_frontend.py",
+      "gen_thin.py"
+    ],
+    "odoo_version": "19.0"
+  }
+}

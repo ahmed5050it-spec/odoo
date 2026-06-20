@@ -1,0 +1,196 @@
+{
+  "subsystem": "google_calendar",
+  "evidence": {
+    "manifest": {
+      "name": "Google Calendar",
+      "category": "Productivity",
+      "depends": [
+        "google_account",
+        "calendar"
+      ],
+      "auto_install": false,
+      "application": false
+    },
+    "models": [
+      {
+        "_name": "calendar.event",
+        "_description": null,
+        "fields": 3
+      },
+      {
+        "_name": "calendar.recurrence",
+        "_description": null,
+        "fields": 0
+      },
+      {
+        "_name": "google.calendar.account.reset",
+        "_description": "Google Calendar Account Reset",
+        "fields": 3
+      },
+      {
+        "_name": "google.calendar.sync",
+        "_description": "Synchronize a record with Google Calendar",
+        "fields": 3
+      }
+    ],
+    "routes": [
+      {
+        "paths": [
+          "/google_calendar/sync_data"
+        ],
+        "auth": "user",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [],
+        "auth": null,
+        "type": null
+      }
+    ],
+    "security": {
+      "access_rules": 1,
+      "record_rules": 0,
+      "groups": 0
+    },
+    "views": {
+      "form": 0,
+      "list": 0,
+      "tree": 0,
+      "kanban": 0,
+      "search": 0,
+      "pivot": 0,
+      "graph": 0,
+      "calendar": 0,
+      "activity": 0
+    },
+    "frontend": {
+      "present": true,
+      "js_files": 3,
+      "xml_templates": 1,
+      "owl_components": [],
+      "registry_adds": [],
+      "patches": [
+        "AttendeeCalendarCommonPopover.prototype",
+        "AttendeeCalendarController.prototype",
+        "AttendeeCalendarModel.prototype"
+      ],
+      "services": [],
+      "asset_bundles": {
+        "web.assets_backend": 2,
+        "web.assets_unit_tests": 1
+      }
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [
+        "requests"
+      ],
+      "uses_api_keys": true,
+      "endpoints": [
+        "http://www.odoo.com",
+        "https://www.googleapis.com/auth/calendar%s"
+      ],
+      "files": [
+        "models/google_sync.py",
+        "models/res_users_settings.py",
+        "utils/google_calendar.py"
+      ]
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    },
+    "behavioral_notes": [
+      {
+        "element": "frontend (OWL/JS)",
+        "observation": "3 JS files, 0 OWL components, 0 registry adds; bundles ['web.assets_backend', 'web.assets_unit_tests'].",
+        "source": "static"
+      },
+      {
+        "element": "external integrations",
+        "observation": "0 HTTP call sites; SDKs ['requests']; api_keys=True.",
+        "source": "static"
+      },
+      {
+        "element": "thin module",
+        "observation": "4 models, 2 routes, 6024 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
+        "source": "ast"
+      }
+    ]
+  },
+  "it_architecture": {
+    "application": "google_calendar (Google Calendar)",
+    "software_services": [
+      "/google_calendar/sync_data"
+    ],
+    "data_objects": [
+      "calendar.event",
+      "calendar.recurrence",
+      "google.calendar.account.reset",
+      "google.calendar.sync"
+    ],
+    "logical_data_erm": [
+      "google.calendar.account.reset -> res.users"
+    ],
+    "information_flows": [
+      "depends: google_account, calendar"
+    ],
+    "frontend_components": []
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Google Calendar"
+    ],
+    "value_streams": [],
+    "information_concepts": [
+      "calendar.event",
+      "calendar.recurrence",
+      "google.calendar.account.reset",
+      "google.calendar.sync"
+    ],
+    "organization": [],
+    "products": [],
+    "policies": [],
+    "stakeholders": [],
+    "strategy": null,
+    "metrics": []
+  },
+  "classification": {
+    "value_model": "support",
+    "activity_class": "support",
+    "apqc_category": "13.0 Develop and Manage Business Capabilities",
+    "rationale": "google_calendar: thin support/support module (auto-architect baseline)."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "Google Calendar"
+    ],
+    "typical_fits": [],
+    "common_gaps": [],
+    "drive_hints": [
+      "odoo shell: env['calendar.event'].search([],limit=3)"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/google_calendar.facts.json",
+    "tools": [
+      "extract_module.py",
+      "extract_frontend.py",
+      "gen_thin.py"
+    ],
+    "odoo_version": "19.0"
+  }
+}

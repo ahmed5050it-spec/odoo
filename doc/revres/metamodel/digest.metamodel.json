@@ -1,0 +1,172 @@
+{
+  "subsystem": "digest",
+  "evidence": {
+    "manifest": {
+      "name": "KPI Digests",
+      "category": "Marketing",
+      "depends": [
+        "mail",
+        "portal",
+        "resource"
+      ],
+      "auto_install": false,
+      "application": false
+    },
+    "models": [
+      {
+        "_name": "digest.digest",
+        "_description": "Digest",
+        "fields": 13
+      },
+      {
+        "_name": "digest.tip",
+        "_description": "Digest Tips",
+        "fields": 5
+      }
+    ],
+    "routes": [
+      {
+        "paths": [
+          "/digest/<int:digest_id>/unsubscribe_oneclik"
+        ],
+        "auth": "public",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/digest/<int:digest_id>/unsubscribe"
+        ],
+        "auth": "public",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/digest/<int:digest_id>/set_periodicity"
+        ],
+        "auth": "user",
+        "type": "http"
+      }
+    ],
+    "security": {
+      "access_rules": 4,
+      "record_rules": 0,
+      "groups": 0
+    },
+    "views": {
+      "form": 2,
+      "list": 3,
+      "tree": 0,
+      "kanban": 0,
+      "search": 2,
+      "pivot": 0,
+      "graph": 0,
+      "calendar": 0,
+      "activity": 0
+    },
+    "frontend": {
+      "present": true,
+      "js_files": 0,
+      "xml_templates": 0,
+      "owl_components": [],
+      "registry_adds": [],
+      "patches": [],
+      "services": [],
+      "asset_bundles": {}
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": false,
+      "endpoints": [],
+      "files": []
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    },
+    "behavioral_notes": [
+      {
+        "element": "thin module",
+        "observation": "2 models, 3 routes, 1129 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
+        "source": "ast"
+      }
+    ]
+  },
+  "it_architecture": {
+    "application": "digest (KPI Digests)",
+    "software_services": [
+      "/digest/<int:digest_id>/set_periodicity",
+      "/digest/<int:digest_id>/unsubscribe",
+      "/digest/<int:digest_id>/unsubscribe_oneclik"
+    ],
+    "data_objects": [
+      "digest.digest",
+      "digest.tip"
+    ],
+    "logical_data_erm": [
+      "digest.digest -> company_id.currency_id",
+      "digest.digest -> res.company",
+      "digest.digest -> res.users",
+      "digest.tip -> res.groups",
+      "digest.tip -> res.users"
+    ],
+    "information_flows": [
+      "depends: mail, portal, resource"
+    ],
+    "frontend_components": []
+  },
+  "business_architecture": {
+    "capabilities": [
+      "KPI Digests"
+    ],
+    "value_streams": [],
+    "information_concepts": [
+      "digest.digest",
+      "digest.tip"
+    ],
+    "organization": [],
+    "products": [],
+    "policies": [],
+    "stakeholders": [],
+    "strategy": null,
+    "metrics": []
+  },
+  "classification": {
+    "value_model": "support",
+    "activity_class": "support",
+    "apqc_category": "13.0 Develop and Manage Business Capabilities",
+    "rationale": "digest: thin support/support module (auto-architect baseline)."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "KPI Digests"
+    ],
+    "typical_fits": [],
+    "common_gaps": [],
+    "drive_hints": [
+      "odoo shell: env['digest.digest'].search([],limit=3)"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/digest.facts.json",
+    "tools": [
+      "extract_module.py",
+      "extract_frontend.py",
+      "gen_thin.py"
+    ],
+    "odoo_version": "19.0"
+  }
+}

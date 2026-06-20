@@ -1,0 +1,172 @@
+{
+  "subsystem": "onboarding",
+  "evidence": {
+    "manifest": {
+      "name": "Onboarding Toolbox",
+      "category": "Hidden",
+      "depends": [
+        "web"
+      ],
+      "auto_install": false,
+      "application": false
+    },
+    "models": [
+      {
+        "_name": "onboarding.onboarding",
+        "_description": "Onboarding",
+        "fields": 11
+      },
+      {
+        "_name": "onboarding.onboarding.step",
+        "_description": "Onboarding Step",
+        "fields": 15
+      },
+      {
+        "_name": "onboarding.progress",
+        "_description": "Onboarding Progress Tracker",
+        "fields": 5
+      },
+      {
+        "_name": "onboarding.progress.step",
+        "_description": "Onboarding Progress Step Tracker",
+        "fields": 4
+      }
+    ],
+    "routes": [],
+    "security": {
+      "access_rules": 12,
+      "record_rules": 0,
+      "groups": 0
+    },
+    "views": {
+      "form": 2,
+      "list": 2,
+      "tree": 0,
+      "kanban": 0,
+      "search": 0,
+      "pivot": 0,
+      "graph": 0,
+      "calendar": 0,
+      "activity": 0
+    },
+    "frontend": {
+      "present": true,
+      "js_files": 1,
+      "xml_templates": 0,
+      "owl_components": [],
+      "registry_adds": [],
+      "patches": [],
+      "services": [],
+      "asset_bundles": {
+        "web.assets_backend": 2,
+        "web.dark_mode_variables": 1,
+        "web._assets_primary_variables": 1
+      }
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": false,
+      "endpoints": [],
+      "files": []
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    },
+    "behavioral_notes": [
+      {
+        "element": "frontend (OWL/JS)",
+        "observation": "1 JS files, 0 OWL components, 0 registry adds; bundles ['web.assets_backend', 'web.dark_mode_variables', 'web._assets_primary_variables'].",
+        "source": "static"
+      },
+      {
+        "element": "thin module",
+        "observation": "4 models, 0 routes, 850 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
+        "source": "ast"
+      }
+    ]
+  },
+  "it_architecture": {
+    "application": "onboarding (Onboarding Toolbox)",
+    "software_services": [],
+    "data_objects": [
+      "onboarding.onboarding",
+      "onboarding.onboarding.step",
+      "onboarding.progress",
+      "onboarding.progress.step"
+    ],
+    "logical_data_erm": [
+      "onboarding.onboarding -> onboarding.onboarding.step",
+      "onboarding.onboarding -> onboarding.progress",
+      "onboarding.onboarding.step -> onboarding.onboarding",
+      "onboarding.onboarding.step -> onboarding.progress.step",
+      "onboarding.progress -> onboarding.onboarding",
+      "onboarding.progress -> onboarding.progress.step",
+      "onboarding.progress -> res.company",
+      "onboarding.progress.step -> onboarding.onboarding.step",
+      "onboarding.progress.step -> onboarding.progress",
+      "onboarding.progress.step -> res.company"
+    ],
+    "information_flows": [
+      "depends: web"
+    ],
+    "frontend_components": []
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Onboarding Toolbox"
+    ],
+    "value_streams": [],
+    "information_concepts": [
+      "onboarding.onboarding",
+      "onboarding.onboarding.step",
+      "onboarding.progress",
+      "onboarding.progress.step"
+    ],
+    "organization": [],
+    "products": [],
+    "policies": [],
+    "stakeholders": [],
+    "strategy": null,
+    "metrics": []
+  },
+  "classification": {
+    "value_model": "support",
+    "activity_class": "support",
+    "apqc_category": "13.0 Develop and Manage Business Capabilities",
+    "rationale": "onboarding: thin support/support module (auto-architect baseline)."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "Onboarding Toolbox"
+    ],
+    "typical_fits": [],
+    "common_gaps": [],
+    "drive_hints": [
+      "odoo shell: env['onboarding.onboarding'].search([],limit=3)"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/onboarding.facts.json",
+    "tools": [
+      "extract_module.py",
+      "extract_frontend.py",
+      "gen_thin.py"
+    ],
+    "odoo_version": "19.0"
+  }
+}

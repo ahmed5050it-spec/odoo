@@ -1,0 +1,144 @@
+{
+  "subsystem": "microsoft_account",
+  "evidence": {
+    "manifest": {
+      "name": "Microsoft Users",
+      "category": "Hidden/Tools",
+      "depends": [
+        "base_setup"
+      ],
+      "auto_install": false,
+      "application": false
+    },
+    "models": [
+      {
+        "_name": "microsoft.service",
+        "_description": "Microsoft Service",
+        "fields": 0
+      }
+    ],
+    "routes": [
+      {
+        "paths": [
+          "/microsoft_account/authentication"
+        ],
+        "auth": "public",
+        "type": "http"
+      }
+    ],
+    "security": {
+      "access_rules": 0,
+      "record_rules": 0,
+      "groups": 0
+    },
+    "views": {},
+    "frontend": {
+      "present": false,
+      "js_files": 0,
+      "xml_templates": 0,
+      "owl_components": [],
+      "registry_adds": [],
+      "patches": [],
+      "services": [],
+      "asset_bundles": {}
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [
+        "requests"
+      ],
+      "uses_api_keys": true,
+      "endpoints": [
+        "https://graph.microsoft.com",
+        "https://login.microsoftonline.com/common/oauth2/v2.0/authorize",
+        "https://login.microsoftonline.com/common/oauth2/v2.0/token"
+      ],
+      "files": [
+        "models/microsoft_service.py"
+      ]
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    },
+    "behavioral_notes": [
+      {
+        "element": "external integrations",
+        "observation": "0 HTTP call sites; SDKs ['requests']; api_keys=True.",
+        "source": "static"
+      },
+      {
+        "element": "thin module",
+        "observation": "1 models, 1 routes, 271 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
+        "source": "ast"
+      }
+    ]
+  },
+  "it_architecture": {
+    "application": "microsoft_account (Microsoft Users)",
+    "software_services": [
+      "/microsoft_account/authentication"
+    ],
+    "data_objects": [
+      "microsoft.service"
+    ],
+    "logical_data_erm": [],
+    "information_flows": [
+      "depends: base_setup"
+    ],
+    "frontend_components": []
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Microsoft Users"
+    ],
+    "value_streams": [],
+    "information_concepts": [
+      "microsoft.service"
+    ],
+    "organization": [],
+    "products": [],
+    "policies": [],
+    "stakeholders": [],
+    "strategy": null,
+    "metrics": []
+  },
+  "classification": {
+    "value_model": "support",
+    "activity_class": "support",
+    "apqc_category": "13.0 Develop and Manage Business Capabilities",
+    "rationale": "microsoft_account: thin support/support module (auto-architect baseline)."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "Microsoft Users"
+    ],
+    "typical_fits": [],
+    "common_gaps": [],
+    "drive_hints": [
+      "odoo shell: env['microsoft.service'].search([],limit=3)"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/microsoft_account.facts.json",
+    "tools": [
+      "extract_module.py",
+      "extract_frontend.py",
+      "gen_thin.py"
+    ],
+    "odoo_version": "19.0"
+  }
+}

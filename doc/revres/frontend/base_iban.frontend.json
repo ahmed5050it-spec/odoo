@@ -1,0 +1,1 @@
+{"module": "base_iban", "frontend_gap3": {"present": true, "js_files": 4, "xml_templates": 1, "owl_components": [], "registry_adds": ["fields:iban"], "patches": [], "services": [], "asset_bundles": {"web.assets_backend": 1, "web.assets_unit_tests": 1}}, "integrations_gap7": {"http_call_sites": 0, "sdk_imports": [], "uses_api_keys": false, "endpoints": [], "files": []}}

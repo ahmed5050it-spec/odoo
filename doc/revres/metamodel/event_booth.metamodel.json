@@ -1,0 +1,151 @@
+{
+  "subsystem": "event_booth",
+  "evidence": {
+    "manifest": {
+      "name": "Events Booths",
+      "category": "Marketing/Events",
+      "depends": [
+        "event"
+      ],
+      "auto_install": false,
+      "application": false
+    },
+    "models": [
+      {
+        "_name": "event.booth",
+        "_description": "Event Booth",
+        "fields": 8
+      },
+      {
+        "_name": "event.booth.category",
+        "_description": "Event Booth Category",
+        "fields": 5
+      },
+      {
+        "_name": "event.type.booth",
+        "_description": "Event Booth Template",
+        "fields": 3
+      }
+    ],
+    "routes": [],
+    "security": {
+      "access_rules": 9,
+      "record_rules": 0,
+      "groups": 0
+    },
+    "views": {
+      "form": 4,
+      "list": 3,
+      "tree": 0,
+      "kanban": 1,
+      "search": 3,
+      "pivot": 1,
+      "graph": 1,
+      "calendar": 0,
+      "activity": 0
+    },
+    "frontend": {
+      "present": true,
+      "js_files": 0,
+      "xml_templates": 0,
+      "owl_components": [],
+      "registry_adds": [],
+      "patches": [],
+      "services": [],
+      "asset_bundles": {}
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": false,
+      "endpoints": [],
+      "files": []
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    },
+    "behavioral_notes": [
+      {
+        "element": "thin module",
+        "observation": "3 models, 0 routes, 450 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
+        "source": "ast"
+      }
+    ]
+  },
+  "it_architecture": {
+    "application": "event_booth (Events Booths)",
+    "software_services": [],
+    "data_objects": [
+      "event.booth",
+      "event.booth.category",
+      "event.type.booth"
+    ],
+    "logical_data_erm": [
+      "event.booth -> event.event",
+      "event.booth -> res.partner",
+      "event.booth.category -> event.booth",
+      "event.type.booth -> event.booth.category",
+      "event.type.booth -> event.type"
+    ],
+    "information_flows": [
+      "depends: event"
+    ],
+    "frontend_components": []
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Events Booths"
+    ],
+    "value_streams": [],
+    "information_concepts": [
+      "event.booth",
+      "event.booth.category",
+      "event.type.booth"
+    ],
+    "organization": [],
+    "products": [],
+    "policies": [],
+    "stakeholders": [],
+    "strategy": null,
+    "metrics": []
+  },
+  "classification": {
+    "value_model": "network",
+    "activity_class": "primary",
+    "apqc_category": "3.0 Market and Sell Products and Services",
+    "rationale": "event_booth: thin network/primary module (auto-architect baseline)."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "Events Booths"
+    ],
+    "typical_fits": [],
+    "common_gaps": [],
+    "drive_hints": [
+      "odoo shell: env['event.booth'].search([],limit=3)"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/event_booth.facts.json",
+    "tools": [
+      "extract_module.py",
+      "extract_frontend.py",
+      "gen_thin.py"
+    ],
+    "odoo_version": "19.0"
+  }
+}

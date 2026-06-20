@@ -1,0 +1,181 @@
+{
+  "subsystem": "rating",
+  "evidence": {
+    "manifest": {
+      "name": "Customer Rating",
+      "category": "Productivity",
+      "depends": [
+        "mail"
+      ],
+      "auto_install": false,
+      "application": false
+    },
+    "models": [
+      {
+        "_name": "rating.mixin",
+        "_description": "Rating Mixin",
+        "fields": 8
+      },
+      {
+        "_name": "rating.parent.mixin",
+        "_description": "Rating Parent Mixin",
+        "fields": 5
+      },
+      {
+        "_name": "rating.rating",
+        "_description": "Rating",
+        "fields": 24
+      }
+    ],
+    "routes": [
+      {
+        "paths": [
+          "/rate/<string:token>/<int:rate>"
+        ],
+        "auth": "public",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/rate/<string:token>/submit_feedback"
+        ],
+        "auth": "public",
+        "type": "http"
+      }
+    ],
+    "security": {
+      "access_rules": 4,
+      "record_rules": 0,
+      "groups": 0
+    },
+    "views": {
+      "form": 2,
+      "list": 1,
+      "tree": 0,
+      "kanban": 2,
+      "search": 1,
+      "pivot": 1,
+      "graph": 1,
+      "calendar": 0,
+      "activity": 0
+    },
+    "frontend": {
+      "present": true,
+      "js_files": 3,
+      "xml_templates": 2,
+      "owl_components": [],
+      "registry_adds": [],
+      "patches": [
+        "Message.prototype"
+      ],
+      "services": [],
+      "asset_bundles": {
+        "web.assets_backend": 2,
+        "web.assets_frontend": 1,
+        "web.assets_unit_tests": 1,
+        "mail.assets_public": 1,
+        "portal.assets_chatter": 1
+      }
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": true,
+      "endpoints": [],
+      "files": []
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    },
+    "behavioral_notes": [
+      {
+        "element": "frontend (OWL/JS)",
+        "observation": "3 JS files, 0 OWL components, 0 registry adds; bundles ['web.assets_backend', 'web.assets_frontend', 'web.assets_unit_tests'].",
+        "source": "static"
+      },
+      {
+        "element": "thin module",
+        "observation": "3 models, 2 routes, 1176 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
+        "source": "ast"
+      }
+    ]
+  },
+  "it_architecture": {
+    "application": "rating (Customer Rating)",
+    "software_services": [
+      "/rate/<string:token>/<int:rate>",
+      "/rate/<string:token>/submit_feedback"
+    ],
+    "data_objects": [
+      "rating.mixin",
+      "rating.parent.mixin",
+      "rating.rating"
+    ],
+    "logical_data_erm": [
+      "rating.parent.mixin -> rating.rating",
+      "rating.rating -> ir.model",
+      "rating.rating -> mail.message",
+      "rating.rating -> res.partner"
+    ],
+    "information_flows": [
+      "depends: mail"
+    ],
+    "frontend_components": []
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Customer Rating"
+    ],
+    "value_streams": [],
+    "information_concepts": [
+      "rating.mixin",
+      "rating.parent.mixin",
+      "rating.rating"
+    ],
+    "organization": [],
+    "products": [],
+    "policies": [],
+    "stakeholders": [],
+    "strategy": null,
+    "metrics": []
+  },
+  "classification": {
+    "value_model": "support",
+    "activity_class": "support",
+    "apqc_category": "6.0 Manage Customer Service",
+    "rationale": "rating: thin support/support module (auto-architect baseline)."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "Customer Rating"
+    ],
+    "typical_fits": [],
+    "common_gaps": [],
+    "drive_hints": [
+      "odoo shell: env['rating.mixin'].search([],limit=3)"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/rating.facts.json",
+    "tools": [
+      "extract_module.py",
+      "extract_frontend.py",
+      "gen_thin.py"
+    ],
+    "odoo_version": "19.0"
+  }
+}

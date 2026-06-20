@@ -1,0 +1,191 @@
+{
+  "subsystem": "web_unsplash",
+  "evidence": {
+    "manifest": {
+      "name": "Unsplash Image Library",
+      "category": "Hidden",
+      "depends": [
+        "base_setup",
+        "html_editor"
+      ],
+      "auto_install": true,
+      "application": false
+    },
+    "models": [],
+    "routes": [
+      {
+        "paths": [
+          "/web_unsplash/attachment/add"
+        ],
+        "auth": "user",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/web_unsplash/fetch_images"
+        ],
+        "auth": "user",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/web_unsplash/get_app_id"
+        ],
+        "auth": "public",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/web_unsplash/save_unsplash"
+        ],
+        "auth": "user",
+        "type": "jsonrpc"
+      }
+    ],
+    "security": {
+      "access_rules": 0,
+      "record_rules": 0,
+      "groups": 0
+    },
+    "views": {
+      "form": 0,
+      "list": 0,
+      "tree": 0,
+      "kanban": 0,
+      "search": 0,
+      "pivot": 0,
+      "graph": 0,
+      "calendar": 0,
+      "activity": 0
+    },
+    "frontend": {
+      "present": true,
+      "js_files": 6,
+      "xml_templates": 3,
+      "owl_components": [
+        "UnsplashCredentials",
+        "UnsplashError"
+      ],
+      "registry_adds": [
+        "public.interactions:web_unsplash.unsplash_beacon",
+        "services:unsplash"
+      ],
+      "patches": [
+        "ImageSelector.prototype",
+        "MediaDialog.prototype"
+      ],
+      "services": [],
+      "asset_bundles": {
+        "web.assets_frontend": 1,
+        "html_editor.assets_media_dialog": 4,
+        "web.assets_unit_tests": 1
+      }
+    },
+    "integrations": {
+      "http_call_sites": 3,
+      "sdk_imports": [
+        "requests"
+      ],
+      "uses_api_keys": true,
+      "endpoints": [
+        "https://api.unsplash.com/photos/",
+        "https://api.unsplash.com/search/photos/",
+        "https://images.unsplash.com/",
+        "https://plus.unsplash.com/"
+      ],
+      "files": [
+        "controllers/main.py"
+      ]
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    },
+    "behavioral_notes": [
+      {
+        "element": "frontend (OWL/JS)",
+        "observation": "6 JS files, 2 OWL components, 2 registry adds; bundles ['web.assets_frontend', 'html_editor.assets_media_dialog', 'web.assets_unit_tests'].",
+        "source": "static"
+      },
+      {
+        "element": "external integrations",
+        "observation": "3 HTTP call sites; SDKs ['requests']; api_keys=True.",
+        "source": "static"
+      },
+      {
+        "element": "thin module",
+        "observation": "0 models, 4 routes, 355 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
+        "source": "ast"
+      }
+    ]
+  },
+  "it_architecture": {
+    "application": "web_unsplash (Unsplash Image Library)",
+    "software_services": [
+      "/web_unsplash/attachment/add",
+      "/web_unsplash/fetch_images",
+      "/web_unsplash/get_app_id",
+      "/web_unsplash/save_unsplash"
+    ],
+    "data_objects": [],
+    "logical_data_erm": [],
+    "information_flows": [
+      "depends: base_setup, html_editor"
+    ],
+    "frontend_components": [
+      "UnsplashCredentials",
+      "UnsplashError"
+    ]
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Unsplash Image Library"
+    ],
+    "value_streams": [],
+    "information_concepts": [],
+    "organization": [],
+    "products": [],
+    "policies": [],
+    "stakeholders": [],
+    "strategy": null,
+    "metrics": []
+  },
+  "classification": {
+    "value_model": "support",
+    "activity_class": "support",
+    "apqc_category": "8.0 Manage Information Technology",
+    "rationale": "web_unsplash: thin support/support module (auto-architect baseline)."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "Unsplash Image Library"
+    ],
+    "typical_fits": [],
+    "common_gaps": [],
+    "drive_hints": [
+      "n/a"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/web_unsplash.facts.json",
+    "tools": [
+      "extract_module.py",
+      "extract_frontend.py",
+      "gen_thin.py"
+    ],
+    "odoo_version": "19.0"
+  }
+}

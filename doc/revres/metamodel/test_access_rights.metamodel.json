@@ -1,0 +1,162 @@
+{
+  "subsystem": "test_access_rights",
+  "evidence": {
+    "manifest": {
+      "name": "test of access rights and rules",
+      "category": "Hidden/Tests",
+      "depends": [],
+      "auto_install": false,
+      "application": false
+    },
+    "models": [
+      {
+        "_name": "test_access_right.child",
+        "_description": "Object for testing company ir rule",
+        "fields": 1
+      },
+      {
+        "_name": "test_access_right.container",
+        "_description": "Test Access Right Container",
+        "fields": 1
+      },
+      {
+        "_name": "test_access_right.inherits",
+        "_description": "Object for testing related access rights",
+        "fields": 1
+      },
+      {
+        "_name": "test_access_right.obj_categ",
+        "_description": "Context dependent searchable model",
+        "fields": 1
+      },
+      {
+        "_name": "test_access_right.some_obj",
+        "_description": "Object For Test Access Right",
+        "fields": 8
+      },
+      {
+        "_name": "test_access_right.ticket",
+        "_description": "Fake ticket For Test Access Right",
+        "fields": 2
+      }
+    ],
+    "routes": [],
+    "security": {
+      "access_rules": 0,
+      "record_rules": 0,
+      "groups": 0
+    },
+    "views": {},
+    "frontend": {
+      "present": false,
+      "js_files": 0,
+      "xml_templates": 0,
+      "owl_components": [],
+      "registry_adds": [],
+      "patches": [],
+      "services": [],
+      "asset_bundles": {}
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": false,
+      "endpoints": [],
+      "files": []
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    },
+    "behavioral_notes": [
+      {
+        "element": "thin module",
+        "observation": "6 models, 0 routes, 969 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
+        "source": "ast"
+      }
+    ]
+  },
+  "it_architecture": {
+    "application": "test_access_rights (test of access rights and rules)",
+    "software_services": [],
+    "data_objects": [
+      "test_access_right.child",
+      "test_access_right.container",
+      "test_access_right.inherits",
+      "test_access_right.obj_categ",
+      "test_access_right.some_obj",
+      "test_access_right.ticket"
+    ],
+    "logical_data_erm": [
+      "test_access_right.child -> test_access_right.some_obj",
+      "test_access_right.container -> test_access_right.some_obj",
+      "test_access_right.inherits -> test_access_right.some_obj",
+      "test_access_right.some_obj -> res.company",
+      "test_access_right.some_obj -> test_access_right.obj_categ",
+      "test_access_right.some_obj -> test_access_right.some_obj",
+      "test_access_right.ticket -> res.partner"
+    ],
+    "information_flows": [
+      "depends: "
+    ],
+    "frontend_components": []
+  },
+  "business_architecture": {
+    "capabilities": [
+      "test of access rights and rules"
+    ],
+    "value_streams": [],
+    "information_concepts": [
+      "test_access_right.child",
+      "test_access_right.container",
+      "test_access_right.inherits",
+      "test_access_right.obj_categ",
+      "test_access_right.some_obj",
+      "test_access_right.ticket"
+    ],
+    "organization": [],
+    "products": [],
+    "policies": [],
+    "stakeholders": [],
+    "strategy": null,
+    "metrics": []
+  },
+  "classification": {
+    "value_model": "support",
+    "activity_class": "support",
+    "apqc_category": "13.0 Develop and Manage Business Capabilities",
+    "rationale": "test_access_rights: thin support/support module (auto-architect baseline)."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "test of access rights and rules"
+    ],
+    "typical_fits": [],
+    "common_gaps": [],
+    "drive_hints": [
+      "odoo shell: env['test_access_right.child'].search([],limit=3)"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/test_access_rights.facts.json",
+    "tools": [
+      "extract_module.py",
+      "extract_frontend.py",
+      "gen_thin.py"
+    ],
+    "odoo_version": "19.0"
+  }
+}

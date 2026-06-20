@@ -1,0 +1,405 @@
+{
+  "subsystem": "test_mail",
+  "evidence": {
+    "manifest": {
+      "name": "Mail Tests",
+      "category": "Hidden",
+      "depends": [
+        "mail",
+        "test_orm"
+      ],
+      "auto_install": false,
+      "application": false
+    },
+    "models": [
+      {
+        "_name": "mail.performance.thread",
+        "_description": "Performance: mail.thread",
+        "fields": 5
+      },
+      {
+        "_name": "mail.performance.thread.recipients",
+        "_description": "Performance: mail.thread, for recipients",
+        "fields": 5
+      },
+      {
+        "_name": "mail.performance.tracking",
+        "_description": "Performance: multi tracking",
+        "fields": 4
+      },
+      {
+        "_name": "mail.test.access",
+        "_description": "Mail Access Test",
+        "fields": 5
+      },
+      {
+        "_name": "mail.test.access.custo",
+        "_description": "Mail Access Test with Custo",
+        "fields": 6
+      },
+      {
+        "_name": "mail.test.access.public",
+        "_description": "Access Test Public",
+        "fields": 5
+      },
+      {
+        "_name": "mail.test.activity",
+        "_description": "Activity Model",
+        "fields": 5
+      },
+      {
+        "_name": "mail.test.alias.optional",
+        "_description": "Chatter Model using Optional Alias Mixin",
+        "fields": 3
+      },
+      {
+        "_name": "mail.test.cc",
+        "_description": "Test Email CC Thread",
+        "fields": 1
+      },
+      {
+        "_name": "mail.test.composer.mixin",
+        "_description": "Invite-like Wizard",
+        "fields": 4
+      },
+      {
+        "_name": "mail.test.composer.source",
+        "_description": "Invite-like Source",
+        "fields": 3
+      },
+      {
+        "_name": "mail.test.container",
+        "_description": "Project-like model with alias",
+        "fields": 3
+      },
+      {
+        "_name": "mail.test.container.mc",
+        "_description": "Project-like model with alias (MC)",
+        "fields": 1
+      },
+      {
+        "_name": "mail.test.field.type",
+        "_description": "Test Field Type",
+        "fields": 6
+      },
+      {
+        "_name": "mail.test.gateway",
+        "_description": "Simple Chatter Model for Mail Gateway",
+        "fields": 4
+      },
+      {
+        "_name": "mail.test.gateway.company",
+        "_description": "Simple Chatter Model for Mail Gateway with company",
+        "fields": 1
+      },
+      {
+        "_name": "mail.test.gateway.groups",
+        "_description": "Channel/Group-like Chatter Model for Mail Gateway",
+        "fields": 4
+      },
+      {
+        "_name": "mail.test.gateway.main.attachment",
+        "_description": "Simple Chatter Model for Mail Gateway with company",
+        "fields": 1
+      },
+      {
+        "_name": "mail.test.lang",
+        "_description": "Lang Chatter Model",
+        "fields": 4
+      },
+      {
+        "_name": "mail.test.lead",
+        "_description": "Lead-like model",
+        "fields": 8
+      },
+      {
+        "_name": "mail.test.multi.company",
+        "_description": "Test Multi Company Mail",
+        "fields": 2
+      },
+      {
+        "_name": "mail.test.multi.company.read",
+        "_description": "Simple Chatter Model ",
+        "fields": 0
+      },
+      {
+        "_name": "mail.test.multi.company.with.activity",
+        "_description": "Test Multi Company Mail With Activity",
+        "fields": 2
+      },
+      {
+        "_name": "mail.test.nothread",
+        "_description": "NoThread Model",
+        "fields": 3
+      },
+      {
+        "_name": "mail.test.properties",
+        "_description": "Mail Test Properties",
+        "fields": 4
+      },
+      {
+        "_name": "mail.test.recipients",
+        "_description": "Test Recipients Computation",
+        "fields": 6
+      },
+      {
+        "_name": "mail.test.rotting.resource",
+        "_description": "Fake model to test the rotting part of the mixin mail.thread.tracking.duration.mixin",
+        "fields": 4
+      },
+      {
+        "_name": "mail.test.rotting.stage",
+        "_description": "Fake model to be a stage to help test rotting implementation",
+        "fields": 3
+      },
+      {
+        "_name": "mail.test.simple",
+        "_description": "Simple Chatter Model",
+        "fields": 2
+      },
+      {
+        "_name": "mail.test.simple.main.attachment",
+        "_description": "Simple Chatter Model With Main Attachment Management",
+        "fields": 0
+      },
+      {
+        "_name": "mail.test.simple.unfollow",
+        "_description": "Simple Chatter Model",
+        "fields": 3
+      },
+      {
+        "_name": "mail.test.simple.unnamed",
+        "_description": "Simple Chatter Model without \"name\" field",
+        "fields": 1
+      },
+      {
+        "_name": "mail.test.thread.customer",
+        "_description": "Test Customer Thread Model",
+        "fields": 0
+      },
+      {
+        "_name": "mail.test.ticket",
+        "_description": "Ticket-like model",
+        "fields": 9
+      },
+      {
+        "_name": "mail.test.ticket.el",
+        "_description": "Ticket-like model with exclusion list",
+        "fields": 1
+      },
+      {
+        "_name": "mail.test.ticket.mc",
+        "_description": "Ticket-like model",
+        "fields": 2
+      },
+      {
+        "_name": "mail.test.ticket.partner",
+        "_description": "MC ticket-like model with partner support",
+        "fields": 2
+      },
+      {
+        "_name": "mail.test.track",
+        "_description": "Standard Chatter Model",
+        "fields": 8
+      },
+      {
+        "_name": "mail.test.track.all",
+        "_description": "Test tracking on all field types",
+        "fields": 19
+      },
+      {
+        "_name": "mail.test.track.all.m2m",
+        "_description": "Sub-model: pseudo tags for tracking",
+        "fields": 1
+      },
+      {
+        "_name": "mail.test.track.all.o2m",
+        "_description": "Sub-model: pseudo tags for tracking",
+        "fields": 2
+      },
+      {
+        "_name": "mail.test.track.all.properties.parent",
+        "_description": "Properties Parent",
+        "fields": 1
+      },
+      {
+        "_name": "mail.test.track.compute",
+        "_description": "Test tracking with computed fields",
+        "fields": 4
+      },
+      {
+        "_name": "mail.test.track.duration.mixin",
+        "_description": "Fake model to test the mixin mail.tracking.duration.mixin",
+        "fields": 2
+      },
+      {
+        "_name": "mail.test.track.groups",
+        "_description": "Test tracking with groups",
+        "fields": 3
+      },
+      {
+        "_name": "mail.test.track.monetary",
+        "_description": "Test tracking monetary field",
+        "fields": 3
+      },
+      {
+        "_name": "mail.test.track.selection",
+        "_description": "Test Selection Tracking",
+        "fields": 2
+      }
+    ],
+    "routes": [],
+    "security": {
+      "access_rules": 77,
+      "record_rules": 21,
+      "groups": 0
+    },
+    "views": {},
+    "frontend": {
+      "present": false,
+      "js_files": 0,
+      "xml_templates": 0,
+      "owl_components": [],
+      "registry_adds": [],
+      "patches": [],
+      "services": [],
+      "asset_bundles": {
+        "web.assets_unit_tests": 1,
+        "web.assets_tests": 1
+      }
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": false,
+      "endpoints": [
+        "http://erp.xxxx.xxxx/info@xxxx-a=\naa.com",
+        "http://erp.xxxx.xxxx/logo.png=\n",
+        "http://www.odoo.com",
+        "http://www.w3.org/1999/xhtml",
+        "http://www.w3.org/TR/html4/strict.dtd",
+        "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd",
+        "http://www.xxxx=\n.com",
+        "https://www.odoo.com"
+      ],
+      "files": [
+        "data/test_mail_data.py"
+      ]
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    },
+    "behavioral_notes": [
+      {
+        "element": "thin module",
+        "observation": "47 models, 0 routes, 26955 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
+        "source": "ast"
+      }
+    ]
+  },
+  "it_architecture": {
+    "application": "test_mail (Mail Tests)",
+    "software_services": [],
+    "data_objects": [
+      "mail.performance.thread",
+      "mail.performance.thread.recipients",
+      "mail.performance.tracking",
+      "mail.test.access",
+      "mail.test.access.custo",
+      "mail.test.access.public",
+      "mail.test.activity",
+      "mail.test.alias.optional",
+      "mail.test.cc",
+      "mail.test.composer.mixin",
+      "mail.test.composer.source",
+      "mail.test.container",
+      "mail.test.container.mc",
+      "mail.test.field.type",
+      "mail.test.gateway",
+      "mail.test.gateway.company",
+      "mail.test.gateway.groups",
+      "mail.test.gateway.main.attachment",
+      "mail.test.lang",
+      "mail.test.lead"
+    ],
+    "logical_data_erm": [
+      "mail.performance.thread -> res.partner",
+      "mail.performance.thread.recipients -> res.partner",
+      "mail.performance.thread.recipients -> res.users",
+      "mail.test.access -> res.partner",
+      "mail.test.access.custo -> res.partner",
+      "mail.test.access.public -> res.partner",
+      "mail.test.activity -> res.company",
+      "mail.test.alias.optional -> res.company",
+      "mail.test.composer.mixin -> mail.test.composer.source",
+      "mail.test.composer.mixin -> res.partner",
+      "mail.test.composer.source -> res.partner",
+      "mail.test.container -> res.partner"
+    ],
+    "information_flows": [
+      "depends: mail, test_orm"
+    ],
+    "frontend_components": []
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Mail Tests"
+    ],
+    "value_streams": [],
+    "information_concepts": [
+      "mail.performance.thread",
+      "mail.performance.thread.recipients",
+      "mail.performance.tracking",
+      "mail.test.access",
+      "mail.test.access.custo",
+      "mail.test.access.public"
+    ],
+    "organization": [],
+    "products": [],
+    "policies": [
+      "21 record rules"
+    ],
+    "stakeholders": [],
+    "strategy": null,
+    "metrics": []
+  },
+  "classification": {
+    "value_model": "support",
+    "activity_class": "support",
+    "apqc_category": "13.0 Develop and Manage Business Capabilities",
+    "rationale": "test_mail: thin support/support module (auto-architect baseline)."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "Mail Tests"
+    ],
+    "typical_fits": [],
+    "common_gaps": [],
+    "drive_hints": [
+      "odoo shell: env['mail.performance.thread'].search([],limit=3)"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/test_mail.facts.json",
+    "tools": [
+      "extract_module.py",
+      "extract_frontend.py",
+      "gen_thin.py"
+    ],
+    "odoo_version": "19.0"
+  }
+}

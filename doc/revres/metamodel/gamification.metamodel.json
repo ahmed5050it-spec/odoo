@@ -1,0 +1,207 @@
+{
+  "subsystem": "gamification",
+  "evidence": {
+    "manifest": {
+      "name": "Gamification",
+      "category": "Human Resources",
+      "depends": [
+        "mail"
+      ],
+      "auto_install": false,
+      "application": false
+    },
+    "models": [
+      {
+        "_name": "gamification.badge",
+        "_description": "Gamification Badge",
+        "fields": 20
+      },
+      {
+        "_name": "gamification.badge.user",
+        "_description": "Gamification User Badge",
+        "fields": 8
+      },
+      {
+        "_name": "gamification.badge.user.wizard",
+        "_description": "Gamification User Badge Wizard",
+        "fields": 3
+      },
+      {
+        "_name": "gamification.challenge",
+        "_description": "Gamification Challenge",
+        "fields": 26
+      },
+      {
+        "_name": "gamification.challenge.line",
+        "_description": "Gamification generic goal for challenge",
+        "fields": 9
+      },
+      {
+        "_name": "gamification.goal",
+        "_description": "Gamification Goal",
+        "fields": 21
+      },
+      {
+        "_name": "gamification.goal.definition",
+        "_description": "Gamification Goal Definition",
+        "fields": 19
+      },
+      {
+        "_name": "gamification.goal.wizard",
+        "_description": "Gamification Goal Wizard",
+        "fields": 2
+      },
+      {
+        "_name": "gamification.karma.rank",
+        "_description": "Rank based on karma",
+        "fields": 6
+      },
+      {
+        "_name": "gamification.karma.tracking",
+        "_description": "Track Karma Changes",
+        "fields": 9
+      }
+    ],
+    "routes": [],
+    "security": {
+      "access_rules": 36,
+      "record_rules": 3,
+      "groups": 0
+    },
+    "views": {
+      "form": 6,
+      "list": 8,
+      "tree": 0,
+      "kanban": 4,
+      "search": 6,
+      "pivot": 0,
+      "graph": 0,
+      "calendar": 0,
+      "activity": 0
+    },
+    "frontend": {
+      "present": true,
+      "js_files": 0,
+      "xml_templates": 0,
+      "owl_components": [],
+      "registry_adds": [],
+      "patches": [],
+      "services": [],
+      "asset_bundles": {
+        "web.assets_backend": 1
+      }
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": false,
+      "endpoints": [],
+      "files": []
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    },
+    "behavioral_notes": [
+      {
+        "element": "thin module",
+        "observation": "10 models, 0 routes, 3110 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
+        "source": "ast"
+      }
+    ]
+  },
+  "it_architecture": {
+    "application": "gamification (Gamification)",
+    "software_services": [],
+    "data_objects": [
+      "gamification.badge",
+      "gamification.badge.user",
+      "gamification.badge.user.wizard",
+      "gamification.challenge",
+      "gamification.challenge.line",
+      "gamification.goal",
+      "gamification.goal.definition",
+      "gamification.goal.wizard",
+      "gamification.karma.rank",
+      "gamification.karma.tracking"
+    ],
+    "logical_data_erm": [
+      "gamification.badge -> gamification.badge",
+      "gamification.badge -> gamification.badge.user",
+      "gamification.badge -> gamification.challenge",
+      "gamification.badge -> gamification.goal.definition",
+      "gamification.badge -> res.users",
+      "gamification.badge.user -> gamification.badge",
+      "gamification.badge.user -> gamification.challenge",
+      "gamification.badge.user -> res.partner",
+      "gamification.badge.user -> res.users",
+      "gamification.badge.user.wizard -> gamification.badge",
+      "gamification.badge.user.wizard -> res.users",
+      "gamification.challenge -> discuss.channel"
+    ],
+    "information_flows": [
+      "depends: mail"
+    ],
+    "frontend_components": []
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Gamification"
+    ],
+    "value_streams": [],
+    "information_concepts": [
+      "gamification.badge",
+      "gamification.badge.user",
+      "gamification.badge.user.wizard",
+      "gamification.challenge",
+      "gamification.challenge.line",
+      "gamification.goal"
+    ],
+    "organization": [],
+    "products": [],
+    "policies": [
+      "3 record rules"
+    ],
+    "stakeholders": [],
+    "strategy": null,
+    "metrics": []
+  },
+  "classification": {
+    "value_model": "support",
+    "activity_class": "support",
+    "apqc_category": "7.0 Develop and Manage Human Capital",
+    "rationale": "gamification: thin support/support module (auto-architect baseline)."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "Gamification"
+    ],
+    "typical_fits": [],
+    "common_gaps": [],
+    "drive_hints": [
+      "odoo shell: env['gamification.badge'].search([],limit=3)"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/gamification.facts.json",
+    "tools": [
+      "extract_module.py",
+      "extract_frontend.py",
+      "gen_thin.py"
+    ],
+    "odoo_version": "19.0"
+  }
+}

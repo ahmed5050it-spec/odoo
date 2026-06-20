@@ -1,0 +1,145 @@
+{
+  "subsystem": "l10n_latam_base",
+  "evidence": {
+    "manifest": {
+      "name": "LATAM Localization Base",
+      "category": "Accounting/Localizations",
+      "depends": [
+        "contacts",
+        "base_vat"
+      ],
+      "auto_install": false,
+      "application": false
+    },
+    "models": [
+      {
+        "_name": "l10n_latam.identification.type",
+        "_description": "Identification Types",
+        "fields": 6
+      }
+    ],
+    "routes": [],
+    "security": {
+      "access_rules": 4,
+      "record_rules": 0,
+      "groups": 0
+    },
+    "views": {
+      "form": 0,
+      "list": 1,
+      "tree": 0,
+      "kanban": 0,
+      "search": 1,
+      "pivot": 0,
+      "graph": 0,
+      "calendar": 0,
+      "activity": 0
+    },
+    "frontend": {
+      "present": true,
+      "js_files": 1,
+      "xml_templates": 1,
+      "owl_components": [
+        "SelectMenuWrapper"
+      ],
+      "registry_adds": [],
+      "patches": [],
+      "services": [],
+      "asset_bundles": {
+        "web.assets_frontend": 1
+      }
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": false,
+      "endpoints": [],
+      "files": []
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    },
+    "behavioral_notes": [
+      {
+        "element": "frontend (OWL/JS)",
+        "observation": "1 JS files, 1 OWL components, 0 registry adds; bundles ['web.assets_frontend'].",
+        "source": "static"
+      },
+      {
+        "element": "thin module",
+        "observation": "1 models, 0 routes, 229 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
+        "source": "ast"
+      }
+    ]
+  },
+  "it_architecture": {
+    "application": "l10n_latam_base (LATAM Localization Base)",
+    "software_services": [],
+    "data_objects": [
+      "l10n_latam.identification.type"
+    ],
+    "logical_data_erm": [
+      "l10n_latam.identification.type -> res.country"
+    ],
+    "information_flows": [
+      "depends: contacts, base_vat"
+    ],
+    "frontend_components": [
+      "SelectMenuWrapper"
+    ]
+  },
+  "business_architecture": {
+    "capabilities": [
+      "LATAM Localization Base"
+    ],
+    "value_streams": [],
+    "information_concepts": [
+      "l10n_latam.identification.type"
+    ],
+    "organization": [],
+    "products": [],
+    "policies": [],
+    "stakeholders": [],
+    "strategy": null,
+    "metrics": []
+  },
+  "classification": {
+    "value_model": "support",
+    "activity_class": "support",
+    "apqc_category": "9.0 Manage Financial Resources",
+    "rationale": "l10n_latam_base: thin support/support module (auto-architect baseline)."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "LATAM Localization Base"
+    ],
+    "typical_fits": [],
+    "common_gaps": [],
+    "drive_hints": [
+      "odoo shell: env['l10n_latam.identification.type'].search([],limit=3)"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/l10n_latam_base.facts.json",
+    "tools": [
+      "extract_module.py",
+      "extract_frontend.py",
+      "gen_thin.py"
+    ],
+    "odoo_version": "19.0"
+  }
+}

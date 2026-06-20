@@ -1,0 +1,132 @@
+{
+  "subsystem": "web_hierarchy",
+  "evidence": {
+    "manifest": {
+      "name": "Web Hierarchy",
+      "category": "Hidden",
+      "depends": [
+        "web"
+      ],
+      "auto_install": false,
+      "application": false
+    },
+    "models": [],
+    "routes": [],
+    "security": {
+      "access_rules": 0,
+      "record_rules": 0,
+      "groups": 0
+    },
+    "views": {},
+    "frontend": {
+      "present": true,
+      "js_files": 8,
+      "xml_templates": 3,
+      "owl_components": [
+        "HierarchyCard",
+        "HierarchyController",
+        "HierarchyRenderer"
+      ],
+      "registry_adds": [
+        "views:hierarchy"
+      ],
+      "patches": [],
+      "services": [
+        "useHierarchyNodeDraggable"
+      ],
+      "asset_bundles": {
+        "web.assets_backend_lazy": 2,
+        "web.assets_backend_lazy_dark": 1,
+        "web.assets_unit_tests": 1
+      }
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": false,
+      "endpoints": [],
+      "files": []
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    },
+    "behavioral_notes": [
+      {
+        "element": "frontend (OWL/JS)",
+        "observation": "8 JS files, 3 OWL components, 1 registry adds; bundles ['web.assets_backend_lazy', 'web.assets_backend_lazy_dark', 'web.assets_unit_tests'].",
+        "source": "static"
+      },
+      {
+        "element": "thin module",
+        "observation": "0 models, 0 routes, 145 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
+        "source": "ast"
+      }
+    ]
+  },
+  "it_architecture": {
+    "application": "web_hierarchy (Web Hierarchy)",
+    "software_services": [],
+    "data_objects": [],
+    "logical_data_erm": [],
+    "information_flows": [
+      "depends: web"
+    ],
+    "frontend_components": [
+      "HierarchyCard",
+      "HierarchyController",
+      "HierarchyRenderer"
+    ]
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Web Hierarchy"
+    ],
+    "value_streams": [],
+    "information_concepts": [],
+    "organization": [],
+    "products": [],
+    "policies": [],
+    "stakeholders": [],
+    "strategy": null,
+    "metrics": []
+  },
+  "classification": {
+    "value_model": "support",
+    "activity_class": "support",
+    "apqc_category": "8.0 Manage Information Technology",
+    "rationale": "web_hierarchy: thin support/support module (auto-architect baseline)."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "Web Hierarchy"
+    ],
+    "typical_fits": [],
+    "common_gaps": [],
+    "drive_hints": [
+      "n/a"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/web_hierarchy.facts.json",
+    "tools": [
+      "extract_module.py",
+      "extract_frontend.py",
+      "gen_thin.py"
+    ],
+    "odoo_version": "19.0"
+  }
+}

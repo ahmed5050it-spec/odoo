@@ -1,0 +1,332 @@
+{
+  "subsystem": "pos_self_order",
+  "evidence": {
+    "manifest": {
+      "name": "POS Self Order",
+      "category": "Sales/Point Of Sale",
+      "depends": [
+        "pos_restaurant",
+        "http_routing",
+        "link_tracker"
+      ],
+      "auto_install": [
+        "pos_restaurant"
+      ],
+      "application": false
+    },
+    "models": [
+      {
+        "_name": "mail.template",
+        "_description": null,
+        "fields": 0
+      },
+      {
+        "_name": "pos_self_order.custom_link",
+        "_description": "Custom links that the restaurant can configure to be displayed on the self order screen",
+        "fields": 6
+      },
+      {
+        "_name": "res.country",
+        "_description": null,
+        "fields": 0
+      }
+    ],
+    "routes": [
+      {
+        "paths": [
+          "/pos-self/<config_id>",
+          "/pos-self/<config_id>/<path:subpath>"
+        ],
+        "auth": "public",
+        "type": null
+      },
+      {
+        "paths": [
+          "/pos-self/data/<config_id>"
+        ],
+        "auth": "public",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/pos-self/relations/<config_id>"
+        ],
+        "auth": "public",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [],
+        "auth": null,
+        "type": null
+      },
+      {
+        "paths": [
+          "/pos-self-order/process-order/<device_type>/"
+        ],
+        "auth": "public",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/pos-self-order/validate-partner"
+        ],
+        "auth": "public",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/pos-self-order/remove-order"
+        ],
+        "auth": "public",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/pos-self-order/get-user-data"
+        ],
+        "auth": "public",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/kiosk/payment/<int:pos_config_id>/<device_type>"
+        ],
+        "auth": "public",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/pos_self_order/kiosk/increment_nb_print/"
+        ],
+        "auth": "public",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/pos-self-order/change-printer-status"
+        ],
+        "auth": "public",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/pos-self-order/get-slots"
+        ],
+        "auth": "public",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/pos-self/ping"
+        ],
+        "auth": "public",
+        "type": "jsonrpc"
+      }
+    ],
+    "security": {
+      "access_rules": 2,
+      "record_rules": 0,
+      "groups": 0
+    },
+    "views": {
+      "form": 0,
+      "list": 1,
+      "tree": 0,
+      "kanban": 0,
+      "search": 0,
+      "pivot": 0,
+      "graph": 0,
+      "calendar": 0,
+      "activity": 0
+    },
+    "frontend": {
+      "present": true,
+      "js_files": 54,
+      "xml_templates": 37,
+      "owl_components": [
+        "AttributeSelection",
+        "CancelPopup",
+        "CartPage",
+        "CategoryListPopup",
+        "ComboPage",
+        "ComboStepper",
+        "ConfirmationPage",
+        "EatingLocationPage",
+        "LandingPage",
+        "LanguagePopup",
+        "LanguageSelector",
+        "LoadingOverlay",
+        "NetworkConnectionLostPopup",
+        "OrderWidget",
+        "OrdersHistoryPage",
+        "PaymentPage",
+        "PopupTable",
+        "PresetInfoPopup",
+        "PrintingFailurePopup",
+        "ProductInfoPopup",
+        "ProductListPage",
+        "ProductNameWidget",
+        "ProductPage",
+        "Router",
+        "StandNumberPage",
+        "TimeoutPopup",
+        "UnavailableProductsDialog",
+        "selfOrderIndex"
+      ],
+      "registry_adds": [
+        "actions:pos_qr_stands",
+        "fields:upgrade_selection",
+        "services:printer",
+        "services:router",
+        "services:self_order"
+      ],
+      "patches": [
+        "DataServiceOptions.prototype",
+        "PosConfig.prototype",
+        "PosData.prototype",
+        "PosOrder.prototype",
+        "PosOrderline.prototype",
+        "PosPreset.prototype",
+        "PosStore.prototype",
+        "ProductInfoPopup.prototype",
+        "RestaurantTable.prototype",
+        "TicketScreen.prototype"
+      ],
+      "services": [],
+      "asset_bundles": {
+        "web.assets_unit_tests_setup": 7,
+        "web.assets_unit_tests": 1,
+        "point_of_sale._assets_pos": 2,
+        "web.assets_backend": 2,
+        "pos_self_order.assets": 56,
+        "pos_self_order.assets_tests": 6,
+        "web.assets_tests": 1
+      }
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": true,
+      "endpoints": [
+        "https://www.odoo.com/app/point-of-sale-restaurant-qr-code"
+      ],
+      "files": [
+        "models/pos_config.py"
+      ]
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    },
+    "behavioral_notes": [
+      {
+        "element": "frontend (OWL/JS)",
+        "observation": "54 JS files, 28 OWL components, 5 registry adds; bundles ['web.assets_unit_tests_setup', 'web.assets_unit_tests', 'point_of_sale._assets_pos'].",
+        "source": "static"
+      },
+      {
+        "element": "thin module",
+        "observation": "3 models, 13 routes, 4909 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
+        "source": "ast"
+      }
+    ]
+  },
+  "it_architecture": {
+    "application": "pos_self_order (POS Self Order)",
+    "software_services": [
+      "/kiosk/payment/<int:pos_config_id>/<device_type>",
+      "/pos-self-order/change-printer-status",
+      "/pos-self-order/get-slots",
+      "/pos-self-order/get-user-data",
+      "/pos-self-order/process-order/<device_type>/",
+      "/pos-self-order/remove-order",
+      "/pos-self-order/validate-partner",
+      "/pos-self/<config_id>",
+      "/pos-self/<config_id>/<path:subpath>",
+      "/pos-self/data/<config_id>"
+    ],
+    "data_objects": [
+      "mail.template",
+      "pos_self_order.custom_link",
+      "res.country"
+    ],
+    "logical_data_erm": [
+      "pos_self_order.custom_link -> pos.config"
+    ],
+    "information_flows": [
+      "depends: pos_restaurant, http_routing, link_tracker"
+    ],
+    "frontend_components": [
+      "AttributeSelection",
+      "CancelPopup",
+      "CartPage",
+      "CategoryListPopup",
+      "ComboPage",
+      "ComboStepper",
+      "ConfirmationPage",
+      "EatingLocationPage",
+      "LandingPage",
+      "LanguagePopup",
+      "LanguageSelector",
+      "LoadingOverlay",
+      "NetworkConnectionLostPopup",
+      "OrderWidget",
+      "OrdersHistoryPage"
+    ]
+  },
+  "business_architecture": {
+    "capabilities": [
+      "POS Self Order"
+    ],
+    "value_streams": [],
+    "information_concepts": [
+      "mail.template",
+      "pos_self_order.custom_link",
+      "res.country"
+    ],
+    "organization": [],
+    "products": [],
+    "policies": [],
+    "stakeholders": [],
+    "strategy": null,
+    "metrics": []
+  },
+  "classification": {
+    "value_model": "chain",
+    "activity_class": "primary",
+    "apqc_category": "3.0 Market and Sell Products and Services",
+    "rationale": "pos_self_order: thin chain/primary module (auto-architect baseline)."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "POS Self Order"
+    ],
+    "typical_fits": [],
+    "common_gaps": [],
+    "drive_hints": [
+      "odoo shell: env['mail.template'].search([],limit=3)"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/pos_self_order.facts.json",
+    "tools": [
+      "extract_module.py",
+      "extract_frontend.py",
+      "gen_thin.py"
+    ],
+    "odoo_version": "19.0"
+  }
+}

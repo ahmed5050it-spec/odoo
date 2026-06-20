@@ -1,0 +1,145 @@
+{
+  "subsystem": "iap_mail",
+  "evidence": {
+    "manifest": {
+      "name": "IAP / Mail",
+      "category": "Hidden/Tools",
+      "depends": [
+        "iap",
+        "mail"
+      ],
+      "auto_install": true,
+      "application": false
+    },
+    "models": [
+      {
+        "_name": "iap.account",
+        "_description": null,
+        "fields": 3
+      }
+    ],
+    "routes": [],
+    "security": {
+      "access_rules": 0,
+      "record_rules": 0,
+      "groups": 0
+    },
+    "views": {
+      "form": 0,
+      "list": 0,
+      "tree": 0,
+      "kanban": 0,
+      "search": 0,
+      "pivot": 0,
+      "graph": 0,
+      "calendar": 0,
+      "activity": 0
+    },
+    "frontend": {
+      "present": true,
+      "js_files": 1,
+      "xml_templates": 0,
+      "owl_components": [],
+      "registry_adds": [
+        "services:iapNotification"
+      ],
+      "patches": [],
+      "services": [],
+      "asset_bundles": {
+        "web.assets_backend": 2,
+        "web.dark_mode_assets_backend": 1
+      }
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": false,
+      "endpoints": [],
+      "files": []
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    },
+    "behavioral_notes": [
+      {
+        "element": "frontend (OWL/JS)",
+        "observation": "1 JS files, 0 OWL components, 1 registry adds; bundles ['web.assets_backend', 'web.dark_mode_assets_backend'].",
+        "source": "static"
+      },
+      {
+        "element": "thin module",
+        "observation": "1 models, 0 routes, 79 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
+        "source": "ast"
+      }
+    ]
+  },
+  "it_architecture": {
+    "application": "iap_mail (IAP / Mail)",
+    "software_services": [],
+    "data_objects": [
+      "iap.account"
+    ],
+    "logical_data_erm": [
+      "iap.account -> res.company",
+      "iap.account -> res.users"
+    ],
+    "information_flows": [
+      "depends: iap, mail"
+    ],
+    "frontend_components": []
+  },
+  "business_architecture": {
+    "capabilities": [
+      "IAP / Mail"
+    ],
+    "value_streams": [],
+    "information_concepts": [
+      "iap.account"
+    ],
+    "organization": [],
+    "products": [],
+    "policies": [],
+    "stakeholders": [],
+    "strategy": null,
+    "metrics": []
+  },
+  "classification": {
+    "value_model": "support",
+    "activity_class": "support",
+    "apqc_category": "8.0 Manage Information Technology",
+    "rationale": "iap_mail: thin support/support module (auto-architect baseline)."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "IAP / Mail"
+    ],
+    "typical_fits": [],
+    "common_gaps": [],
+    "drive_hints": [
+      "odoo shell: env['iap.account'].search([],limit=3)"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/iap_mail.facts.json",
+    "tools": [
+      "extract_module.py",
+      "extract_frontend.py",
+      "gen_thin.py"
+    ],
+    "odoo_version": "19.0"
+  }
+}

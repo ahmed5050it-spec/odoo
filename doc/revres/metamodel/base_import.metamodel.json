@@ -1,0 +1,175 @@
+{
+  "subsystem": "base_import",
+  "evidence": {
+    "manifest": {
+      "name": "Base import",
+      "category": "Hidden/Tools",
+      "depends": [
+        "web"
+      ],
+      "auto_install": true,
+      "application": false
+    },
+    "models": [
+      {
+        "_name": "base_import.import",
+        "_description": "Base Import",
+        "fields": 4
+      },
+      {
+        "_name": "base_import.mapping",
+        "_description": "Base Import Mapping",
+        "fields": 3
+      }
+    ],
+    "routes": [
+      {
+        "paths": [
+          "/base_import/set_file"
+        ],
+        "auth": null,
+        "type": null
+      }
+    ],
+    "security": {
+      "access_rules": 2,
+      "record_rules": 0,
+      "groups": 0
+    },
+    "views": {},
+    "frontend": {
+      "present": true,
+      "js_files": 10,
+      "xml_templates": 8,
+      "owl_components": [
+        "ImportAction",
+        "ImportBlockUI",
+        "ImportDataColumnError",
+        "ImportDataContent",
+        "ImportDataOptions",
+        "ImportDataProgress",
+        "ImportDataSidepanel",
+        "ImportRecords"
+      ],
+      "registry_adds": [
+        "actions:import"
+      ],
+      "patches": [],
+      "services": [],
+      "asset_bundles": {
+        "web.assets_backend": 3,
+        "web.assets_unit_tests": 1
+      }
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [
+        "requests"
+      ],
+      "uses_api_keys": false,
+      "endpoints": [],
+      "files": [
+        "models/base_import.py"
+      ]
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    },
+    "behavioral_notes": [
+      {
+        "element": "frontend (OWL/JS)",
+        "observation": "10 JS files, 8 OWL components, 1 registry adds; bundles ['web.assets_backend', 'web.assets_unit_tests'].",
+        "source": "static"
+      },
+      {
+        "element": "external integrations",
+        "observation": "0 HTTP call sites; SDKs ['requests']; api_keys=False.",
+        "source": "static"
+      },
+      {
+        "element": "thin module",
+        "observation": "2 models, 1 routes, 1977 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
+        "source": "ast"
+      }
+    ]
+  },
+  "it_architecture": {
+    "application": "base_import (Base import)",
+    "software_services": [
+      "/base_import/set_file"
+    ],
+    "data_objects": [
+      "base_import.import",
+      "base_import.mapping"
+    ],
+    "logical_data_erm": [],
+    "information_flows": [
+      "depends: web"
+    ],
+    "frontend_components": [
+      "ImportAction",
+      "ImportBlockUI",
+      "ImportDataColumnError",
+      "ImportDataContent",
+      "ImportDataOptions",
+      "ImportDataProgress",
+      "ImportDataSidepanel",
+      "ImportRecords"
+    ]
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Base import"
+    ],
+    "value_streams": [],
+    "information_concepts": [
+      "base_import.import",
+      "base_import.mapping"
+    ],
+    "organization": [],
+    "products": [],
+    "policies": [],
+    "stakeholders": [],
+    "strategy": null,
+    "metrics": []
+  },
+  "classification": {
+    "value_model": "support",
+    "activity_class": "support",
+    "apqc_category": "8.0 Manage Information Technology",
+    "rationale": "base_import: thin support/support module (auto-architect baseline)."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "Base import"
+    ],
+    "typical_fits": [],
+    "common_gaps": [],
+    "drive_hints": [
+      "odoo shell: env['base_import.import'].search([],limit=3)"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/base_import.facts.json",
+    "tools": [
+      "extract_module.py",
+      "extract_frontend.py",
+      "gen_thin.py"
+    ],
+    "odoo_version": "19.0"
+  }
+}

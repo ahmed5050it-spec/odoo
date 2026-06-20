@@ -1,0 +1,219 @@
+{
+  "subsystem": "website_profile",
+  "evidence": {
+    "manifest": {
+      "name": "Website profile",
+      "category": "Website/Website",
+      "depends": [
+        "html_editor",
+        "website_partner",
+        "gamification"
+      ],
+      "auto_install": false,
+      "application": false
+    },
+    "models": [
+      {
+        "_name": "gamification.badge",
+        "_description": null,
+        "fields": 0
+      }
+    ],
+    "routes": [
+      {
+        "paths": [
+          "/profile/avatar/<int:user_id>"
+        ],
+        "auth": "public",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/profile/user/<int:user_id>"
+        ],
+        "auth": "public",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/profile/user/save"
+        ],
+        "auth": "user",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/profile/ranks_badges"
+        ],
+        "auth": "public",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/profile/users",
+          "/profile/users/page/<int:page>"
+        ],
+        "auth": "public",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/profile/send_validation_email"
+        ],
+        "auth": "user",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/profile/validate_email"
+        ],
+        "auth": "public",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/profile/validate_email/close"
+        ],
+        "auth": "public",
+        "type": "jsonrpc"
+      }
+    ],
+    "security": {
+      "access_rules": 1,
+      "record_rules": 0,
+      "groups": 0
+    },
+    "views": {
+      "form": 2,
+      "list": 0,
+      "tree": 0,
+      "kanban": 0,
+      "search": 0,
+      "pivot": 0,
+      "graph": 0,
+      "calendar": 0,
+      "activity": 0
+    },
+    "frontend": {
+      "present": true,
+      "js_files": 5,
+      "xml_templates": 1,
+      "owl_components": [
+        "ProfileDialog"
+      ],
+      "registry_adds": [
+        "public.interactions.edit:website_profile.website_profile_editor",
+        "public.interactions:website_profile.next_rank_card",
+        "public.interactions:website_profile.profile_editor",
+        "public.interactions:website_profile.profile_validation"
+      ],
+      "patches": [],
+      "services": [],
+      "asset_bundles": {
+        "web.assets_frontend": 6,
+        "website.assets_inside_builder_iframe": 1,
+        "web.assets_tests": 1
+      }
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": false,
+      "endpoints": [],
+      "files": []
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    },
+    "behavioral_notes": [
+      {
+        "element": "frontend (OWL/JS)",
+        "observation": "5 JS files, 1 OWL components, 4 registry adds; bundles ['web.assets_frontend', 'website.assets_inside_builder_iframe', 'web.assets_tests'].",
+        "source": "static"
+      },
+      {
+        "element": "thin module",
+        "observation": "1 models, 8 routes, 613 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
+        "source": "ast"
+      }
+    ]
+  },
+  "it_architecture": {
+    "application": "website_profile (Website profile)",
+    "software_services": [
+      "/profile/avatar/<int:user_id>",
+      "/profile/ranks_badges",
+      "/profile/send_validation_email",
+      "/profile/user/<int:user_id>",
+      "/profile/user/save",
+      "/profile/users",
+      "/profile/users/page/<int:page>",
+      "/profile/validate_email",
+      "/profile/validate_email/close"
+    ],
+    "data_objects": [
+      "gamification.badge"
+    ],
+    "logical_data_erm": [],
+    "information_flows": [
+      "depends: html_editor, website_partner, gamification"
+    ],
+    "frontend_components": [
+      "ProfileDialog"
+    ]
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Website profile"
+    ],
+    "value_streams": [],
+    "information_concepts": [
+      "gamification.badge"
+    ],
+    "organization": [],
+    "products": [],
+    "policies": [],
+    "stakeholders": [],
+    "strategy": null,
+    "metrics": []
+  },
+  "classification": {
+    "value_model": "network",
+    "activity_class": "primary",
+    "apqc_category": "3.0 Market and Sell Products and Services",
+    "rationale": "website_profile: thin network/primary module (auto-architect baseline)."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "Website profile"
+    ],
+    "typical_fits": [],
+    "common_gaps": [],
+    "drive_hints": [
+      "odoo shell: env['gamification.badge'].search([],limit=3)"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/website_profile.facts.json",
+    "tools": [
+      "extract_module.py",
+      "extract_frontend.py",
+      "gen_thin.py"
+    ],
+    "odoo_version": "19.0"
+  }
+}

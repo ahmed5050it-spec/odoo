@@ -1,0 +1,153 @@
+{
+  "subsystem": "phone_validation",
+  "evidence": {
+    "manifest": {
+      "name": "Phone Numbers Validation",
+      "category": "Hidden",
+      "depends": [
+        "base",
+        "mail"
+      ],
+      "auto_install": true,
+      "application": false
+    },
+    "models": [
+      {
+        "_name": "mail.thread.phone",
+        "_description": "Phone Blacklist Mixin",
+        "fields": 4
+      },
+      {
+        "_name": "phone.blacklist",
+        "_description": "Phone Blacklist",
+        "fields": 2
+      },
+      {
+        "_name": "phone.blacklist.remove",
+        "_description": "Remove phone from blacklist",
+        "fields": 2
+      },
+      {
+        "_name": "res.partner",
+        "_description": null,
+        "fields": 0
+      }
+    ],
+    "routes": [],
+    "security": {
+      "access_rules": 3,
+      "record_rules": 0,
+      "groups": 0
+    },
+    "views": {
+      "form": 1,
+      "list": 1,
+      "tree": 0,
+      "kanban": 0,
+      "search": 1,
+      "pivot": 0,
+      "graph": 0,
+      "calendar": 0,
+      "activity": 0
+    },
+    "frontend": {
+      "present": false,
+      "js_files": 0,
+      "xml_templates": 0,
+      "owl_components": [],
+      "registry_adds": [],
+      "patches": [],
+      "services": [],
+      "asset_bundles": {}
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": false,
+      "endpoints": [],
+      "files": []
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    },
+    "behavioral_notes": [
+      {
+        "element": "thin module",
+        "observation": "4 models, 0 routes, 1339 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
+        "source": "ast"
+      }
+    ]
+  },
+  "it_architecture": {
+    "application": "phone_validation (Phone Numbers Validation)",
+    "software_services": [],
+    "data_objects": [
+      "mail.thread.phone",
+      "phone.blacklist",
+      "phone.blacklist.remove",
+      "res.partner"
+    ],
+    "logical_data_erm": [],
+    "information_flows": [
+      "depends: base, mail"
+    ],
+    "frontend_components": []
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Phone Numbers Validation"
+    ],
+    "value_streams": [],
+    "information_concepts": [
+      "mail.thread.phone",
+      "phone.blacklist",
+      "phone.blacklist.remove",
+      "res.partner"
+    ],
+    "organization": [],
+    "products": [],
+    "policies": [],
+    "stakeholders": [],
+    "strategy": null,
+    "metrics": []
+  },
+  "classification": {
+    "value_model": "support",
+    "activity_class": "support",
+    "apqc_category": "8.0 Manage Information Technology",
+    "rationale": "phone_validation: thin support/support module (auto-architect baseline)."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "Phone Numbers Validation"
+    ],
+    "typical_fits": [],
+    "common_gaps": [],
+    "drive_hints": [
+      "odoo shell: env['mail.thread.phone'].search([],limit=3)"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/phone_validation.facts.json",
+    "tools": [
+      "extract_module.py",
+      "extract_frontend.py",
+      "gen_thin.py"
+    ],
+    "odoo_version": "19.0"
+  }
+}

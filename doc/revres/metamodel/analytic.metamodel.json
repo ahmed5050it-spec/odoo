@@ -1,0 +1,219 @@
+{
+  "subsystem": "analytic",
+  "evidence": {
+    "manifest": {
+      "name": "Analytic Accounting",
+      "category": "Accounting/Accounting",
+      "depends": [
+        "base",
+        "mail",
+        "uom"
+      ],
+      "auto_install": false,
+      "application": false
+    },
+    "models": [
+      {
+        "_name": "account.analytic.account",
+        "_description": "Analytic Account",
+        "fields": 13
+      },
+      {
+        "_name": "account.analytic.applicability",
+        "_description": "Analytic Plan's Applicabilities",
+        "fields": 4
+      },
+      {
+        "_name": "account.analytic.distribution.model",
+        "_description": "Analytic Distribution Model",
+        "fields": 4
+      },
+      {
+        "_name": "account.analytic.line",
+        "_description": "Analytic Line",
+        "fields": 13
+      },
+      {
+        "_name": "account.analytic.plan",
+        "_description": "Analytic Plans",
+        "fields": 15
+      },
+      {
+        "_name": "analytic.mixin",
+        "_description": "Analytic Mixin",
+        "fields": 3
+      },
+      {
+        "_name": "analytic.plan.fields.mixin",
+        "_description": "Analytic Plan Fields",
+        "fields": 2
+      }
+    ],
+    "routes": [],
+    "security": {
+      "access_rules": 5,
+      "record_rules": 4,
+      "groups": 1
+    },
+    "views": {
+      "form": 4,
+      "list": 6,
+      "tree": 0,
+      "kanban": 2,
+      "search": 2,
+      "pivot": 1,
+      "graph": 1,
+      "calendar": 0,
+      "activity": 0
+    },
+    "frontend": {
+      "present": true,
+      "js_files": 8,
+      "xml_templates": 1,
+      "owl_components": [
+        "AnalyticDistribution"
+      ],
+      "registry_adds": [
+        "fields:analytic_distribution",
+        "services:batchedOrm",
+        "views:analytic_graph",
+        "views:analytic_kanban",
+        "views:analytic_list",
+        "views:analytic_pivot"
+      ],
+      "patches": [],
+      "services": [
+        "account_field",
+        "amount_field",
+        "analytic_precision",
+        "business_domain",
+        "disable_save",
+        "force_applicability",
+        "multi_edit",
+        "placeholder_field",
+        "product_field"
+      ],
+      "asset_bundles": {
+        "web.assets_backend": 5,
+        "web.assets_backend_lazy": 2,
+        "web.assets_unit_tests": 1
+      }
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": false,
+      "endpoints": [],
+      "files": []
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    },
+    "behavioral_notes": [
+      {
+        "element": "frontend (OWL/JS)",
+        "observation": "8 JS files, 1 OWL components, 6 registry adds; bundles ['web.assets_backend', 'web.assets_backend_lazy', 'web.assets_unit_tests'].",
+        "source": "static"
+      },
+      {
+        "element": "thin module",
+        "observation": "7 models, 0 routes, 2354 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
+        "source": "ast"
+      }
+    ]
+  },
+  "it_architecture": {
+    "application": "analytic (Analytic Accounting)",
+    "software_services": [],
+    "data_objects": [
+      "account.analytic.account",
+      "account.analytic.applicability",
+      "account.analytic.distribution.model",
+      "account.analytic.line",
+      "account.analytic.plan",
+      "analytic.mixin",
+      "analytic.plan.fields.mixin"
+    ],
+    "logical_data_erm": [
+      "account.analytic.account -> account.analytic.line",
+      "account.analytic.account -> account.analytic.plan",
+      "account.analytic.account -> company_id.currency_id",
+      "account.analytic.account -> res.company",
+      "account.analytic.account -> res.partner",
+      "account.analytic.applicability -> account.analytic.plan",
+      "account.analytic.applicability -> res.company",
+      "account.analytic.distribution.model -> res.company",
+      "account.analytic.distribution.model -> res.partner",
+      "account.analytic.distribution.model -> res.partner.category",
+      "account.analytic.line -> company_id.currency_id",
+      "account.analytic.line -> res.company"
+    ],
+    "information_flows": [
+      "depends: base, mail, uom"
+    ],
+    "frontend_components": [
+      "AnalyticDistribution"
+    ]
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Analytic Accounting"
+    ],
+    "value_streams": [],
+    "information_concepts": [
+      "account.analytic.account",
+      "account.analytic.applicability",
+      "account.analytic.distribution.model",
+      "account.analytic.line",
+      "account.analytic.plan",
+      "analytic.mixin"
+    ],
+    "organization": [],
+    "products": [],
+    "policies": [
+      "4 record rules"
+    ],
+    "stakeholders": [],
+    "strategy": null,
+    "metrics": []
+  },
+  "classification": {
+    "value_model": "support",
+    "activity_class": "support",
+    "apqc_category": "9.0 Manage Financial Resources",
+    "rationale": "analytic: thin support/support module (auto-architect baseline)."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "Analytic Accounting"
+    ],
+    "typical_fits": [],
+    "common_gaps": [],
+    "drive_hints": [
+      "odoo shell: env['account.analytic.account'].search([],limit=3)"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/analytic.facts.json",
+    "tools": [
+      "extract_module.py",
+      "extract_frontend.py",
+      "gen_thin.py"
+    ],
+    "odoo_version": "19.0"
+  }
+}

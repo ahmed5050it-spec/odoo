@@ -1,0 +1,157 @@
+{
+  "subsystem": "event_crm",
+  "evidence": {
+    "manifest": {
+      "name": "Event CRM",
+      "category": "Marketing/Events",
+      "depends": [
+        "event",
+        "crm"
+      ],
+      "auto_install": true,
+      "application": false
+    },
+    "models": [
+      {
+        "_name": "event.lead.request",
+        "_description": "Event Lead Request",
+        "fields": 3
+      },
+      {
+        "_name": "event.lead.rule",
+        "_description": "Event Lead Rules",
+        "fields": 13
+      }
+    ],
+    "routes": [],
+    "security": {
+      "access_rules": 5,
+      "record_rules": 1,
+      "groups": 0
+    },
+    "views": {
+      "form": 1,
+      "list": 1,
+      "tree": 0,
+      "kanban": 0,
+      "search": 1,
+      "pivot": 0,
+      "graph": 0,
+      "calendar": 0,
+      "activity": 0
+    },
+    "frontend": {
+      "present": false,
+      "js_files": 0,
+      "xml_templates": 0,
+      "owl_components": [],
+      "registry_adds": [],
+      "patches": [],
+      "services": [],
+      "asset_bundles": {
+        "web.assets_tests": 1
+      }
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": false,
+      "endpoints": [
+        "https://www.odoo.com/app/events"
+      ],
+      "files": [
+        "__manifest__.py"
+      ]
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    },
+    "behavioral_notes": [
+      {
+        "element": "thin module",
+        "observation": "2 models, 0 routes, 1363 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
+        "source": "ast"
+      }
+    ]
+  },
+  "it_architecture": {
+    "application": "event_crm (Event CRM)",
+    "software_services": [],
+    "data_objects": [
+      "event.lead.request",
+      "event.lead.rule"
+    ],
+    "logical_data_erm": [
+      "event.lead.request -> event.event",
+      "event.lead.request -> event.lead.rule",
+      "event.lead.rule -> crm.lead",
+      "event.lead.rule -> crm.tag",
+      "event.lead.rule -> crm.team",
+      "event.lead.rule -> event.event",
+      "event.lead.rule -> event.type",
+      "event.lead.rule -> res.company",
+      "event.lead.rule -> res.users"
+    ],
+    "information_flows": [
+      "depends: event, crm"
+    ],
+    "frontend_components": []
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Event CRM"
+    ],
+    "value_streams": [],
+    "information_concepts": [
+      "event.lead.request",
+      "event.lead.rule"
+    ],
+    "organization": [],
+    "products": [],
+    "policies": [
+      "1 record rules"
+    ],
+    "stakeholders": [],
+    "strategy": null,
+    "metrics": []
+  },
+  "classification": {
+    "value_model": "network",
+    "activity_class": "primary",
+    "apqc_category": "3.0 Market and Sell Products and Services",
+    "rationale": "event_crm: thin network/primary module (auto-architect baseline)."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "Event CRM"
+    ],
+    "typical_fits": [],
+    "common_gaps": [],
+    "drive_hints": [
+      "odoo shell: env['event.lead.request'].search([],limit=3)"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/event_crm.facts.json",
+    "tools": [
+      "extract_module.py",
+      "extract_frontend.py",
+      "gen_thin.py"
+    ],
+    "odoo_version": "19.0"
+  }
+}

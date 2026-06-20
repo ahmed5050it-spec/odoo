@@ -1,0 +1,202 @@
+{
+  "subsystem": "pos_event",
+  "evidence": {
+    "manifest": {
+      "name": "POS - Event",
+      "category": "Technical",
+      "depends": [
+        "point_of_sale",
+        "event_product"
+      ],
+      "auto_install": true,
+      "application": false
+    },
+    "models": [
+      {
+        "_name": "event.event",
+        "_description": null,
+        "fields": 1
+      },
+      {
+        "_name": "event.event.ticket",
+        "_description": null,
+        "fields": 0
+      },
+      {
+        "_name": "event.question",
+        "_description": null,
+        "fields": 0
+      },
+      {
+        "_name": "event.question.answer",
+        "_description": null,
+        "fields": 0
+      },
+      {
+        "_name": "event.registration",
+        "_description": null,
+        "fields": 2
+      },
+      {
+        "_name": "event.registration.answer",
+        "_description": null,
+        "fields": 0
+      },
+      {
+        "_name": "event.slot",
+        "_description": null,
+        "fields": 0
+      }
+    ],
+    "routes": [],
+    "security": {
+      "access_rules": 3,
+      "record_rules": 0,
+      "groups": 0
+    },
+    "views": {
+      "form": 0,
+      "list": 0,
+      "tree": 0,
+      "kanban": 0,
+      "search": 0,
+      "pivot": 0,
+      "graph": 0,
+      "calendar": 0,
+      "activity": 0
+    },
+    "frontend": {
+      "present": true,
+      "js_files": 11,
+      "xml_templates": 6,
+      "owl_components": [
+        "EventConfiguratorPopup",
+        "EventRegistrationPopup",
+        "EventSlotSelectionPopup"
+      ],
+      "registry_adds": [],
+      "patches": [
+        "DataServiceOptions.prototype",
+        "PosOrder.prototype",
+        "PosOrderline.prototype",
+        "PosStore.prototype",
+        "ProductCard.prototype",
+        "ProductScreen.prototype",
+        "ProductTemplate.prototype",
+        "ReceiptScreen.prototype"
+      ],
+      "services": [],
+      "asset_bundles": {
+        "point_of_sale._assets_pos": 1,
+        "web.assets_tests": 1,
+        "web.assets_unit_tests": 1
+      }
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": false,
+      "endpoints": [],
+      "files": []
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    },
+    "behavioral_notes": [
+      {
+        "element": "frontend (OWL/JS)",
+        "observation": "11 JS files, 3 OWL components, 0 registry adds; bundles ['point_of_sale._assets_pos', 'web.assets_tests', 'web.assets_unit_tests'].",
+        "source": "static"
+      },
+      {
+        "element": "thin module",
+        "observation": "7 models, 0 routes, 713 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
+        "source": "ast"
+      }
+    ]
+  },
+  "it_architecture": {
+    "application": "pos_event (POS - Event)",
+    "software_services": [],
+    "data_objects": [
+      "event.event",
+      "event.event.ticket",
+      "event.question",
+      "event.question.answer",
+      "event.registration",
+      "event.registration.answer",
+      "event.slot"
+    ],
+    "logical_data_erm": [
+      "event.registration -> pos.order.line",
+      "event.registration -> pos_order_line_id.order_id"
+    ],
+    "information_flows": [
+      "depends: point_of_sale, event_product"
+    ],
+    "frontend_components": [
+      "EventConfiguratorPopup",
+      "EventRegistrationPopup",
+      "EventSlotSelectionPopup"
+    ]
+  },
+  "business_architecture": {
+    "capabilities": [
+      "POS - Event"
+    ],
+    "value_streams": [],
+    "information_concepts": [
+      "event.event",
+      "event.event.ticket",
+      "event.question",
+      "event.question.answer",
+      "event.registration",
+      "event.registration.answer"
+    ],
+    "organization": [],
+    "products": [],
+    "policies": [],
+    "stakeholders": [],
+    "strategy": null,
+    "metrics": []
+  },
+  "classification": {
+    "value_model": "chain",
+    "activity_class": "primary",
+    "apqc_category": "3.0 Market and Sell Products and Services",
+    "rationale": "pos_event: thin chain/primary module (auto-architect baseline)."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "POS - Event"
+    ],
+    "typical_fits": [],
+    "common_gaps": [],
+    "drive_hints": [
+      "odoo shell: env['event.event'].search([],limit=3)"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/pos_event.facts.json",
+    "tools": [
+      "extract_module.py",
+      "extract_frontend.py",
+      "gen_thin.py"
+    ],
+    "odoo_version": "19.0"
+  }
+}

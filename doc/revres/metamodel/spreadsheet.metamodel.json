@@ -1,0 +1,222 @@
+{
+  "subsystem": "spreadsheet",
+  "evidence": {
+    "manifest": {
+      "name": "Spreadsheet",
+      "category": "Productivity/Dashboard",
+      "depends": [
+        "bus",
+        "web",
+        "portal"
+      ],
+      "auto_install": false,
+      "application": false
+    },
+    "models": [
+      {
+        "_name": "spreadsheet.mixin",
+        "_description": "Spreadsheet mixin",
+        "fields": 4
+      }
+    ],
+    "routes": [
+      {
+        "paths": [
+          "/spreadsheet/log"
+        ],
+        "auth": "user",
+        "type": "jsonrpc"
+      }
+    ],
+    "security": {
+      "access_rules": 0,
+      "record_rules": 0,
+      "groups": 0
+    },
+    "views": {
+      "form": 0,
+      "list": 0,
+      "tree": 0,
+      "kanban": 0,
+      "search": 0,
+      "pivot": 0,
+      "graph": 0,
+      "calendar": 0,
+      "activity": 0
+    },
+    "frontend": {
+      "present": true,
+      "js_files": 100,
+      "xml_templates": 15,
+      "owl_components": [
+        "DateFilterDropdown",
+        "DateFilterValue",
+        "DefaultDateValue",
+        "FilterValue",
+        "FilterValuesList",
+        "MenuPopover",
+        "NumericFilterValue",
+        "PublicReadonlySpreadsheet",
+        "SelectionFilterValue",
+        "SpreadsheetComponent",
+        "SpreadsheetShareButton",
+        "TextFilterValue"
+      ],
+      "registry_adds": [
+        "actions:action_download_spreadsheet",
+        "fields:binary_spreadsheet",
+        "services:geo_json_service",
+        "services:spreadsheetLinkMenuCell"
+      ],
+      "patches": [
+        "Grid.prototype",
+        "Spreadsheet.prototype",
+        "components.ZoomableChartJsComponent.prototype",
+        "spreadsheet.components.FigureComponent.prototype",
+        "spreadsheet.components.GaugeChartComponent.prototype",
+        "spreadsheet.components.ScorecardChart.prototype"
+      ],
+      "services": [
+        "ARROW_DOWN",
+        "ARROW_RIGHT",
+        "ARROW_UP",
+        "Arial",
+        "CARET_DOWN",
+        "CARET_UP",
+        "CHECKBOX_CHECKED",
+        "CHECKBOX_UNCHECKED",
+        "CHIP",
+        "DATA_FILTER_ICON",
+        "Dollar",
+        "FROWN",
+        "French",
+        "GREEN_DOT",
+        "MEH",
+        "PIVOT_ICON",
+        "RED_DOT",
+        "SMILE",
+        "YELLOW_DOT",
+        "__count",
+        "aggregated",
+        "create_date",
+        "cumulative",
+        "dataSetsHaveTitle",
+        "labelsAsText",
+        "local",
+        "none"
+      ],
+      "asset_bundles": {
+        "web.chartjs_lib": 2,
+        "spreadsheet.o_spreadsheet": 10,
+        "spreadsheet.assets_print": 1,
+        "spreadsheet.public_spreadsheet": 52,
+        "web.assets_backend": 6,
+        "web.assets_web_dark": 1,
+        "web.assets_unit_tests": 5
+      }
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": false,
+      "endpoints": [],
+      "files": []
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    },
+    "behavioral_notes": [
+      {
+        "element": "frontend (OWL/JS)",
+        "observation": "100 JS files, 12 OWL components, 4 registry adds; bundles ['web.chartjs_lib', 'spreadsheet.o_spreadsheet', 'spreadsheet.assets_print'].",
+        "source": "static"
+      },
+      {
+        "element": "thin module",
+        "observation": "1 models, 1 routes, 1254 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
+        "source": "ast"
+      }
+    ]
+  },
+  "it_architecture": {
+    "application": "spreadsheet (Spreadsheet)",
+    "software_services": [
+      "/spreadsheet/log"
+    ],
+    "data_objects": [
+      "spreadsheet.mixin"
+    ],
+    "logical_data_erm": [],
+    "information_flows": [
+      "depends: bus, web, portal"
+    ],
+    "frontend_components": [
+      "DateFilterDropdown",
+      "DateFilterValue",
+      "DefaultDateValue",
+      "FilterValue",
+      "FilterValuesList",
+      "MenuPopover",
+      "NumericFilterValue",
+      "PublicReadonlySpreadsheet",
+      "SelectionFilterValue",
+      "SpreadsheetComponent",
+      "SpreadsheetShareButton",
+      "TextFilterValue"
+    ]
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Spreadsheet"
+    ],
+    "value_streams": [],
+    "information_concepts": [
+      "spreadsheet.mixin"
+    ],
+    "organization": [],
+    "products": [],
+    "policies": [],
+    "stakeholders": [],
+    "strategy": null,
+    "metrics": []
+  },
+  "classification": {
+    "value_model": "support",
+    "activity_class": "support",
+    "apqc_category": "13.0 Develop and Manage Business Capabilities",
+    "rationale": "spreadsheet: thin support/support module (auto-architect baseline)."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "Spreadsheet"
+    ],
+    "typical_fits": [],
+    "common_gaps": [],
+    "drive_hints": [
+      "odoo shell: env['spreadsheet.mixin'].search([],limit=3)"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/spreadsheet.facts.json",
+    "tools": [
+      "extract_module.py",
+      "extract_frontend.py",
+      "gen_thin.py"
+    ],
+    "odoo_version": "19.0"
+  }
+}

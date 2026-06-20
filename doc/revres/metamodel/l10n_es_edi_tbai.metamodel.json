@@ -1,0 +1,169 @@
+{
+  "subsystem": "l10n_es_edi_tbai",
+  "evidence": {
+    "manifest": {
+      "name": "Spain - TicketBAI",
+      "category": "Accounting/Localizations/EDI",
+      "depends": [
+        "l10n_es",
+        "certificate"
+      ],
+      "auto_install": false,
+      "application": false
+    },
+    "models": [
+      {
+        "_name": "l10n_es_edi_tbai.document",
+        "_description": "TicketBAI Document",
+        "fields": 8
+      }
+    ],
+    "routes": [],
+    "security": {
+      "access_rules": 1,
+      "record_rules": 1,
+      "groups": 0
+    },
+    "views": {
+      "form": 0,
+      "list": 0,
+      "tree": 0,
+      "kanban": 0,
+      "search": 0,
+      "pivot": 0,
+      "graph": 0,
+      "calendar": 0,
+      "activity": 0
+    },
+    "frontend": {
+      "present": false,
+      "js_files": 0,
+      "xml_templates": 0,
+      "owl_components": [],
+      "registry_adds": [],
+      "patches": [],
+      "services": [],
+      "asset_bundles": {}
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [
+        "requests"
+      ],
+      "uses_api_keys": false,
+      "endpoints": [
+        "http://www.w3.org/2000/09/xmldsig#",
+        "https://batuz.eus/QRTBAI/",
+        "https://pruebas-ticketbai.araba.eus/TicketBAI/v1/anulaciones/",
+        "https://pruebas-ticketbai.araba.eus/TicketBAI/v1/facturas/",
+        "https://pruebas-ticketbai.araba.eus/tbai/qrtbai/",
+        "https://pruesarrerak.bizkaia.eus/N3B4000M/aurkezpena",
+        "https://sarrerak.bizkaia.eus/N3B4000M/aurkezpena",
+        "https://tbai-z.egoitza.gipuzkoa.eus/sarrerak/alta",
+        "https://tbai-z.egoitza.gipuzkoa.eus/sarrerak/baja",
+        "https://tbai.egoitza.gipuzkoa.eus/qr/",
+        "https://tbai.prep.gipuzkoa.eus/qr/",
+        "https://ticketbai.araba.eus/TicketBAI/v1/anulaciones/",
+        "https://ticketbai.araba.eus/TicketBAI/v1/facturas/",
+        "https://ticketbai.araba.eus/tbai/qrtbai/",
+        "https://ticketbai.araba.eus/tbai/sinadura/",
+        "https://web.araba.eus/documents/105044/5608600/TicketBai12+%282%29.zip",
+        "https://www.batuz.eus/fitxategiak/batuz/lroe/batuz_lroe_lista_epigrafes_v1_0_3.xlsx",
+        "https://www.batuz.eus/fitxategiak/batuz/ticketbai/Anula_ticketBaiV1-2-1.xsd",
+        "https://www.batuz.eus/fitxategiak/batuz/ticketbai/ticketBaiV1-2-1.xsd",
+        "https://www.gipuzkoa.eus/TicketBAI/signature"
+      ],
+      "files": [
+        "models/l10n_es_edi_tbai_agencies.py",
+        "models/l10n_es_edi_tbai_document.py",
+        "models/xml_utils.py"
+      ]
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    },
+    "behavioral_notes": [
+      {
+        "element": "external integrations",
+        "observation": "0 HTTP call sites; SDKs ['requests']; api_keys=False.",
+        "source": "static"
+      },
+      {
+        "element": "thin module",
+        "observation": "1 models, 0 routes, 3124 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
+        "source": "ast"
+      }
+    ]
+  },
+  "it_architecture": {
+    "application": "l10n_es_edi_tbai (Spain - TicketBAI)",
+    "software_services": [],
+    "data_objects": [
+      "l10n_es_edi_tbai.document"
+    ],
+    "logical_data_erm": [
+      "l10n_es_edi_tbai.document -> ir.attachment",
+      "l10n_es_edi_tbai.document -> res.company"
+    ],
+    "information_flows": [
+      "depends: l10n_es, certificate"
+    ],
+    "frontend_components": []
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Spain - TicketBAI"
+    ],
+    "value_streams": [],
+    "information_concepts": [
+      "l10n_es_edi_tbai.document"
+    ],
+    "organization": [],
+    "products": [],
+    "policies": [
+      "1 record rules"
+    ],
+    "stakeholders": [],
+    "strategy": null,
+    "metrics": []
+  },
+  "classification": {
+    "value_model": "support",
+    "activity_class": "support",
+    "apqc_category": "9.0 Manage Financial Resources",
+    "rationale": "l10n_es_edi_tbai: thin support/support module (auto-architect baseline)."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "Spain - TicketBAI"
+    ],
+    "typical_fits": [],
+    "common_gaps": [],
+    "drive_hints": [
+      "odoo shell: env['l10n_es_edi_tbai.document'].search([],limit=3)"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/l10n_es_edi_tbai.facts.json",
+    "tools": [
+      "extract_module.py",
+      "extract_frontend.py",
+      "gen_thin.py"
+    ],
+    "odoo_version": "19.0"
+  }
+}

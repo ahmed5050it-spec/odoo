@@ -1,0 +1,245 @@
+{
+  "subsystem": "mail_plugin",
+  "evidence": {
+    "manifest": {
+      "name": "Mail Plugin",
+      "category": "Sales/CRM",
+      "depends": [
+        "web",
+        "contacts",
+        "iap"
+      ],
+      "auto_install": false,
+      "application": false
+    },
+    "models": [
+      {
+        "_name": "res.partner.iap",
+        "_description": "Partner IAP",
+        "fields": 3
+      }
+    ],
+    "routes": [
+      {
+        "paths": [
+          "/mail_client_extension/modules/get"
+        ],
+        "auth": "outlook",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/mail_plugin/partner/enrich_and_create_company"
+        ],
+        "auth": "outlook",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/mail_plugin/partner/enrich_and_update_company"
+        ],
+        "auth": "outlook",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/mail_client_extension/partner/get",
+          "/mail_plugin/partner/get"
+        ],
+        "auth": "outlook",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/mail_plugin/partner/search"
+        ],
+        "auth": "outlook",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/mail_client_extension/partner/create",
+          "/mail_plugin/partner/create"
+        ],
+        "auth": "outlook",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/mail_plugin/log_mail_content"
+        ],
+        "auth": "outlook",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/mail_plugin/get_translations"
+        ],
+        "auth": "outlook",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/mail_client_extension/auth",
+          "/mail_plugin/auth"
+        ],
+        "auth": "user",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/mail_client_extension/auth/confirm",
+          "/mail_plugin/auth/confirm"
+        ],
+        "auth": "user",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/mail_plugin/auth/check_version"
+        ],
+        "auth": "none",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/mail_client_extension/auth/access_token",
+          "/mail_plugin/auth/access_token"
+        ],
+        "auth": "none",
+        "type": "jsonrpc"
+      }
+    ],
+    "security": {
+      "access_rules": 1,
+      "record_rules": 0,
+      "groups": 0
+    },
+    "views": {
+      "form": 2,
+      "list": 1,
+      "tree": 0,
+      "kanban": 0,
+      "search": 0,
+      "pivot": 0,
+      "graph": 0,
+      "calendar": 0,
+      "activity": 0
+    },
+    "frontend": {
+      "present": true,
+      "js_files": 0,
+      "xml_templates": 2,
+      "owl_components": [],
+      "registry_adds": [],
+      "patches": [],
+      "services": [],
+      "asset_bundles": {}
+    },
+    "integrations": {
+      "http_call_sites": 2,
+      "sdk_imports": [
+        "requests"
+      ],
+      "uses_api_keys": true,
+      "endpoints": [],
+      "files": [
+        "controllers/mail_plugin.py"
+      ]
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    },
+    "behavioral_notes": [
+      {
+        "element": "external integrations",
+        "observation": "2 HTTP call sites; SDKs ['requests']; api_keys=True.",
+        "source": "static"
+      },
+      {
+        "element": "thin module",
+        "observation": "1 models, 12 routes, 1145 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
+        "source": "ast"
+      }
+    ]
+  },
+  "it_architecture": {
+    "application": "mail_plugin (Mail Plugin)",
+    "software_services": [
+      "/mail_client_extension/auth",
+      "/mail_client_extension/auth/access_token",
+      "/mail_client_extension/auth/confirm",
+      "/mail_client_extension/modules/get",
+      "/mail_client_extension/partner/create",
+      "/mail_client_extension/partner/get",
+      "/mail_plugin/auth",
+      "/mail_plugin/auth/access_token",
+      "/mail_plugin/auth/check_version",
+      "/mail_plugin/auth/confirm"
+    ],
+    "data_objects": [
+      "res.partner.iap"
+    ],
+    "logical_data_erm": [
+      "res.partner.iap -> res.partner"
+    ],
+    "information_flows": [
+      "depends: web, contacts, iap"
+    ],
+    "frontend_components": []
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Mail Plugin"
+    ],
+    "value_streams": [],
+    "information_concepts": [
+      "res.partner.iap"
+    ],
+    "organization": [],
+    "products": [],
+    "policies": [],
+    "stakeholders": [],
+    "strategy": null,
+    "metrics": []
+  },
+  "classification": {
+    "value_model": "support",
+    "activity_class": "support",
+    "apqc_category": "9.4 Manage internal communications",
+    "rationale": "mail_plugin: thin support/support module (auto-architect baseline)."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "Mail Plugin"
+    ],
+    "typical_fits": [],
+    "common_gaps": [],
+    "drive_hints": [
+      "odoo shell: env['res.partner.iap'].search([],limit=3)"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/mail_plugin.facts.json",
+    "tools": [
+      "extract_module.py",
+      "extract_frontend.py",
+      "gen_thin.py"
+    ],
+    "odoo_version": "19.0"
+  }
+}

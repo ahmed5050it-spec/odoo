@@ -1,0 +1,151 @@
+{
+  "subsystem": "privacy_lookup",
+  "evidence": {
+    "manifest": {
+      "name": "Privacy",
+      "category": "Hidden",
+      "depends": [
+        "mail"
+      ],
+      "auto_install": true,
+      "application": false
+    },
+    "models": [
+      {
+        "_name": "privacy.log",
+        "_description": "Privacy Log",
+        "fields": 7
+      },
+      {
+        "_name": "privacy.lookup.wizard",
+        "_description": "Privacy Lookup Wizard",
+        "fields": 7
+      },
+      {
+        "_name": "privacy.lookup.wizard.line",
+        "_description": "Privacy Lookup Wizard Line",
+        "fields": 10
+      }
+    ],
+    "routes": [],
+    "security": {
+      "access_rules": 3,
+      "record_rules": 0,
+      "groups": 0
+    },
+    "views": {
+      "form": 1,
+      "list": 1,
+      "tree": 0,
+      "kanban": 0,
+      "search": 0,
+      "pivot": 0,
+      "graph": 0,
+      "calendar": 0,
+      "activity": 0
+    },
+    "frontend": {
+      "present": false,
+      "js_files": 0,
+      "xml_templates": 0,
+      "owl_components": [],
+      "registry_adds": [],
+      "patches": [],
+      "services": [],
+      "asset_bundles": {}
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": false,
+      "endpoints": [],
+      "files": []
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    },
+    "behavioral_notes": [
+      {
+        "element": "thin module",
+        "observation": "3 models, 0 routes, 585 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
+        "source": "ast"
+      }
+    ]
+  },
+  "it_architecture": {
+    "application": "privacy_lookup (Privacy)",
+    "software_services": [],
+    "data_objects": [
+      "privacy.log",
+      "privacy.lookup.wizard",
+      "privacy.lookup.wizard.line"
+    ],
+    "logical_data_erm": [
+      "privacy.log -> res.users",
+      "privacy.lookup.wizard -> privacy.log",
+      "privacy.lookup.wizard -> privacy.lookup.wizard.line",
+      "privacy.lookup.wizard.line -> ir.model",
+      "privacy.lookup.wizard.line -> privacy.lookup.wizard"
+    ],
+    "information_flows": [
+      "depends: mail"
+    ],
+    "frontend_components": []
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Privacy"
+    ],
+    "value_streams": [],
+    "information_concepts": [
+      "privacy.log",
+      "privacy.lookup.wizard",
+      "privacy.lookup.wizard.line"
+    ],
+    "organization": [],
+    "products": [],
+    "policies": [],
+    "stakeholders": [],
+    "strategy": null,
+    "metrics": []
+  },
+  "classification": {
+    "value_model": "support",
+    "activity_class": "support",
+    "apqc_category": "13.0 Develop and Manage Business Capabilities",
+    "rationale": "privacy_lookup: thin support/support module (auto-architect baseline)."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "Privacy"
+    ],
+    "typical_fits": [],
+    "common_gaps": [],
+    "drive_hints": [
+      "odoo shell: env['privacy.log'].search([],limit=3)"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/privacy_lookup.facts.json",
+    "tools": [
+      "extract_module.py",
+      "extract_frontend.py",
+      "gen_thin.py"
+    ],
+    "odoo_version": "19.0"
+  }
+}

@@ -1,0 +1,189 @@
+{
+  "subsystem": "pos_safaricom",
+  "evidence": {
+    "manifest": {
+      "name": "POS Safaricom",
+      "category": "Sales/Point of Sale",
+      "depends": [
+        "point_of_sale"
+      ],
+      "auto_install": false,
+      "application": false
+    },
+    "models": [
+      {
+        "_name": "transaction.lipa.na.mpesa",
+        "_description": "Transaction Lipa na M-PESA",
+        "fields": 5
+      }
+    ],
+    "routes": [
+      {
+        "paths": [
+          "/pos_safaricom/callback"
+        ],
+        "auth": "public",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/c2b/validation/callback"
+        ],
+        "auth": "public",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/c2b/confirmation/callback"
+        ],
+        "auth": "public",
+        "type": "http"
+      }
+    ],
+    "security": {
+      "access_rules": 1,
+      "record_rules": 0,
+      "groups": 0
+    },
+    "views": {
+      "form": 0,
+      "list": 0,
+      "tree": 0,
+      "kanban": 0,
+      "search": 0,
+      "pivot": 0,
+      "graph": 0,
+      "calendar": 0,
+      "activity": 0
+    },
+    "frontend": {
+      "present": true,
+      "js_files": 3,
+      "xml_templates": 1,
+      "owl_components": [
+        "MpesaTransactionPopup"
+      ],
+      "registry_adds": [],
+      "patches": [
+        "PosStore.prototype"
+      ],
+      "services": [],
+      "asset_bundles": {
+        "point_of_sale._assets_pos": 1,
+        "web.assets_tests": 1
+      }
+    },
+    "integrations": {
+      "http_call_sites": 4,
+      "sdk_imports": [
+        "requests"
+      ],
+      "uses_api_keys": true,
+      "endpoints": [
+        "https://api.safaricom.co.ke/mpesa/c2b/v2/registerurl",
+        "https://api.safaricom.co.ke/mpesa/qrcode/v1/generate",
+        "https://api.safaricom.co.ke/mpesa/stkpush/v1/processrequest",
+        "https://api.safaricom.co.ke/oauth/v1/generate?grant_type=client_credentials",
+        "https://sandbox.safaricom.co.ke/mpesa/c2b/v2/registerurl",
+        "https://sandbox.safaricom.co.ke/mpesa/qrcode/v1/generate",
+        "https://sandbox.safaricom.co.ke/mpesa/stkpush/v1/processrequest",
+        "https://sandbox.safaricom.co.ke/oauth/v1/generate?grant_type=client_credentials"
+      ],
+      "files": [
+        "models/pos_payment_method.py"
+      ]
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    },
+    "behavioral_notes": [
+      {
+        "element": "frontend (OWL/JS)",
+        "observation": "3 JS files, 1 OWL components, 0 registry adds; bundles ['point_of_sale._assets_pos', 'web.assets_tests'].",
+        "source": "static"
+      },
+      {
+        "element": "external integrations",
+        "observation": "4 HTTP call sites; SDKs ['requests']; api_keys=True.",
+        "source": "static"
+      },
+      {
+        "element": "thin module",
+        "observation": "1 models, 3 routes, 673 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
+        "source": "ast"
+      }
+    ]
+  },
+  "it_architecture": {
+    "application": "pos_safaricom (POS Safaricom)",
+    "software_services": [
+      "/c2b/confirmation/callback",
+      "/c2b/validation/callback",
+      "/pos_safaricom/callback"
+    ],
+    "data_objects": [
+      "transaction.lipa.na.mpesa"
+    ],
+    "logical_data_erm": [],
+    "information_flows": [
+      "depends: point_of_sale"
+    ],
+    "frontend_components": [
+      "MpesaTransactionPopup"
+    ]
+  },
+  "business_architecture": {
+    "capabilities": [
+      "POS Safaricom"
+    ],
+    "value_streams": [],
+    "information_concepts": [
+      "transaction.lipa.na.mpesa"
+    ],
+    "organization": [],
+    "products": [],
+    "policies": [],
+    "stakeholders": [],
+    "strategy": null,
+    "metrics": []
+  },
+  "classification": {
+    "value_model": "chain",
+    "activity_class": "primary",
+    "apqc_category": "3.0 Market and Sell Products and Services",
+    "rationale": "pos_safaricom: thin chain/primary module (auto-architect baseline)."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "POS Safaricom"
+    ],
+    "typical_fits": [],
+    "common_gaps": [],
+    "drive_hints": [
+      "odoo shell: env['transaction.lipa.na.mpesa'].search([],limit=3)"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/pos_safaricom.facts.json",
+    "tools": [
+      "extract_module.py",
+      "extract_frontend.py",
+      "gen_thin.py"
+    ],
+    "odoo_version": "19.0"
+  }
+}

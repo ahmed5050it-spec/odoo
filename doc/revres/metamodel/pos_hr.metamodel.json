@@ -1,0 +1,174 @@
+{
+  "subsystem": "pos_hr",
+  "evidence": {
+    "manifest": {
+      "name": "POS - HR",
+      "category": "Sales/Point of Sale",
+      "depends": [
+        "point_of_sale",
+        "hr"
+      ],
+      "auto_install": true,
+      "application": false
+    },
+    "models": [
+      {
+        "_name": "hr.employee",
+        "_description": null,
+        "fields": 0
+      },
+      {
+        "_name": "pos.config",
+        "_description": null,
+        "fields": 3
+      },
+      {
+        "_name": "report.pos_hr.single_employee_sales_report",
+        "_description": "Session sales details for a single employee",
+        "fields": 0
+      }
+    ],
+    "routes": [],
+    "security": {
+      "access_rules": 0,
+      "record_rules": 0,
+      "groups": 0
+    },
+    "views": {
+      "form": 0,
+      "list": 0,
+      "tree": 0,
+      "kanban": 0,
+      "search": 0,
+      "pivot": 0,
+      "graph": 0,
+      "calendar": 0,
+      "activity": 0
+    },
+    "frontend": {
+      "present": true,
+      "js_files": 14,
+      "xml_templates": 7,
+      "owl_components": [
+        "CashierSelectionPopup"
+      ],
+      "registry_adds": [],
+      "patches": [
+        "CashMovePopup.prototype",
+        "CashierName.prototype",
+        "Chrome.prototype",
+        "ClosePosPopup.prototype",
+        "DataServiceOptions.prototype",
+        "LoginScreen.prototype",
+        "Navbar.prototype",
+        "OrderPaymentValidation.prototype",
+        "OrderSummary.prototype",
+        "PosOrder.prototype",
+        "PosStore.prototype",
+        "ProductInfoPopup.prototype"
+      ],
+      "services": [],
+      "asset_bundles": {
+        "point_of_sale._assets_pos": 1,
+        "web.assets_tests": 1,
+        "web.assets_unit_tests": 1
+      }
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": false,
+      "endpoints": [],
+      "files": []
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    },
+    "behavioral_notes": [
+      {
+        "element": "frontend (OWL/JS)",
+        "observation": "14 JS files, 1 OWL components, 0 registry adds; bundles ['point_of_sale._assets_pos', 'web.assets_tests', 'web.assets_unit_tests'].",
+        "source": "static"
+      },
+      {
+        "element": "thin module",
+        "observation": "3 models, 0 routes, 877 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
+        "source": "ast"
+      }
+    ]
+  },
+  "it_architecture": {
+    "application": "pos_hr (POS - HR)",
+    "software_services": [],
+    "data_objects": [
+      "hr.employee",
+      "pos.config",
+      "report.pos_hr.single_employee_sales_report"
+    ],
+    "logical_data_erm": [
+      "pos.config -> hr.employee"
+    ],
+    "information_flows": [
+      "depends: point_of_sale, hr"
+    ],
+    "frontend_components": [
+      "CashierSelectionPopup"
+    ]
+  },
+  "business_architecture": {
+    "capabilities": [
+      "POS - HR"
+    ],
+    "value_streams": [],
+    "information_concepts": [
+      "hr.employee",
+      "pos.config",
+      "report.pos_hr.single_employee_sales_report"
+    ],
+    "organization": [],
+    "products": [],
+    "policies": [],
+    "stakeholders": [],
+    "strategy": null,
+    "metrics": []
+  },
+  "classification": {
+    "value_model": "chain",
+    "activity_class": "primary",
+    "apqc_category": "3.0 Market and Sell Products and Services",
+    "rationale": "pos_hr: thin chain/primary module (auto-architect baseline)."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "POS - HR"
+    ],
+    "typical_fits": [],
+    "common_gaps": [],
+    "drive_hints": [
+      "odoo shell: env['hr.employee'].search([],limit=3)"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/pos_hr.facts.json",
+    "tools": [
+      "extract_module.py",
+      "extract_frontend.py",
+      "gen_thin.py"
+    ],
+    "odoo_version": "19.0"
+  }
+}

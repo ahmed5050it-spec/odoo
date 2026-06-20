@@ -1,0 +1,189 @@
+{
+  "subsystem": "account_payment",
+  "evidence": {
+    "manifest": {
+      "name": "Payment - Account",
+      "category": "Accounting/Accounting",
+      "depends": [
+        "account",
+        "payment"
+      ],
+      "auto_install": [
+        "account"
+      ],
+      "application": false
+    },
+    "models": [
+      {
+        "_name": "payment.refund.wizard",
+        "_description": "Payment Refund Wizard",
+        "fields": 9
+      }
+    ],
+    "routes": [
+      {
+        "paths": [
+          "/invoice/transaction/<int:invoice_id>"
+        ],
+        "auth": "public",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/invoice/transaction/overdue"
+        ],
+        "auth": "public",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [],
+        "auth": null,
+        "type": null
+      },
+      {
+        "paths": [
+          "/my/invoices/overdue"
+        ],
+        "auth": "public",
+        "type": "http"
+      },
+      {
+        "paths": [],
+        "auth": null,
+        "type": null
+      }
+    ],
+    "security": {
+      "access_rules": 3,
+      "record_rules": 1,
+      "groups": 0
+    },
+    "views": {
+      "form": 0,
+      "list": 0,
+      "tree": 0,
+      "kanban": 0,
+      "search": 0,
+      "pivot": 0,
+      "graph": 0,
+      "calendar": 0,
+      "activity": 0
+    },
+    "frontend": {
+      "present": true,
+      "js_files": 3,
+      "xml_templates": 0,
+      "owl_components": [],
+      "registry_adds": [
+        "public.interactions:account_payment.portal_invoice_page_payment",
+        "public.interactions:account_payment.portal_my_invoices_payment_list"
+      ],
+      "patches": [
+        "PaymentForm.prototype"
+      ],
+      "services": [],
+      "asset_bundles": {
+        "web.assets_unit_tests": 3,
+        "web.assets_frontend": 1
+      }
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": true,
+      "endpoints": [],
+      "files": []
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    },
+    "behavioral_notes": [
+      {
+        "element": "frontend (OWL/JS)",
+        "observation": "3 JS files, 0 OWL components, 2 registry adds; bundles ['web.assets_unit_tests', 'web.assets_frontend'].",
+        "source": "static"
+      },
+      {
+        "element": "thin module",
+        "observation": "1 models, 5 routes, 2520 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
+        "source": "ast"
+      }
+    ]
+  },
+  "it_architecture": {
+    "application": "account_payment (Payment - Account)",
+    "software_services": [
+      "/invoice/transaction/<int:invoice_id>",
+      "/invoice/transaction/overdue",
+      "/my/invoices/overdue"
+    ],
+    "data_objects": [
+      "payment.refund.wizard"
+    ],
+    "logical_data_erm": [
+      "payment.refund.wizard -> account.payment",
+      "payment.refund.wizard -> payment_id.payment_transaction_id",
+      "payment.refund.wizard -> transaction_id.currency_id"
+    ],
+    "information_flows": [
+      "depends: account, payment"
+    ],
+    "frontend_components": []
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Payment - Account"
+    ],
+    "value_streams": [],
+    "information_concepts": [
+      "payment.refund.wizard"
+    ],
+    "organization": [],
+    "products": [],
+    "policies": [
+      "1 record rules"
+    ],
+    "stakeholders": [],
+    "strategy": null,
+    "metrics": []
+  },
+  "classification": {
+    "value_model": "support",
+    "activity_class": "support",
+    "apqc_category": "9.0 Manage Financial Resources",
+    "rationale": "account_payment: thin support/support module (auto-architect baseline)."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "Payment - Account"
+    ],
+    "typical_fits": [],
+    "common_gaps": [],
+    "drive_hints": [
+      "odoo shell: env['payment.refund.wizard'].search([],limit=3)"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/account_payment.facts.json",
+    "tools": [
+      "extract_module.py",
+      "extract_frontend.py",
+      "gen_thin.py"
+    ],
+    "odoo_version": "19.0"
+  }
+}

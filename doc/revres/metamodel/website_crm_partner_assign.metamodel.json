@@ -1,0 +1,245 @@
+{
+  "subsystem": "website_crm_partner_assign",
+  "evidence": {
+    "manifest": {
+      "name": "Resellers",
+      "category": "Website/Website",
+      "depends": [
+        "base_geolocalize",
+        "crm",
+        "account",
+        "partnership",
+        "website_partner",
+        "website_google_map",
+        "portal"
+      ],
+      "auto_install": false,
+      "application": false
+    },
+    "models": [
+      {
+        "_name": "crm.lead.assignation",
+        "_description": "Lead Assignation",
+        "fields": 6
+      },
+      {
+        "_name": "crm.lead.forward.to.partner",
+        "_description": "Lead forward to partner",
+        "fields": 4
+      },
+      {
+        "_name": "crm.partner.report.assign",
+        "_description": "CRM Partnership Analysis",
+        "fields": 10
+      },
+      {
+        "_name": "res.partner.activation",
+        "_description": "Partner Activation",
+        "fields": 3
+      },
+      {
+        "_name": "res.partner.grade",
+        "_description": null,
+        "fields": 1
+      }
+    ],
+    "routes": [
+      {
+        "paths": [
+          "/my/leads",
+          "/my/leads/page/<int:page>"
+        ],
+        "auth": "user",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/my/opportunities",
+          "/my/opportunities/page/<int:page>"
+        ],
+        "auth": "user",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/my/lead/<model("
+        ],
+        "auth": null,
+        "type": null
+      },
+      {
+        "paths": [
+          "/my/opportunity/<model("
+        ],
+        "auth": null,
+        "type": null
+      },
+      {
+        "paths": [
+          "/partners",
+          "/partners/page/<int:page>",
+          "/partners/grade/<model("
+        ],
+        "auth": null,
+        "type": null
+      },
+      {
+        "paths": [],
+        "auth": null,
+        "type": null
+      }
+    ],
+    "security": {
+      "access_rules": 11,
+      "record_rules": 4,
+      "groups": 0
+    },
+    "views": {
+      "form": 7,
+      "list": 1,
+      "tree": 0,
+      "kanban": 0,
+      "search": 1,
+      "pivot": 0,
+      "graph": 0,
+      "calendar": 0,
+      "activity": 0
+    },
+    "frontend": {
+      "present": true,
+      "js_files": 4,
+      "xml_templates": 2,
+      "owl_components": [],
+      "registry_adds": [
+        "public.interactions:website_crm_partner_assign.crm_partner_assign"
+      ],
+      "patches": [],
+      "services": [],
+      "asset_bundles": {
+        "web.assets_frontend": 1,
+        "website.website_builder_assets": 1,
+        "html_builder.assets_inside_builder_iframe": 1,
+        "web.assets_tests": 1
+      }
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": true,
+      "endpoints": [],
+      "files": []
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    },
+    "behavioral_notes": [
+      {
+        "element": "frontend (OWL/JS)",
+        "observation": "4 JS files, 0 OWL components, 1 registry adds; bundles ['web.assets_frontend', 'website.website_builder_assets', 'html_builder.assets_inside_builder_iframe'].",
+        "source": "static"
+      },
+      {
+        "element": "thin module",
+        "observation": "5 models, 6 routes, 1734 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
+        "source": "ast"
+      }
+    ]
+  },
+  "it_architecture": {
+    "application": "website_crm_partner_assign (Resellers)",
+    "software_services": [
+      "/my/lead/<model(",
+      "/my/leads",
+      "/my/leads/page/<int:page>",
+      "/my/opportunities",
+      "/my/opportunities/page/<int:page>",
+      "/my/opportunity/<model(",
+      "/partners",
+      "/partners/grade/<model(",
+      "/partners/page/<int:page>"
+    ],
+    "data_objects": [
+      "crm.lead.assignation",
+      "crm.lead.forward.to.partner",
+      "crm.partner.report.assign",
+      "res.partner.activation",
+      "res.partner.grade"
+    ],
+    "logical_data_erm": [
+      "crm.lead.assignation -> crm.lead",
+      "crm.lead.assignation -> crm.lead.forward.to.partner",
+      "crm.lead.assignation -> res.partner",
+      "crm.lead.forward.to.partner -> crm.lead.assignation",
+      "crm.lead.forward.to.partner -> res.partner",
+      "crm.partner.report.assign -> res.country",
+      "crm.partner.report.assign -> res.partner",
+      "crm.partner.report.assign -> res.partner.activation",
+      "crm.partner.report.assign -> res.partner.grade",
+      "crm.partner.report.assign -> res.users"
+    ],
+    "information_flows": [
+      "depends: base_geolocalize, crm, account, partnership, website_partner, website_google_map, portal"
+    ],
+    "frontend_components": []
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Resellers"
+    ],
+    "value_streams": [],
+    "information_concepts": [
+      "crm.lead.assignation",
+      "crm.lead.forward.to.partner",
+      "crm.partner.report.assign",
+      "res.partner.activation",
+      "res.partner.grade"
+    ],
+    "organization": [],
+    "products": [],
+    "policies": [
+      "4 record rules"
+    ],
+    "stakeholders": [],
+    "strategy": null,
+    "metrics": []
+  },
+  "classification": {
+    "value_model": "network",
+    "activity_class": "primary",
+    "apqc_category": "3.0 Market and Sell Products and Services",
+    "rationale": "website_crm_partner_assign: thin network/primary module (auto-architect baseline)."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "Resellers"
+    ],
+    "typical_fits": [],
+    "common_gaps": [],
+    "drive_hints": [
+      "odoo shell: env['crm.lead.assignation'].search([],limit=3)"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/website_crm_partner_assign.facts.json",
+    "tools": [
+      "extract_module.py",
+      "extract_frontend.py",
+      "gen_thin.py"
+    ],
+    "odoo_version": "19.0"
+  }
+}

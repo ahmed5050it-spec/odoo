@@ -1,0 +1,1 @@
+{"module": "test_convert", "frontend_gap3": {"present": false, "js_files": 0, "xml_templates": 0, "owl_components": [], "registry_adds": [], "patches": [], "services": [], "asset_bundles": {}}, "integrations_gap7": {"http_call_sites": 0, "sdk_imports": [], "uses_api_keys": false, "endpoints": [], "files": []}}

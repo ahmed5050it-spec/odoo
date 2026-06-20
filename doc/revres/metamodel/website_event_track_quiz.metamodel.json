@@ -1,0 +1,205 @@
+{
+  "subsystem": "website_event_track_quiz",
+  "evidence": {
+    "manifest": {
+      "name": "Quizzes on Tracks",
+      "category": "Marketing/Events",
+      "depends": [
+        "website_profile",
+        "website_event_track"
+      ],
+      "auto_install": false,
+      "application": false
+    },
+    "models": [
+      {
+        "_name": "event.quiz",
+        "_description": "Quiz",
+        "fields": 5
+      },
+      {
+        "_name": "event.quiz.answer",
+        "_description": "Question's Answer",
+        "fields": 6
+      },
+      {
+        "_name": "event.quiz.question",
+        "_description": "Content Quiz Question",
+        "fields": 6
+      }
+    ],
+    "routes": [
+      {
+        "paths": [
+          "/event_track/quiz/submit"
+        ],
+        "auth": "public",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/event_track/quiz/reset"
+        ],
+        "auth": "public",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/event/<model("
+        ],
+        "auth": null,
+        "type": null
+      },
+      {
+        "paths": [
+          "/event/<model("
+        ],
+        "auth": null,
+        "type": null
+      },
+      {
+        "paths": [],
+        "auth": null,
+        "type": null
+      }
+    ],
+    "security": {
+      "access_rules": 3,
+      "record_rules": 0,
+      "groups": 0
+    },
+    "views": {
+      "form": 4,
+      "list": 3,
+      "tree": 0,
+      "kanban": 0,
+      "search": 2,
+      "pivot": 0,
+      "graph": 0,
+      "calendar": 0,
+      "activity": 0
+    },
+    "frontend": {
+      "present": true,
+      "js_files": 2,
+      "xml_templates": 1,
+      "owl_components": [],
+      "registry_adds": [
+        "public.interactions:website_event_track_quiz.leaderboard",
+        "public.interactions:website_event_track_quiz.quiz"
+      ],
+      "patches": [],
+      "services": [],
+      "asset_bundles": {
+        "web.assets_frontend": 3
+      }
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": false,
+      "endpoints": [
+        "https://www.odoo.com/app/events"
+      ],
+      "files": [
+        "__manifest__.py"
+      ]
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    },
+    "behavioral_notes": [
+      {
+        "element": "frontend (OWL/JS)",
+        "observation": "2 JS files, 0 OWL components, 2 registry adds; bundles ['web.assets_frontend'].",
+        "source": "static"
+      },
+      {
+        "element": "thin module",
+        "observation": "3 models, 5 routes, 421 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
+        "source": "ast"
+      }
+    ]
+  },
+  "it_architecture": {
+    "application": "website_event_track_quiz (Quizzes on Tracks)",
+    "software_services": [
+      "/event/<model(",
+      "/event_track/quiz/reset",
+      "/event_track/quiz/submit"
+    ],
+    "data_objects": [
+      "event.quiz",
+      "event.quiz.answer",
+      "event.quiz.question"
+    ],
+    "logical_data_erm": [
+      "event.quiz -> event.event",
+      "event.quiz -> event.quiz.question",
+      "event.quiz -> event.track",
+      "event.quiz.answer -> event.quiz.question",
+      "event.quiz.question -> event.quiz",
+      "event.quiz.question -> event.quiz.answer"
+    ],
+    "information_flows": [
+      "depends: website_profile, website_event_track"
+    ],
+    "frontend_components": []
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Quizzes on Tracks"
+    ],
+    "value_streams": [],
+    "information_concepts": [
+      "event.quiz",
+      "event.quiz.answer",
+      "event.quiz.question"
+    ],
+    "organization": [],
+    "products": [],
+    "policies": [],
+    "stakeholders": [],
+    "strategy": null,
+    "metrics": []
+  },
+  "classification": {
+    "value_model": "network",
+    "activity_class": "primary",
+    "apqc_category": "3.0 Market and Sell Products and Services",
+    "rationale": "website_event_track_quiz: thin network/primary module (auto-architect baseline)."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "Quizzes on Tracks"
+    ],
+    "typical_fits": [],
+    "common_gaps": [],
+    "drive_hints": [
+      "odoo shell: env['event.quiz'].search([],limit=3)"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/website_event_track_quiz.facts.json",
+    "tools": [
+      "extract_module.py",
+      "extract_frontend.py",
+      "gen_thin.py"
+    ],
+    "odoo_version": "19.0"
+  }
+}

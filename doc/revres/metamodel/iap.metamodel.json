@@ -1,0 +1,180 @@
+{
+  "subsystem": "iap",
+  "evidence": {
+    "manifest": {
+      "name": "In-App Purchases",
+      "category": "Hidden/Tools",
+      "depends": [
+        "web",
+        "base_setup"
+      ],
+      "auto_install": true,
+      "application": false
+    },
+    "models": [
+      {
+        "_name": "iap.account",
+        "_description": "IAP Account",
+        "fields": 11
+      },
+      {
+        "_name": "iap.enrich.api",
+        "_description": "IAP Lead Enrichment API",
+        "fields": 0
+      },
+      {
+        "_name": "iap.service",
+        "_description": "IAP Service",
+        "fields": 5
+      }
+    ],
+    "routes": [],
+    "security": {
+      "access_rules": 4,
+      "record_rules": 1,
+      "groups": 0
+    },
+    "views": {
+      "form": 1,
+      "list": 1,
+      "tree": 0,
+      "kanban": 0,
+      "search": 0,
+      "pivot": 0,
+      "graph": 0,
+      "calendar": 0,
+      "activity": 0
+    },
+    "frontend": {
+      "present": true,
+      "js_files": 1,
+      "xml_templates": 1,
+      "owl_components": [
+        "IAPActionButtonsWidget"
+      ],
+      "registry_adds": [
+        "view_widgets:iap_buy_more_credits"
+      ],
+      "patches": [],
+      "services": [],
+      "asset_bundles": {
+        "web.assets_backend": 2
+      }
+    },
+    "integrations": {
+      "http_call_sites": 1,
+      "sdk_imports": [
+        "requests"
+      ],
+      "uses_api_keys": false,
+      "endpoints": [
+        "https://iap-services.odoo.com",
+        "https://iap.odoo.com",
+        "https://iap.odoo.com/iap/1/credit"
+      ],
+      "files": [
+        "models/iap_account.py",
+        "models/iap_enrich_api.py",
+        "tools/iap_tools.py"
+      ]
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    },
+    "behavioral_notes": [
+      {
+        "element": "frontend (OWL/JS)",
+        "observation": "1 JS files, 1 OWL components, 1 registry adds; bundles ['web.assets_backend'].",
+        "source": "static"
+      },
+      {
+        "element": "external integrations",
+        "observation": "1 HTTP call sites; SDKs ['requests']; api_keys=False.",
+        "source": "static"
+      },
+      {
+        "element": "thin module",
+        "observation": "3 models, 0 routes, 723 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
+        "source": "ast"
+      }
+    ]
+  },
+  "it_architecture": {
+    "application": "iap (In-App Purchases)",
+    "software_services": [],
+    "data_objects": [
+      "iap.account",
+      "iap.enrich.api",
+      "iap.service"
+    ],
+    "logical_data_erm": [
+      "iap.account -> iap.service",
+      "iap.account -> res.company",
+      "iap.account -> res.users"
+    ],
+    "information_flows": [
+      "depends: web, base_setup"
+    ],
+    "frontend_components": [
+      "IAPActionButtonsWidget"
+    ]
+  },
+  "business_architecture": {
+    "capabilities": [
+      "In-App Purchases"
+    ],
+    "value_streams": [],
+    "information_concepts": [
+      "iap.account",
+      "iap.enrich.api",
+      "iap.service"
+    ],
+    "organization": [],
+    "products": [],
+    "policies": [
+      "1 record rules"
+    ],
+    "stakeholders": [],
+    "strategy": null,
+    "metrics": []
+  },
+  "classification": {
+    "value_model": "support",
+    "activity_class": "support",
+    "apqc_category": "8.0 Manage Information Technology",
+    "rationale": "iap: thin support/support module (auto-architect baseline)."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "In-App Purchases"
+    ],
+    "typical_fits": [],
+    "common_gaps": [],
+    "drive_hints": [
+      "odoo shell: env['iap.account'].search([],limit=3)"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/iap.facts.json",
+    "tools": [
+      "extract_module.py",
+      "extract_frontend.py",
+      "gen_thin.py"
+    ],
+    "odoo_version": "19.0"
+  }
+}

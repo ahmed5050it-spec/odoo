@@ -1,0 +1,133 @@
+{
+  "subsystem": "l10n_ke",
+  "evidence": {
+    "manifest": {
+      "name": "Kenya - Accounting",
+      "category": "Accounting/Localizations/Account Charts",
+      "depends": [
+        "account"
+      ],
+      "auto_install": [
+        "account"
+      ],
+      "application": false
+    },
+    "models": [
+      {
+        "_name": "l10n_ke.item.code",
+        "_description": "KRA defined codes that justify a given tax rate / exemption",
+        "fields": 3
+      }
+    ],
+    "routes": [],
+    "security": {
+      "access_rules": 2,
+      "record_rules": 0,
+      "groups": 0
+    },
+    "views": {
+      "form": 0,
+      "list": 1,
+      "tree": 0,
+      "kanban": 0,
+      "search": 1,
+      "pivot": 0,
+      "graph": 0,
+      "calendar": 0,
+      "activity": 0
+    },
+    "frontend": {
+      "present": false,
+      "js_files": 0,
+      "xml_templates": 0,
+      "owl_components": [],
+      "registry_adds": [],
+      "patches": [],
+      "services": [],
+      "asset_bundles": {}
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": false,
+      "endpoints": [],
+      "files": []
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    },
+    "behavioral_notes": [
+      {
+        "element": "thin module",
+        "observation": "1 models, 0 routes, 159 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
+        "source": "ast"
+      }
+    ]
+  },
+  "it_architecture": {
+    "application": "l10n_ke (Kenya - Accounting)",
+    "software_services": [],
+    "data_objects": [
+      "l10n_ke.item.code"
+    ],
+    "logical_data_erm": [],
+    "information_flows": [
+      "depends: account"
+    ],
+    "frontend_components": []
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Kenya - Accounting"
+    ],
+    "value_streams": [],
+    "information_concepts": [
+      "l10n_ke.item.code"
+    ],
+    "organization": [],
+    "products": [],
+    "policies": [],
+    "stakeholders": [],
+    "strategy": null,
+    "metrics": []
+  },
+  "classification": {
+    "value_model": "support",
+    "activity_class": "support",
+    "apqc_category": "9.0 Manage Financial Resources",
+    "rationale": "l10n_ke: thin support/support module (auto-architect baseline)."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "Kenya - Accounting"
+    ],
+    "typical_fits": [],
+    "common_gaps": [],
+    "drive_hints": [
+      "odoo shell: env['l10n_ke.item.code'].search([],limit=3)"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/l10n_ke.facts.json",
+    "tools": [
+      "extract_module.py",
+      "extract_frontend.py",
+      "gen_thin.py"
+    ],
+    "odoo_version": "19.0"
+  }
+}

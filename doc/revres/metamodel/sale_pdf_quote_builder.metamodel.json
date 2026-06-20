@@ -1,0 +1,174 @@
+{
+  "subsystem": "sale_pdf_quote_builder",
+  "evidence": {
+    "manifest": {
+      "name": "Sales PDF Quotation Builder",
+      "category": "Sales/Sales",
+      "depends": [
+        "sale_management"
+      ],
+      "auto_install": true,
+      "application": false
+    },
+    "models": [
+      {
+        "_name": "quotation.document",
+        "_description": "Quotation's Headers & Footers",
+        "fields": 7
+      },
+      {
+        "_name": "sale.pdf.form.field",
+        "_description": "Form fields of inside quotation documents.",
+        "fields": 5
+      }
+    ],
+    "routes": [
+      {
+        "paths": [
+          "/sale_pdf_quote_builder/quotation_document/upload"
+        ],
+        "auth": "user",
+        "type": "http"
+      }
+    ],
+    "security": {
+      "access_rules": 4,
+      "record_rules": 1,
+      "groups": 0
+    },
+    "views": {
+      "form": 1,
+      "list": 2,
+      "tree": 0,
+      "kanban": 1,
+      "search": 2,
+      "pivot": 0,
+      "graph": 0,
+      "calendar": 0,
+      "activity": 0
+    },
+    "frontend": {
+      "present": true,
+      "js_files": 5,
+      "xml_templates": 3,
+      "owl_components": [
+        "CustomContentKanbanLikeWidget",
+        "CustomFieldCard"
+      ],
+      "registry_adds": [
+        "fields:quotation_document_many2many",
+        "view_widgets:customContentKanbanLikeWidget",
+        "views:quotation_document_kanban"
+      ],
+      "patches": [],
+      "services": [],
+      "asset_bundles": {
+        "web.assets_backend": 1,
+        "web.assets_tests": 1
+      }
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": false,
+      "endpoints": [],
+      "files": []
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    },
+    "behavioral_notes": [
+      {
+        "element": "frontend (OWL/JS)",
+        "observation": "5 JS files, 2 OWL components, 3 registry adds; bundles ['web.assets_backend', 'web.assets_tests'].",
+        "source": "static"
+      },
+      {
+        "element": "thin module",
+        "observation": "2 models, 1 routes, 1466 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
+        "source": "ast"
+      }
+    ]
+  },
+  "it_architecture": {
+    "application": "sale_pdf_quote_builder (Sales PDF Quotation Builder)",
+    "software_services": [
+      "/sale_pdf_quote_builder/quotation_document/upload"
+    ],
+    "data_objects": [
+      "quotation.document",
+      "sale.pdf.form.field"
+    ],
+    "logical_data_erm": [
+      "quotation.document -> ir.attachment",
+      "quotation.document -> sale.order.template",
+      "quotation.document -> sale.pdf.form.field",
+      "sale.pdf.form.field -> product.document",
+      "sale.pdf.form.field -> quotation.document"
+    ],
+    "information_flows": [
+      "depends: sale_management"
+    ],
+    "frontend_components": [
+      "CustomContentKanbanLikeWidget",
+      "CustomFieldCard"
+    ]
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Sales PDF Quotation Builder"
+    ],
+    "value_streams": [],
+    "information_concepts": [
+      "quotation.document",
+      "sale.pdf.form.field"
+    ],
+    "organization": [],
+    "products": [],
+    "policies": [
+      "1 record rules"
+    ],
+    "stakeholders": [],
+    "strategy": null,
+    "metrics": []
+  },
+  "classification": {
+    "value_model": "chain",
+    "activity_class": "primary",
+    "apqc_category": "3.0 Market and Sell Products and Services",
+    "rationale": "sale_pdf_quote_builder: thin chain/primary module (auto-architect baseline)."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "Sales PDF Quotation Builder"
+    ],
+    "typical_fits": [],
+    "common_gaps": [],
+    "drive_hints": [
+      "odoo shell: env['quotation.document'].search([],limit=3)"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/sale_pdf_quote_builder.facts.json",
+    "tools": [
+      "extract_module.py",
+      "extract_frontend.py",
+      "gen_thin.py"
+    ],
+    "odoo_version": "19.0"
+  }
+}

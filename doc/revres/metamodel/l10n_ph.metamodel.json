@@ -1,0 +1,137 @@
+{
+  "subsystem": "l10n_ph",
+  "evidence": {
+    "manifest": {
+      "name": "Philippines - Accounting",
+      "category": "Accounting/Localizations/Account Charts",
+      "depends": [
+        "account",
+        "base_vat",
+        "l10n_account_withholding_tax"
+      ],
+      "auto_install": [
+        "account"
+      ],
+      "application": false
+    },
+    "models": [
+      {
+        "_name": "l10n_ph_2307.wizard",
+        "_description": "Exports 2307 data to a XLS file.",
+        "fields": 2
+      }
+    ],
+    "routes": [],
+    "security": {
+      "access_rules": 1,
+      "record_rules": 0,
+      "groups": 0
+    },
+    "views": {
+      "form": 0,
+      "list": 0,
+      "tree": 0,
+      "kanban": 0,
+      "search": 0,
+      "pivot": 0,
+      "graph": 0,
+      "calendar": 0,
+      "activity": 0
+    },
+    "frontend": {
+      "present": false,
+      "js_files": 0,
+      "xml_templates": 0,
+      "owl_components": [],
+      "registry_adds": [],
+      "patches": [],
+      "services": [],
+      "asset_bundles": {}
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": false,
+      "endpoints": [],
+      "files": []
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    },
+    "behavioral_notes": [
+      {
+        "element": "thin module",
+        "observation": "1 models, 0 routes, 632 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
+        "source": "ast"
+      }
+    ]
+  },
+  "it_architecture": {
+    "application": "l10n_ph (Philippines - Accounting)",
+    "software_services": [],
+    "data_objects": [
+      "l10n_ph_2307.wizard"
+    ],
+    "logical_data_erm": [
+      "l10n_ph_2307.wizard -> account.move"
+    ],
+    "information_flows": [
+      "depends: account, base_vat, l10n_account_withholding_tax"
+    ],
+    "frontend_components": []
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Philippines - Accounting"
+    ],
+    "value_streams": [],
+    "information_concepts": [
+      "l10n_ph_2307.wizard"
+    ],
+    "organization": [],
+    "products": [],
+    "policies": [],
+    "stakeholders": [],
+    "strategy": null,
+    "metrics": []
+  },
+  "classification": {
+    "value_model": "support",
+    "activity_class": "support",
+    "apqc_category": "9.0 Manage Financial Resources",
+    "rationale": "l10n_ph: thin support/support module (auto-architect baseline)."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "Philippines - Accounting"
+    ],
+    "typical_fits": [],
+    "common_gaps": [],
+    "drive_hints": [
+      "odoo shell: env['l10n_ph_2307.wizard'].search([],limit=3)"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/l10n_ph.facts.json",
+    "tools": [
+      "extract_module.py",
+      "extract_frontend.py",
+      "gen_thin.py"
+    ],
+    "odoo_version": "19.0"
+  }
+}

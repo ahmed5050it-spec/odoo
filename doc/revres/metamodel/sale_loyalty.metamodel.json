@@ -1,0 +1,167 @@
+{
+  "subsystem": "sale_loyalty",
+  "evidence": {
+    "manifest": {
+      "name": "Sale Loyalty",
+      "category": "Sales/Sales",
+      "depends": [
+        "sale",
+        "loyalty"
+      ],
+      "auto_install": true,
+      "application": false
+    },
+    "models": [
+      {
+        "_name": "sale.loyalty.coupon.wizard",
+        "_description": "Sale Loyalty - Apply Coupon Wizard",
+        "fields": 2
+      },
+      {
+        "_name": "sale.loyalty.reward.wizard",
+        "_description": "Sale Loyalty - Reward Selection Wizard",
+        "fields": 6
+      },
+      {
+        "_name": "sale.order.coupon.points",
+        "_description": "Sale Order Coupon Points - Keeps track of how a sale order impacts a coupon",
+        "fields": 3
+      }
+    ],
+    "routes": [],
+    "security": {
+      "access_rules": 17,
+      "record_rules": 0,
+      "groups": 0
+    },
+    "views": {
+      "form": 0,
+      "list": 0,
+      "tree": 0,
+      "kanban": 0,
+      "search": 0,
+      "pivot": 0,
+      "graph": 0,
+      "calendar": 0,
+      "activity": 0
+    },
+    "frontend": {
+      "present": true,
+      "js_files": 1,
+      "xml_templates": 1,
+      "owl_components": [
+        "LoyaltyDataField"
+      ],
+      "registry_adds": [
+        "fields:loyalty_data_field"
+      ],
+      "patches": [],
+      "services": [],
+      "asset_bundles": {
+        "web.assets_backend": 1
+      }
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": false,
+      "endpoints": [],
+      "files": []
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    },
+    "behavioral_notes": [
+      {
+        "element": "frontend (OWL/JS)",
+        "observation": "1 JS files, 1 OWL components, 1 registry adds; bundles ['web.assets_backend'].",
+        "source": "static"
+      },
+      {
+        "element": "thin module",
+        "observation": "3 models, 0 routes, 7780 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
+        "source": "ast"
+      }
+    ]
+  },
+  "it_architecture": {
+    "application": "sale_loyalty (Sale Loyalty)",
+    "software_services": [],
+    "data_objects": [
+      "sale.loyalty.coupon.wizard",
+      "sale.loyalty.reward.wizard",
+      "sale.order.coupon.points"
+    ],
+    "logical_data_erm": [
+      "sale.loyalty.coupon.wizard -> sale.order",
+      "sale.loyalty.reward.wizard -> loyalty.reward",
+      "sale.loyalty.reward.wizard -> product.product",
+      "sale.loyalty.reward.wizard -> sale.order",
+      "sale.loyalty.reward.wizard -> selected_reward_id.reward_product_ids",
+      "sale.order.coupon.points -> loyalty.card",
+      "sale.order.coupon.points -> sale.order"
+    ],
+    "information_flows": [
+      "depends: sale, loyalty"
+    ],
+    "frontend_components": [
+      "LoyaltyDataField"
+    ]
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Sale Loyalty"
+    ],
+    "value_streams": [],
+    "information_concepts": [
+      "sale.loyalty.coupon.wizard",
+      "sale.loyalty.reward.wizard",
+      "sale.order.coupon.points"
+    ],
+    "organization": [],
+    "products": [],
+    "policies": [],
+    "stakeholders": [],
+    "strategy": null,
+    "metrics": []
+  },
+  "classification": {
+    "value_model": "chain",
+    "activity_class": "primary",
+    "apqc_category": "3.0 Market and Sell Products and Services",
+    "rationale": "sale_loyalty: thin chain/primary module (auto-architect baseline)."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "Sale Loyalty"
+    ],
+    "typical_fits": [],
+    "common_gaps": [],
+    "drive_hints": [
+      "odoo shell: env['sale.loyalty.coupon.wizard'].search([],limit=3)"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/sale_loyalty.facts.json",
+    "tools": [
+      "extract_module.py",
+      "extract_frontend.py",
+      "gen_thin.py"
+    ],
+    "odoo_version": "19.0"
+  }
+}

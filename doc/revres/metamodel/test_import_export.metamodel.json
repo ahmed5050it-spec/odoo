@@ -1,0 +1,330 @@
+{
+  "subsystem": "test_import_export",
+  "evidence": {
+    "manifest": {
+      "name": "Test - Import & Export",
+      "category": "Hidden",
+      "depends": [
+        "web",
+        "base_import",
+        "website"
+      ],
+      "auto_install": false,
+      "application": false
+    },
+    "models": [
+      {
+        "_name": "export.aggregator",
+        "_description": "Export Aggregator",
+        "fields": 16
+      },
+      {
+        "_name": "export.aggregator.admin",
+        "_description": "Export Aggregator only for admin",
+        "fields": 1
+      },
+      {
+        "_name": "export.aggregator.one2many",
+        "_description": "Export Aggregator One2Many",
+        "fields": 6
+      },
+      {
+        "_name": "export.inherits.child",
+        "_description": "export.inherits.child",
+        "fields": 2
+      },
+      {
+        "_name": "export.inherits.parent",
+        "_description": "export.inherits.parent",
+        "fields": 1
+      },
+      {
+        "_name": "export.m2o.str",
+        "_description": "export.m2o.str",
+        "fields": 1
+      },
+      {
+        "_name": "export.m2o.str.child",
+        "_description": "export.m2o.str.child",
+        "fields": 1
+      },
+      {
+        "_name": "export.many2many.other",
+        "_description": "Export Many to Many Other",
+        "fields": 2
+      },
+      {
+        "_name": "export.many2one.required.subfield",
+        "_description": "export.many2one.required.subfield",
+        "fields": 1
+      },
+      {
+        "_name": "export.one2many.child",
+        "_description": "Export One to Many Child",
+        "fields": 4
+      },
+      {
+        "_name": "export.one2many.child.1",
+        "_description": "Export One to Many Child 1",
+        "fields": 0
+      },
+      {
+        "_name": "export.one2many.child.2",
+        "_description": "Export One To Many Child 2",
+        "fields": 0
+      },
+      {
+        "_name": "export.one2many.multiple",
+        "_description": "Export One To Many Multiple",
+        "fields": 4
+      },
+      {
+        "_name": "export.one2many.multiple.child",
+        "_description": "Export One To Many Multiple Child",
+        "fields": 3
+      },
+      {
+        "_name": "export.one2many.recursive",
+        "_description": "Export One To Many Recursive",
+        "fields": 2
+      },
+      {
+        "_name": "export.selection.withdefault",
+        "_description": "Export Selection With Default",
+        "fields": 2
+      },
+      {
+        "_name": "export.unique",
+        "_description": "Export Unique",
+        "fields": 3
+      },
+      {
+        "_name": "export.with.non.demo.constraint",
+        "_description": "export.with.non.demo.constraint",
+        "fields": 1
+      },
+      {
+        "_name": "export.with.required.field",
+        "_description": "export.with.required.field",
+        "fields": 2
+      },
+      {
+        "_name": "import.char",
+        "_description": "Tests: Base Import Model, Character",
+        "fields": 1
+      },
+      {
+        "_name": "import.char.noreadonly",
+        "_description": "Tests: Base Import Model, Character No readonly",
+        "fields": 1
+      },
+      {
+        "_name": "import.char.readonly",
+        "_description": "Tests: Base Import Model, Character readonly",
+        "fields": 1
+      },
+      {
+        "_name": "import.char.required",
+        "_description": "Tests: Base Import Model, Character required",
+        "fields": 1
+      },
+      {
+        "_name": "import.char.stillreadonly",
+        "_description": "Tests: Base Import Model, Character still readonly",
+        "fields": 1
+      },
+      {
+        "_name": "import.complex",
+        "_description": "Tests: Base Import Model Complex",
+        "fields": 8
+      },
+      {
+        "_name": "import.float",
+        "_description": "Tests: Base Import Model Float",
+        "fields": 3
+      },
+      {
+        "_name": "import.m2o",
+        "_description": "Tests: Base Import Model, Many to One",
+        "fields": 1
+      },
+      {
+        "_name": "import.m2o.related",
+        "_description": "Tests: Base Import Model, Many to One related",
+        "fields": 1
+      },
+      {
+        "_name": "import.m2o.required",
+        "_description": "Tests: Base Import Model, Many to One required",
+        "fields": 1
+      },
+      {
+        "_name": "import.m2o.required.related",
+        "_description": "Tests: Base Import Model, Many to One required related",
+        "fields": 1
+      },
+      {
+        "_name": "import.o2m",
+        "_description": "Tests: Base Import Model, One to Many",
+        "fields": 2
+      },
+      {
+        "_name": "import.o2m.child",
+        "_description": "Tests: Base Import Model, One to Many child",
+        "fields": 3
+      },
+      {
+        "_name": "import.preview",
+        "_description": "Tests: Base Import Model Preview",
+        "fields": 5
+      },
+      {
+        "_name": "import.properties",
+        "_description": "import.properties",
+        "fields": 2
+      },
+      {
+        "_name": "import.properties.definition",
+        "_description": "import.properties.definition",
+        "fields": 3
+      }
+    ],
+    "routes": [],
+    "security": {
+      "access_rules": 54,
+      "record_rules": 0,
+      "groups": 0
+    },
+    "views": {},
+    "frontend": {
+      "present": false,
+      "js_files": 0,
+      "xml_templates": 0,
+      "owl_components": [],
+      "registry_adds": [],
+      "patches": [],
+      "services": [],
+      "asset_bundles": {}
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": false,
+      "endpoints": [],
+      "files": []
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    },
+    "behavioral_notes": [
+      {
+        "element": "thin module",
+        "observation": "35 models, 0 routes, 5646 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
+        "source": "ast"
+      }
+    ]
+  },
+  "it_architecture": {
+    "application": "test_import_export (Test - Import & Export)",
+    "software_services": [],
+    "data_objects": [
+      "export.aggregator",
+      "export.aggregator.admin",
+      "export.aggregator.one2many",
+      "export.inherits.child",
+      "export.inherits.parent",
+      "export.m2o.str",
+      "export.m2o.str.child",
+      "export.many2many.other",
+      "export.many2one.required.subfield",
+      "export.one2many.child",
+      "export.one2many.child.1",
+      "export.one2many.child.2",
+      "export.one2many.multiple",
+      "export.one2many.multiple.child",
+      "export.one2many.recursive",
+      "export.selection.withdefault",
+      "export.unique",
+      "export.with.non.demo.constraint",
+      "export.with.required.field",
+      "import.char"
+    ],
+    "logical_data_erm": [
+      "export.aggregator -> export.aggregator",
+      "export.aggregator -> export.aggregator.one2many",
+      "export.aggregator -> export.integer",
+      "export.aggregator -> res.currency",
+      "export.aggregator -> res.partner",
+      "export.aggregator.one2many -> export.aggregator",
+      "export.aggregator.one2many -> export.aggregator.admin",
+      "export.inherits.child -> export.inherits.parent",
+      "export.m2o.str -> export.m2o.str.child",
+      "export.many2one.required.subfield -> export.with.required.field",
+      "export.one2many.child -> export.integer",
+      "export.one2many.child -> export.one2many"
+    ],
+    "information_flows": [
+      "depends: web, base_import, website"
+    ],
+    "frontend_components": []
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Test - Import & Export"
+    ],
+    "value_streams": [],
+    "information_concepts": [
+      "export.aggregator",
+      "export.aggregator.admin",
+      "export.aggregator.one2many",
+      "export.inherits.child",
+      "export.inherits.parent",
+      "export.m2o.str"
+    ],
+    "organization": [],
+    "products": [],
+    "policies": [],
+    "stakeholders": [],
+    "strategy": null,
+    "metrics": []
+  },
+  "classification": {
+    "value_model": "support",
+    "activity_class": "support",
+    "apqc_category": "13.0 Develop and Manage Business Capabilities",
+    "rationale": "test_import_export: thin support/support module (auto-architect baseline)."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "Test - Import & Export"
+    ],
+    "typical_fits": [],
+    "common_gaps": [],
+    "drive_hints": [
+      "odoo shell: env['export.aggregator'].search([],limit=3)"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/test_import_export.facts.json",
+    "tools": [
+      "extract_module.py",
+      "extract_frontend.py",
+      "gen_thin.py"
+    ],
+    "odoo_version": "19.0"
+  }
+}

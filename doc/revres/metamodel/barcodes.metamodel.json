@@ -1,0 +1,170 @@
+{
+  "subsystem": "barcodes",
+  "evidence": {
+    "manifest": {
+      "name": "Barcode",
+      "category": "Supply Chain/Inventory",
+      "depends": [
+        "web"
+      ],
+      "auto_install": false,
+      "application": false
+    },
+    "models": [
+      {
+        "_name": "barcode.nomenclature",
+        "_description": "Barcode Nomenclature",
+        "fields": 3
+      },
+      {
+        "_name": "barcode.rule",
+        "_description": "Barcode Rule",
+        "fields": 7
+      },
+      {
+        "_name": "barcodes.barcode_events_mixin",
+        "_description": "Barcode Event Mixin",
+        "fields": 1
+      }
+    ],
+    "routes": [],
+    "security": {
+      "access_rules": 4,
+      "record_rules": 0,
+      "groups": 0
+    },
+    "views": {
+      "form": 2,
+      "list": 2,
+      "tree": 0,
+      "kanban": 0,
+      "search": 0,
+      "pivot": 0,
+      "graph": 0,
+      "calendar": 0,
+      "activity": 0
+    },
+    "frontend": {
+      "present": true,
+      "js_files": 7,
+      "xml_templates": 3,
+      "owl_components": [
+        "BarcodeHandlerField",
+        "BarcodeInput",
+        "BarcodeScanner"
+      ],
+      "registry_adds": [
+        "fields:barcode_handler",
+        "fields:field_float_scannable",
+        "services:barcode",
+        "services:barcode_handlers"
+      ],
+      "patches": [],
+      "services": [],
+      "asset_bundles": {
+        "web.assets_backend": 1,
+        "web.tests_assets": 1,
+        "web.assets_unit_tests": 1
+      }
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": false,
+      "endpoints": [],
+      "files": []
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    },
+    "behavioral_notes": [
+      {
+        "element": "frontend (OWL/JS)",
+        "observation": "7 JS files, 3 OWL components, 4 registry adds; bundles ['web.assets_backend', 'web.tests_assets', 'web.assets_unit_tests'].",
+        "source": "static"
+      },
+      {
+        "element": "thin module",
+        "observation": "3 models, 0 routes, 655 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
+        "source": "ast"
+      }
+    ]
+  },
+  "it_architecture": {
+    "application": "barcodes (Barcode)",
+    "software_services": [],
+    "data_objects": [
+      "barcode.nomenclature",
+      "barcode.rule",
+      "barcodes.barcode_events_mixin"
+    ],
+    "logical_data_erm": [
+      "barcode.nomenclature -> barcode.rule",
+      "barcode.rule -> barcode.nomenclature"
+    ],
+    "information_flows": [
+      "depends: web"
+    ],
+    "frontend_components": [
+      "BarcodeHandlerField",
+      "BarcodeInput",
+      "BarcodeScanner"
+    ]
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Barcode"
+    ],
+    "value_streams": [],
+    "information_concepts": [
+      "barcode.nomenclature",
+      "barcode.rule",
+      "barcodes.barcode_events_mixin"
+    ],
+    "organization": [],
+    "products": [],
+    "policies": [],
+    "stakeholders": [],
+    "strategy": null,
+    "metrics": []
+  },
+  "classification": {
+    "value_model": "chain",
+    "activity_class": "support",
+    "apqc_category": "4.0 Deliver Physical Products",
+    "rationale": "barcodes: thin chain/support module (auto-architect baseline)."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "Barcode"
+    ],
+    "typical_fits": [],
+    "common_gaps": [],
+    "drive_hints": [
+      "odoo shell: env['barcode.nomenclature'].search([],limit=3)"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/barcodes.facts.json",
+    "tools": [
+      "extract_module.py",
+      "extract_frontend.py",
+      "gen_thin.py"
+    ],
+    "odoo_version": "19.0"
+  }
+}

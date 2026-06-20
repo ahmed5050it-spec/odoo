@@ -1,0 +1,144 @@
+{
+  "subsystem": "test_event_full",
+  "evidence": {
+    "manifest": {
+      "name": "Test Full Event Flow",
+      "category": "Hidden/Tests",
+      "depends": [
+        "event",
+        "event_booth",
+        "event_crm",
+        "event_crm_sale",
+        "event_sale",
+        "event_sms",
+        "payment_demo",
+        "website_event_booth_sale_exhibitor",
+        "website_event_exhibitor",
+        "website_event_sale",
+        "website_event_track",
+        "website_event_track_live",
+        "website_event_track_quiz"
+      ],
+      "auto_install": false,
+      "application": false
+    },
+    "models": [],
+    "routes": [],
+    "security": {
+      "access_rules": 0,
+      "record_rules": 0,
+      "groups": 0
+    },
+    "views": {
+      "form": 0,
+      "list": 0,
+      "tree": 0,
+      "kanban": 0,
+      "search": 0,
+      "pivot": 0,
+      "graph": 0,
+      "calendar": 0,
+      "activity": 0
+    },
+    "frontend": {
+      "present": true,
+      "js_files": 3,
+      "xml_templates": 0,
+      "owl_components": [],
+      "registry_adds": [
+        "web_tour.tours:wevent_performance_register",
+        "web_tour.tours:wevent_register"
+      ],
+      "patches": [],
+      "services": [],
+      "asset_bundles": {
+        "web.assets_tests": 1,
+        "web.assets_unit_tests": 1
+      }
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": false,
+      "endpoints": [],
+      "files": []
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    },
+    "behavioral_notes": [
+      {
+        "element": "frontend (OWL/JS)",
+        "observation": "3 JS files, 0 OWL components, 2 registry adds; bundles ['web.assets_tests', 'web.assets_unit_tests'].",
+        "source": "static"
+      },
+      {
+        "element": "thin module",
+        "observation": "0 models, 0 routes, 2122 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
+        "source": "ast"
+      }
+    ]
+  },
+  "it_architecture": {
+    "application": "test_event_full (Test Full Event Flow)",
+    "software_services": [],
+    "data_objects": [],
+    "logical_data_erm": [],
+    "information_flows": [
+      "depends: event, event_booth, event_crm, event_crm_sale, event_sale, event_sms, payment_demo, website_event_booth_sale_exhibitor, website_event_exhibitor, website_event_sale, website_event_track, website_event_track_live, website_event_track_quiz"
+    ],
+    "frontend_components": []
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Test Full Event Flow"
+    ],
+    "value_streams": [],
+    "information_concepts": [],
+    "organization": [],
+    "products": [],
+    "policies": [],
+    "stakeholders": [],
+    "strategy": null,
+    "metrics": []
+  },
+  "classification": {
+    "value_model": "support",
+    "activity_class": "support",
+    "apqc_category": "13.0 Develop and Manage Business Capabilities",
+    "rationale": "test_event_full: thin support/support module (auto-architect baseline)."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "Test Full Event Flow"
+    ],
+    "typical_fits": [],
+    "common_gaps": [],
+    "drive_hints": [
+      "n/a"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/test_event_full.facts.json",
+    "tools": [
+      "extract_module.py",
+      "extract_frontend.py",
+      "gen_thin.py"
+    ],
+    "odoo_version": "19.0"
+  }
+}

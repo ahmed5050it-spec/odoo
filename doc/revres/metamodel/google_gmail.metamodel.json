@@ -1,0 +1,179 @@
+{
+  "subsystem": "google_gmail",
+  "evidence": {
+    "manifest": {
+      "name": "Google Gmail",
+      "category": "Hidden",
+      "depends": [
+        "mail"
+      ],
+      "auto_install": true,
+      "application": false
+    },
+    "models": [
+      {
+        "_name": "fetchmail.server",
+        "_description": null,
+        "fields": 1
+      },
+      {
+        "_name": "google.gmail.mixin",
+        "_description": "Google Gmail Mixin",
+        "fields": 5
+      },
+      {
+        "_name": "ir.mail_server",
+        "_description": null,
+        "fields": 1
+      }
+    ],
+    "routes": [
+      {
+        "paths": [
+          "/google_gmail/confirm"
+        ],
+        "auth": "user",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/google_gmail/iap_confirm"
+        ],
+        "auth": "user",
+        "type": "http"
+      }
+    ],
+    "security": {
+      "access_rules": 0,
+      "record_rules": 0,
+      "groups": 0
+    },
+    "views": {
+      "form": 0,
+      "list": 0,
+      "tree": 0,
+      "kanban": 0,
+      "search": 0,
+      "pivot": 0,
+      "graph": 0,
+      "calendar": 0,
+      "activity": 0
+    },
+    "frontend": {
+      "present": false,
+      "js_files": 0,
+      "xml_templates": 0,
+      "owl_components": [],
+      "registry_adds": [],
+      "patches": [],
+      "services": [],
+      "asset_bundles": {}
+    },
+    "integrations": {
+      "http_call_sites": 4,
+      "sdk_imports": [
+        "requests"
+      ],
+      "uses_api_keys": true,
+      "endpoints": [
+        "https://accounts.google.com/o/oauth2/v2/auth?%s",
+        "https://gmail.api.odoo.com",
+        "https://mail.google.com/ https://www.googleapis.com/auth/userinfo.email",
+        "https://oauth2.googleapis.com/token",
+        "https://www.googleapis.com/oauth2/v2/userinfo"
+      ],
+      "files": [
+        "controllers/main.py",
+        "models/google_gmail_mixin.py"
+      ]
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    },
+    "behavioral_notes": [
+      {
+        "element": "external integrations",
+        "observation": "4 HTTP call sites; SDKs ['requests']; api_keys=True.",
+        "source": "static"
+      },
+      {
+        "element": "thin module",
+        "observation": "3 models, 2 routes, 712 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
+        "source": "ast"
+      }
+    ]
+  },
+  "it_architecture": {
+    "application": "google_gmail (Google Gmail)",
+    "software_services": [
+      "/google_gmail/confirm",
+      "/google_gmail/iap_confirm"
+    ],
+    "data_objects": [
+      "fetchmail.server",
+      "google.gmail.mixin",
+      "ir.mail_server"
+    ],
+    "logical_data_erm": [],
+    "information_flows": [
+      "depends: mail"
+    ],
+    "frontend_components": []
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Google Gmail"
+    ],
+    "value_streams": [],
+    "information_concepts": [
+      "fetchmail.server",
+      "google.gmail.mixin",
+      "ir.mail_server"
+    ],
+    "organization": [],
+    "products": [],
+    "policies": [],
+    "stakeholders": [],
+    "strategy": null,
+    "metrics": []
+  },
+  "classification": {
+    "value_model": "support",
+    "activity_class": "support",
+    "apqc_category": "13.0 Develop and Manage Business Capabilities",
+    "rationale": "google_gmail: thin support/support module (auto-architect baseline)."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "Google Gmail"
+    ],
+    "typical_fits": [],
+    "common_gaps": [],
+    "drive_hints": [
+      "odoo shell: env['fetchmail.server'].search([],limit=3)"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/google_gmail.facts.json",
+    "tools": [
+      "extract_module.py",
+      "extract_frontend.py",
+      "gen_thin.py"
+    ],
+    "odoo_version": "19.0"
+  }
+}

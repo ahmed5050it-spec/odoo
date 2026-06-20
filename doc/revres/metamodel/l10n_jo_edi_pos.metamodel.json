@@ -1,0 +1,145 @@
+{
+  "subsystem": "l10n_jo_edi_pos",
+  "evidence": {
+    "manifest": {
+      "name": "Jordan Accounting EDI for POS",
+      "category": "Accounting/Localizations/EDI",
+      "depends": [
+        "l10n_jo_edi",
+        "pos_edi_ubl"
+      ],
+      "auto_install": true,
+      "application": false
+    },
+    "models": [
+      {
+        "_name": "pos.edi.xml.ubl_21.jo",
+        "_description": "UBL 2.1 (JoFotara) for PoS Orders",
+        "fields": 0
+      }
+    ],
+    "routes": [],
+    "security": {
+      "access_rules": 0,
+      "record_rules": 0,
+      "groups": 0
+    },
+    "views": {
+      "form": 0,
+      "list": 0,
+      "tree": 0,
+      "kanban": 0,
+      "search": 0,
+      "pivot": 0,
+      "graph": 0,
+      "calendar": 0,
+      "activity": 0
+    },
+    "frontend": {
+      "present": true,
+      "js_files": 4,
+      "xml_templates": 2,
+      "owl_components": [],
+      "registry_adds": [],
+      "patches": [
+        "InvoiceButton.prototype",
+        "PosOrder.prototype",
+        "ReceiptScreen.prototype",
+        "TicketScreen.prototype"
+      ],
+      "services": [],
+      "asset_bundles": {
+        "point_of_sale._assets_pos": 1,
+        "web.assets_tests": 1
+      }
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": false,
+      "endpoints": [],
+      "files": []
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    },
+    "behavioral_notes": [
+      {
+        "element": "frontend (OWL/JS)",
+        "observation": "4 JS files, 0 OWL components, 0 registry adds; bundles ['point_of_sale._assets_pos', 'web.assets_tests'].",
+        "source": "static"
+      },
+      {
+        "element": "thin module",
+        "observation": "1 models, 0 routes, 1437 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
+        "source": "ast"
+      }
+    ]
+  },
+  "it_architecture": {
+    "application": "l10n_jo_edi_pos (Jordan Accounting EDI for POS)",
+    "software_services": [],
+    "data_objects": [
+      "pos.edi.xml.ubl_21.jo"
+    ],
+    "logical_data_erm": [],
+    "information_flows": [
+      "depends: l10n_jo_edi, pos_edi_ubl"
+    ],
+    "frontend_components": []
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Jordan Accounting EDI for POS"
+    ],
+    "value_streams": [],
+    "information_concepts": [
+      "pos.edi.xml.ubl_21.jo"
+    ],
+    "organization": [],
+    "products": [],
+    "policies": [],
+    "stakeholders": [],
+    "strategy": null,
+    "metrics": []
+  },
+  "classification": {
+    "value_model": "support",
+    "activity_class": "support",
+    "apqc_category": "9.0 Manage Financial Resources",
+    "rationale": "l10n_jo_edi_pos: thin support/support module (auto-architect baseline)."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "Jordan Accounting EDI for POS"
+    ],
+    "typical_fits": [],
+    "common_gaps": [],
+    "drive_hints": [
+      "odoo shell: env['pos.edi.xml.ubl_21.jo'].search([],limit=3)"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/l10n_jo_edi_pos.facts.json",
+    "tools": [
+      "extract_module.py",
+      "extract_frontend.py",
+      "gen_thin.py"
+    ],
+    "odoo_version": "19.0"
+  }
+}

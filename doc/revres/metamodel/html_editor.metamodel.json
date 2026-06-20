@@ -1,0 +1,500 @@
+{
+  "subsystem": "html_editor",
+  "evidence": {
+    "manifest": {
+      "name": "HTML Editor",
+      "category": "Hidden",
+      "depends": [
+        "base",
+        "bus",
+        "web"
+      ],
+      "auto_install": true,
+      "application": false
+    },
+    "models": [
+      {
+        "_name": "html.field.history.mixin",
+        "_description": "Field html History",
+        "fields": 2
+      },
+      {
+        "_name": "html_editor.converter.test",
+        "_description": "Html Editor Converter Test",
+        "fields": 11
+      },
+      {
+        "_name": "html_editor.converter.test.sub",
+        "_description": "Html Editor Converter Subtest",
+        "fields": 1
+      },
+      {
+        "_name": "ir.qweb.field",
+        "_description": "Qweb Field",
+        "fields": 0
+      },
+      {
+        "_name": "ir.qweb.field.contact",
+        "_description": "Qweb Field Contact",
+        "fields": 0
+      },
+      {
+        "_name": "ir.qweb.field.date",
+        "_description": "Qweb Field Date",
+        "fields": 0
+      },
+      {
+        "_name": "ir.qweb.field.datetime",
+        "_description": "Qweb Field Datetime",
+        "fields": 0
+      },
+      {
+        "_name": "ir.qweb.field.duration",
+        "_description": "Qweb Field Duration",
+        "fields": 0
+      },
+      {
+        "_name": "ir.qweb.field.float",
+        "_description": "Qweb Field Float",
+        "fields": 0
+      },
+      {
+        "_name": "ir.qweb.field.html",
+        "_description": "Qweb Field HTML",
+        "fields": 0
+      },
+      {
+        "_name": "ir.qweb.field.image",
+        "_description": "Qweb Field Image",
+        "fields": 0
+      },
+      {
+        "_name": "ir.qweb.field.integer",
+        "_description": "Qweb Field Integer",
+        "fields": 0
+      },
+      {
+        "_name": "ir.qweb.field.many2one",
+        "_description": "Qweb Field Many to One",
+        "fields": 0
+      },
+      {
+        "_name": "ir.qweb.field.qweb",
+        "_description": "Qweb Field qweb",
+        "fields": 0
+      },
+      {
+        "_name": "ir.qweb.field.relative",
+        "_description": "Qweb Field Relative",
+        "fields": 0
+      },
+      {
+        "_name": "ir.qweb.field.selection",
+        "_description": "Qweb Field Selection",
+        "fields": 0
+      },
+      {
+        "_name": "ir.qweb.field.text",
+        "_description": "Qweb Field Text",
+        "fields": 0
+      }
+    ],
+    "routes": [
+      {
+        "paths": [
+          "/html_editor/attachment/remove"
+        ],
+        "auth": "user",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/web_editor/get_image_info",
+          "/html_editor/get_image_info"
+        ],
+        "auth": "user",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/web_editor/video_url/data",
+          "/html_editor/video_url/data"
+        ],
+        "auth": "user",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/web_editor/attachment/add_data",
+          "/html_editor/attachment/add_data"
+        ],
+        "auth": "user",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/web_editor/attachment/add_url",
+          "/html_editor/attachment/add_url"
+        ],
+        "auth": "user",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/web_editor/modify_image/<model("
+        ],
+        "auth": null,
+        "type": null
+      },
+      {
+        "paths": [
+          "/web_editor/save_library_media",
+          "/html_editor/save_library_media"
+        ],
+        "auth": "user",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/web_editor/shape/<module>/<path:filename>",
+          "/html_editor/shape/<module>/<path:filename>"
+        ],
+        "auth": "public",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/web_editor/image_shape/<string:img_key>/<module>/<path:filename>",
+          "/html_editor/image_shape/<string:img_key>/<module>/<path:filename>"
+        ],
+        "auth": "public",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/web_editor/generate_text",
+          "/html_editor/generate_text"
+        ],
+        "auth": "user",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/web_editor/get_ice_servers",
+          "/html_editor/get_ice_servers"
+        ],
+        "auth": "user",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/web_editor/bus_broadcast",
+          "/html_editor/bus_broadcast"
+        ],
+        "auth": "user",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/html_editor/link_preview_external"
+        ],
+        "auth": "public",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/html_editor/link_preview_internal"
+        ],
+        "auth": "user",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/html_editor/media_library_search"
+        ],
+        "auth": "user",
+        "type": "jsonrpc"
+      }
+    ],
+    "security": {
+      "access_rules": 2,
+      "record_rules": 0,
+      "groups": 0
+    },
+    "views": {},
+    "frontend": {
+      "present": true,
+      "js_files": 187,
+      "xml_templates": 58,
+      "owl_components": [
+        "AlignSelector",
+        "Attachment",
+        "AttachmentError",
+        "ChatGPTDialog",
+        "CodeToolbar",
+        "ColorPickerGradientTab",
+        "ColorSelector",
+        "EditorOverlay",
+        "EmbeddedCaptionComponent",
+        "EmbeddedComponentToolbar",
+        "EmbeddedComponentToolbarButton",
+        "EmbeddedDummy",
+        "EmbeddedSyntaxHighlightingComponent",
+        "EmbeddedTableOfContentComponent",
+        "EmbeddedToggleBlockComponent",
+        "FileSelector",
+        "FileSelectorControlPanel",
+        "FontFamilySelector",
+        "FontSelector",
+        "FontSizeSelector",
+        "GradientPicker",
+        "HistoryDialog",
+        "HtmlField",
+        "HtmlViewer",
+        "IconSelector",
+        "ImageCrop",
+        "ImageDescription",
+        "ImageDescriptionPopover",
+        "ImageToolbarDropdown",
+        "ImageTransformButton",
+        "ImageTransformation",
+        "LanguageSelector",
+        "LinkPopover",
+        "ListSelector",
+        "MediaDialog",
+        "Powerbox",
+        "ProgressBar",
+        "QWebPicker",
+        "ReadonlyEmbeddedFileComponent",
+        "ReadonlyEmbeddedVideoComponent"
+      ],
+      "registry_adds": [
+        "color_picker_tabs:html_editor.gradient",
+        "fields:html",
+        "fields:x2_many_image",
+        "fields:x2_many_media_viewer",
+        "main_components:ImageCropping",
+        "main_components:ImageTransformation",
+        "main_components:UploadProgressToast",
+        "public.interactions:html_editor.embedded_component",
+        "public.interactions:html_editor.html_migrations",
+        "services:upload",
+        "services:uploadLocalFiles"
+      ],
+      "patches": [
+        "PropertyValue.prototype"
+      ],
+      "services": [
+        "Default",
+        "Large",
+        "Medium",
+        "None",
+        "Small",
+        "XL",
+        "caption",
+        "clear_content",
+        "delete",
+        "file",
+        "image_padding",
+        "image_size",
+        "insert_above",
+        "insert_below",
+        "insert_left",
+        "insert_right",
+        "make_header",
+        "move_down",
+        "move_left",
+        "move_right",
+        "move_up",
+        "readonlySyntaxHighlighting",
+        "remove_header",
+        "reset_column_size",
+        "reset_row_size",
+        "reset_table_size",
+        "syntaxHighlighting",
+        "tableOfContent",
+        "toggleBlock",
+        "useDragAndDrop",
+        "video"
+      ],
+      "asset_bundles": {
+        "web._assets_primary_variables": 1,
+        "web.assets_frontend": 7,
+        "web.assets_backend": 8,
+        "html_editor.assets_editor": 14,
+        "html_editor.assets_history_diff": 2,
+        "html_editor.assets_media_dialog": 2,
+        "html_editor.assets_readonly": 11,
+        "web.assets_web_dark": 1,
+        "web.assets_tests": 1,
+        "web.assets_unit_tests": 1,
+        "web.assets_unit_tests_setup": 1,
+        "html_editor.assets_image_cropper": 3,
+        "web.report_assets_common": 3,
+        "web._assets_secondary_variables": 1,
+        "web._assets_backend_helpers": 2,
+        "web._assets_frontend_helpers": 1,
+        "html_editor.assets_prism": 2,
+        "html_editor.assets_prism_dark": 2
+      }
+    },
+    "integrations": {
+      "http_call_sites": 9,
+      "sdk_imports": [
+        "requests"
+      ],
+      "uses_api_keys": true,
+      "endpoints": [
+        "http://vimeo.com/api/oembed.json?url={video_url}",
+        "https://img.youtube.com/vi/{video_id}/0.jpg",
+        "https://media-api.odoo.com",
+        "https://olg.api.odoo.com",
+        "https://www.dailymotion.com/thumbnail/video/{video_id}",
+        "https://www.instagram.com/p/{video_id}/media/?size=t",
+        "https://www.odoo.com"
+      ],
+      "files": [
+        "__manifest__.py",
+        "controllers/main.py",
+        "models/ir_qweb_fields.py",
+        "tools.py"
+      ]
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    },
+    "behavioral_notes": [
+      {
+        "element": "frontend (OWL/JS)",
+        "observation": "187 JS files, 40 OWL components, 11 registry adds; bundles ['web._assets_primary_variables', 'web.assets_frontend', 'web.assets_backend'].",
+        "source": "static"
+      },
+      {
+        "element": "external integrations",
+        "observation": "9 HTTP call sites; SDKs ['requests']; api_keys=True.",
+        "source": "static"
+      },
+      {
+        "element": "thin module",
+        "observation": "17 models, 15 routes, 4282 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
+        "source": "ast"
+      }
+    ]
+  },
+  "it_architecture": {
+    "application": "html_editor (HTML Editor)",
+    "software_services": [
+      "/html_editor/attachment/add_data",
+      "/html_editor/attachment/add_url",
+      "/html_editor/attachment/remove",
+      "/html_editor/bus_broadcast",
+      "/html_editor/generate_text",
+      "/html_editor/get_ice_servers",
+      "/html_editor/get_image_info",
+      "/html_editor/image_shape/<string:img_key>/<module>/<path:filename>",
+      "/html_editor/link_preview_external",
+      "/html_editor/link_preview_internal"
+    ],
+    "data_objects": [
+      "html.field.history.mixin",
+      "html_editor.converter.test",
+      "html_editor.converter.test.sub",
+      "ir.qweb.field",
+      "ir.qweb.field.contact",
+      "ir.qweb.field.date",
+      "ir.qweb.field.datetime",
+      "ir.qweb.field.duration",
+      "ir.qweb.field.float",
+      "ir.qweb.field.html",
+      "ir.qweb.field.image",
+      "ir.qweb.field.integer",
+      "ir.qweb.field.many2one",
+      "ir.qweb.field.qweb",
+      "ir.qweb.field.relative",
+      "ir.qweb.field.selection",
+      "ir.qweb.field.text"
+    ],
+    "logical_data_erm": [
+      "html_editor.converter.test -> html_editor.converter.test.sub"
+    ],
+    "information_flows": [
+      "depends: base, bus, web"
+    ],
+    "frontend_components": [
+      "AlignSelector",
+      "Attachment",
+      "AttachmentError",
+      "ChatGPTDialog",
+      "CodeToolbar",
+      "ColorPickerGradientTab",
+      "ColorSelector",
+      "EditorOverlay",
+      "EmbeddedCaptionComponent",
+      "EmbeddedComponentToolbar",
+      "EmbeddedComponentToolbarButton",
+      "EmbeddedDummy",
+      "EmbeddedSyntaxHighlightingComponent",
+      "EmbeddedTableOfContentComponent",
+      "EmbeddedToggleBlockComponent"
+    ]
+  },
+  "business_architecture": {
+    "capabilities": [
+      "HTML Editor"
+    ],
+    "value_streams": [],
+    "information_concepts": [
+      "html.field.history.mixin",
+      "html_editor.converter.test",
+      "html_editor.converter.test.sub",
+      "ir.qweb.field",
+      "ir.qweb.field.contact",
+      "ir.qweb.field.date"
+    ],
+    "organization": [],
+    "products": [],
+    "policies": [],
+    "stakeholders": [],
+    "strategy": null,
+    "metrics": []
+  },
+  "classification": {
+    "value_model": "support",
+    "activity_class": "support",
+    "apqc_category": "13.0 Develop and Manage Business Capabilities",
+    "rationale": "html_editor: thin support/support module (auto-architect baseline)."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "HTML Editor"
+    ],
+    "typical_fits": [],
+    "common_gaps": [],
+    "drive_hints": [
+      "odoo shell: env['html.field.history.mixin'].search([],limit=3)"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/html_editor.facts.json",
+    "tools": [
+      "extract_module.py",
+      "extract_frontend.py",
+      "gen_thin.py"
+    ],
+    "odoo_version": "19.0"
+  }
+}

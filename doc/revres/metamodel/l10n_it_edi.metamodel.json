@@ -1,0 +1,161 @@
+{
+  "subsystem": "l10n_it_edi",
+  "evidence": {
+    "manifest": {
+      "name": "Italy - E-invoicing",
+      "category": "Accounting/Localizations/EDI",
+      "depends": [
+        "l10n_it",
+        "account_edi_proxy_client",
+        "account_debit_note"
+      ],
+      "auto_install": [
+        "l10n_it"
+      ],
+      "application": false
+    },
+    "models": [
+      {
+        "_name": "l10n_it.ddt",
+        "_description": "Transport Document",
+        "fields": 3
+      },
+      {
+        "_name": "l10n_it.document.type",
+        "_description": "Italian Document Type",
+        "fields": 3
+      }
+    ],
+    "routes": [],
+    "security": {
+      "access_rules": 2,
+      "record_rules": 0,
+      "groups": 0
+    },
+    "views": {
+      "form": 2,
+      "list": 2,
+      "tree": 0,
+      "kanban": 0,
+      "search": 0,
+      "pivot": 0,
+      "graph": 0,
+      "calendar": 0,
+      "activity": 0
+    },
+    "frontend": {
+      "present": true,
+      "js_files": 1,
+      "xml_templates": 0,
+      "owl_components": [],
+      "registry_adds": [],
+      "patches": [
+        "CustomerAddress.prototype"
+      ],
+      "services": [],
+      "asset_bundles": {
+        "web.assets_frontend": 1,
+        "web.assets_tests": 1
+      }
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": false,
+      "endpoints": [
+        "http://www.odoo.com/",
+        "https://iap-services-test.odoo.com",
+        "https://l10n-it-edi.api.odoo.com"
+      ],
+      "files": [
+        "__manifest__.py",
+        "models/account_edi_proxy_user.py"
+      ]
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    },
+    "behavioral_notes": [
+      {
+        "element": "frontend (OWL/JS)",
+        "observation": "1 JS files, 0 OWL components, 0 registry adds; bundles ['web.assets_frontend', 'web.assets_tests'].",
+        "source": "static"
+      },
+      {
+        "element": "thin module",
+        "observation": "2 models, 0 routes, 7739 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
+        "source": "ast"
+      }
+    ]
+  },
+  "it_architecture": {
+    "application": "l10n_it_edi (Italy - E-invoicing)",
+    "software_services": [],
+    "data_objects": [
+      "l10n_it.ddt",
+      "l10n_it.document.type"
+    ],
+    "logical_data_erm": [
+      "l10n_it.ddt -> account.move"
+    ],
+    "information_flows": [
+      "depends: l10n_it, account_edi_proxy_client, account_debit_note"
+    ],
+    "frontend_components": []
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Italy - E-invoicing"
+    ],
+    "value_streams": [],
+    "information_concepts": [
+      "l10n_it.ddt",
+      "l10n_it.document.type"
+    ],
+    "organization": [],
+    "products": [],
+    "policies": [],
+    "stakeholders": [],
+    "strategy": null,
+    "metrics": []
+  },
+  "classification": {
+    "value_model": "support",
+    "activity_class": "support",
+    "apqc_category": "9.0 Manage Financial Resources",
+    "rationale": "l10n_it_edi: thin support/support module (auto-architect baseline)."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "Italy - E-invoicing"
+    ],
+    "typical_fits": [],
+    "common_gaps": [],
+    "drive_hints": [
+      "odoo shell: env['l10n_it.ddt'].search([],limit=3)"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/l10n_it_edi.facts.json",
+    "tools": [
+      "extract_module.py",
+      "extract_frontend.py",
+      "gen_thin.py"
+    ],
+    "odoo_version": "19.0"
+  }
+}

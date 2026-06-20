@@ -1,0 +1,1 @@
+{"module": "product_matrix", "frontend_gap3": {"present": true, "js_files": 2, "xml_templates": 2, "owl_components": ["ProductMatrixDialog"], "registry_adds": [], "patches": [], "services": [], "asset_bundles": {"web.assets_backend": 4}}, "integrations_gap7": {"http_call_sites": 0, "sdk_imports": [], "uses_api_keys": false, "endpoints": [], "files": []}}

@@ -1,0 +1,170 @@
+{
+  "subsystem": "pos_online_payment",
+  "evidence": {
+    "manifest": {
+      "name": "Point of Sale online payment",
+      "category": null,
+      "depends": [
+        "point_of_sale",
+        "account_payment"
+      ],
+      "auto_install": true,
+      "application": false
+    },
+    "models": [],
+    "routes": [
+      {
+        "paths": [
+          "/pos/pay/<int:pos_order_id>"
+        ],
+        "auth": "public",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/pos/pay/transaction/<int:pos_order_id>"
+        ],
+        "auth": "public",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/pos/pay/confirmation/<int:pos_order_id>"
+        ],
+        "auth": "public",
+        "type": "http"
+      }
+    ],
+    "security": {
+      "access_rules": 0,
+      "record_rules": 0,
+      "groups": 0
+    },
+    "views": {
+      "form": 0,
+      "list": 0,
+      "tree": 0,
+      "kanban": 0,
+      "search": 0,
+      "pivot": 0,
+      "graph": 0,
+      "calendar": 0,
+      "activity": 0
+    },
+    "frontend": {
+      "present": true,
+      "js_files": 9,
+      "xml_templates": 1,
+      "owl_components": [
+        "OnlinePaymentPopup"
+      ],
+      "registry_adds": [],
+      "patches": [
+        "CustomerDisplay.prototype",
+        "CustomerDisplayPosAdapter.prototype",
+        "OrderPaymentValidation.prototype",
+        "PaymentScreen.prototype",
+        "PosOrder.prototype",
+        "PosPayment.prototype",
+        "PosStore.prototype"
+      ],
+      "services": [],
+      "asset_bundles": {
+        "point_of_sale.assets_prod": 3,
+        "point_of_sale.customer_display_assets": 2,
+        "point_of_sale.customer_display_assets_test": 2,
+        "web.assets_tests": 2
+      }
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": true,
+      "endpoints": [],
+      "files": []
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    },
+    "behavioral_notes": [
+      {
+        "element": "frontend (OWL/JS)",
+        "observation": "9 JS files, 1 OWL components, 0 registry adds; bundles ['point_of_sale.assets_prod', 'point_of_sale.customer_display_assets', 'point_of_sale.customer_display_assets_test'].",
+        "source": "static"
+      },
+      {
+        "element": "thin module",
+        "observation": "0 models, 3 routes, 1296 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
+        "source": "ast"
+      }
+    ]
+  },
+  "it_architecture": {
+    "application": "pos_online_payment (Point of Sale online payment)",
+    "software_services": [
+      "/pos/pay/<int:pos_order_id>",
+      "/pos/pay/confirmation/<int:pos_order_id>",
+      "/pos/pay/transaction/<int:pos_order_id>"
+    ],
+    "data_objects": [],
+    "logical_data_erm": [],
+    "information_flows": [
+      "depends: point_of_sale, account_payment"
+    ],
+    "frontend_components": [
+      "OnlinePaymentPopup"
+    ]
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Point of Sale online payment"
+    ],
+    "value_streams": [],
+    "information_concepts": [],
+    "organization": [],
+    "products": [],
+    "policies": [],
+    "stakeholders": [],
+    "strategy": null,
+    "metrics": []
+  },
+  "classification": {
+    "value_model": "chain",
+    "activity_class": "primary",
+    "apqc_category": "3.0 Market and Sell Products and Services",
+    "rationale": "pos_online_payment: thin chain/primary module (auto-architect baseline)."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "Point of Sale online payment"
+    ],
+    "typical_fits": [],
+    "common_gaps": [],
+    "drive_hints": [
+      "n/a"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/pos_online_payment.facts.json",
+    "tools": [
+      "extract_module.py",
+      "extract_frontend.py",
+      "gen_thin.py"
+    ],
+    "odoo_version": "19.0"
+  }
+}

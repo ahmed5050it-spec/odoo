@@ -1,0 +1,258 @@
+{
+  "subsystem": "mail_group",
+  "evidence": {
+    "manifest": {
+      "name": "Mail Group",
+      "category": null,
+      "depends": [
+        "mail",
+        "portal"
+      ],
+      "auto_install": false,
+      "application": false
+    },
+    "models": [
+      {
+        "_name": "mail.group",
+        "_description": "Mail Group",
+        "fields": 25
+      },
+      {
+        "_name": "mail.group.member",
+        "_description": "Mailing List Member",
+        "fields": 4
+      },
+      {
+        "_name": "mail.group.message",
+        "_description": "Mailing List Message",
+        "fields": 15
+      },
+      {
+        "_name": "mail.group.message.reject",
+        "_description": "Reject Group Message",
+        "fields": 6
+      },
+      {
+        "_name": "mail.group.moderation",
+        "_description": "Mailing List black/white list",
+        "fields": 3
+      }
+    ],
+    "routes": [
+      {
+        "paths": [
+          "/groups"
+        ],
+        "auth": "public",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/groups/<model("
+        ],
+        "auth": null,
+        "type": null
+      },
+      {
+        "paths": [
+          "/groups/<model("
+        ],
+        "auth": null,
+        "type": null
+      },
+      {
+        "paths": [
+          "/groups/<model("
+        ],
+        "auth": null,
+        "type": null
+      },
+      {
+        "paths": [
+          "/group/<int:group_id>/unsubscribe_oneclick"
+        ],
+        "auth": "public",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/group/subscribe"
+        ],
+        "auth": "public",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/group/unsubscribe"
+        ],
+        "auth": "public",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/group/subscribe-confirm"
+        ],
+        "auth": "public",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/group/unsubscribe-confirm"
+        ],
+        "auth": "public",
+        "type": "http"
+      }
+    ],
+    "security": {
+      "access_rules": 9,
+      "record_rules": 10,
+      "groups": 0
+    },
+    "views": {
+      "form": 2,
+      "list": 4,
+      "tree": 0,
+      "kanban": 1,
+      "search": 4,
+      "pivot": 0,
+      "graph": 0,
+      "calendar": 0,
+      "activity": 0
+    },
+    "frontend": {
+      "present": true,
+      "js_files": 2,
+      "xml_templates": 0,
+      "owl_components": [],
+      "registry_adds": [
+        "public.interactions:mail_group.mail_group",
+        "public.interactions:mail_group.mail_group_message"
+      ],
+      "patches": [],
+      "services": [],
+      "asset_bundles": {
+        "web.assets_frontend": 2,
+        "web.assets_backend": 1
+      }
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": true,
+      "endpoints": [],
+      "files": []
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    },
+    "behavioral_notes": [
+      {
+        "element": "frontend (OWL/JS)",
+        "observation": "2 JS files, 0 OWL components, 2 registry adds; bundles ['web.assets_frontend', 'web.assets_backend'].",
+        "source": "static"
+      },
+      {
+        "element": "thin module",
+        "observation": "5 models, 9 routes, 2591 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
+        "source": "ast"
+      }
+    ]
+  },
+  "it_architecture": {
+    "application": "mail_group (Mail Group)",
+    "software_services": [
+      "/group/<int:group_id>/unsubscribe_oneclick",
+      "/group/subscribe",
+      "/group/subscribe-confirm",
+      "/group/unsubscribe",
+      "/group/unsubscribe-confirm",
+      "/groups",
+      "/groups/<model("
+    ],
+    "data_objects": [
+      "mail.group",
+      "mail.group.member",
+      "mail.group.message",
+      "mail.group.message.reject",
+      "mail.group.moderation"
+    ],
+    "logical_data_erm": [
+      "mail.group -> mail.group.member",
+      "mail.group -> mail.group.message",
+      "mail.group -> mail.group.moderation",
+      "mail.group -> res.groups",
+      "mail.group -> res.partner",
+      "mail.group -> res.users",
+      "mail.group.member -> mail.group",
+      "mail.group.member -> res.partner",
+      "mail.group.message -> mail.group",
+      "mail.group.message -> mail.group.message",
+      "mail.group.message -> mail.message",
+      "mail.group.message -> mail_message_id.attachment_ids"
+    ],
+    "information_flows": [
+      "depends: mail, portal"
+    ],
+    "frontend_components": []
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Mail Group"
+    ],
+    "value_streams": [],
+    "information_concepts": [
+      "mail.group",
+      "mail.group.member",
+      "mail.group.message",
+      "mail.group.message.reject",
+      "mail.group.moderation"
+    ],
+    "organization": [],
+    "products": [],
+    "policies": [
+      "10 record rules"
+    ],
+    "stakeholders": [],
+    "strategy": null,
+    "metrics": []
+  },
+  "classification": {
+    "value_model": "support",
+    "activity_class": "support",
+    "apqc_category": "9.4 Manage internal communications",
+    "rationale": "mail_group: thin support/support module (auto-architect baseline)."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "Mail Group"
+    ],
+    "typical_fits": [],
+    "common_gaps": [],
+    "drive_hints": [
+      "odoo shell: env['mail.group'].search([],limit=3)"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/mail_group.facts.json",
+    "tools": [
+      "extract_module.py",
+      "extract_frontend.py",
+      "gen_thin.py"
+    ],
+    "odoo_version": "19.0"
+  }
+}

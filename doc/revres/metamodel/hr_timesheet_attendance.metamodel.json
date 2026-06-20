@@ -1,0 +1,127 @@
+{
+  "subsystem": "hr_timesheet_attendance",
+  "evidence": {
+    "manifest": {
+      "name": "Timesheets/attendances reporting",
+      "category": "Human Resources/Attendances",
+      "depends": [
+        "hr_timesheet",
+        "hr_attendance"
+      ],
+      "auto_install": true,
+      "application": false
+    },
+    "models": [
+      {
+        "_name": "hr.timesheet.attendance.report",
+        "_description": "Timesheet Attendance Report",
+        "fields": 9
+      }
+    ],
+    "routes": [],
+    "security": {
+      "access_rules": 1,
+      "record_rules": 4,
+      "groups": 0
+    },
+    "views": {},
+    "frontend": {
+      "present": false,
+      "js_files": 0,
+      "xml_templates": 0,
+      "owl_components": [],
+      "registry_adds": [],
+      "patches": [],
+      "services": [],
+      "asset_bundles": {}
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": false,
+      "endpoints": [],
+      "files": []
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    },
+    "behavioral_notes": [
+      {
+        "element": "thin module",
+        "observation": "1 models, 0 routes, 177 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
+        "source": "ast"
+      }
+    ]
+  },
+  "it_architecture": {
+    "application": "hr_timesheet_attendance (Timesheets/attendances reporting)",
+    "software_services": [],
+    "data_objects": [
+      "hr.timesheet.attendance.report"
+    ],
+    "logical_data_erm": [
+      "hr.timesheet.attendance.report -> hr.employee",
+      "hr.timesheet.attendance.report -> res.company"
+    ],
+    "information_flows": [
+      "depends: hr_timesheet, hr_attendance"
+    ],
+    "frontend_components": []
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Timesheets/attendances reporting"
+    ],
+    "value_streams": [],
+    "information_concepts": [
+      "hr.timesheet.attendance.report"
+    ],
+    "organization": [],
+    "products": [],
+    "policies": [
+      "4 record rules"
+    ],
+    "stakeholders": [],
+    "strategy": null,
+    "metrics": []
+  },
+  "classification": {
+    "value_model": "support",
+    "activity_class": "support",
+    "apqc_category": "7.0 Develop and Manage Human Capital",
+    "rationale": "hr_timesheet_attendance: thin support/support module (auto-architect baseline)."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "Timesheets/attendances reporting"
+    ],
+    "typical_fits": [],
+    "common_gaps": [],
+    "drive_hints": [
+      "odoo shell: env['hr.timesheet.attendance.report'].search([],limit=3)"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/hr_timesheet_attendance.facts.json",
+    "tools": [
+      "extract_module.py",
+      "extract_frontend.py",
+      "gen_thin.py"
+    ],
+    "odoo_version": "19.0"
+  }
+}

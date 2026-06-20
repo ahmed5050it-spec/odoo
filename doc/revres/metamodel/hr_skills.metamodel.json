@@ -1,0 +1,269 @@
+{
+  "subsystem": "hr_skills",
+  "evidence": {
+    "manifest": {
+      "name": "Skills Management",
+      "category": "Human Resources/Employees",
+      "depends": [
+        "hr"
+      ],
+      "auto_install": true,
+      "application": true
+    },
+    "models": [
+      {
+        "_name": "hr.employee.certification.report",
+        "_description": "Employee Certification Report",
+        "fields": 7
+      },
+      {
+        "_name": "hr.employee.cv.wizard",
+        "_description": "Print Resume",
+        "fields": 8
+      },
+      {
+        "_name": "hr.employee.skill",
+        "_description": "Skill level for employee",
+        "fields": 1
+      },
+      {
+        "_name": "hr.employee.skill.history.report",
+        "_description": "Employee Skills Report",
+        "fields": 5
+      },
+      {
+        "_name": "hr.employee.skill.report",
+        "_description": "Employee Skills Report",
+        "fields": 8
+      },
+      {
+        "_name": "hr.individual.skill.mixin",
+        "_description": "Skill level",
+        "fields": 11
+      },
+      {
+        "_name": "hr.job.skill",
+        "_description": "Skills for job positions",
+        "fields": 1
+      },
+      {
+        "_name": "hr.resume.line",
+        "_description": "Resume line of an employee",
+        "fields": 17
+      },
+      {
+        "_name": "hr.resume.line.type",
+        "_description": "Type of a resume line",
+        "fields": 4
+      },
+      {
+        "_name": "hr.skill",
+        "_description": "Skill",
+        "fields": 4
+      },
+      {
+        "_name": "hr.skill.level",
+        "_description": "Skill Level",
+        "fields": 5
+      },
+      {
+        "_name": "hr.skill.type",
+        "_description": "Skill Type",
+        "fields": 8
+      },
+      {
+        "_name": "report.hr_skills.report_employee_cv",
+        "_description": "Employee Resume",
+        "fields": 0
+      }
+    ],
+    "routes": [
+      {
+        "paths": [
+          "/print/cv"
+        ],
+        "auth": "user",
+        "type": "http"
+      }
+    ],
+    "security": {
+      "access_rules": 20,
+      "record_rules": 11,
+      "groups": 0
+    },
+    "views": {
+      "form": 6,
+      "list": 14,
+      "tree": 0,
+      "kanban": 1,
+      "search": 4,
+      "pivot": 0,
+      "graph": 0,
+      "calendar": 1,
+      "activity": 0
+    },
+    "frontend": {
+      "present": true,
+      "js_files": 11,
+      "xml_templates": 8,
+      "owl_components": [
+        "FormattedDate",
+        "InternalResumeLineComponent"
+      ],
+      "registry_adds": [
+        "fields:boolean_toggle_load",
+        "fields:formatted_date",
+        "fields:many2many_tags_skills",
+        "fields:many2one_tags_skills",
+        "fields:resume_one2many",
+        "fields:skills_one2many",
+        "view_widgets:internal_resume_lines",
+        "views:skills_graph"
+      ],
+      "patches": [
+        "AvatarCardResourcePopover.prototype"
+      ],
+      "services": [
+        "color",
+        "company_id",
+        "day_format",
+        "default_level",
+        "month_format",
+        "resume_line_ids",
+        "year_format"
+      ],
+      "asset_bundles": {
+        "web.assets_backend": 5,
+        "web.assets_backend_lazy": 1,
+        "web.assets_unit_tests": 2,
+        "web.assets_tests": 1,
+        "web.report_assets_pdf": 1
+      }
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": false,
+      "endpoints": [],
+      "files": []
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    },
+    "behavioral_notes": [
+      {
+        "element": "frontend (OWL/JS)",
+        "observation": "11 JS files, 2 OWL components, 8 registry adds; bundles ['web.assets_backend', 'web.assets_backend_lazy', 'web.assets_unit_tests'].",
+        "source": "static"
+      },
+      {
+        "element": "thin module",
+        "observation": "13 models, 1 routes, 2512 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
+        "source": "ast"
+      }
+    ]
+  },
+  "it_architecture": {
+    "application": "hr_skills (Skills Management)",
+    "software_services": [
+      "/print/cv"
+    ],
+    "data_objects": [
+      "hr.employee.certification.report",
+      "hr.employee.cv.wizard",
+      "hr.employee.skill",
+      "hr.employee.skill.history.report",
+      "hr.employee.skill.report",
+      "hr.individual.skill.mixin",
+      "hr.job.skill",
+      "hr.resume.line",
+      "hr.resume.line.type",
+      "hr.skill",
+      "hr.skill.level",
+      "hr.skill.type",
+      "report.hr_skills.report_employee_cv"
+    ],
+    "logical_data_erm": [
+      "hr.employee.certification.report -> hr.department",
+      "hr.employee.certification.report -> hr.skill",
+      "hr.employee.certification.report -> hr.skill.type",
+      "hr.employee.certification.report -> res.company",
+      "hr.employee.cv.wizard -> hr.employee",
+      "hr.employee.skill -> hr.employee",
+      "hr.employee.skill.history.report -> hr.employee",
+      "hr.employee.skill.history.report -> hr.skill",
+      "hr.employee.skill.history.report -> hr.skill.type",
+      "hr.employee.skill.report -> hr.department",
+      "hr.employee.skill.report -> hr.job",
+      "hr.employee.skill.report -> hr.skill"
+    ],
+    "information_flows": [
+      "depends: hr"
+    ],
+    "frontend_components": [
+      "FormattedDate",
+      "InternalResumeLineComponent"
+    ]
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Skills Management"
+    ],
+    "value_streams": [],
+    "information_concepts": [
+      "hr.employee.certification.report",
+      "hr.employee.cv.wizard",
+      "hr.employee.skill",
+      "hr.employee.skill.history.report",
+      "hr.employee.skill.report",
+      "hr.individual.skill.mixin"
+    ],
+    "organization": [],
+    "products": [],
+    "policies": [
+      "11 record rules"
+    ],
+    "stakeholders": [],
+    "strategy": null,
+    "metrics": []
+  },
+  "classification": {
+    "value_model": "support",
+    "activity_class": "support",
+    "apqc_category": "7.0 Develop and Manage Human Capital",
+    "rationale": "hr_skills: thin support/support module (auto-architect baseline)."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "Skills Management"
+    ],
+    "typical_fits": [],
+    "common_gaps": [],
+    "drive_hints": [
+      "odoo shell: env['hr.employee.certification.report'].search([],limit=3)"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/hr_skills.facts.json",
+    "tools": [
+      "extract_module.py",
+      "extract_frontend.py",
+      "gen_thin.py"
+    ],
+    "odoo_version": "19.0"
+  }
+}

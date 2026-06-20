@@ -1,0 +1,181 @@
+{
+  "subsystem": "crm_iap_mine",
+  "evidence": {
+    "manifest": {
+      "name": "Lead Generation",
+      "category": "Sales/CRM",
+      "depends": [
+        "iap_crm",
+        "iap_mail"
+      ],
+      "auto_install": true,
+      "application": false
+    },
+    "models": [
+      {
+        "_name": "crm.iap.lead.helpers",
+        "_description": "Helper methods for crm_iap_mine modules",
+        "fields": 0
+      },
+      {
+        "_name": "crm.iap.lead.industry",
+        "_description": "CRM IAP Lead Industry",
+        "fields": 4
+      },
+      {
+        "_name": "crm.iap.lead.mining.request",
+        "_description": "CRM Lead Mining Request",
+        "fields": 26
+      },
+      {
+        "_name": "crm.iap.lead.role",
+        "_description": "People Role",
+        "fields": 3
+      },
+      {
+        "_name": "crm.iap.lead.seniority",
+        "_description": "People Seniority",
+        "fields": 2
+      }
+    ],
+    "routes": [],
+    "security": {
+      "access_rules": 5,
+      "record_rules": 0,
+      "groups": 0
+    },
+    "views": {
+      "form": 1,
+      "list": 1,
+      "tree": 0,
+      "kanban": 0,
+      "search": 1,
+      "pivot": 0,
+      "graph": 0,
+      "calendar": 0,
+      "activity": 0
+    },
+    "frontend": {
+      "present": true,
+      "js_files": 1,
+      "xml_templates": 0,
+      "owl_components": [],
+      "registry_adds": [],
+      "patches": [],
+      "services": [],
+      "asset_bundles": {
+        "web.assets_backend": 1
+      }
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": false,
+      "endpoints": [
+        "https://iap-services.odoo.com"
+      ],
+      "files": [
+        "models/crm_iap_lead_mining_request.py"
+      ]
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    },
+    "behavioral_notes": [
+      {
+        "element": "frontend (OWL/JS)",
+        "observation": "1 JS files, 0 OWL components, 0 registry adds; bundles ['web.assets_backend'].",
+        "source": "static"
+      },
+      {
+        "element": "thin module",
+        "observation": "5 models, 0 routes, 774 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
+        "source": "ast"
+      }
+    ]
+  },
+  "it_architecture": {
+    "application": "crm_iap_mine (Lead Generation)",
+    "software_services": [],
+    "data_objects": [
+      "crm.iap.lead.helpers",
+      "crm.iap.lead.industry",
+      "crm.iap.lead.mining.request",
+      "crm.iap.lead.role",
+      "crm.iap.lead.seniority"
+    ],
+    "logical_data_erm": [
+      "crm.iap.lead.mining.request -> crm.iap.lead.industry",
+      "crm.iap.lead.mining.request -> crm.iap.lead.role",
+      "crm.iap.lead.mining.request -> crm.iap.lead.seniority",
+      "crm.iap.lead.mining.request -> crm.lead",
+      "crm.iap.lead.mining.request -> crm.tag",
+      "crm.iap.lead.mining.request -> crm.team",
+      "crm.iap.lead.mining.request -> res.country",
+      "crm.iap.lead.mining.request -> res.country.state",
+      "crm.iap.lead.mining.request -> res.users"
+    ],
+    "information_flows": [
+      "depends: iap_crm, iap_mail"
+    ],
+    "frontend_components": []
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Lead Generation"
+    ],
+    "value_streams": [],
+    "information_concepts": [
+      "crm.iap.lead.helpers",
+      "crm.iap.lead.industry",
+      "crm.iap.lead.mining.request",
+      "crm.iap.lead.role",
+      "crm.iap.lead.seniority"
+    ],
+    "organization": [],
+    "products": [],
+    "policies": [],
+    "stakeholders": [],
+    "strategy": null,
+    "metrics": []
+  },
+  "classification": {
+    "value_model": "shop",
+    "activity_class": "primary",
+    "apqc_category": "3.0 Market and Sell Products and Services",
+    "rationale": "crm_iap_mine: thin shop/primary module (auto-architect baseline)."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "Lead Generation"
+    ],
+    "typical_fits": [],
+    "common_gaps": [],
+    "drive_hints": [
+      "odoo shell: env['crm.iap.lead.helpers'].search([],limit=3)"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/crm_iap_mine.facts.json",
+    "tools": [
+      "extract_module.py",
+      "extract_frontend.py",
+      "gen_thin.py"
+    ],
+    "odoo_version": "19.0"
+  }
+}
