@@ -110,7 +110,7 @@ hr_timesheet_attendance	support	support	7.0 Develop and Manage Human	1	0	0	0	met
 hr_work_entry	support	support	7.0 Develop and Manage Human	4	0	12	1	meta+fe
 hr_work_entry_holidays	support	support	7.0 Develop and Manage Human	0	0	0	0	meta
 html_builder	support	support	13.0 Develop and Manage Busi	0	0	148	40	meta+fe
-html_editor	support	support	13.0 Develop and Manage Busi	17	15	187	40	meta+fe+integ
+html_editor	support	support	8.0 Manage Information Techn	7	15	187	40	meta+code+fe+integ
 http_routing	support	support	13.0 Develop and Manage Busi	0	3	0	0	meta
 iap	support	support	8.0 Manage Information Techn	3	0	1	1	meta+fe+integ
 iap_crm	support	support	8.0 Manage Information Techn	0	0	0	0	meta
@@ -436,7 +436,7 @@ pos_safaricom	chain	primary	3.0 Market and Sell Products	1	3	3	1	meta+fe+integ
 pos_sale	chain	primary	3.0 Market and Sell Products	2	0	7	0	meta+fe
 pos_sale_loyalty	chain	primary	3.0 Market and Sell Products	0	0	1	0	meta+fe
 pos_sale_margin	chain	primary	3.0 Market and Sell Products	0	0	0	0	meta
-pos_self_order	chain	primary	3.0 Market and Sell Products	3	13	54	28	meta+fe
+pos_self_order	network	primary	3.0 Market and Sell Products	6	6	54	28	meta+code+fe
 pos_self_order_adyen	chain	primary	3.0 Market and Sell Products	0	0	0	0	meta
 pos_self_order_pine_labs	chain	primary	3.0 Market and Sell Products	0	2	3	0	meta+fe
 pos_self_order_qfpay	chain	primary	3.0 Market and Sell Products	0	0	2	0	meta+fe

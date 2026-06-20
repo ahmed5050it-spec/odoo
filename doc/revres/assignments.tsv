@@ -3,7 +3,6 @@ test_orm	test	todo	support	13.0	153	0	306
 test_mail	test	todo	support	13.0	47	0	94
 test_import_export	test	todo	support	13.0	35	0	70
 test_testing_utilities	test	todo	support	13.0	33	0	66
-html_editor	baseline	todo	support	13.0	17	15	49
 test_website	test	todo	support	13.0	5	37	47
 test_http	test	todo	support	13.0	2	34	38
 mail	deep	done	support	9.4	14	8	36
@@ -11,6 +10,7 @@ base	deep	done	support	8.0	17	0	34
 test_read_group	test	todo	support	13.0	17	0	34
 hr_holidays	baseline	todo	support	7.0	14	5	33
 website	deep	done	network	3.0	8	16	32
+html_editor	deep	done	support	8.0	7	15	29
 stock	deep	done	chain	4.0	14	1	29
 account	deep	done	support	9.0	10	4	24
 lunch	baseline	todo	support	7.0	9	6	24
@@ -26,12 +26,12 @@ website_event_track	deep	done	network	3.0	6	9	21
 survey	deep	done	support	13.0	6	8	20
 web	deep	done	support	8.0	4	12	20
 event	deep	done	network	3.0	8	3	19
-pos_self_order	baseline	todo	chain	3.0	3	13	19
 purchase	deep	done	support	4.2	7	5	19
 sms	deep	done	support	9.4	9	1	19
 website_sale	deep	done	network	3.0	6	7	19
 account_edi_ubl_cii	deep	done	support	9.0	9	0	18
 mrp	deep	done	chain	4.3	9	0	18
+pos_self_order	deep	done	network	3.0	6	6	18
 test_inherits	test	todo	support	13.0	9	0	18
 bus	deep	done	support	8.0	5	7	17
 hr_skills	deep	done	support	7.0	8	1	17
