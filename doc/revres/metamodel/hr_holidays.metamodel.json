@@ -14,93 +14,66 @@
     },
     "models": [
       {
-        "_name": "hr.holidays.cancel.leave",
-        "_description": "Cancel Time Off Wizard",
-        "fields": 2
-      },
-      {
-        "_name": "hr.holidays.summary.employee",
-        "_description": "HR Time Off Summary Report By Employee",
-        "fields": 3
-      },
-      {
         "_name": "hr.leave",
         "_description": "Time Off",
-        "fields": 51
-      },
-      {
-        "_name": "hr.leave.accrual.level",
-        "_description": "Accrual Plan Level",
-        "fields": 30
-      },
-      {
-        "_name": "hr.leave.accrual.plan",
-        "_description": "Accrual Plan",
-        "fields": 17
+        "fields": 51,
+        "relations": [
+          "holiday_status_id->hr.leave.type",
+          "employee_id->hr.employee",
+          "department_id->hr.department",
+          "resource_calendar_id->resource.calendar",
+          "meeting_id->calendar.event",
+          "first_approver_id->hr.employee",
+          "second_approver_id->hr.employee"
+        ]
       },
       {
         "_name": "hr.leave.allocation",
         "_description": "Time Off Allocation",
-        "fields": 38
-      },
-      {
-        "_name": "hr.leave.allocation.generate.multi.wizard",
-        "_description": "Generate time off allocations for multiple employees",
-        "fields": 14
-      },
-      {
-        "_name": "hr.leave.employee.type.report",
-        "_description": "Time Off Summary / Report",
-        "fields": 11
-      },
-      {
-        "_name": "hr.leave.generate.multi.wizard",
-        "_description": "Generate time off for multiple employees",
-        "fields": 9
-      },
-      {
-        "_name": "hr.leave.mandatory.day",
-        "_description": "Mandatory Day",
-        "fields": 8
-      },
-      {
-        "_name": "hr.leave.report",
-        "_description": "Time Off Summary / Report",
-        "fields": 12
-      },
-      {
-        "_name": "hr.leave.report.calendar",
-        "_description": "Time Off Calendar",
-        "fields": 21
+        "fields": 38,
+        "relations": [
+          "holiday_status_id->hr.leave.type",
+          "employee_id->hr.employee",
+          "accrual_plan_id->hr.leave.accrual.plan",
+          "approver_id->hr.employee",
+          "second_approver_id->hr.employee"
+        ]
       },
       {
         "_name": "hr.leave.type",
         "_description": "Time Off Type",
-        "fields": 35
+        "fields": 35,
+        "relations": [
+          "company_id->res.company",
+          "country_id->res.country",
+          "responsible_ids->res.users",
+          "accruals_ids->hr.leave.accrual.plan"
+        ]
       },
       {
-        "_name": "report.hr_holidays.report_holidayssummary",
-        "_description": "Holidays Summary Report",
-        "fields": 0
+        "_name": "hr.leave.accrual.plan",
+        "_description": "Accrual Plan",
+        "fields": 17,
+        "relations": [
+          "time_off_type_id->hr.leave.type",
+          "level_ids->hr.leave.accrual.level",
+          "allocation_ids->hr.leave.allocation"
+        ]
+      },
+      {
+        "_name": "hr.leave.accrual.level",
+        "_description": "Accrual Plan Level",
+        "fields": 30,
+        "relations": [
+          "accrual_plan_id->hr.leave.accrual.plan"
+        ]
       }
     ],
     "routes": [
       {
         "paths": [
-          "/leave/approve"
-        ],
-        "auth": "user",
-        "type": "http"
-      },
-      {
-        "paths": [
-          "/leave/validate"
-        ],
-        "auth": "user",
-        "type": "http"
-      },
-      {
-        "paths": [
+          "/leave/approve",
+          "/leave/validate",
           "/leave/refuse"
         ],
         "auth": "user",
@@ -108,13 +81,7 @@
       },
       {
         "paths": [
-          "/allocation/validate"
-        ],
-        "auth": "user",
-        "type": "http"
-      },
-      {
-        "paths": [
+          "/allocation/validate",
           "/allocation/refuse"
         ],
         "auth": "user",
@@ -129,7 +96,6 @@
     "views": {
       "form": 6,
       "list": 6,
-      "tree": 0,
       "kanban": 3,
       "search": 5,
       "pivot": 1,
@@ -137,6 +103,43 @@
       "calendar": 3,
       "activity": 2
     },
+    "behavioral_notes": [
+      {
+        "element": "hr.leave.action_approve / _action_validate (approval state machine)",
+        "observation": "A leave is created in state 'confirm' (To Approve). action_approve writes 'validate1' (Second Approval) and sets first_approver_id when validation_type=='both', otherwise calls _action_validate which writes state 'validate' and sets first_approver_id/second_approver_id. action_refuse requires state in {confirm,validate,validate1}, writes 'refuse', archives the linked calendar.event (meeting_id.active=False) and posts a chatter refusal message. The confirm->validate1->validate / refuse transitions and approver bookkeeping are pure Python, invisible in metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "hr.leave._action_validate -> _validate_leave_request -> _create_resource_leave (calendar blocking)",
+        "observation": "On final validation, _validate_leave_request calls _create_resource_leave, which sudo-creates a resource.calendar.leaves row per leave (resource.py adds holiday_id->hr.leave). That blocking entry removes the period from the employee's working hours so attendance/payroll/planning treat the person as unavailable; if holiday_status_id.create_calendar_meeting a confidential calendar.event is also created and linked via meeting_id. _remove_resource_leave deletes those rows on cancel/refuse. This cross-model side-effect is the core of time off and is not in metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "hr.leave._check_validity (allocation coverage gate)",
+        "observation": "Before a request on an allocation-requiring type is accepted, _check_validity calls hr.leave.type.get_allocation_data and raises ValidationError ('You do not have any allocation...' / 'There is no valid allocation to cover that request') when max_leaves is 0 or virtual_remaining_leaves would drop below the allowed negative (leave_type.allows_negative / max_allowed_negative). It also blocks requests on a hr.leave.mandatory.day for non-officers. This availability enforcement lives in code.",
+        "source": "code-read"
+      },
+      {
+        "element": "hr.leave.allocation._compute_leaves / _process_accrual_plans (accrual + remaining-days)",
+        "observation": "leaves_taken, max_leaves and virtual_remaining_leaves are computed (not stored) by _compute_leaves via employee._get_consumed_leaves. For allocation_type=='accrual', the cron _update_accrual searches validated accrual allocations whose nextcall<=today and calls _process_accrual_plans, which retroactively walks accrual levels from lastcall/nextcall, increments number_of_days by added_value per frequency, applies caps (maximum_leave), carryover and level transitions. The available balance is therefore derived dynamically; metadata shows only the float fields, not the accrual algorithm.",
+        "source": "code-read"
+      },
+      {
+        "element": "hr.leave.allocation.action_approve (double validation / segregation of duties)",
+        "observation": "Allocations follow a confirm->validate state machine; action_approve writes {'state':'validate','approver_id':current_employee,'second_approver_id':current_employee}. For leaves, _check_double_validation_rules / _check_approval_update enforce that a 'both'-validation request needs a first approver (validate1, group_hr_holidays_responsible/officer) then a second/HR approver (validate, group_hr_holidays_user) before resource leaves are created. The two-step approval is encoded in Python guards (can_approve/can_validate), not visible structurally.",
+        "source": "code-read"
+      },
+      {
+        "element": "resource.calendar.leaves.create/write (public-holiday reevaluation)",
+        "observation": "When a global/public time off (resource.calendar.leaves with no resource_id) is created/written/unlinked, _reevaluate_leaves re-searches overlapping hr.leave, recomputes number_of_days, may grant days back or take extra days from allocation, and can auto-refuse leaves that no longer fit, notifying the employee. This automation effect across the leave population is code-only.",
+        "source": "code-read"
+      },
+      {
+        "element": "frontend (OWL/JS)",
+        "observation": "37 JS files, 6 OWL components (TimeOffDashboard, TimeOffCard, TimeOffCardPopover, LeaveStatsComponent, AccrualLevels, FloatTimeSelectionPopover); 15 registry registrations (time_off_calendar / dashboard views, accrual_levels & float_time_selection fields, hr_leave_stats view widget, hr_holidays_tour) and 9 patches (HrEmployee, HrPresenceStatus*, ResPartner, ResUsers, Store). Asset bundles include web.assets_backend and mail.assets_public. Static-only, not in Python metadata.",
+        "source": "static"
+      }
+    ],
     "frontend": {
       "present": true,
       "js_files": 37,
@@ -211,61 +214,42 @@
     "runtime": {
       "models_with_data": 0,
       "top": []
-    },
-    "behavioral_notes": [
-      {
-        "element": "frontend (OWL/JS)",
-        "observation": "37 JS files, 6 OWL components, 15 registry adds; bundles ['web.assets_backend', 'web.assets_backend_lazy', 'web.assets_web_dark'].",
-        "source": "static"
-      },
-      {
-        "element": "thin module",
-        "observation": "14 models, 5 routes, 20614 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
-        "source": "ast"
-      }
-    ]
+    }
   },
   "it_architecture": {
-    "application": "hr_holidays (Time Off)",
+    "application": "hr_holidays (Time Off application component)",
     "software_services": [
-      "/allocation/refuse",
-      "/allocation/validate",
       "/leave/approve",
+      "/leave/validate",
       "/leave/refuse",
-      "/leave/validate"
+      "/allocation/validate",
+      "/allocation/refuse"
     ],
     "data_objects": [
-      "hr.holidays.cancel.leave",
-      "hr.holidays.summary.employee",
       "hr.leave",
-      "hr.leave.accrual.level",
-      "hr.leave.accrual.plan",
       "hr.leave.allocation",
-      "hr.leave.allocation.generate.multi.wizard",
-      "hr.leave.employee.type.report",
-      "hr.leave.generate.multi.wizard",
-      "hr.leave.mandatory.day",
-      "hr.leave.report",
-      "hr.leave.report.calendar",
       "hr.leave.type",
-      "report.hr_holidays.report_holidayssummary"
+      "hr.leave.accrual.plan",
+      "hr.leave.accrual.level",
+      "hr.leave.mandatory.day",
+      "hr.leave.report"
     ],
     "logical_data_erm": [
-      "hr.holidays.cancel.leave -> hr.leave",
-      "hr.holidays.summary.employee -> hr.employee",
-      "hr.leave -> calendar.event",
-      "hr.leave -> employee_id.company_id",
-      "hr.leave -> hr.department",
-      "hr.leave -> hr.employee",
-      "hr.leave -> hr.leave.type",
-      "hr.leave -> ir.attachment",
-      "hr.leave -> res.company",
-      "hr.leave -> res.users",
-      "hr.leave -> resource.calendar",
-      "hr.leave.accrual.level -> hr.leave.accrual.plan"
+      "hr.leave -> hr.leave.type (holiday_status_id)",
+      "hr.leave -> hr.employee (employee_id)",
+      "hr.leave -> calendar.event (meeting_id)",
+      "hr.leave.allocation -> hr.leave.type (holiday_status_id)",
+      "hr.leave.allocation -> hr.leave.accrual.plan (accrual_plan_id)",
+      "hr.leave.accrual.plan -> hr.leave.accrual.level (level_ids)",
+      "resource.calendar.leaves -> hr.leave (holiday_id)"
     ],
     "information_flows": [
-      "depends: hr, calendar, resource"
+      "depends: hr, calendar, resource",
+      "side-effect: hr.leave._action_validate -> creates resource.calendar.leaves (blocks working hours) + optional calendar.event",
+      "side-effect: hr.leave.action_refuse/cancel -> removes resource.calendar.leaves + archives calendar.event",
+      "side-effect: hr.leave._check_validity -> validated against hr.leave.allocation remaining days",
+      "side-effect: hr.leave.allocation cron _update_accrual -> _process_accrual_plans increments number_of_days",
+      "side-effect: resource.calendar.leaves (public holiday) create/write -> _reevaluate_leaves recomputes/refuses overlapping hr.leave"
     ],
     "frontend_components": [
       "AccrualLevels",
@@ -278,40 +262,85 @@
   },
   "business_architecture": {
     "capabilities": [
-      "Time Off"
+      "Manage Time Off / Leave Requests",
+      "Approve & Validate Leave (single / double validation)",
+      "Manage Leave Allocations",
+      "Configure Accrual Plans & Carryover",
+      "Define Time Off Types & Policies",
+      "Manage Mandatory Days & Public Holidays",
+      "Time Off Reporting & Dashboard"
     ],
-    "value_streams": [],
+    "value_streams": [
+      "Request-to-Approval: draft -> confirm -> (validate1) -> validate -> resource.calendar.leaves block / calendar.event",
+      "Allocate-and-Accrue: allocation confirm -> validate -> accrual cron grants days -> available balance for requests"
+    ],
     "information_concepts": [
-      "hr.holidays.cancel.leave",
-      "hr.holidays.summary.employee",
       "hr.leave",
-      "hr.leave.accrual.level",
+      "hr.leave.allocation",
+      "hr.leave.type",
       "hr.leave.accrual.plan",
-      "hr.leave.allocation"
+      "hr.leave.accrual.level",
+      "hr.leave.mandatory.day",
+      "hr.employee (requester)",
+      "resource.calendar.leaves (blocking entry)"
     ],
-    "organization": [],
+    "organization": [
+      "group_hr_holidays_user",
+      "group_hr_holidays_responsible",
+      "group_hr_holidays_manager"
+    ],
     "products": [],
     "policies": [
-      "26 record rules"
+      "26 record rules: own/department/manager leave & allocation visibility + multi-company scoping",
+      "leave_validation_type / allocation_validation_type: no_validation | manager | hr | both (double validation)",
+      "requires_allocation + allows_negative / max_allowed_negative enforced in _check_validity",
+      "cron _update_accrual processes validated accrual allocations on nextcall",
+      "mandatory days block self-service requests for non-officers"
     ],
-    "stakeholders": [],
+    "stakeholders": [
+      "Employee (requester, hr.employee / res.users)",
+      "Time Off Officer (group_hr_holidays_responsible / leave_manager_id)",
+      "Time Off Manager (group_hr_holidays_manager)",
+      "HR (second approver in 'both' validation)"
+    ],
     "strategy": null,
-    "metrics": []
+    "metrics": [
+      "hr.leave.report (Time Off Summary: days/hours by type, department, state)",
+      "hr.leave.employee.type.report (per-employee per-type summary)",
+      "report.hr_holidays.report_holidayssummary (Holidays Summary report)",
+      "hr.leave.type: max_leaves / leaves_taken / virtual_remaining_leaves dashboard"
+    ]
   },
   "classification": {
     "value_model": "support",
     "activity_class": "support",
     "apqc_category": "7.0 Develop and Manage Human Capital",
-    "rationale": "hr_holidays: thin support/support module (auto-architect baseline)."
+    "rationale": "hr_holidays is an HR leave/absence-management support activity of Porter's value chain (Stabell & Fjeldstad: a support value configuration, not a primary chain/shop/network flow). It does not convert demand into a delivered product; it administers employee time off and allocations, blocking working hours (resource.calendar.leaves) that operational modules (attendance, payroll, planning) consume. APQC PCF category 7.0 Develop and Manage Human Capital covers workforce administration including time-off / leave management; it extends the hr master-data app (parent metamodel hr, also 7.0 / support)."
   },
   "fit_to_standard": {
     "standard_capabilities": [
-      "Time Off"
+      "leave request lifecycle (confirm -> validate1 -> validate / refuse) with single or double validation",
+      "leave types with units (day/half-day/hour), support documents, paid/unpaid, public-holiday handling",
+      "allocations: regular + accrual plans with multi-level rules, caps, carryover and expiry",
+      "automatic resource.calendar.leaves blocking + optional confidential calendar.event",
+      "time-off dashboard, calendar/pivot/graph analytics and summary reports"
     ],
-    "typical_fits": [],
-    "common_gaps": [],
+    "typical_fits": [
+      "standard request->approval->calendar-block flow with manager/HR approval",
+      "accrual-based PTO with carryover and seniority milestones",
+      "company/department/employee scoped visibility via record rules"
+    ],
+    "common_gaps": [
+      "country-specific statutory leave rules and public-holiday calendars (localization)",
+      "complex multi-step or threshold-based approval routing beyond manager/HR/both",
+      "payroll integration of unpaid / specific leave codes (needs payroll app)",
+      "bespoke accrual formulas beyond the level / frequency / cap configuration"
+    ],
     "drive_hints": [
-      "odoo shell: env['hr.holidays.cancel.leave'].search([],limit=3)"
+      "odoo shell: env['hr.leave'].search([], limit=5).mapped(('employee_id.name','holiday_status_id.name','state'))",
+      "odoo shell: env['hr.leave.allocation'].search([('state','=','validate')], limit=5).mapped(('employee_id.name','number_of_days','virtual_remaining_leaves'))",
+      "odoo shell: env['resource.calendar.leaves'].search([('holiday_id','!=',False)], limit=5).mapped(('holiday_id.employee_id.name','date_from','date_to'))",
+      "curl -b session http /leave/approve?id=<leave_id> (auth=user)"
     ]
   },
   "reverse_eng_confidence": {
@@ -325,14 +354,18 @@
     "strategy": "human"
   },
   "open_questions": [
-    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+    "Exact carryover / unused-accrual end-of-year actions (action_with_unused_accruals) per accrual level.",
+    "How hr_holidays presence/absence overrides interact with hr_attendance and payroll work-entry generation.",
+    "Full set of mail subtypes / activities driving the approval notifications and manager reminders."
   ],
   "provenance": {
     "explorer_facts": "doc/revres/facts/hr_holidays.facts.json",
     "tools": [
-      "extract_module.py",
+      "code-read",
       "extract_frontend.py",
-      "gen_thin.py"
+      "extract_module.py",
+      "extract_runtime.sh",
+      "run-odoo (odoo shell)"
     ],
     "odoo_version": "19.0"
   }
