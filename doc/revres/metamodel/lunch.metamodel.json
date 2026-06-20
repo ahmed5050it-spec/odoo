@@ -1,0 +1,278 @@
+{
+  "subsystem": "lunch",
+  "evidence": {
+    "manifest": {
+      "name": "Lunch",
+      "category": "Human Resources/Lunch",
+      "depends": [
+        "mail"
+      ],
+      "auto_install": false,
+      "application": true
+    },
+    "models": [
+      {
+        "_name": "lunch.alert",
+        "_description": "Lunch Alert",
+        "fields": 19
+      },
+      {
+        "_name": "lunch.cashmove",
+        "_description": "Lunch Cashmove",
+        "fields": 5
+      },
+      {
+        "_name": "lunch.cashmove.report",
+        "_description": "Cashmoves report",
+        "fields": 6
+      },
+      {
+        "_name": "lunch.location",
+        "_description": "Lunch Locations",
+        "fields": 3
+      },
+      {
+        "_name": "lunch.order",
+        "_description": "Lunch Order",
+        "fields": 36
+      },
+      {
+        "_name": "lunch.product",
+        "_description": "Lunch Product",
+        "fields": 15
+      },
+      {
+        "_name": "lunch.product.category",
+        "_description": "Lunch Product Category",
+        "fields": 6
+      },
+      {
+        "_name": "lunch.supplier",
+        "_description": "Lunch Supplier",
+        "fields": 42
+      },
+      {
+        "_name": "lunch.topping",
+        "_description": "Lunch Extras",
+        "fields": 6
+      }
+    ],
+    "routes": [
+      {
+        "paths": [
+          "/lunch/infos"
+        ],
+        "auth": "user",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/lunch/trash"
+        ],
+        "auth": "user",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/lunch/pay"
+        ],
+        "auth": "user",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/lunch/payment_message"
+        ],
+        "auth": "user",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/lunch/user_location_set"
+        ],
+        "auth": "user",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/lunch/user_location_get"
+        ],
+        "auth": "user",
+        "type": "jsonrpc"
+      }
+    ],
+    "security": {
+      "access_rules": 17,
+      "record_rules": 10,
+      "groups": 2
+    },
+    "views": {
+      "form": 7,
+      "list": 10,
+      "tree": 0,
+      "kanban": 8,
+      "search": 7,
+      "pivot": 1,
+      "graph": 1,
+      "calendar": 0,
+      "activity": 0
+    },
+    "frontend": {
+      "present": true,
+      "js_files": 7,
+      "xml_templates": 4,
+      "owl_components": [
+        "LunchAlert",
+        "LunchAlerts",
+        "LunchCurrency",
+        "LunchDashboard",
+        "LunchLocation",
+        "LunchOrderLine",
+        "LunchUser"
+      ],
+      "registry_adds": [
+        "fields:lunch_is_favorite",
+        "views:lunch_kanban",
+        "views:lunch_list"
+      ],
+      "patches": [],
+      "services": [],
+      "asset_bundles": {
+        "web.assets_backend": 4,
+        "web.assets_tests": 1,
+        "web.assets_unit_tests": 1
+      }
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": false,
+      "endpoints": [],
+      "files": []
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    },
+    "behavioral_notes": [
+      {
+        "element": "frontend (OWL/JS)",
+        "observation": "7 JS files, 7 OWL components, 3 registry adds; bundles ['web.assets_backend', 'web.assets_tests', 'web.assets_unit_tests'].",
+        "source": "static"
+      },
+      {
+        "element": "thin module",
+        "observation": "9 models, 6 routes, 2021 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
+        "source": "ast"
+      }
+    ]
+  },
+  "it_architecture": {
+    "application": "lunch (Lunch)",
+    "software_services": [
+      "/lunch/infos",
+      "/lunch/pay",
+      "/lunch/payment_message",
+      "/lunch/trash",
+      "/lunch/user_location_get",
+      "/lunch/user_location_set"
+    ],
+    "data_objects": [
+      "lunch.alert",
+      "lunch.cashmove",
+      "lunch.cashmove.report",
+      "lunch.location",
+      "lunch.order",
+      "lunch.product",
+      "lunch.product.category",
+      "lunch.supplier",
+      "lunch.topping"
+    ],
+    "logical_data_erm": [
+      "lunch.alert -> ir.cron",
+      "lunch.alert -> lunch.location",
+      "lunch.cashmove -> res.currency",
+      "lunch.cashmove -> res.users",
+      "lunch.cashmove.report -> res.currency",
+      "lunch.cashmove.report -> res.users",
+      "lunch.location -> res.company",
+      "lunch.order -> company_id.currency_id",
+      "lunch.order -> lunch.location",
+      "lunch.order -> lunch.product",
+      "lunch.order -> lunch.topping",
+      "lunch.order -> product_id.category_id"
+    ],
+    "information_flows": [
+      "depends: mail"
+    ],
+    "frontend_components": [
+      "LunchAlert",
+      "LunchAlerts",
+      "LunchCurrency",
+      "LunchDashboard",
+      "LunchLocation",
+      "LunchOrderLine",
+      "LunchUser"
+    ]
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Lunch"
+    ],
+    "value_streams": [],
+    "information_concepts": [
+      "lunch.alert",
+      "lunch.cashmove",
+      "lunch.cashmove.report",
+      "lunch.location",
+      "lunch.order",
+      "lunch.product"
+    ],
+    "organization": [],
+    "products": [],
+    "policies": [
+      "10 record rules"
+    ],
+    "stakeholders": [],
+    "strategy": null,
+    "metrics": []
+  },
+  "classification": {
+    "value_model": "support",
+    "activity_class": "support",
+    "apqc_category": "7.0 Develop and Manage Human Capital",
+    "rationale": "lunch: thin support/support module (auto-architect baseline)."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "Lunch"
+    ],
+    "typical_fits": [],
+    "common_gaps": [],
+    "drive_hints": [
+      "odoo shell: env['lunch.alert'].search([],limit=3)"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/lunch.facts.json",
+    "tools": [
+      "extract_module.py",
+      "extract_frontend.py",
+      "gen_thin.py"
+    ],
+    "odoo_version": "19.0"
+  }
+}

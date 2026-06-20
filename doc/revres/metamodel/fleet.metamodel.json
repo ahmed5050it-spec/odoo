@@ -1,0 +1,293 @@
+{
+  "subsystem": "fleet",
+  "evidence": {
+    "manifest": {
+      "name": "Fleet",
+      "category": "Human Resources/Fleet",
+      "depends": [
+        "base",
+        "mail"
+      ],
+      "auto_install": false,
+      "application": true
+    },
+    "models": [
+      {
+        "_name": "fleet.vehicle",
+        "_description": "Vehicle",
+        "fields": 62,
+        "relations": [
+          "driver_id->res.partner",
+          "future_driver_id->res.partner",
+          "model_id->fleet.vehicle.model",
+          "state_id->fleet.vehicle.state",
+          "manager_id->res.users",
+          "company_id->res.company"
+        ]
+      },
+      {
+        "_name": "fleet.vehicle.log.contract",
+        "_description": "Vehicle Contract",
+        "fields": 23,
+        "relations": [
+          "vehicle_id->fleet.vehicle",
+          "cost_subtype_id->fleet.service.type",
+          "insurer_id->res.partner",
+          "purchaser_id->vehicle_id.driver_id"
+        ]
+      },
+      {
+        "_name": "fleet.vehicle.log.services",
+        "_description": "Services for vehicles",
+        "fields": 19,
+        "relations": [
+          "vehicle_id->fleet.vehicle",
+          "service_type_id->fleet.service.type",
+          "odometer_id->fleet.vehicle.odometer",
+          "vendor_id->res.partner"
+        ]
+      },
+      {
+        "_name": "fleet.vehicle.odometer",
+        "_description": "Odometer log for a vehicle",
+        "fields": 6,
+        "relations": [
+          "vehicle_id->fleet.vehicle",
+          "driver_id->res.partner"
+        ]
+      },
+      {
+        "_name": "fleet.vehicle.assignation.log",
+        "_description": "Drivers history on a vehicle",
+        "fields": 4,
+        "relations": [
+          "vehicle_id->fleet.vehicle",
+          "driver_id->res.partner"
+        ]
+      },
+      {
+        "_name": "fleet.vehicle.model",
+        "_description": "Model of a vehicle",
+        "fields": 27,
+        "relations": [
+          "brand_id->fleet.vehicle.model.brand",
+          "category_id->fleet.vehicle.model.category",
+          "vendors->res.partner"
+        ]
+      },
+      {
+        "_name": "fleet.vehicle.cost.report",
+        "_description": "Fleet Analysis Report",
+        "fields": 9,
+        "relations": [
+          "vehicle_id->fleet.vehicle",
+          "driver_id->res.partner"
+        ]
+      }
+    ],
+    "routes": [],
+    "security": {
+      "access_rules": 24,
+      "record_rules": 9,
+      "groups": 2
+    },
+    "views": {
+      "form": 11,
+      "list": 12,
+      "kanban": 6,
+      "search": 9,
+      "pivot": 4,
+      "graph": 5,
+      "activity": 3
+    },
+    "behavioral_notes": [
+      {
+        "element": "fleet.vehicle.create / write (driver_id)",
+        "observation": "Setting/changing driver_id calls create_driver_history(), which creates a fleet.vehicle.assignation.log row (vehicle_id, driver_id, date_start=today) tracking the driver-to-vehicle assignment over time. On a driver change with an existing driver, it also activity_schedule's a 'mail.mail_activity_data_todo' to-do (assigned to manager_id or current user) asking to specify the end date of the previous driver. None of this is visible in metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "fleet.vehicle.write (future_driver_id) / action_accept_driver_change",
+        "observation": "Assigning a future_driver_id flags other same-type vehicles currently driven by that partner with plan_to_change_car / plan_to_change_bike = True (a hand-over signal). action_accept_driver_change() then clears those flags, removes driver_id from the prior vehicles, and promotes future_driver_id to driver_id on the current vehicle. _track_subtype posts the fleet.mt_fleet_driver_updated subtype on driver changes.",
+        "source": "code-read"
+      },
+      {
+        "element": "fleet.vehicle.log.contract.scheduler_manage_contract_expiration (cron run_scheduler)",
+        "observation": "Daily ir.cron 'ir_cron_contract_costs_generator' (model.run_scheduler) drives the contract state machine: schedules a 'fleet.mail_act_fleet_contract_to_renew' renewal activity for open contracts expiring within hr_fleet.delay_alert_contract days (default 30) and an assigned user_id; flips contracts to expired/futur/open by comparing today against start_date/expiration_date. _compute_contract_reminder feeds the vehicle's contract_renewal_due_soon / contract_renewal_overdue alert flags. Pure automation, invisible to metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "fleet.vehicle.odometer + _set_odometer inverse",
+        "observation": "Odometer readings are an append-only fleet.vehicle.odometer log (order by value/date). The vehicle's odometer field is computed as the max reading and its inverse creates a new odometer row instead of mutating one. fleet.vehicle.write enforces a monotonic guard (UserError if a new odometer is lower than the current). fleet.vehicle.log.services._set_odometer likewise spawns an odometer log and links it via odometer_id, so each service captures a mileage point.",
+        "source": "code-read"
+      },
+      {
+        "element": "frontend (OWL/JS)",
+        "observation": "1 JS file, 0 OWL components, 0 patches; one registry add ('views:fleet_form') on bundle web.assets_backend. Fleet ships an almost entirely server-rendered backend UI (11 forms, 12 lists, 6 kanban, plus pivot/graph reporting) with negligible client-side custom code.",
+        "source": "static"
+      }
+    ],
+    "frontend": {
+      "present": true,
+      "js_files": 1,
+      "xml_templates": 0,
+      "owl_components": [],
+      "registry_adds": [
+        "views:fleet_form"
+      ],
+      "patches": [],
+      "services": [],
+      "asset_bundles": {
+        "web.assets_backend": 1
+      }
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": false,
+      "endpoints": [
+        "https://www.odoo.com/app/fleet"
+      ],
+      "files": [
+        "__manifest__.py"
+      ]
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    }
+  },
+  "it_architecture": {
+    "application": "fleet (Fleet / vehicle-asset management application component)",
+    "software_services": [],
+    "data_objects": [
+      "fleet.vehicle",
+      "fleet.vehicle.log.contract",
+      "fleet.vehicle.log.services",
+      "fleet.vehicle.odometer",
+      "fleet.vehicle.assignation.log",
+      "fleet.vehicle.model",
+      "fleet.vehicle.cost.report"
+    ],
+    "logical_data_erm": [
+      "fleet.vehicle -> res.partner (driver_id)",
+      "fleet.vehicle -> fleet.vehicle.model (model_id)",
+      "fleet.vehicle -> fleet.vehicle.state (state_id)",
+      "fleet.vehicle.log.contract -> fleet.vehicle (vehicle_id)",
+      "fleet.vehicle.log.services -> fleet.vehicle (vehicle_id)",
+      "fleet.vehicle.odometer -> fleet.vehicle (vehicle_id)",
+      "fleet.vehicle.assignation.log -> fleet.vehicle (vehicle_id)",
+      "fleet.vehicle.model -> fleet.vehicle.model.brand (brand_id)"
+    ],
+    "information_flows": [
+      "depends: base, mail",
+      "side-effect: fleet.vehicle driver change -> fleet.vehicle.assignation.log + manager to-do activity",
+      "side-effect: fleet.vehicle.log.contract cron -> contract state transitions + renewal activity + vehicle renewal-alert flags",
+      "side-effect: odometer set (vehicle or service) -> new fleet.vehicle.odometer log row"
+    ],
+    "frontend_components": []
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Manage Vehicle Fleet (register, configure, decommission vehicles)",
+      "Assign Vehicles to Drivers (assignment history & hand-over)",
+      "Manage Vehicle Contracts (leasing/insurance with renewal alerts)",
+      "Log Vehicle Services & Costs",
+      "Track Odometer / Mileage",
+      "Fleet Cost & Odometer Analysis"
+    ],
+    "value_streams": [
+      "Vehicle lifecycle: new request -> registered/in-service -> driver assignment -> contract & service upkeep -> write-off",
+      "Contract renewal: open contract -> near-expiry alert activity -> renew/expire"
+    ],
+    "information_concepts": [
+      "fleet.vehicle",
+      "fleet.vehicle.log.contract",
+      "fleet.vehicle.log.services",
+      "fleet.vehicle.odometer",
+      "fleet.vehicle.assignation.log",
+      "fleet.vehicle.model",
+      "res.partner (driver / vendor / insurer)"
+    ],
+    "organization": [
+      "fleet_group_user (Officer: Manage all vehicles)",
+      "fleet_group_manager (Administrator)"
+    ],
+    "products": [],
+    "policies": [
+      "9 record rules: per-administrator full rights on vehicles/contracts/services/odometer + multi-company scoping (e.g. fleet_rule_vehicle_visibility_manager, ir_rule_fleet_vehicle)",
+      "Daily ir.cron ir_cron_contract_costs_generator -> run_scheduler (contract expiration & renewal automation)",
+      "Odometer monotonicity guard (UserError on decreasing odometer)"
+    ],
+    "stakeholders": [
+      "Driver (res.partner)",
+      "Fleet Manager / Officer (res.users)",
+      "Vendor / Insurer (res.partner)",
+      "Company (res.company)"
+    ],
+    "strategy": null,
+    "metrics": [
+      "fleet.vehicle.cost.report (Fleet Analysis: costs by vehicle/driver/type)",
+      "fleet.vehicle.odometer.report (Odometer Analysis: mileage delta)"
+    ]
+  },
+  "classification": {
+    "value_model": "support",
+    "activity_class": "support",
+    "apqc_category": "10.0 Acquire, Construct, and Manage Assets",
+    "rationale": "Fleet manages vehicles as physical assets across their lifecycle (acquisition/registration, in-service contracts and servicing, mileage tracking, write-off) rather than producing or selling output. It is a Stabell & Fjeldstad 'support' configuration: an asset-management support activity consumed by the primary value chain (drivers/operations), with no customer-facing document flow of its own. Maps to APQC 10.0 (Acquire, Construct, and Manage Assets) - the enterprise-asset upkeep category."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "vehicle register with brand/model/category catalog and state kanban",
+      "driver assignment with full assignment-history log and hand-over flow",
+      "leasing/insurance contracts with automatic renewal alerts (cron + activities)",
+      "service/repair logging with cost capture",
+      "odometer/mileage tracking (append-only logs)",
+      "fleet cost & odometer analysis (pivot/graph reports)",
+      "mass-email drivers wizard (fleet.vehicle.send.mail)"
+    ],
+    "typical_fits": [
+      "company car/bike pool management for HR",
+      "contract-expiry monitoring with manager renewal to-dos",
+      "per-vehicle running-cost reporting",
+      "multi-company fleet scoping via record rules"
+    ],
+    "common_gaps": [
+      "accounting integration of fleet costs (provided by separate fleet_account / hr_fleet bridge modules, not base fleet)",
+      "fuel-card / telematics / GPS feeds (no external integration in base module)",
+      "payroll benefit-in-kind valuation (l10n_*_hr_payroll_fleet add-ons)",
+      "custom depreciation schedules beyond car_value/residual_value fields"
+    ],
+    "drive_hints": [
+      "odoo shell: env['fleet.vehicle'].search([], limit=5).mapped(('name','state_id.name','driver_id.name'))",
+      "odoo shell: env['fleet.vehicle.log.contract'].run_scheduler()  # exercise contract-expiration cron",
+      "odoo shell: env['fleet.vehicle.odometer'].search([], limit=5).mapped(('vehicle_id.name','value'))"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "How fleet costs reach accounting - confirmed to live in the separate fleet_account / hr_fleet bridge, not the base fleet module.",
+    "Exact recurring-cost generation logic for contracts (cost_generated / cost_frequency) driven by the daily cron.",
+    "Whether plan_to_change_car/bike hand-over signalling is consumed by downstream HR/payroll fleet modules."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/fleet.facts.json",
+    "tools": [
+      "code-read",
+      "extract_frontend.py",
+      "extract_module.py",
+      "Grep/Read"
+    ],
+    "odoo_version": "19.0"
+  }
+}

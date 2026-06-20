@@ -1,0 +1,220 @@
+{
+  "subsystem": "spreadsheet_dashboard",
+  "evidence": {
+    "manifest": {
+      "name": "Spreadsheet dashboard",
+      "category": "Productivity/Dashboard",
+      "depends": [
+        "spreadsheet"
+      ],
+      "auto_install": false,
+      "application": false
+    },
+    "models": [
+      {
+        "_name": "spreadsheet.dashboard",
+        "_description": "Spreadsheet Dashboard",
+        "fields": 10
+      },
+      {
+        "_name": "spreadsheet.dashboard.group",
+        "_description": "Group of dashboards",
+        "fields": 4
+      },
+      {
+        "_name": "spreadsheet.dashboard.share",
+        "_description": "Copy of a shared dashboard",
+        "fields": 5
+      }
+    ],
+    "routes": [
+      {
+        "paths": [
+          "/spreadsheet/dashboard/data/<model("
+        ],
+        "auth": null,
+        "type": null
+      },
+      {
+        "paths": [
+          "/dashboard/share/<int:share_id>/<token>"
+        ],
+        "auth": "public",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/dashboard/download/<int:share_id>/<token>"
+        ],
+        "auth": "user",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/dashboard/data/<int:share_id>/<token>"
+        ],
+        "auth": "public",
+        "type": "http"
+      }
+    ],
+    "security": {
+      "access_rules": 5,
+      "record_rules": 4,
+      "groups": 1
+    },
+    "views": {
+      "form": 2,
+      "list": 2,
+      "tree": 0,
+      "kanban": 1,
+      "search": 0,
+      "pivot": 0,
+      "graph": 0,
+      "calendar": 0,
+      "activity": 0
+    },
+    "frontend": {
+      "present": true,
+      "js_files": 14,
+      "xml_templates": 7,
+      "owl_components": [
+        "DashboardDateFilter",
+        "DashboardFacet",
+        "DashboardMobileSearchPanel",
+        "DashboardSearchBar",
+        "MobileFigureContainer",
+        "SpreadsheetDashboardAction"
+      ],
+      "registry_adds": [
+        "actions:action_spreadsheet_dashboard",
+        "services:spreadsheet_dashboard_loader",
+        "services:spreadsheet_dashboard_menu_translate"
+      ],
+      "patches": [
+        "ChartDashboardMenu.prototype",
+        "components.ChartJsComponent.prototype"
+      ],
+      "services": [],
+      "asset_bundles": {
+        "spreadsheet.o_spreadsheet": 2,
+        "spreadsheet.assets_print": 1,
+        "web.assets_backend": 2,
+        "web.assets_unit_tests": 1
+      }
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": true,
+      "endpoints": [],
+      "files": []
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    },
+    "behavioral_notes": [
+      {
+        "element": "frontend (OWL/JS)",
+        "observation": "14 JS files, 6 OWL components, 3 registry adds; bundles ['spreadsheet.o_spreadsheet', 'spreadsheet.assets_print', 'web.assets_backend'].",
+        "source": "static"
+      },
+      {
+        "element": "thin module",
+        "observation": "3 models, 4 routes, 664 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
+        "source": "ast"
+      }
+    ]
+  },
+  "it_architecture": {
+    "application": "spreadsheet_dashboard (Spreadsheet dashboard)",
+    "software_services": [
+      "/dashboard/data/<int:share_id>/<token>",
+      "/dashboard/download/<int:share_id>/<token>",
+      "/dashboard/share/<int:share_id>/<token>",
+      "/spreadsheet/dashboard/data/<model("
+    ],
+    "data_objects": [
+      "spreadsheet.dashboard",
+      "spreadsheet.dashboard.group",
+      "spreadsheet.dashboard.share"
+    ],
+    "logical_data_erm": [
+      "spreadsheet.dashboard -> ir.model",
+      "spreadsheet.dashboard -> res.company",
+      "spreadsheet.dashboard -> res.groups",
+      "spreadsheet.dashboard -> res.users",
+      "spreadsheet.dashboard -> spreadsheet.dashboard.group",
+      "spreadsheet.dashboard.group -> spreadsheet.dashboard",
+      "spreadsheet.dashboard.share -> spreadsheet.dashboard"
+    ],
+    "information_flows": [
+      "depends: spreadsheet"
+    ],
+    "frontend_components": [
+      "DashboardDateFilter",
+      "DashboardFacet",
+      "DashboardMobileSearchPanel",
+      "DashboardSearchBar",
+      "MobileFigureContainer",
+      "SpreadsheetDashboardAction"
+    ]
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Spreadsheet dashboard"
+    ],
+    "value_streams": [],
+    "information_concepts": [
+      "spreadsheet.dashboard",
+      "spreadsheet.dashboard.group",
+      "spreadsheet.dashboard.share"
+    ],
+    "organization": [],
+    "products": [],
+    "policies": [
+      "4 record rules"
+    ],
+    "stakeholders": [],
+    "strategy": null,
+    "metrics": []
+  },
+  "classification": {
+    "value_model": "support",
+    "activity_class": "support",
+    "apqc_category": "13.0 Develop and Manage Business Capabilities",
+    "rationale": "spreadsheet_dashboard: thin support/support module (auto-architect baseline)."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "Spreadsheet dashboard"
+    ],
+    "typical_fits": [],
+    "common_gaps": [],
+    "drive_hints": [
+      "odoo shell: env['spreadsheet.dashboard'].search([],limit=3)"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/spreadsheet_dashboard.facts.json",
+    "tools": [
+      "extract_module.py",
+      "extract_frontend.py",
+      "gen_thin.py"
+    ],
+    "odoo_version": "19.0"
+  }
+}

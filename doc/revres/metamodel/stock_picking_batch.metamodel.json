@@ -1,0 +1,170 @@
+{
+  "subsystem": "stock_picking_batch",
+  "evidence": {
+    "manifest": {
+      "name": "Warehouse Management: Batch Transfer",
+      "category": "Supply Chain/Inventory",
+      "depends": [
+        "stock"
+      ],
+      "auto_install": false,
+      "application": false
+    },
+    "models": [
+      {
+        "_name": "stock.add.to.wave",
+        "_description": "Wave Transfer Lines",
+        "fields": 5
+      },
+      {
+        "_name": "stock.picking.batch",
+        "_description": "Batch Transfer",
+        "fields": 20
+      },
+      {
+        "_name": "stock.picking.to.batch",
+        "_description": "Batch Transfer Lines",
+        "fields": 5
+      }
+    ],
+    "routes": [],
+    "security": {
+      "access_rules": 3,
+      "record_rules": 1,
+      "groups": 0
+    },
+    "views": {
+      "form": 1,
+      "list": 2,
+      "tree": 0,
+      "kanban": 1,
+      "search": 1,
+      "pivot": 0,
+      "graph": 0,
+      "calendar": 1,
+      "activity": 0
+    },
+    "frontend": {
+      "present": true,
+      "js_files": 1,
+      "xml_templates": 0,
+      "owl_components": [],
+      "registry_adds": [
+        "fields:stock_picking_many2many"
+      ],
+      "patches": [],
+      "services": [],
+      "asset_bundles": {
+        "web.assets_backend": 2,
+        "web.assets_tests": 1
+      }
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": false,
+      "endpoints": [],
+      "files": []
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    },
+    "behavioral_notes": [
+      {
+        "element": "frontend (OWL/JS)",
+        "observation": "1 JS files, 0 OWL components, 1 registry adds; bundles ['web.assets_backend', 'web.assets_tests'].",
+        "source": "static"
+      },
+      {
+        "element": "thin module",
+        "observation": "3 models, 0 routes, 3854 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
+        "source": "ast"
+      }
+    ]
+  },
+  "it_architecture": {
+    "application": "stock_picking_batch (Warehouse Management: Batch Transfer)",
+    "software_services": [],
+    "data_objects": [
+      "stock.add.to.wave",
+      "stock.picking.batch",
+      "stock.picking.to.batch"
+    ],
+    "logical_data_erm": [
+      "stock.add.to.wave -> res.users",
+      "stock.add.to.wave -> stock.move.line",
+      "stock.add.to.wave -> stock.picking",
+      "stock.add.to.wave -> stock.picking.batch",
+      "stock.picking.batch -> res.company",
+      "stock.picking.batch -> res.users",
+      "stock.picking.batch -> stock.move",
+      "stock.picking.batch -> stock.move.line",
+      "stock.picking.batch -> stock.picking",
+      "stock.picking.batch -> stock.picking.type",
+      "stock.picking.batch -> stock.warehouse",
+      "stock.picking.to.batch -> res.users"
+    ],
+    "information_flows": [
+      "depends: stock"
+    ],
+    "frontend_components": []
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Warehouse Management: Batch Transfer"
+    ],
+    "value_streams": [],
+    "information_concepts": [
+      "stock.add.to.wave",
+      "stock.picking.batch",
+      "stock.picking.to.batch"
+    ],
+    "organization": [],
+    "products": [],
+    "policies": [
+      "1 record rules"
+    ],
+    "stakeholders": [],
+    "strategy": null,
+    "metrics": []
+  },
+  "classification": {
+    "value_model": "chain",
+    "activity_class": "support",
+    "apqc_category": "4.0 Deliver Physical Products",
+    "rationale": "stock_picking_batch: thin chain/support module (auto-architect baseline)."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "Warehouse Management: Batch Transfer"
+    ],
+    "typical_fits": [],
+    "common_gaps": [],
+    "drive_hints": [
+      "odoo shell: env['stock.add.to.wave'].search([],limit=3)"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/stock_picking_batch.facts.json",
+    "tools": [
+      "extract_module.py",
+      "extract_frontend.py",
+      "gen_thin.py"
+    ],
+    "odoo_version": "19.0"
+  }
+}

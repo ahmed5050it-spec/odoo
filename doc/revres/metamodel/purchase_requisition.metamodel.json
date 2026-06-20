@@ -1,0 +1,184 @@
+{
+  "subsystem": "purchase_requisition",
+  "evidence": {
+    "manifest": {
+      "name": "Purchase Agreements",
+      "category": "Supply Chain/Purchase",
+      "depends": [
+        "purchase"
+      ],
+      "auto_install": false,
+      "application": false
+    },
+    "models": [
+      {
+        "_name": "purchase.order.group",
+        "_description": "Technical model to group PO for call to tenders",
+        "fields": 1
+      },
+      {
+        "_name": "purchase.requisition",
+        "_description": "Purchase Requisition",
+        "fields": 16
+      },
+      {
+        "_name": "purchase.requisition.alternative.warning",
+        "_description": "Wizard in case PO still has open alternative requests for quotation",
+        "fields": 2
+      },
+      {
+        "_name": "purchase.requisition.create.alternative",
+        "_description": "Wizard to preset values for alternative PO",
+        "fields": 4
+      },
+      {
+        "_name": "purchase.requisition.line",
+        "_description": "Purchase Requisition Line",
+        "fields": 9
+      }
+    ],
+    "routes": [],
+    "security": {
+      "access_rules": 7,
+      "record_rules": 2,
+      "groups": 1
+    },
+    "views": {
+      "form": 2,
+      "list": 4,
+      "tree": 0,
+      "kanban": 1,
+      "search": 1,
+      "pivot": 0,
+      "graph": 0,
+      "calendar": 0,
+      "activity": 0
+    },
+    "frontend": {
+      "present": true,
+      "js_files": 3,
+      "xml_templates": 1,
+      "owl_components": [],
+      "registry_adds": [
+        "fields:many2many_alt_pos",
+        "views:purchase_order_line_compare"
+      ],
+      "patches": [],
+      "services": [],
+      "asset_bundles": {
+        "web.assets_backend": 4
+      }
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": false,
+      "endpoints": [],
+      "files": []
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    },
+    "behavioral_notes": [
+      {
+        "element": "frontend (OWL/JS)",
+        "observation": "3 JS files, 0 OWL components, 2 registry adds; bundles ['web.assets_backend'].",
+        "source": "static"
+      },
+      {
+        "element": "thin module",
+        "observation": "5 models, 0 routes, 1730 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
+        "source": "ast"
+      }
+    ]
+  },
+  "it_architecture": {
+    "application": "purchase_requisition (Purchase Agreements)",
+    "software_services": [],
+    "data_objects": [
+      "purchase.order.group",
+      "purchase.requisition",
+      "purchase.requisition.alternative.warning",
+      "purchase.requisition.create.alternative",
+      "purchase.requisition.line"
+    ],
+    "logical_data_erm": [
+      "purchase.order.group -> purchase.order",
+      "purchase.requisition -> product.product",
+      "purchase.requisition -> purchase.order",
+      "purchase.requisition -> purchase.requisition.line",
+      "purchase.requisition -> res.company",
+      "purchase.requisition -> res.currency",
+      "purchase.requisition -> res.partner",
+      "purchase.requisition -> res.users",
+      "purchase.requisition.alternative.warning -> purchase.order",
+      "purchase.requisition.create.alternative -> purchase.order",
+      "purchase.requisition.create.alternative -> res.partner",
+      "purchase.requisition.line -> product.product"
+    ],
+    "information_flows": [
+      "depends: purchase"
+    ],
+    "frontend_components": []
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Purchase Agreements"
+    ],
+    "value_streams": [],
+    "information_concepts": [
+      "purchase.order.group",
+      "purchase.requisition",
+      "purchase.requisition.alternative.warning",
+      "purchase.requisition.create.alternative",
+      "purchase.requisition.line"
+    ],
+    "organization": [],
+    "products": [],
+    "policies": [
+      "2 record rules"
+    ],
+    "stakeholders": [],
+    "strategy": null,
+    "metrics": []
+  },
+  "classification": {
+    "value_model": "support",
+    "activity_class": "support",
+    "apqc_category": "4.2 Procure Materials and Services",
+    "rationale": "purchase_requisition: thin support/support module (auto-architect baseline)."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "Purchase Agreements"
+    ],
+    "typical_fits": [],
+    "common_gaps": [],
+    "drive_hints": [
+      "odoo shell: env['purchase.order.group'].search([],limit=3)"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/purchase_requisition.facts.json",
+    "tools": [
+      "extract_module.py",
+      "extract_frontend.py",
+      "gen_thin.py"
+    ],
+    "odoo_version": "19.0"
+  }
+}

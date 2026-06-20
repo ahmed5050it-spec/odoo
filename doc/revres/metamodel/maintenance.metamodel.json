@@ -1,0 +1,274 @@
+{
+  "subsystem": "maintenance",
+  "evidence": {
+    "manifest": {
+      "name": "Maintenance",
+      "category": "Supply Chain/Maintenance",
+      "depends": [
+        "mail"
+      ],
+      "auto_install": false,
+      "application": true
+    },
+    "models": [
+      {
+        "_name": "maintenance.equipment",
+        "_description": "Maintenance Equipment",
+        "fields": 17,
+        "relations": [
+          "category_id->maintenance.equipment.category",
+          "owner_user_id->res.users",
+          "partner_id->res.partner",
+          "maintenance_ids->maintenance.request",
+          "maintenance_team_id->maintenance.team"
+        ]
+      },
+      {
+        "_name": "maintenance.request",
+        "_description": "Maintenance Request",
+        "fields": 29,
+        "relations": [
+          "equipment_id->maintenance.equipment",
+          "category_id->maintenance.equipment.category",
+          "stage_id->maintenance.stage",
+          "maintenance_team_id->maintenance.team",
+          "user_id->res.users"
+        ]
+      },
+      {
+        "_name": "maintenance.team",
+        "_description": "Maintenance Teams",
+        "fields": 14,
+        "relations": [
+          "member_ids->res.users",
+          "request_ids->maintenance.request",
+          "equipment_ids->maintenance.equipment"
+        ]
+      },
+      {
+        "_name": "maintenance.equipment.category",
+        "_description": "Maintenance Equipment Category",
+        "fields": 12,
+        "relations": [
+          "technician_user_id->res.users",
+          "equipment_ids->maintenance.equipment",
+          "maintenance_ids->maintenance.request"
+        ]
+      },
+      {
+        "_name": "maintenance.stage",
+        "_description": "Maintenance Stage",
+        "fields": 4,
+        "relations": []
+      },
+      {
+        "_name": "maintenance.mixin",
+        "_description": "Maintenance Maintained Item (AbstractModel: MTBF/MTTR KPIs)",
+        "fields": 12,
+        "relations": [
+          "maintenance_team_id->maintenance.team",
+          "technician_user_id->res.users",
+          "maintenance_ids->maintenance.request"
+        ]
+      }
+    ],
+    "routes": [],
+    "security": {
+      "access_rules": 10,
+      "record_rules": 8,
+      "groups": 1
+    },
+    "views": {
+      "form": 4,
+      "list": 5,
+      "kanban": 6,
+      "search": 5,
+      "pivot": 1,
+      "graph": 1,
+      "calendar": 1,
+      "activity": 1
+    },
+    "behavioral_notes": [
+      {
+        "element": "maintenance.request kanban stages + maintenance_type",
+        "observation": "Requests flow across maintenance.stage kanban columns (demo: New Request -> In Progress -> Repaired -> Scrap; the last two have done=True). maintenance_type selects 'corrective' (default) vs 'preventive'. Moving to any done stage sets close_date=today and triggers activity_feedback/activity_update; moving back clears close_date. write() also resets kanban_state to 'normal' on stage change. Stage semantics live in Python, not metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "maintenance.request.write (preventive recurrence)",
+        "observation": "Preventive recurrence is NOT a cron. In write(), when a recurring preventive request enters a done stage, the record copy()s itself with schedule_date advanced by repeat_interval x repeat_unit (day/week/month/year) and reset to the first stage, honoring repeat_type forever/until repeat_until. _compute_recurring_maintenance forces recurring_maintenance=False unless maintenance_type=='preventive'. (Note: stale i18n still references a removed next_action_date field / maintenance_requests_cron server action; neither exists in the current models/maintenance.py.)",
+        "source": "code-read"
+      },
+      {
+        "element": "maintenance.equipment <-> maintenance.request linkage + activities",
+        "observation": "equipment_id (ondelete='restrict') links a request to its asset; category_id is related/stored from equipment_id.category_id, and _compute_user_id assigns the technician from equipment.technician_user_id (fallback category.technician_user_id). create/write call _add_followers (message_subscribe owner+technician) and activity_schedule/reschedule a 'maintenance.mail_act_maintenance_request' activity on schedule_date. These cross-model effects are invisible to metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "maintenance.mixin MTBF/MTTR KPIs",
+        "observation": "Abstract mixin (inherited by maintenance.equipment) computes reliability KPIs in _compute_maintenance_request from done corrective requests: mttr = avg(close_date - request_date); mtbf = (latest_failure_date - effective_date)/count; estimated_next_failure = latest_failure_date + mtbf days; expected_mtbf is a manual target. Formulas are Python-only.",
+        "source": "code-read"
+      },
+      {
+        "element": "frontend (OWL/JS)",
+        "observation": "7 JS files, 0 XML templates, 0 OWL components; 1 registry registration 'views:calendar_with_recurrence' (a custom calendar view extension under static/src/views/calendar_with_recurrence rendering recurring preventive requests); asset bundles ['web.assets_backend', 'web.assets_tests']. No portal/website frontend.",
+        "source": "static"
+      }
+    ],
+    "frontend": {
+      "present": true,
+      "js_files": 7,
+      "xml_templates": 0,
+      "owl_components": [],
+      "registry_adds": [
+        "views:calendar_with_recurrence"
+      ],
+      "patches": [],
+      "services": [],
+      "asset_bundles": {
+        "web.assets_backend": 1,
+        "web.assets_tests": 1
+      }
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": false,
+      "endpoints": [
+        "https://www.odoo.com/app/maintenance"
+      ],
+      "files": [
+        "__manifest__.py"
+      ]
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    }
+  },
+  "it_architecture": {
+    "application": "maintenance (Equipment Maintenance application component)",
+    "software_services": [],
+    "data_objects": [
+      "maintenance.equipment",
+      "maintenance.request",
+      "maintenance.team",
+      "maintenance.equipment.category",
+      "maintenance.stage"
+    ],
+    "logical_data_erm": [
+      "maintenance.request -> maintenance.equipment",
+      "maintenance.request -> maintenance.stage",
+      "maintenance.request -> maintenance.team",
+      "maintenance.equipment -> maintenance.equipment.category",
+      "maintenance.equipment -> maintenance.team",
+      "maintenance.equipment.category -> maintenance.request"
+    ],
+    "information_flows": [
+      "depends: mail (mail.thread, mail.activity.mixin, mail.alias.mixin)",
+      "side-effect: maintenance.request.write(stage done) -> close_date set + activity_feedback + (preventive recurring) copy() next occurrence",
+      "side-effect: maintenance.request create/write -> _add_followers (message_subscribe) + activity_schedule mail.activity",
+      "side-effect: maintenance.team alias -> inbound email creates maintenance.request (mail.alias.mixin)"
+    ],
+    "frontend_components": []
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Manage Equipment / Asset Register",
+      "Handle Corrective Maintenance Requests",
+      "Schedule Preventive (Recurring) Maintenance",
+      "Maintenance Team & Technician Assignment",
+      "Equipment Reliability Analysis (MTBF/MTTR)"
+    ],
+    "value_streams": [
+      "Breakdown-to-Repair: request -> assign team/technician -> in progress -> repaired (close_date)",
+      "Preventive cycle: recurring preventive request -> done -> auto-copied next scheduled occurrence"
+    ],
+    "information_concepts": [
+      "maintenance.equipment (asset)",
+      "maintenance.request (work order)",
+      "maintenance.team",
+      "maintenance.equipment.category",
+      "maintenance.stage"
+    ],
+    "organization": [
+      "maintenance.group_equipment_manager"
+    ],
+    "products": [],
+    "policies": [
+      "8 record rules: multi-company scoping + manager-vs-user visibility on equipment/requests/teams",
+      "automation: stage.done sets close_date; preventive recurrence auto-generates the next request on completion"
+    ],
+    "stakeholders": [
+      "Equipment Owner (res.users)",
+      "Technician (res.users)",
+      "Maintenance Team (maintenance.team)",
+      "Vendor (res.partner)"
+    ],
+    "strategy": null,
+    "metrics": [
+      "MTBF (Mean Time Between Failure, per equipment)",
+      "MTTR (Mean Time To Repair, per equipment)",
+      "estimated_next_failure (predicted next breakdown)",
+      "team dashboard counts (todo / scheduled / high-priority / blocked / unscheduled)",
+      "maintenance request pivot & graph analysis"
+    ]
+  },
+  "classification": {
+    "value_model": "support",
+    "activity_class": "support",
+    "apqc_category": "10.0 Acquire, Construct, and Manage Assets",
+    "rationale": "Maintenance is a firm-infrastructure support activity (Stabell & Fjeldstad: a value-shop-shaped diagnostic/repair routine wrapped around the asset base, but classified support because it sustains the firm's productive assets rather than transforming a customer order). It does not buy, make, or sell anything tradeable; it keeps equipment serviceable so the primary value chain (mrp/stock) can run. APQC PCF 10.0 'Acquire, Construct, and Manage Assets' owns asset maintenance: 10.5 (Maintain productive assets) covers the corrective request lifecycle and 10.5.x preventive maintenance scheduling matches the recurring preventive cron-like copy mechanism. (8.x 'Manage Information Technology' was rejected: the assets here are physical equipment, not IT services.) MTBF/MTTR KPIs and the equipment register are textbook asset-management instrumentation."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "equipment / asset register with categories, serial, warranty, cost, scrap date",
+      "corrective & preventive maintenance request kanban (configurable stages)",
+      "recurring preventive maintenance (repeat interval/unit/until)",
+      "maintenance teams, email-alias request intake, technician auto-assignment",
+      "MTBF/MTTR reliability KPIs + team dashboard + pivot/graph reporting"
+    ],
+    "typical_fits": [
+      "asset-tracked corrective + preventive maintenance with stage pipeline",
+      "team/technician ownership and scheduled-date activities",
+      "multi-company scoping via record rules"
+    ],
+    "common_gaps": [
+      "spare-parts / inventory consumption on a work order (needs maintenance_worksheet or stock integration)",
+      "meter / usage-based preventive triggers (only calendar-interval recurrence is built in)",
+      "labor costing / billing of maintenance work (no native cost capture beyond duration)",
+      "SLA / response-time enforcement beyond the activity deadline"
+    ],
+    "drive_hints": [
+      "odoo shell: env['maintenance.request'].search([], limit=5).mapped(('name','maintenance_type','stage_id.name'))",
+      "odoo shell: env['maintenance.equipment'].search([], limit=5).mapped(('name','mtbf','mttr','estimated_next_failure'))",
+      "odoo shell: r = env['maintenance.request'].create({'name':'PM','maintenance_type':'preventive','recurring_maintenance':True,'repeat_interval':1,'repeat_unit':'month','schedule_date':'2026-06-20 09:00:00'}); r.stage_id = env.ref('maintenance.stage_3'); env['maintenance.request'].search_count([('name','=','PM')])  # expect 2 (next occurrence copied)"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Exact maintenance.stage configuration in production (demo seeds New Request/In Progress/Repaired/Scrap, but stages are user-editable).",
+    "Whether the stale next_action_date field / maintenance_requests_cron server action referenced in i18n is reintroduced by any bridge module (mrp_maintenance, etc.).",
+    "How maintenance_worksheet (module_maintenance_worksheet setting) extends the request when enabled."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/maintenance.facts.json",
+    "tools": [
+      "code-read",
+      "extract_frontend.py",
+      "extract_module.py",
+      "extract_runtime.sh",
+      "run-odoo (odoo shell)"
+    ],
+    "odoo_version": "19.0"
+  }
+}
