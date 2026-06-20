@@ -8,30 +8,110 @@
         "stock"
       ],
       "auto_install": false,
-      "application": false
+      "application": false,
+      "version": "1.0",
+      "license": "LGPL-3",
+      "author": "Odoo S.A."
     },
     "models": [
       {
-        "_name": "stock.add.to.wave",
-        "_description": "Wave Transfer Lines",
-        "fields": 5
-      },
-      {
         "_name": "stock.picking.batch",
         "_description": "Batch Transfer",
-        "fields": 20
+        "_inherit": [
+          "mail.thread",
+          "mail.activity.mixin"
+        ],
+        "fields": 20,
+        "methods": 34,
+        "relations": [
+          "user_id->res.users",
+          "company_id->res.company",
+          "picking_ids->stock.picking (one2many via batch_id)",
+          "allowed_picking_ids->stock.picking (computed)",
+          "move_ids->stock.move (computed)",
+          "move_line_ids->stock.move.line (computed)",
+          "picking_type_id->stock.picking.type",
+          "warehouse_id->stock.warehouse (related)"
+        ]
+      },
+      {
+        "_name": "stock.add.to.wave",
+        "_description": "Wave Transfer Lines",
+        "_inherit": null,
+        "fields": 5,
+        "methods": 2,
+        "relations": [
+          "wave_id->stock.picking.batch",
+          "picking_ids->stock.picking",
+          "line_ids->stock.move.line",
+          "user_id->res.users"
+        ]
       },
       {
         "_name": "stock.picking.to.batch",
         "_description": "Batch Transfer Lines",
-        "fields": 5
+        "_inherit": null,
+        "fields": 5,
+        "methods": 1,
+        "relations": [
+          "batch_id->stock.picking.batch",
+          "user_id->res.users"
+        ]
+      },
+      {
+        "_name": "stock.picking (inherited)",
+        "_description": "Transfer (+batch_id, batch_sequence)",
+        "_inherit": "stock.picking",
+        "fields": 2,
+        "methods": 17,
+        "relations": [
+          "batch_id->stock.picking.batch"
+        ]
+      },
+      {
+        "_name": "stock.picking.type (inherited)",
+        "_description": "Picking Type (+auto_batch / wave grouping / capacity config)",
+        "_inherit": "stock.picking.type",
+        "fields": 16,
+        "methods": 9,
+        "relations": [
+          "wave_category_ids->product.category",
+          "wave_location_ids->stock.location"
+        ]
+      },
+      {
+        "_name": "stock.move.line (inherited)",
+        "_description": "Product Moves (+batch_id related, wave splitting)",
+        "_inherit": "stock.move.line",
+        "fields": 1,
+        "methods": 11,
+        "relations": [
+          "batch_id->picking_id.batch_id (related)"
+        ]
+      },
+      {
+        "_name": "stock.move (inherited)",
+        "_description": "Stock Move (+auto-batch / auto-wave hooks)",
+        "_inherit": "stock.move",
+        "fields": 0,
+        "methods": 6,
+        "relations": []
+      },
+      {
+        "_name": "stock.warehouse (inherited)",
+        "_description": "Warehouse (+batch picking-type wiring)",
+        "_inherit": "stock.warehouse",
+        "fields": 0,
+        "methods": 1,
+        "relations": []
       }
     ],
     "routes": [],
     "security": {
       "access_rules": 3,
       "record_rules": 1,
-      "groups": 0
+      "groups": 0,
+      "note": "No own groups; reuses stock.group_stock_user for all 3 access rules (stock.picking.batch, stock.picking.to.batch, stock.add.to.wave)."
     },
     "views": {
       "form": 1,
@@ -72,77 +152,157 @@
     },
     "behavioral_notes": [
       {
-        "element": "frontend (OWL/JS)",
-        "observation": "1 JS files, 0 OWL components, 1 registry adds; bundles ['web.assets_backend', 'web.assets_tests'].",
-        "source": "static"
+        "element": "stock.picking.batch.action_confirm / action_done / _compute_state (state machine)",
+        "observation": "The batch lifecycle (draft -> in_progress -> done/cancel) is a thin orchestrator over its member stock.picking states, not an independent workflow. action_confirm propagates self.picking_ids.action_confirm() to confirm every member transfer, runs _check_company and sets state='in_progress'. action_done runs a batch-wide _sanity_check(separate_pickings=False), detaches empty 'waiting'/'assigned' pickings (removed from the batch, not cancelled), then calls button_validate() on all non-empty members with context skip_sanity_check + pickings_to_detach + batches_to_validate so per-picking validation is suppressed in favor of the single batch validation. state is itself a stored compute (_compute_state): the batch auto-flips to 'cancel' when all member pickings are cancelled and to 'done' when all non-cancelled members are done - so validating/cancelling the underlying transfers drives the batch state. This propagation and empty-picking detachment are invisible in metadata.",
+        "source": "code-read"
       },
       {
-        "element": "thin module",
-        "observation": "3 models, 0 routes, 3854 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
-        "source": "ast"
+        "element": "stock.move.line._add_to_wave / _auto_wave (wave line grouping & picking split)",
+        "observation": "Wave picking splits a picking's demand at the move-line level rather than grouping whole transfers. _add_to_wave takes selected stock.move.line records: if all of a picking's lines/moves are taken it simply links the whole picking to the wave (a stock.picking.batch with is_wave=True); otherwise it copy_data-clones the picking into a new split picking, calls move._split(qty) to carve the taken quantity into a new stock.move, and reassigns those move lines - leaving the remainder on the original picking. _auto_wave (triggered from stock.move._action_assign and picking.button_validate on backorders) buckets reservable move lines by the picking type's wave_group_by_product / wave_group_by_category (limited to wave_category_ids) / wave_group_by_location (nearest parent in wave_location_ids), trying existing waves first then creating new ones. None of this product/zone splitting logic is derivable from field metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "stock.picking.batch.user_id (Responsible) + stock.picking.assign_batch_user",
+        "observation": "user_id is the worker the batch is assigned to (tracked field). On write of user_id (or when pickings are added), stock.picking.batch.write calls self.picking_ids.assign_batch_user(vals['user_id']), which cascades the responsible user down onto every member stock.picking (writing picking.user_id) and posts a chatter message 'Assigned to ... Responsible' / 'Unassigned responsible' per picking. So assigning a batch to one operator transitively re-owns all its transfers - a cross-model side effect not visible in the schema.",
+        "source": "code-read"
+      },
+      {
+        "element": "stock.picking.type capacity limits + _find_auto_batch / _is_picking_auto_mergeable (auto-batching)",
+        "observation": "stock.picking.type gains auto_batch plus batch_max_lines and batch_max_pickings capacity caps and group-by flags (partner/destination/src_loc/dest_loc for batches; product/category/location for waves). When a picking reaches 'assigned' (stock.picking.action_confirm -> _find_auto_batch, also stock.move.write / _assign_picking_post_process), the module searches for a compatible non-done batch of the same picking type/company/grouping and inserts the picking only if _is_picking_auto_mergeable passes (len(move_ids)+picking.move_ids <= batch_max_lines and len(picking_ids)+1 <= batch_max_pickings); else it pairs it with another loose compatible picking into a new batch, else creates a singleton batch - auto-confirming when batch_auto_confirm is set. A constraint (_validate_auto_batch_group_by) forces at least one group-by when auto_batch is on. This scheduler-like grouping/capacity behavior is pure code.",
+        "source": "code-read"
+      },
+      {
+        "element": "stock.picking.batch.action_merge",
+        "observation": "Two or more batch/wave transfers can be merged: action_merge validates they share operation type, is_wave flag and state (and are not done/cancel), then folds every other batch's move_line_ids and picking_ids into the first, copies the earliest-scheduled batch's user/description/scheduled_date, and unlinks the absorbed batches - returning a client notification linking the surviving batch.",
+        "source": "code-read"
+      },
+      {
+        "element": "frontend (OWL/JS)",
+        "observation": "1 JS file, 0 OWL components, 1 registry registration (fields:stock_picking_many2many - a Many2many widget for picking selection); no patches; bundles ['web.assets_backend', 'web.assets_tests']. The module is almost entirely server-side ORM/automation with only a thin widget addition.",
+        "source": "static"
       }
     ]
   },
   "it_architecture": {
-    "application": "stock_picking_batch (Warehouse Management: Batch Transfer)",
+    "application": "stock_picking_batch (Batch & Wave Transfer add-on to the Inventory application component)",
     "software_services": [],
     "data_objects": [
-      "stock.add.to.wave",
       "stock.picking.batch",
-      "stock.picking.to.batch"
+      "stock.add.to.wave",
+      "stock.picking.to.batch",
+      "stock.picking (inherited: batch_id, batch_sequence)",
+      "stock.picking.type (inherited: auto_batch, batch_max_lines, batch_max_pickings, wave/batch group-by)",
+      "stock.move.line (inherited: batch_id, wave split)",
+      "stock.move (inherited: auto-batch / auto-wave hooks)",
+      "stock.warehouse (inherited)"
     ],
     "logical_data_erm": [
-      "stock.add.to.wave -> res.users",
-      "stock.add.to.wave -> stock.move.line",
-      "stock.add.to.wave -> stock.picking",
-      "stock.add.to.wave -> stock.picking.batch",
-      "stock.picking.batch -> res.company",
-      "stock.picking.batch -> res.users",
-      "stock.picking.batch -> stock.move",
-      "stock.picking.batch -> stock.move.line",
-      "stock.picking.batch -> stock.picking",
-      "stock.picking.batch -> stock.picking.type",
-      "stock.picking.batch -> stock.warehouse",
-      "stock.picking.to.batch -> res.users"
+      "stock.picking.batch -> stock.picking (1..n, picking_ids via batch_id)",
+      "stock.picking.batch -> stock.move (computed, picking_ids.move_ids)",
+      "stock.picking.batch -> stock.move.line (computed, picking_ids.move_line_ids)",
+      "stock.picking.batch -> stock.picking.type (operation type) -> stock.warehouse (related)",
+      "stock.picking.batch -> res.users (user_id, Responsible)",
+      "stock.picking.type -> product.category (wave_category_ids) + stock.location (wave_location_ids)",
+      "stock.add.to.wave -> stock.move.line + stock.picking + stock.picking.batch (wave_id)",
+      "stock.picking.to.batch -> stock.picking.batch (batch_id)"
     ],
     "information_flows": [
-      "depends: stock"
+      "depends: stock",
+      "side-effect: stock.picking.batch.action_confirm -> stock.picking.action_confirm on every member transfer (state -> in_progress)",
+      "side-effect: stock.picking.batch.action_done -> batch-wide _sanity_check + detach empty pickings + stock.picking.button_validate on all members (validation propagated to member pickings)",
+      "side-effect: stock.picking.batch._compute_state <- member stock.picking states (auto done/cancel)",
+      "side-effect: stock.picking.batch.write(user_id) -> stock.picking.assign_batch_user (responsible cascaded onto member pickings + chatter)",
+      "side-effect: stock.picking.action_confirm / stock.move._action_assign -> _find_auto_batch / _auto_wave (auto-grouping into batches/waves under capacity limits)",
+      "side-effect: stock.move.line._add_to_wave -> stock.move._split + stock.picking.copy_data (picking split into a wave)",
+      "upstream: stock reservation/backorders feed auto-batch and auto-wave grouping"
     ],
     "frontend_components": []
   },
   "business_architecture": {
     "capabilities": [
-      "Warehouse Management: Batch Transfer"
+      "Group Transfers into a Batch (multi-picking batch transfer)",
+      "Wave Picking (split & group picking lines by product/category/zone)",
+      "Assign Batch to a Worker (responsible cascade)",
+      "Automatic Batching/Waving (rule-based grouping on confirmation)",
+      "Batch Capacity Control (max lines / max transfers)",
+      "Batch Validation & Backorder Handling (validate all members at once)",
+      "Merge / Split Batch & Wave Transfers",
+      "Batch Packing & Label Printing (put-in-pack, label layout, reception report)"
     ],
-    "value_streams": [],
+    "value_streams": [
+      "Plan-the-pick: confirm/reserve transfers -> auto-batch or auto-wave grouping by operation-type rules -> assign to worker",
+      "Wave-pick: select move lines -> split pickings into a wave by product/category/location -> single optimized pick walk",
+      "Execute-batch: action_confirm (in_progress) -> pick all members together -> action_done -> button_validate all -> backorders re-batched"
+    ],
     "information_concepts": [
-      "stock.add.to.wave",
-      "stock.picking.batch",
-      "stock.picking.to.batch"
+      "stock.picking.batch (batch / wave transfer)",
+      "stock.picking (member transfer, +batch_id)",
+      "stock.move (planned move within batch)",
+      "stock.move.line (executed / wave-split line)",
+      "stock.picking.type (operation type, batch/wave policy)"
     ],
-    "organization": [],
+    "organization": [
+      "stock.group_stock_user (reused; no module-specific groups)",
+      "stock.group_stock_manager (reused from stock)"
+    ],
     "products": [],
     "policies": [
-      "1 record rules"
+      "1 record rule: multi-company scoping on stock.picking.batch",
+      "stock.picking.type.auto_batch + group-by flags: automatic batch grouping policy (partner/destination/source loc/dest loc)",
+      "stock.picking.type wave_group_by_product/category/location (+wave_category_ids/wave_location_ids): wave grouping policy",
+      "batch_max_lines / batch_max_pickings: batch capacity limits enforced by _is_picking_auto_mergeable",
+      "batch_auto_confirm: auto-confirm newly created batches/waves",
+      "_validate_auto_batch_group_by: constraint requiring >=1 group-by when auto_batch enabled"
     ],
-    "stakeholders": [],
+    "stakeholders": [
+      "Warehouse Operator / Picker (res.users via stock.picking.batch.user_id, Responsible)",
+      "Inventory Manager (stock.group_stock_manager, defines batch/wave operation-type rules)",
+      "Customer (res.partner, delivery destination of grouped transfers)"
+    ],
     "strategy": null,
-    "metrics": []
+    "metrics": [
+      "stock.picking.type.count_picking_batch / count_picking_wave (dashboard counts of open batches/waves)",
+      "stock.picking.batch.estimated_shipping_weight / estimated_shipping_volume (batch shipping capacity estimate)",
+      "action_report_picking_batch (batch picking operations report / pick list)"
+    ]
   },
   "classification": {
     "value_model": "chain",
     "activity_class": "support",
     "apqc_category": "4.0 Deliver Physical Products",
-    "rationale": "stock_picking_batch: thin chain/support module (auto-architect baseline)."
+    "rationale": "stock_picking_batch sits inside the same value-chain (Porter) logistics flow as its parent stock - warehouse fulfillment, the deliver value chain - so its value_model is 'chain': it organizes the physical pick/transfer of goods toward the customer. Unlike stock itself (a primary activity through which goods physically pass), this module is an efficiency/productivity layer on top: it does not create new stock moves in the ledger or own a transfer's state machine - it groups existing stock.picking into batches and waves, assigns them to a worker, and propagates confirm/validate. It optimizes HOW the warehouse executes picking (operator routing, fewer walks) rather than moving goods itself, so its activity_class is 'support'. APQC maps to 4.0 'Deliver Physical Products', specifically the 4.x warehousing / order-picking operations (operate warehousing, pick/stage product for shipment); apqc_odoo_map.tsv anchors 4.4.x outbound transportation and 4.4.1.4 delivery service policy (stock.picking.type) which this module configures via auto_batch / wave grouping."
   },
   "fit_to_standard": {
     "standard_capabilities": [
-      "Warehouse Management: Batch Transfer"
+      "manual batch transfer: group several stock.picking of one operation type into a stock.picking.batch",
+      "wave transfer: split picking lines and group them by product / product category / location into a wave",
+      "automatic batching & waving on confirmation/reservation (auto_batch + group-by rules on the operation type)",
+      "batch capacity limits (max lines / max transfers) honored during auto-grouping",
+      "responsible-user assignment cascaded to all member transfers",
+      "validate the whole batch at once (action_done -> button_validate) with batch-wide backorder handling",
+      "merge and split batch/wave transfers",
+      "batch put-in-pack, label-layout printing, reception report, and a batch picking report",
+      "kanban dashboard counts of open batches/waves per operation type"
     ],
-    "typical_fits": [],
-    "common_gaps": [],
+    "typical_fits": [
+      "pick-then-pack warehouses grouping many small deliveries into operator batches",
+      "wave picking by zone/product to minimize travel in a large warehouse",
+      "auto-batch by destination country / carrier-adjacent grouping for outbound",
+      "capacity-bounded batches (max N transfers or N lines per operator)"
+    ],
+    "common_gaps": [
+      "no built-in pick-path / route optimization sequencing within a batch (only grouping, not ordering the walk)",
+      "barcode-driven batch execution UX (lives in stock_barcode)",
+      "cluster / put-to-light or zone-to-zone handoff picking strategies",
+      "carrier / shipping-rate batching and load planning (delivery_* modules)",
+      "advanced labor / wave-release scheduling and KPIs beyond simple counts",
+      "industry-specific grouping criteria beyond partner/destination/location/product/category"
+    ],
     "drive_hints": [
-      "odoo shell: env['stock.add.to.wave'].search([],limit=3)"
+      "odoo shell: pt = env['stock.picking.type'].search([('code','=','outgoing')], limit=1); pt.write({'auto_batch': True, 'batch_group_by_dest_loc': True, 'batch_max_pickings': 5})  # enable auto-batching",
+      "odoo shell: b = env['stock.picking.batch'].create({'picking_type_id': pt.id, 'picking_ids': [(6,0, env['stock.picking'].search([('state','=','assigned'),('picking_type_id','=',pt.id)], limit=3).ids)]}); b.action_confirm(); print(b.state)  # -> in_progress",
+      "odoo shell: b.action_done()  # validates every member picking via button_validate, handles backorders, flips state to done",
+      "odoo shell: ml = env['stock.move.line'].search([('picking_id.state','=','assigned')], limit=2); ml._add_to_wave()  # split lines into a new wave transfer"
     ]
   },
   "reverse_eng_confidence": {
@@ -156,14 +316,17 @@
     "strategy": "human"
   },
   "open_questions": [
-    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+    "Exact ordering of the pick walk within a batch/wave (batch_sequence on stock.picking) - the module groups but does the sequencing/route optimization live downstream or in stock_barcode?",
+    "Interaction with stock_barcode for the on-floor batch/wave execution UX (separate module).",
+    "How wave_group_by_location nearest-parent resolution behaves with deep location trees and overlapping wave_location_ids.",
+    "Whether estimated_shipping_weight/volume are consumed by any downstream carrier/load-planning logic or are purely informational here."
   ],
   "provenance": {
     "explorer_facts": "doc/revres/facts/stock_picking_batch.facts.json",
     "tools": [
+      "code-read",
       "extract_module.py",
-      "extract_frontend.py",
-      "gen_thin.py"
+      "extract_frontend.py"
     ],
     "odoo_version": "19.0"
   }

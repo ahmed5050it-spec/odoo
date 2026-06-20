@@ -4,29 +4,63 @@
     "manifest": {
       "name": "WMS Landed Costs",
       "category": "Supply Chain/Inventory",
+      "summary": "Landed Costs",
       "depends": [
         "stock_account",
         "purchase_stock"
       ],
       "auto_install": false,
-      "application": false
+      "application": false,
+      "version": "1.1"
     },
     "models": [
       {
         "_name": "stock.landed.cost",
         "_description": "Stock Landed Cost",
-        "fields": 14
+        "fields": 14,
+        "relations": [
+          "picking_ids->stock.picking",
+          "cost_lines->stock.landed.cost.lines",
+          "valuation_adjustment_lines->stock.valuation.adjustment.lines",
+          "account_move_id->account.move",
+          "account_journal_id->account.journal",
+          "vendor_bill_id->account.move",
+          "company_id->res.company",
+          "currency_id->res.currency"
+        ]
       },
       {
         "_name": "stock.landed.cost.lines",
         "_description": "Stock Landed Cost Line",
-        "fields": 7
+        "fields": 7,
+        "relations": [
+          "cost_id->stock.landed.cost",
+          "product_id->product.product",
+          "account_id->account.account",
+          "currency_id->res.currency"
+        ]
       },
       {
         "_name": "stock.valuation.adjustment.lines",
         "_description": "Valuation Adjustment Lines",
-        "fields": 12
+        "fields": 12,
+        "relations": [
+          "cost_id->stock.landed.cost",
+          "cost_line_id->stock.landed.cost.lines",
+          "move_id->stock.move",
+          "product_id->product.product",
+          "currency_id->res.currency"
+        ]
       }
+    ],
+    "inherits": [
+      "account.move (landed_costs_ids, landed_costs_visible, button_create_landed_costs)",
+      "account.move.line (is_landed_costs_line, product_type)",
+      "product.template (landed_cost_ok, split_method_landed_cost)",
+      "purchase.order.line (_prepare_account_move_line flags is_landed_costs_line)",
+      "stock.move (_get_landed_cost, _get_value_from_extra)",
+      "res.company (lc_journal_id)",
+      "res.config.settings (lc_journal_id)"
     ],
     "routes": [],
     "security": {
@@ -45,6 +79,38 @@
       "calendar": 0,
       "activity": 0
     },
+    "behavioral_notes": [
+      {
+        "element": "stock.landed.cost.button_validate",
+        "observation": "The whole module pivots on this method. It first auto-runs compute_landed_cost for any cost lacking valuation_adjustment_lines, then _check_sum guards that each cost line's distributed amounts re-sum to its price_unit (else UserError 'recompute the landed costs'). For each valuation adjustment line whose product has valuation=='real_time' it builds an account.move (move_type='entry') of paired debit/credit lines via line._create_accounting_entries(remaining_qty), creates+posts that journal entry (move._post()), flips state draft->done, and finally calls valuation_adjustment_lines.move_id._set_value() so the underlying stock.move/stock valuation layer absorbs the extra cost. Products with manual (periodic) valuation are skipped for the journal entry but still adjust cost. Validation is irreversible: button_cancel raises on done records ('create negative landed costs to reverse them').",
+        "source": "code-read"
+      },
+      {
+        "element": "stock.landed.cost.compute_landed_cost (cost-distribution algorithm)",
+        "observation": "The split engine. It deletes prior stock.valuation.adjustment.lines, then for every targeted stock.move x every cost_line creates a valuation adjustment line and accumulates totals (total_qty/weight/volume/cost/line-count). For each cost line it allocates price_unit across moves by split_method: 'equal' = price_unit/line-count; 'by_quantity' = quantity x (price_unit/total_qty); 'by_weight' = weight x (price_unit/total_weight); 'by_volume' = volume x (price_unit/total_volume); 'by_current_cost_price' = former_cost x (price_unit/total_cost). Each share is HALF-UP rounded to currency precision and any residual rounding_diff (price_unit - sum of splits) is added back to the largest line so the totals reconcile exactly. Result is written to additional_landed_cost on each adjustment line. split_method defaults come from product.template.split_method_landed_cost.",
+        "source": "code-read"
+      },
+      {
+        "element": "stock.landed.cost.get_valuation_lines / _get_targeted_move_ids (link to the receipt)",
+        "observation": "_get_targeted_move_ids returns picking_ids.move_ids, i.e. the stock moves of the linked receipt transfer(s). get_valuation_lines walks those moves and, ONLY for products whose cost_method is 'fifo' or 'average' (real cost) with a non-cancel state and nonzero qty, captures former_cost = move._get_value() plus weight/volume = product.weight/volume * received qty. Products on standard costing are rejected with a UserError. This is the explicit binding from an extra cost back to the specific inbound stock.move it must inflate.",
+        "source": "code-read"
+      },
+      {
+        "element": "account.move.button_create_landed_costs / landed_costs_ids (link to the vendor bill)",
+        "observation": "stock_landed_costs inherits account.move: button_create_landed_costs spawns a stock.landed.cost from a vendor bill (move_type in_invoice/in_refund), copying each account.move.line flagged is_landed_costs_line into a cost_line (product, expense account, company-currency price_subtotal, split_method), and opens its form. is_landed_costs_line is set when product.template.landed_cost_ok is true (also stamped on purchase.order.line._prepare_account_move_line and account.move.line onchange). vendor_bill_id on the landed cost closes the loop, and landed_costs_visible drives the bill's 'Create Landed Costs' smart button. This is how freight/duty invoiced on a separate vendor bill is routed onto an earlier receipt.",
+        "source": "code-read"
+      },
+      {
+        "element": "stock.valuation.adjustment.lines._create_account_move_line / stock.move._get_value_from_extra",
+        "observation": "_create_accounting_entries picks debit = product stock_valuation account, credit = cost line's account_id (fallback cost product expense), erroring if no expense account is configured. _create_account_move_line scales the posted amount by remaining_qty/quantity (only what is still in stock is capitalised; already-sold qty hits COGS) and reverses debit/credit for negative (corrective) costs. On the inventory side, stock.move._get_value_from_extra adds each done landed cost's additional_landed_cost into the move's accounting value and appends a human-readable '+ amount from <vendor bill> (Landed Cost: ...)' breakdown, so the stock valuation layer and the GL stay in lockstep.",
+        "source": "code-read"
+      },
+      {
+        "element": "frontend (OWL/JS)",
+        "observation": "No frontend assets: 0 JS files, 0 OWL components, 0 registry registrations, 0 patches, no asset bundles. The UI is pure server-rendered form/list/kanban XML (3 form, 4 list, 1 kanban, 1 search) plus the 'Create Landed Costs' smart button injected on the account.move (vendor bill) form. No client-side widgets are added by this module.",
+        "source": "static"
+      }
+    ],
     "frontend": {
       "present": false,
       "js_files": 0,
@@ -65,17 +131,10 @@
     "runtime": {
       "models_with_data": 0,
       "top": []
-    },
-    "behavioral_notes": [
-      {
-        "element": "thin module",
-        "observation": "3 models, 0 routes, 3207 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
-        "source": "ast"
-      }
-    ]
+    }
   },
   "it_architecture": {
-    "application": "stock_landed_costs (WMS Landed Costs)",
+    "application": "stock_landed_costs (WMS Landed Costs application component)",
     "software_services": [],
     "data_objects": [
       "stock.landed.cost",
@@ -83,57 +142,105 @@
       "stock.valuation.adjustment.lines"
     ],
     "logical_data_erm": [
-      "stock.landed.cost -> account.journal",
-      "stock.landed.cost -> account.move",
-      "stock.landed.cost -> res.company",
-      "stock.landed.cost -> res.currency",
-      "stock.landed.cost -> stock.landed.cost.lines",
-      "stock.landed.cost -> stock.picking",
-      "stock.landed.cost -> stock.valuation.adjustment.lines",
-      "stock.landed.cost.lines -> account.account",
-      "stock.landed.cost.lines -> product.product",
-      "stock.landed.cost.lines -> res.currency",
-      "stock.landed.cost.lines -> stock.landed.cost",
-      "stock.valuation.adjustment.lines -> product.product"
+      "stock.landed.cost -> stock.landed.cost.lines (1..n cost lines)",
+      "stock.landed.cost -> stock.valuation.adjustment.lines (1..n adjustments)",
+      "stock.landed.cost -> stock.picking (Many2many, the targeted receipts)",
+      "stock.landed.cost -> account.move (account_move_id = generated entry; vendor_bill_id = source bill)",
+      "stock.landed.cost -> account.journal (account_journal_id, default lc_journal_id/stock journal)",
+      "stock.landed.cost.lines -> product.product + account.account (cost product + expense account)",
+      "stock.valuation.adjustment.lines -> stock.move (move_id, the inbound move being inflated)",
+      "stock.valuation.adjustment.lines -> stock.landed.cost.lines (cost_line_id, the split source)"
     ],
     "information_flows": [
-      "depends: stock_account, purchase_stock"
+      "depends: stock_account, purchase_stock",
+      "side-effect: stock.landed.cost.button_validate -> account.move (move_type=entry) created + _post()ed (debit stock valuation / credit expense)",
+      "side-effect: button_validate -> stock.valuation.adjustment.lines.move_id._set_value() updates the stock valuation layer / move value",
+      "side-effect: compute_landed_cost -> stock.valuation.adjustment.lines generated by split_method (equal/by_quantity/by_weight/by_volume/by_current_cost_price)",
+      "inbound: account.move.button_create_landed_costs (vendor bill lines flagged is_landed_costs_line) -> stock.landed.cost",
+      "inbound: stock.picking receipt moves (picking_ids.move_ids) supply former_cost = stock.move._get_value()",
+      "outbound: stock.move._get_value_from_extra feeds additional_landed_cost back into inventory valuation reporting"
     ],
     "frontend_components": []
   },
   "business_architecture": {
     "capabilities": [
-      "WMS Landed Costs"
+      "Capture Landed Costs (freight, duties, insurance, handling)",
+      "Link Extra Costs to Receipts (stock pickings/moves)",
+      "Link Extra Costs to Vendor Bills",
+      "Distribute Costs by Split Method (equal/quantity/weight/volume/current value)",
+      "Adjust Inventory Valuation (re-cost received goods)",
+      "Post Landed-Cost Revaluation Journal Entries"
     ],
-    "value_streams": [],
+    "value_streams": [
+      "Receipt-to-Revalued-Stock: receive goods -> create landed cost on the receipt -> compute split -> validate -> stock valuation layer inflated",
+      "Bill-to-Landed-Cost: vendor bill for freight/duty -> button_create_landed_costs -> distribute across prior receipt -> post adjustment entry",
+      "Cost-to-Ledger: compute_landed_cost split -> button_validate -> debit stock valuation / credit expense in account.move"
+    ],
     "information_concepts": [
-      "stock.landed.cost",
-      "stock.landed.cost.lines",
-      "stock.valuation.adjustment.lines"
+      "stock.landed.cost (the extra-cost document)",
+      "stock.landed.cost.lines (a chargeable cost + its split method)",
+      "stock.valuation.adjustment.lines (per-move computed cost allocation)",
+      "stock.picking / stock.move (the receipt being re-costed)",
+      "account.move (vendor bill source + generated revaluation entry)"
     ],
-    "organization": [],
+    "organization": [
+      "stock.group_stock_manager (sole access group on all three models)"
+    ],
     "products": [],
     "policies": [
-      "1 record rules"
+      "1 record rule: multi-company scoping on stock.landed.cost ([('company_id','in',company_ids)])",
+      "Validation is irreversible: done landed costs cannot be cancelled, only reversed with negative costs",
+      "Only FIFO/average-costed products are eligible; standard-cost products are rejected",
+      "Journal entry posted only for real_time-valuated products; manual valuation adjusts cost only",
+      "Capitalise only remaining_qty in stock (already-consumed qty flows to COGS)",
+      "Rounding residual reallocated to the largest adjustment line to keep totals exact"
     ],
-    "stakeholders": [],
+    "stakeholders": [
+      "Inventory Manager (stock.group_stock_manager) — creates/validates landed costs",
+      "Accountant — receives the revaluation journal entry (account.move)",
+      "Supplier / Freight forwarder (res.partner on the vendor bill)",
+      "Cost / Plant controller (consumes inflated inventory valuation)"
+    ],
     "strategy": null,
-    "metrics": []
+    "metrics": [
+      "amount_total (total extra cost per landed-cost document)",
+      "stock.valuation.adjustment.lines.former_cost / additional_landed_cost / final_cost (per-product revaluation)",
+      "landed-cost contribution surfaced in stock valuation reports via stock.move._get_value_from_extra"
+    ]
   },
   "classification": {
     "value_model": "support",
     "activity_class": "support",
     "apqc_category": "9.0 Manage Financial Resources",
-    "rationale": "stock_landed_costs: thin support/support module (auto-architect baseline)."
+    "rationale": "stock_landed_costs is an inventory-valuation / cost-accounting support extension, not a primary value-creating activity. It does not move goods (that is stock, value-model chain); it corrects the *book value* of received goods by capitalising freight/duties/insurance into inventory cost and writing the matching debit-stock-valuation / credit-expense journal entry into the financial ledger (account.move). That is firm-infrastructure cost accounting, a Porter support activity, classified support/support. It sits squarely under APQC 9.0 Manage Financial Resources -> 9.x Perform general accounting and reporting: it feeds inventory valuation (cf. account 9.2/9.5) by adjusting product cost and posting the revaluation entry, bridging the stock valuation layer (stock_account) and the GL. It is the cost-accounting complement to the receipt (4.0 Deliver Physical Products) rather than a logistics step itself."
   },
   "fit_to_standard": {
     "standard_capabilities": [
-      "WMS Landed Costs"
+      "Add extra costs (freight, duty, insurance, handling) to a receipt and capitalise them into inventory value",
+      "Five split methods: equal, by quantity, by weight, by volume, by current cost value",
+      "Create a landed cost directly from a vendor bill (lines flagged 'Is a Landed Cost')",
+      "Auto-generate and post the stock-valuation revaluation journal entry on validation",
+      "Per-product valuation adjustment lines (former / additional / new value) with exact-total rounding",
+      "Default landed-cost journal per company (lc_journal_id) and per-product default split method",
+      "Eligibility limited to FIFO/average-costed, real-time-valuated products"
     ],
-    "typical_fits": [],
-    "common_gaps": [],
+    "typical_fits": [
+      "Import freight + customs duty allocated across an inbound shipment by value or weight",
+      "Insurance / handling fees billed separately and pushed onto an earlier receipt",
+      "Standard FIFO/AVCO inventory revaluation with automatic GL posting"
+    ],
+    "common_gaps": [
+      "Standard-cost (and periodic/manual) valuated products are not supported for the GL entry",
+      "Only stock.picking transfers are a target (target_model selection ships with 'picking' only; manufacturing/other sources need extension)",
+      "No anglo-saxon/continental nuance beyond debit stock valuation / credit expense; bespoke duty-deferral or split-by-customs-value rules need development",
+      "No multi-currency landed-cost line revaluation beyond company-currency conversion at bill rate",
+      "Reversal is manual (negative landed cost), no one-click undo"
+    ],
     "drive_hints": [
-      "odoo shell: env['stock.landed.cost'].search([],limit=3)"
+      "odoo shell: env['stock.landed.cost'].search([('state','=','done')], limit=5).mapped(('name','amount_total','account_move_id.name'))",
+      "odoo shell: lc = env['stock.landed.cost'].search([('state','=','draft')], limit=1); lc.compute_landed_cost(); lc.valuation_adjustment_lines.mapped(('product_id.display_name','former_cost','additional_landed_cost','final_cost'))",
+      "odoo shell: lc.button_validate(); print(lc.state, lc.account_move_id.name)  # observe posted debit-stock-valuation / credit-expense entry",
+      "odoo shell: bill = env['account.move'].search([('move_type','=','in_invoice'),('landed_costs_visible','=',True)], limit=1); bill.button_create_landed_costs()  # vendor-bill -> landed cost"
     ]
   },
   "reverse_eng_confidence": {
@@ -147,14 +254,18 @@
     "strategy": "human"
   },
   "open_questions": [
-    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+    "Exact mechanics of stock.move._set_value() in stock_account and how the additional_landed_cost lands in the stock valuation layer (lives in the parent stock_account module).",
+    "How remaining_qty is derived per move and how partial consumption between receipt and landed-cost validation splits value between stock valuation and COGS.",
+    "Whether lot-valuated products (the commented-out per-lot standard_price block) are fully handled or deferred in this version.",
+    "Interaction with average-cost recomputation (standard_price update) now that the inline per-product loop is commented out in button_validate."
   ],
   "provenance": {
     "explorer_facts": "doc/revres/facts/stock_landed_costs.facts.json",
     "tools": [
-      "extract_module.py",
+      "apqc_odoo_map.tsv",
+      "code-read (stock_landed_cost.py, account_move.py, product.py, stock_move.py, purchase.py)",
       "extract_frontend.py",
-      "gen_thin.py"
+      "extract_module.py"
     ],
     "odoo_version": "19.0"
   }

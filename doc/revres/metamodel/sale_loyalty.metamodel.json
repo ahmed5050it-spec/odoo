@@ -4,6 +4,7 @@
     "manifest": {
       "name": "Sale Loyalty",
       "category": "Sales/Sales",
+      "summary": "Use discounts and loyalty programs in sales orders",
       "depends": [
         "sale",
         "loyalty"
@@ -13,19 +14,84 @@
     },
     "models": [
       {
+        "_name": "sale.order.coupon.points",
+        "_description": "Sale Order Coupon Points - Keeps track of how a sale order impacts a coupon",
+        "fields": 3,
+        "relations": [
+          "order_id->sale.order",
+          "coupon_id->loyalty.card"
+        ]
+      },
+      {
         "_name": "sale.loyalty.coupon.wizard",
         "_description": "Sale Loyalty - Apply Coupon Wizard",
-        "fields": 2
+        "fields": 2,
+        "relations": [
+          "order_id->sale.order"
+        ]
       },
       {
         "_name": "sale.loyalty.reward.wizard",
         "_description": "Sale Loyalty - Reward Selection Wizard",
-        "fields": 6
+        "fields": 6,
+        "relations": [
+          "order_id->sale.order",
+          "reward_ids->loyalty.reward",
+          "selected_reward_id->loyalty.reward",
+          "selected_product_id->product.product"
+        ]
       },
       {
-        "_name": "sale.order.coupon.points",
-        "_description": "Sale Order Coupon Points - Keeps track of how a sale order impacts a coupon",
-        "fields": 3
+        "_name": "sale.order (ext)",
+        "_description": "_inherit sale.order: carries applied coupons, code-enabled rules, the coupon point ledger and reward amount",
+        "fields": "+6",
+        "relations": [
+          "applied_coupon_ids->loyalty.card",
+          "code_enabled_rule_ids->loyalty.rule",
+          "coupon_point_ids->sale.order.coupon.points"
+        ]
+      },
+      {
+        "_name": "sale.order.line (ext)",
+        "_description": "_inherit sale.order.line: reward / discount / free-product line carrying the coupon and points cost",
+        "fields": "+5",
+        "relations": [
+          "reward_id->loyalty.reward",
+          "coupon_id->loyalty.card"
+        ]
+      },
+      {
+        "_name": "loyalty.card (ext)",
+        "_description": "_inherit loyalty.card: links the issued card/coupon back to its source sale.order",
+        "fields": "+2",
+        "relations": [
+          "order_id->sale.order",
+          "order_id_partner_id->res.partner"
+        ]
+      },
+      {
+        "_name": "loyalty.program (ext)",
+        "_description": "_inherit loyalty.program: order_count rollup + sale_ok channel flag",
+        "fields": "+2",
+        "relations": []
+      },
+      {
+        "_name": "loyalty.reward (ext)",
+        "_description": "_inherit loyalty.reward: tunes discount backing-product values for SO invoicing, archives instead of unlink when used",
+        "fields": 0,
+        "relations": []
+      },
+      {
+        "_name": "loyalty.history (ext)",
+        "_description": "_inherit loyalty.history: resolves the sale.order portal URL for history rows",
+        "fields": 0,
+        "relations": []
+      },
+      {
+        "_name": "account.move.line (ext)",
+        "_description": "_inherit account.move.line: marks invoice lines backed by a discount reward line as discount lines",
+        "fields": 0,
+        "relations": []
       }
     ],
     "routes": [],
@@ -37,7 +103,6 @@
     "views": {
       "form": 0,
       "list": 0,
-      "tree": 0,
       "kanban": 0,
       "search": 0,
       "pivot": 0,
@@ -74,36 +139,64 @@
     },
     "behavioral_notes": [
       {
-        "element": "frontend (OWL/JS)",
-        "observation": "1 JS files, 1 OWL components, 1 registry adds; bundles ['web.assets_backend'].",
-        "source": "static"
+        "element": "sale.order._try_apply_code (apply a promo/coupon code) + sale.loyalty.coupon.wizard.action_apply",
+        "observation": "The 'Add a promo/coupon code' wizard (sale.loyalty.coupon.wizard) calls order._try_apply_code(code). That method first searches loyalty.rule for mode='with_code', code=<input> within _get_trigger_domain(); if no program-rule matches it falls back to a loyalty.card whose code equals the input (validating active program, reward_ids, program_domain, expiration and remaining points). It rejects already-applied codes, blocks 'loyalty'/'ewallet' program types ('cannot be applied with code'), and locks the loyalty_program row via raw SQL 'SELECT id FROM loyalty_program WHERE id=%s FOR UPDATE NOWAIT' to force a serialization retry under concurrency. On success it appends the rule to code_enabled_rule_ids and/or the coupon to applied_coupon_ids, runs _try_apply_program / _update_programs_and_rewards, and returns _get_claimable_rewards; the wizard then opens sale.loyalty.reward.wizard pre-loaded with those rewards. None of this code-vs-coupon resolution or row-locking is visible in metadata.",
+        "source": "code-read"
       },
       {
-        "element": "thin module",
-        "observation": "3 models, 0 routes, 7780 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
-        "source": "ast"
+        "element": "sale.order._update_programs_and_rewards + _get_reward_values_discount / _get_reward_values_product (reward sale.order.line generation)",
+        "observation": "_update_programs_and_rewards is the engine that reconciles the order against its programs. STEP 1 auto-loads the partner's eWallet and 'future' loyalty cards with positive points into applied_coupon_ids, gathers points/coupon/automatic programs (trigger='auto', rule mode='auto', under max_usage), drops expired coupons and re-checks domains via _program_check_compute_points. STEP 2 then regenerates reward order lines: _get_reward_line_values dispatches to _get_reward_values_discount (creates one sale.order.line per tax bucket on the reward's discount_line_product_id, name=reward.description, tax_ids cleared, discount split via _discountable_order/_specific/_cheapest and capped at discount_max_amount and the order total) or _get_reward_values_product (a free-product line priced so points cover required_points * claimable_count). Lines are written in a single order_line write (Command.UPDATE/CREATE/DELETE) keyed by reward_identifier_code, with is_reward_line lines excluded from name/discount/tax recompute and from being invoiced alone. This regenerate-on-every-change flow is pure behavior.",
+        "source": "code-read"
+      },
+      {
+        "element": "sale.order.action_confirm -> point debit/credit on loyalty.card + loyalty.history",
+        "observation": "On confirmation action_confirm raises ValidationError if any coupon would end with negative points, calls _update_programs_and_rewards then _add_loyalty_history_lines (creates loyalty.history rows per coupon recording 'issued' = coupon_point_ids.points and 'used' = sum of reward line points_cost), unlinks ghost 'current' coupons that claimed no reward, and applies _get_point_changes() (issued points minus reward points_cost) onto each loyalty.card.points so the card balance moves only at confirm time. If the single order still has unclaimed rewards it returns a 'Rewards Available' display_notification, and _send_reward_coupon_mail fires the creation communication for any reward coupons generated for future orders. _action_cancel reverses all of this (deletes history, subtracts points back, removes reward lines and non-nominative coupons). sale.order.line.create/write/unlink additionally adjust coupon.points live when a confirmed order's reward lines change. The card is a passive balance in loyalty itself; sale_loyalty is the consumer that actually moves the points.",
+        "source": "code-read"
+      },
+      {
+        "element": "sale.loyalty.reward.wizard.action_apply (the apply-reward wizard)",
+        "observation": "sale.loyalty.reward.wizard computes claimable rewards via order._get_claimable_rewards() (grouped per coupon, filtering expired coupons, already-applied discounts, zero-total orders without a payment reward, inactive reward products and best-global-discount-already-applied). action_apply locates the coupon owning the selected reward, calls order._apply_program_reward(reward, coupon, product=selected_product_id) (which checks required_points and best-global-discount, then writes the reward line), re-runs _update_programs_and_rewards and prunes unused 'current' coupons. For a one-reward / one-coupon non-multi-product case sale.order.action_open_reward_wizard short-circuits and applies the reward directly without opening the dialog.",
+        "source": "code-read"
+      },
+      {
+        "element": "frontend (OWL/JS)",
+        "observation": "1 JS file, 1 XML template, 1 OWL component (LoyaltyDataField) registered as field widget 'loyalty_data_field' in web.assets_backend; 0 patches, 0 services, 0 public interactions. The widget renders the sale.order.loyalty_data Json field (a read-only points/rewards summary block) on the order form. No storefront/public assets here (that is website_sale_loyalty).",
+        "source": "static"
       }
     ]
   },
   "it_architecture": {
-    "application": "sale_loyalty (Sale Loyalty)",
+    "application": "sale_loyalty (Sale Loyalty bridge application component, auto-installed by sale + loyalty)",
     "software_services": [],
     "data_objects": [
+      "sale.order.coupon.points",
       "sale.loyalty.coupon.wizard",
       "sale.loyalty.reward.wizard",
-      "sale.order.coupon.points"
+      "sale.order (ext)",
+      "sale.order.line (ext)",
+      "loyalty.card (ext)",
+      "loyalty.program (ext)",
+      "loyalty.reward (ext)",
+      "loyalty.history (ext)",
+      "account.move.line (ext)"
     ],
     "logical_data_erm": [
-      "sale.loyalty.coupon.wizard -> sale.order",
-      "sale.loyalty.reward.wizard -> loyalty.reward",
-      "sale.loyalty.reward.wizard -> product.product",
-      "sale.loyalty.reward.wizard -> sale.order",
-      "sale.loyalty.reward.wizard -> selected_reward_id.reward_product_ids",
-      "sale.order.coupon.points -> loyalty.card",
-      "sale.order.coupon.points -> sale.order"
+      "sale.order -> sale.order.coupon.points (coupon_point_ids)",
+      "sale.order.coupon.points -> loyalty.card (coupon_id)",
+      "sale.order -> loyalty.card (applied_coupon_ids)",
+      "sale.order -> loyalty.rule (code_enabled_rule_ids)",
+      "sale.order.line -> loyalty.reward (reward_id)",
+      "sale.order.line -> loyalty.card (coupon_id)",
+      "loyalty.card -> sale.order (order_id, source order)",
+      "loyalty.reward -> product.product (discount_line_product_id, the reward line product)"
     ],
     "information_flows": [
-      "depends: sale, loyalty"
+      "depends: sale, loyalty",
+      "side-effect: sale.order._try_apply_code -> resolves a loyalty.rule code or loyalty.card, locks loyalty.program row (SELECT ... FOR UPDATE NOWAIT)",
+      "side-effect: sale.order._update_programs_and_rewards -> regenerates reward sale.order.line rows (discount / free product) from loyalty.reward + loyalty.rule",
+      "side-effect: sale.order.action_confirm -> debits/credits loyalty.card.points and writes loyalty.history (issued/used); cancel reverses it",
+      "side-effect: sale.order.action_confirm -> _send_reward_coupon_mail issues creation communication for future-order reward coupons (gift cards / next-order coupons)",
+      "consumes: loyalty (program/rule/reward/card engine) — sale_loyalty is the sale.order-side application of that engine"
     ],
     "frontend_components": [
       "LoyaltyDataField"
@@ -111,35 +204,81 @@
   },
   "business_architecture": {
     "capabilities": [
-      "Sale Loyalty"
+      "Apply Promotions & Discounts to Sales Orders (automatic and promo-code rules)",
+      "Redeem Coupons / Gift Cards / eWallets on a Sales Order",
+      "Generate Reward Order Lines (percentage / fixed / per-point discounts and free products)",
+      "Earn & Settle Loyalty Points on Order Confirmation (debit/credit loyalty.card)",
+      "Issue Reward Coupons from a Sales Order with customer communication"
     ],
-    "value_streams": [],
+    "value_streams": [
+      "Promotion-on-order: capture order -> apply auto/coded program -> generate reward/discount lines -> confirm -> settle points & history & issue follow-on coupons",
+      "(the discounts/rewards leg of the quote-to-cash flow inherited from sale; full lifecycle realized with the loyalty engine)"
+    ],
     "information_concepts": [
-      "sale.loyalty.coupon.wizard",
-      "sale.loyalty.reward.wizard",
-      "sale.order.coupon.points"
+      "sale.order.coupon.points (per-order coupon points ledger)",
+      "sale.order (ext: applied_coupon_ids / reward_amount / loyalty_data)",
+      "sale.order.line (ext: reward / discount / free-product line)",
+      "loyalty.card (ext: order_id source link)",
+      "loyalty.program / loyalty.reward / loyalty.rule (consumed)",
+      "loyalty.history (issued/used ledger)"
     ],
     "organization": [],
-    "products": [],
-    "policies": [],
-    "stakeholders": [],
+    "products": [
+      "product.product (loyalty.reward.discount_line_product_id reward backing product; sale_loyalty forces invoice_policy='order' and clears taxes on it)"
+    ],
+    "policies": [
+      "17 access rules; no own record rules (multi-company scoping inherited from sale / loyalty)",
+      "one promo code applied once per order; 'loyalty'/'ewallet' programs cannot be applied by code",
+      "loyalty_program row locked (FOR UPDATE NOWAIT) during code application to serialize concurrent usage",
+      "negative-points guard on confirmation (action_confirm raises if any reward overspends a coupon)",
+      "UNIQUE(order_id, coupon_id) on sale.order.coupon.points; reward lines cannot be invoiced alone or edited on portal"
+    ],
+    "stakeholders": [
+      "Sales user / salesperson applying promotions on the quotation",
+      "Customer (res.partner) redeeming coupons / gift cards / earning points",
+      "Marketing configuring the loyalty programs consumed here",
+      "Accounting (discount reward lines flow into account.move.line as discount lines)"
+    ],
     "strategy": null,
-    "metrics": []
+    "metrics": [
+      "sale.order.reward_amount (total discount/reward value on the order)",
+      "loyalty.program.order_count / total_order_count (sales orders that used the program)",
+      "sale.order.gift_card_count; loyalty.history issued/used per card per order"
+    ]
   },
   "classification": {
     "value_model": "chain",
     "activity_class": "primary",
     "apqc_category": "3.0 Market and Sell Products and Services",
-    "rationale": "sale_loyalty: thin chain/primary module (auto-architect baseline)."
+    "rationale": "sale_loyalty is the promotions/discounts-and-rewards layer of the Quote-to-Cash (sale) value chain: it operates directly on the confirmed sale.order, generating reward/discount order lines, settling loyalty points and issuing follow-on coupons at confirmation. Unlike the loyalty engine (classified support — a cross-cutting program/rule/reward definition store), this module is part of the primary sell motion: it changes what the customer pays on a real order and is auto-installed precisely to graft that pricing behavior onto sale's chain. Hence value_model=chain, activity_class=primary. Its subject matter is pricing & promotions on orders, mapping to APQC 3.0 Market and Sell (3.2 develop pricing strategy / manage promotions) applied at order time, consistent with the parent loyalty record and apqc_odoo_map.tsv (3.2.2.x pricing on sale)."
   },
   "fit_to_standard": {
     "standard_capabilities": [
-      "Sale Loyalty"
+      "Apply a coupon / promo code to a sales order via the Apply Coupon wizard (sale.loyalty.coupon.wizard)",
+      "Auto-apply automatic promotion programs (trigger=auto, rule mode=auto) when the order qualifies",
+      "Select and claim rewards via the Reward Selection wizard, including multi-product and global-discount handling",
+      "Generate discount reward lines (percent / fixed per_order / per_point, on order / specific / cheapest) and free-product lines",
+      "Auto-load and pay with a customer's eWallet / loyalty-card points and settle balances on confirmation",
+      "Issue gift cards / next-order coupons from the order and email the creation communication",
+      "Show a loyalty points/rewards summary (loyalty_data) on the order form"
     ],
-    "typical_fits": [],
-    "common_gaps": [],
+    "typical_fits": [
+      "percentage and fixed discounts auto-applied or entered as a promo code on quotations",
+      "gift cards and eWallets redeemed as payment on back-office sales orders",
+      "buy-X-get-Y and next-order coupon promotions on confirmed orders",
+      "points earned per order/spend feeding a customer's loyalty card"
+    ],
+    "common_gaps": [
+      "storefront / eCommerce application of the same programs (handled by website_sale_loyalty, not here)",
+      "Point-of-Sale redemption (pos_loyalty), a separate consumer of the loyalty engine",
+      "bespoke discount math beyond percent / per_order / per_point modes",
+      "tiered membership status or external loyalty-platform synchronization (no outbound integration in this module)"
+    ],
     "drive_hints": [
-      "odoo shell: env['sale.loyalty.coupon.wizard'].search([],limit=3)"
+      "odoo shell: so = env['sale.order'].search([], limit=1); w = env['sale.loyalty.coupon.wizard'].create({'order_id': so.id, 'coupon_code': 'PROMO'}); w.action_apply()",
+      "odoo shell: so._update_programs_and_rewards(); so.order_line.filtered('is_reward_line').read(['name','reward_id','coupon_id','points_cost','price_unit'])",
+      "odoo shell: so.action_confirm(); env['loyalty.history'].search([('order_id','=',so.id),('order_model','=','sale.order')]).read(['card_id','issued','used'])",
+      "odoo shell: env['loyalty.program'].search([('program_type','=','promotion')]).read(['name','order_count','sale_ok'])"
     ]
   },
   "reverse_eng_confidence": {
@@ -153,14 +292,17 @@
     "strategy": "human"
   },
   "open_questions": [
-    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+    "Exact precedence when multiple automatic programs and a coded program compete for the same lines (ordering inside _update_programs_and_rewards STEP 2).",
+    "Concurrency behavior of the FOR UPDATE NOWAIT program lock under high-volume promo-code application (retry storms).",
+    "Lifecycle of reward sale.order.line rows across order copy / amendment after confirmation (copy() drops them; partial re-confirmation paths).",
+    "How point settlement interacts with down-payments and zero-total invoicing (_validate_order force-invoices zero-total reward orders)."
   ],
   "provenance": {
     "explorer_facts": "doc/revres/facts/sale_loyalty.facts.json",
     "tools": [
-      "extract_module.py",
+      "code-read",
       "extract_frontend.py",
-      "gen_thin.py"
+      "extract_module.py"
     ],
     "odoo_version": "19.0"
   }

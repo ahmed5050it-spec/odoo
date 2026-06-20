@@ -15,17 +15,24 @@
       {
         "_name": "iap.account",
         "_description": "IAP Account",
-        "fields": 11
+        "fields": 11,
+        "relations": [
+          "service_id->iap.service",
+          "company_ids->res.company",
+          "warning_user_ids->res.users"
+        ]
       },
       {
         "_name": "iap.enrich.api",
-        "_description": "IAP Lead Enrichment API",
-        "fields": 0
+        "_description": "IAP Lead Enrichment API (AbstractModel)",
+        "fields": 0,
+        "relations": []
       },
       {
         "_name": "iap.service",
         "_description": "IAP Service",
-        "fields": 5
+        "fields": 5,
+        "relations": []
       }
     ],
     "routes": [],
@@ -84,24 +91,39 @@
     },
     "behavioral_notes": [
       {
+        "element": "iap.account (per-service credit wallet + account_token)",
+        "observation": "iap.account is the local stub of a remote prepaid wallet, one row per IAP service (service_id->iap.service, service_name=service_id.technical_name). Its identity is account_token: a uuid4().hex (size 43, copy=False) restricted to base.group_system that is the authentication key sent on every outbound IAP call. balance and state ('banned'/'registered'/'unregistered') are NOT stored locally — they are declared readonly and refreshed on demand: web_read() calls _get_account_information_from_iap() before every form/list read, POSTing each token+technical_name plus database.uuid to '/iap/1/get-accounts-information' on the IAP endpoint, then writing back balance (rounded 4dp unless service.integer_balance) and warning_threshold under context disable_iap_update+tracking_disable. company_ids scopes an account to companies (ir.rule restricts users to their own companies). On create, if database.is_neutralized the token is suffixed '+disabled' so a copied/neutralized DB can never spend real credits; neutralize.sql does the same in bulk.",
+        "source": "code-read"
+      },
+      {
+        "element": "iap_tools.iap_jsonrpc + iap_get_endpoint (the single outbound HTTP broker)",
+        "observation": "tools/iap_tools.iap_jsonrpc(url, method='call', params, timeout=15) is the ONE place the whole framework reaches the public internet: it builds a JSON-RPC 2.0 envelope and does requests.post(url, json=payload), raise_for_status(), then unwraps response['result']. Server-side errors are mapped to typed Python exceptions: a JSON-RPC error whose data.name ends in 'InsufficientCreditError' becomes iap_tools.InsufficientCreditError (carrying .data with credit/service_name/base_url so callers can prompt a top-up), anything else becomes IAPServerError, and requests timeouts/RequestExceptions become odoo.exceptions.AccessError. The target host is resolved by iap_get_endpoint(env) = ir.config_parameter 'iap.endpoint' (DEFAULT_ENDPOINT 'https://iap.odoo.com'), so a self-hosted/proxy IAP server is a one-parameter override. Crucially, if modules.module.current_test is set, iap_jsonrpc immediately raises AccessError('Unavailable during tests.') — the framework is hard-wired to never bill or hit the network in test runs.",
+        "source": "code-read"
+      },
+      {
+        "element": "credit balance & top-up (get_credits / get_credits_url / action_buy_credits)",
+        "observation": "Two credit-facing helpers consumed across the suite. get_credits(service_name) resolves the account (force_create=False) and POSTs token+dbuuid to '/iap/1/balance', returning the integer credit count (or -1 on AccessError) — the canonical 'do I have enough?' probe before a paid feature runs. get_credits_url(service_name, account_token) builds the buy-more deep-link to '<endpoint>/iap/1/credit' with dbuuid, service_name and a SHA1-hashed token (_hash_iap_token, hashed=1) so the raw secret never leaves in a URL; action_buy_credits returns it as an ir.actions.act_url and the OWL widget surfaces it. account.get(service_name, force_create=True) is the lazy provisioning entry point: it searches by company scope, garbage-collects tokenless rows on a separate cursor, and on first use creates the account on a fresh pool.cursor() because the very first paid call typically rolls back the main cursor with InsufficientCreditError/NoCreditError.",
+        "source": "code-read"
+      },
+      {
+        "element": "iap.enrich.api -> iap-services.odoo.com (a brokered downstream service example)",
+        "observation": "iap.enrich.api (AbstractModel, no fields) is a thin facade over a specific paid endpoint and shows the broker pattern other modules follow: _contact_iap(local_endpoint, params) fetches the 'reveal' account, injects account_token + database.uuid into params, resolves base_url from ir.config_parameter 'enrich.endpoint' (its own _DEFAULT_ENDPOINT 'https://iap-services.odoo.com', distinct from the credit host), and calls iap_jsonrpc(timeout=300). _request_enrich(lead_emails) hits '/iap/clearbit/1/lead_enrichment_email' and documents that the server may answer with InsufficientCreditError. The 'reveal' service itself is seeded by data/services.xml (iap.service technical_name='reveal') so dependent apps (crm/partner_autocomplete) can find an account before any UI exists.",
+        "source": "code-read"
+      },
+      {
+        "element": "external integrations (gap #7 hub)",
+        "observation": "1 HTTP call site; SDKs ['requests']; api_keys=False (auth is the per-account token, not a global API key). Endpoints: https://iap.odoo.com (credits/balance/accounts-information/warning-alerts), https://iap-services.odoo.com (enrichment), https://iap.odoo.com/iap/1/credit (buy URL). This module is the egress chokepoint that brokers ALL IAP traffic for the database; every dependent feature (sms, snailmail, partner_autocomplete, lead mining, ocr...) routes its paid calls through iap_jsonrpc here.",
+        "source": "static"
+      },
+      {
         "element": "frontend (OWL/JS)",
-        "observation": "1 JS files, 1 OWL components, 1 registry adds; bundles ['web.assets_backend'].",
+        "observation": "1 JS file, 1 OWL component, 1 registry add; bundles ['web.assets_backend']. IAPActionButtonsWidget is a view_widget ('iap_buy_more_credits') with onManageServiceLinkClicked (orm.silent.call iap.account.get_account_id -> open the account form) and onViewServicesClicked (doAction iap.iap_account_action) — host modules drop it on their settings/config views to expose 'Manage Service & Buy Credits' / 'View My Services'.",
         "source": "static"
-      },
-      {
-        "element": "external integrations",
-        "observation": "1 HTTP call sites; SDKs ['requests']; api_keys=False.",
-        "source": "static"
-      },
-      {
-        "element": "thin module",
-        "observation": "3 models, 0 routes, 723 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
-        "source": "ast"
       }
     ]
   },
   "it_architecture": {
-    "application": "iap (In-App Purchases)",
+    "application": "iap (In-App Purchase framework: credit-account plumbing + outbound JSON-RPC broker to Odoo IAP services)",
     "software_services": [],
     "data_objects": [
       "iap.account",
@@ -109,50 +131,102 @@
       "iap.service"
     ],
     "logical_data_erm": [
-      "iap.account -> iap.service",
-      "iap.account -> res.company",
-      "iap.account -> res.users"
+      "iap.account -> iap.service (service_id; service_name=technical_name)",
+      "iap.account -> res.company (company_ids, multi-company scope)",
+      "iap.account -> res.users (warning_user_ids, low-credit alert recipients)"
     ],
     "information_flows": [
-      "depends: web, base_setup"
+      "depends: web, base_setup",
+      "outbound: iap_tools.iap_jsonrpc -> requests.post -> IAP endpoint (iap.endpoint param, default https://iap.odoo.com)",
+      "sync: iap.account.web_read -> _get_account_information_from_iap -> POST /iap/1/get-accounts-information -> write balance/state/threshold",
+      "credit-check: get_credits -> POST /iap/1/balance ; top-up: get_credits_url/action_buy_credits -> act_url to /iap/1/credit (SHA1-hashed token)",
+      "enrichment: iap.enrich.api._contact_iap -> POST https://iap-services.odoo.com/iap/clearbit/1/lead_enrichment_email",
+      "error-up: InsufficientCreditError / IAPServerError / AccessError propagated to caller modules to gate paid features",
+      "consumed-by (downstream): sms, snailmail, partner_autocomplete, crm lead mining/enrichment, ocr and other paid features call iap.account.get + iap_jsonrpc"
     ],
     "frontend_components": [
-      "IAPActionButtonsWidget"
+      "IAPActionButtonsWidget (view_widget 'iap_buy_more_credits': Manage Service & Buy Credits / View My Services)"
     ]
   },
   "business_architecture": {
     "capabilities": [
-      "In-App Purchases"
+      "Broker paid calls to external Odoo IAP services (single outbound JSON-RPC gateway)",
+      "Provision & hold per-service prepaid credit accounts (iap.account wallet + account_token)",
+      "Check remaining credit balance and gate paid features (get_credits / InsufficientCreditError)",
+      "Provide a buy-more-credits / top-up deep-link into the Odoo IAP portal",
+      "Synchronise account balance & registration state from the IAP server",
+      "Notify owners on low credit (warning_threshold + email alert recipients)",
+      "Scope IAP accounts per company (multi-company)",
+      "Disable spending on neutralized/duplicated databases (token '+disabled')"
     ],
-    "value_streams": [],
+    "value_streams": [
+      "Provision-to-Spend: dependent feature calls iap.account.get(service) -> account+token -> iap_jsonrpc to IAP server -> result or InsufficientCreditError",
+      "Low-credit-to-Top-up: balance sync / InsufficientCreditError -> get_credits_url -> act_url -> Odoo IAP buy portal -> recharged balance"
+    ],
     "information_concepts": [
       "iap.account",
+      "iap.service",
       "iap.enrich.api",
-      "iap.service"
+      "account_token (per-service authentication key)",
+      "credit balance / registration state (remote, synced)"
     ],
     "organization": [],
     "products": [],
     "policies": [
-      "1 record rules"
+      "1 record rule: users see only iap.account rows for their own companies (or company-less)",
+      "account_token field restricted to base.group_system; managers (group_system) CRUD accounts, users may read/create only",
+      "neutralized/duplicated DB -> account_token suffixed '+disabled' (create() + neutralize.sql) so credits cannot be spent",
+      "module.current_test -> iap_jsonrpc raises AccessError: never bills or hits the network in tests"
     ],
-    "stakeholders": [],
+    "stakeholders": [
+      "End user of a paid feature (SMS send, lead enrich, snailmail, partner autocomplete) consuming credits",
+      "System administrator / IAP account manager (base.group_system: manages accounts, tokens, buys credits)",
+      "Dependent module developer (calls iap.account.get + iap_tools.iap_jsonrpc to add a paid feature)",
+      "Odoo S.A. IAP platform (external vendor operating iap.odoo.com / iap-services.odoo.com)"
+    ],
     "strategy": null,
-    "metrics": []
+    "metrics": [
+      "Credit balance per account (iap.account.balance, synced from server)",
+      "warning_threshold low-credit alert level (email alert to warning_user_ids)"
+    ]
   },
   "classification": {
     "value_model": "support",
     "activity_class": "support",
     "apqc_category": "8.0 Manage Information Technology",
-    "rationale": "iap: thin support/support module (auto-architect baseline)."
+    "rationale": "iap is shared firm IT infrastructure (Porter support activity; Stabell & Fjeldstad 'support'). It owns no business object of its own value chain/shop/network — it is the credit-account plumbing and the single outbound JSON-RPC broker (iap_tools.iap_jsonrpc) through which MANY other modules (sms, snailmail, partner_autocomplete, crm lead mining/enrichment, ocr) reach Odoo's external paid IAP services. auto_install=true and category Hidden/Tools confirm it is ubiquitous, invisible plumbing, not a user-facing app; with only 3 models, 0 routes and ~723 py LOC its substance is the external HTTP integration (gap #7) plus the credit wallet, not data-bearing transactions. APQC 8.0 'Manage Information Technology' fits because the work is managing external IT services / vendor connectivity (provision accounts, broker calls, meter credits, manage the IAP endpoint configuration) — i.e. 8.x 'manage IT services / external service providers'. 9.0 'Acquire, Construct and Manage Assets' and 13.0 'Develop and Manage Business Capabilities' were considered: the credit purchase has a faint procurement flavour, but there is no purchase.order/account.move/asset object here — iap only mints a top-up URL and meters a remote prepaid balance; the actual capability is technical vendor-connectivity, which is squarely IT-services management (8.0)."
   },
   "fit_to_standard": {
     "standard_capabilities": [
-      "In-App Purchases"
+      "Per-service prepaid credit account (iap.account) with secret account_token authentication",
+      "Single outbound JSON-RPC broker to the Odoo IAP endpoint with typed credit/server/access errors",
+      "Configurable IAP endpoint via ir.config_parameter 'iap.endpoint' (self-hosted/proxy capable)",
+      "On-demand balance & registration-state sync from the IAP server",
+      "Buy-more-credits deep-link (hashed token) + 'iap_buy_more_credits' OWL view widget for host views",
+      "Low-credit email alerting (warning_threshold + warning_user_ids)",
+      "Multi-company account scoping via record rule",
+      "Automatic spend-disable on neutralized/duplicated databases",
+      "Lazy account provisioning (iap.account.get) used by all dependent paid features"
     ],
-    "typical_fits": [],
-    "common_gaps": [],
+    "typical_fits": [
+      "Any app that wants a metered paid call: declare an iap.service, call iap.account.get(service) then iap_tools.iap_jsonrpc",
+      "Embedding 'Manage Service & Buy Credits' on a module's settings view via the iap_buy_more_credits widget",
+      "Pointing the whole database at a private IAP proxy by setting the iap.endpoint system parameter"
+    ],
+    "common_gaps": [
+      "No local ledger of consumption/spend history — billing/metering lives on the external IAP server (gap #7)",
+      "No authorize/capture two-phase charge in this version: a paid call is a single iap_jsonrpc that the server answers with InsufficientCreditError; per-credit accounting is the caller's responsibility",
+      "Requires outbound HTTPS to iap.odoo.com / iap-services.odoo.com; air-gapped deployments need a self-hosted IAP endpoint",
+      "No in-app credit purchase/checkout — top-up is a redirect to the external Odoo IAP portal",
+      "Tests cannot exercise real calls (iap_jsonrpc hard-fails under module.current_test)"
+    ],
     "drive_hints": [
-      "odoo shell: env['iap.account'].search([],limit=3)"
+      "odoo shell: env['iap.service'].search([]).mapped('technical_name')  # seeded services (e.g. 'reveal')",
+      "odoo shell: env['iap.account'].get('reveal').sudo().account_token  # lazily provision + read the per-service token",
+      "odoo shell: env['iap.account'].get_credits_url('reveal')  # buy-more deep link (note hashed=1, no raw token)",
+      "odoo shell: env['ir.config_parameter'].sudo().get_param('iap.endpoint','https://iap.odoo.com')  # current IAP host",
+      "odoo shell: from odoo.addons.iap.tools import iap_tools; iap_tools.iap_get_endpoint(env)  # resolved endpoint",
+      "curl -s -X POST https://iap.odoo.com/iap/1/balance -H 'Content-Type: application/json' -d '{\"jsonrpc\":\"2.0\",\"method\":\"call\",\"params\":{\"dbuuid\":\"<uuid>\",\"account_token\":\"<token>\",\"service_name\":\"reveal\"}}'  # the live balance probe iap does"
     ]
   },
   "reverse_eng_confidence": {
@@ -166,14 +240,16 @@
     "strategy": "human"
   },
   "open_questions": [
-    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+    "Full catalogue of downstream consumer modules and which iap.service each registers (sms, snailmail, partner_autocomplete, crm lead mining/enrichment, ocr...) — not declared inside iap itself.",
+    "Server-side credit metering / per-call pricing lives on iap.odoo.com and is not reverse-engineerable from this module (gap #7).",
+    "Whether deployments override iap.endpoint / enrich.endpoint to a private IAP proxy (runtime config, not in code)."
   ],
   "provenance": {
     "explorer_facts": "doc/revres/facts/iap.facts.json",
     "tools": [
       "extract_module.py",
       "extract_frontend.py",
-      "gen_thin.py"
+      "code-read"
     ],
     "odoo_version": "19.0"
   }

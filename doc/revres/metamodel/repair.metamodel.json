@@ -9,23 +9,84 @@
         "sale_management"
       ],
       "auto_install": false,
-      "application": true
+      "application": true,
+      "version": "1.0"
     },
     "models": [
       {
         "_name": "repair.order",
         "_description": "Repair Order",
-        "fields": 43
+        "fields": 43,
+        "relations": [
+          "partner_id->res.partner",
+          "user_id->res.users",
+          "product_id->product.product",
+          "lot_id->stock.lot",
+          "picking_type_id->stock.picking.type",
+          "move_id->stock.move (repaired product, generated in action_repair_done)",
+          "move_ids->stock.move (parts: add/remove/recycle)",
+          "picking_id->stock.picking (originating return transfer)",
+          "sale_order_id->sale.order",
+          "sale_order_line_id->sale.order.line",
+          "location_id/product_location_src_id/product_location_dest_id/location_dest_id/parts_location_id/recycle_location_id->stock.location",
+          "tag_ids->repair.tags"
+        ]
       },
       {
         "_name": "repair.tags",
         "_description": "Repair Tags",
-        "fields": 2
+        "fields": 2,
+        "relations": []
       },
       {
         "_name": "stock.warn.insufficient.qty.repair",
-        "_description": "Warn Insufficient Repair Quantity",
-        "fields": 1
+        "_description": "Warn Insufficient Repair Quantity (wizard, _inherit stock.warn.insufficient.qty)",
+        "fields": 1,
+        "relations": [
+          "repair_id->repair.order"
+        ]
+      },
+      {
+        "_name": "stock.move (extended via _inherit)",
+        "_description": "adds repair_id + repair_line_type (add/remove/recycle); 23 methods drive part location mapping, consumption and SO-line sync",
+        "fields": 2,
+        "relations": [
+          "repair_id->repair.order"
+        ]
+      },
+      {
+        "_name": "stock.picking / stock.picking.type (extended via _inherit)",
+        "_description": "picking gains repair_ids/nbr_repairs + action_repair_return; picking.type adds code='repair_operation', repair count fields, default add/remove/recycle locations, repair_properties_definition",
+        "fields": 11,
+        "relations": [
+          "repair_ids->repair.order",
+          "default_product_location_src_id/dest_id/default_remove_location_dest_id/default_recycle_location_dest_id->stock.location"
+        ]
+      },
+      {
+        "_name": "sale.order / sale.order.line (extended via _inherit)",
+        "_description": "order gains repair_order_ids/repair_count; line drives _create_repair_order/_cancel_repair_order on confirm/cancel and qty_delivered from done repair moves",
+        "fields": 2,
+        "relations": [
+          "repair_order_ids->repair.order"
+        ]
+      },
+      {
+        "_name": "stock.warehouse (extended via _inherit)",
+        "_description": "adds repair_type_id (the repair operation type) + repair_mto_pull_id (MTO stock.rule for parts); post_init_hook _create_warehouse_data seeds them",
+        "fields": 2,
+        "relations": [
+          "repair_type_id->stock.picking.type",
+          "repair_mto_pull_id->stock.rule"
+        ]
+      },
+      {
+        "_name": "stock.lot / product.product / product.template / account.move.line / stock.move.line / stock.traceability.report / stock.forecasted_product_product (_inherit only)",
+        "_description": "stock.lot gains repair_part/in_repair/repaired counts; product.template adds service_tracking='repair'; product.product, account.move.line, traceability & forecast reports add repair hooks",
+        "fields": 5,
+        "relations": [
+          "stock.lot.repair_line_ids->repair.order"
+        ]
       }
     ],
     "routes": [],
@@ -74,77 +135,170 @@
     },
     "behavioral_notes": [
       {
-        "element": "frontend (OWL/JS)",
-        "observation": "2 JS files, 0 OWL components, 0 registry adds; bundles ['web.assets_backend', 'web.assets_tests'].",
-        "source": "static"
+        "element": "repair.order state machine: action_validate -> _action_repair_confirm / action_repair_start / action_repair_end -> action_repair_done / action_repair_cancel",
+        "observation": "State flows draft -> confirmed -> under_repair -> done (or -> cancel). action_validate checks on-hand qty of the product-to-repair at product_location_src_id (owner first, then no-owner) and either calls _action_repair_confirm or raises the stock.warn.insufficient.qty.repair wizard. _action_repair_confirm (draft->confirmed) runs move_ids._adjust_procure_method(picking_type_code='repair_operation'), _action_confirm(), then _trigger_scheduler() to procure parts. action_repair_start (confirmed->under_repair) confirms first if still draft. action_repair_end requires state=='under_repair' then delegates to action_repair_done. action_repair_cancel cancels all part moves and zeroes the bound sale.order.line qty. None of this transition logic is visible in metadata.",
+        "source": "code-read"
       },
       {
-        "element": "thin module",
-        "observation": "3 models, 0 routes, 2969 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
-        "source": "ast"
+        "element": "repair.order.action_repair_done -> stock.move creation (consume parts + produce repaired product)",
+        "observation": "On completion it cancels zero-qty part moves, marks remaining part moves picked=True, and CREATES a new stock.move (stored as move_id) for the product-to-repair from product_location_src_id to product_location_dest_id, whose move.line consume_line_ids link the consumed parts' move lines for traceability. It then calls (move_ids + product_move)._action_done(cancel_backorder=True), committing all moves to stock.quant, and sets state='done'. The repaired good is thus 'produced' as a stock.move into a production-type location while 'add' parts are consumed from stock.",
+        "source": "code-read"
+      },
+      {
+        "element": "stock.move.repair_line_type (add/remove/recycle) + MAP_REPAIR_LINE_TYPE_TO_MOVE_LOCATIONS_FROM_REPAIR + _is_consuming",
+        "observation": "Each part move carries repair_line_type. Locations are computed from the repair order per type: 'add' = location_id -> location_dest_id (into the production/repair location; _is_consuming() returns True so it draws down stock); 'remove' = location_dest_id -> parts_location_id (inventory-loss/scrap); 'recycle' = location_dest_id -> recycle_location_id. Repair moves bypass normal reservation and split (_should_be_assigned and _split return early) and take repair_id.picking_type_id rather than living on a stock.picking. This is how a repair both consumes added parts and disposes of removed/recycled parts as distinct inventory flows.",
+        "source": "code-read"
+      },
+      {
+        "element": "sale.order._action_confirm -> sale.order.line._create_repair_order; move._create_repair_sale_order_line; under_warranty pricing",
+        "observation": "Confirming a sale.order calls order_line._create_repair_order(): for each line whose product_template service_tracking == 'repair' (qty > 0, not already bound) it creates a confirmed repair.order linked via sale_order_id/sale_order_line_id with picking_type from warehouse.repair_type_id. Conversely 'add' part moves on the RO auto-create sale.order.line records (_create_repair_sale_order_line) so added parts are billed; under_warranty=True forces price_unit/technical_price_unit to 0. On action_repair_done qty_delivered is set from the repaired/part moves (_prepare_qty_delivered), feeding the standard sale invoicing flow. The link is bidirectional and not derivable from metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "stock.picking.action_repair_return + repair.order.picking_id (originating return/delivery)",
+        "observation": "A repair can originate from a return transfer: stock.picking.action_repair_return opens a repair.order form pre-seeded with default_repair_picking_id and partner, and picking_id is domain-restricted to pickings with return_id != False. _compute_partner_id, _compute_product_qty and compute_lot_id derive the customer, quantity and lot/serial from that return picking's move lines, wiring the reverse-logistics chain (delivery -> customer return -> repair) without any explicit FK that metadata could surface.",
+        "source": "code-read"
+      },
+      {
+        "element": "frontend (OWL/JS)",
+        "observation": "2 JS files, 0 OWL components, 0 registry registrations, 2 patches (ProductCatalogKanbanController.prototype, ProductCatalogOrderLine.prototype) extending the product-catalog UI to add repair parts; asset bundles ['web.assets_backend','web.assets_tests']. No standalone repair widgets - the part-picking UI reuses the product.catalog.mixin catalog.",
+        "source": "static"
       }
     ]
   },
   "it_architecture": {
-    "application": "repair (Repairs)",
+    "application": "repair (Repairs application component, layered on sale_stock + sale_management)",
     "software_services": [],
     "data_objects": [
       "repair.order",
       "repair.tags",
-      "stock.warn.insufficient.qty.repair"
+      "stock.warn.insufficient.qty.repair",
+      "stock.move (repair_id / repair_line_type extension)",
+      "stock.picking.type (repair_operation extension)",
+      "stock.picking (repair_ids extension)",
+      "sale.order / sale.order.line (repair_order extension)",
+      "stock.warehouse (repair_type_id / repair_mto_pull_id extension)",
+      "stock.lot (repair counts extension)",
+      "product.template (service_tracking='repair' extension)"
     ],
     "logical_data_erm": [
-      "repair.order -> action_repair_done",
-      "repair.order -> picking_id.product_id",
-      "repair.order -> product.product",
-      "repair.order -> repair.tags",
-      "repair.order -> res.company",
-      "repair.order -> res.partner",
-      "repair.order -> res.users",
-      "repair.order -> sale.order",
-      "repair.order -> sale.order.line",
-      "repair.order -> stock.location",
-      "repair.order -> stock.lot",
-      "repair.order -> stock.move"
+      "repair.order -> stock.move (move_ids: parts, 1..n)",
+      "repair.order -> stock.move (move_id: repaired product, 0..1, created on done)",
+      "repair.order parts -> stock.quant (committed via _action_done)",
+      "repair.order -> sale.order + sale.order.line (origin / billing)",
+      "repair.order -> stock.picking (picking_id: originating return transfer)",
+      "repair.order -> stock.picking.type (picking_type_id, code='repair_operation')",
+      "stock.warehouse -> stock.picking.type (repair_type_id)",
+      "repair.order -> product.product (product_id) + stock.lot (lot_id)",
+      "repair.order -> stock.location (src/dest/parts/recycle locations)"
     ],
     "information_flows": [
-      "depends: sale_stock, sale_management"
+      "depends: sale_stock, sale_management (-> sale, stock, product, account, mail transitively)",
+      "side-effect: sale.order._action_confirm -> sale.order.line._create_repair_order -> repair.order (product service_tracking='repair')",
+      "side-effect: repair.order.action_repair_done -> stock.move (repaired product) + _action_done -> stock.quant updates",
+      "side-effect: repair.order 'add' parts -> sale.order.line (_create_repair_sale_order_line) -> billed (or 0 under warranty)",
+      "side-effect: repair.order.action_repair_done -> sale.order.line.qty_delivered -> standard sale invoicing",
+      "upstream: stock.picking.action_repair_return (customer return) -> repair.order.picking_id",
+      "side-effect: _action_repair_confirm -> move_ids._action_confirm + _trigger_scheduler (parts procurement / MTO via warehouse.repair_mto_pull_id)"
     ],
     "frontend_components": []
   },
   "business_architecture": {
     "capabilities": [
-      "Repairs"
+      "Register & Schedule Repair Orders",
+      "Diagnose & Plan Repair (parts add/remove/recycle)",
+      "Consume Spare Parts from Stock",
+      "Produce / Return the Serviced Product",
+      "Warranty Determination & Pricing",
+      "Repair Quotation & Invoicing (via sale.order)",
+      "Reverse Logistics from Customer Returns",
+      "Lot/Serial Traceability of Repaired Goods",
+      "Parts Availability & Replenishment Scheduling",
+      "Recycle / Scrap Disposal of Removed Parts"
     ],
-    "value_streams": [],
+    "value_streams": [
+      "Return-to-Repair: customer return (stock.picking) -> create repair.order -> confirm -> under_repair -> done",
+      "Repair-to-Stock: confirm RO -> reserve/procure parts -> consume 'add' parts + scrap 'remove'/'recycle' -> produce repaired product (stock.move) -> on-hand quant",
+      "Repair-to-Cash: sale.order line (service_tracking='repair') -> repair.order -> 'add' parts as SO lines -> qty_delivered on done -> customer invoice (or 0 under warranty)",
+      "Plan-Parts: RO parts moves -> _trigger_scheduler -> procurement (MTO repair_mto_pull_id) -> parts availability state"
+    ],
     "information_concepts": [
-      "repair.order",
-      "repair.tags",
-      "stock.warn.insufficient.qty.repair"
+      "repair.order (the repair work order)",
+      "stock.move (part add/remove/recycle + repaired-product move)",
+      "repair.tags (classification)",
+      "stock.picking.type (repair_operation)",
+      "sale.order / sale.order.line (origin + billing)",
+      "stock.lot (lot/serial of repaired good and parts)",
+      "stock.picking (originating return transfer)"
     ],
-    "organization": [],
-    "products": [],
+    "organization": [
+      "stock.group_stock_user (repair user - rights on repair.order / repair.tags / insufficient-qty wizard)",
+      "stock.group_stock_manager (inherited via stock app, manages repair operations)"
+    ],
+    "products": [
+      "product.template.service_tracking='repair' (a saleable service whose sale spawns a repair.order)"
+    ],
     "policies": [
-      "1 record rules"
+      "1 record rule: repair.order multi-company scoping (company_id in company_ids)",
+      "under_warranty: zero-price policy on all transferred/added parts",
+      "service_tracking='repair' on a product: SO confirmation auto-creates a repair.order",
+      "picking_type.code='repair_operation': dedicated operation type with default add/remove/recycle locations",
+      "insufficient-quantity gate (stock.warn.insufficient.qty.repair) before confirming"
     ],
-    "stakeholders": [],
+    "stakeholders": [
+      "Repair Technician / Responsible (repair.order.user_id, res.users)",
+      "Customer (res.partner; owner of returned/repaired product, invoiced)",
+      "Inventory/Repair Manager (stock.group_stock_manager)",
+      "Salesperson (sale.order origin for billed repairs)"
+    ],
     "strategy": null,
-    "metrics": []
+    "metrics": [
+      "stock.picking.type repair dashboard counts (count_repair_confirmed / under_repair / ready / late)",
+      "parts_availability_state (available/expected/late) per repair order",
+      "repair pivot + graph + activity reporting views",
+      "stock.lot repair_part_count / in_repair_count / repaired_count"
+    ]
   },
   "classification": {
     "value_model": "chain",
     "activity_class": "support",
     "apqc_category": "4.0 Deliver Physical Products",
-    "rationale": "repair: thin chain/support module (auto-architect baseline)."
+    "rationale": "Repair is a value-chain (transform/flow) configuration: a physical good moves through an operation that consumes inputs (spare parts drawn from stock as 'add' moves, _is_consuming=True) and produces an output (the serviced product re-created as a stock.move into a production location and committed to stock.quant via _action_done). The append-only stock-move ledger plus bill-of-parts consumption is textbook chain logic - the same logistics machinery as stock/mrp, applied after the original sale. It is classed activity_class='support' rather than primary because, like maintenance, it is an after-sales / aftermarket service that restores already-delivered products rather than being the firm's primary make-and-ship flow; it depends on sale_stock+sale_management and only runs when a return or a service line triggers it. APQC 4.0 'Deliver Physical Products' is the closest umbrella: repair is reverse logistics / after-sales operations - it operates inbound from a customer return (4.4.x outbound transportation run in reverse), manages parts inventory (4.3.2.1 manage raw material inventory, via stock.quant moves and warehouse.repair_mto_pull_id replenishment) and re-delivers the serviced good. No single 4.x leaf names 'repair', so 4.0 is taken with the after-sales/reverse-logistics qualification; a 7.x 'customer service / after-sales support' reading is plausible, but the dominant evidence (stock.move consumption/production, repair picking types, warehouse routing) is physical fulfilment, hence 4.0."
   },
   "fit_to_standard": {
     "standard_capabilities": [
-      "Repairs"
+      "repair order lifecycle (draft/confirmed/under_repair/done/cancel) with chatter & activities",
+      "add/remove/recycle part lines as stock moves with per-type source/destination locations",
+      "consume parts from stock and re-create the repaired product move (traceable via consume_line_ids)",
+      "dedicated 'Repair' operation type (stock.picking.type) with kanban dashboard counts",
+      "warranty flag that zero-prices transferred parts",
+      "quotation/invoicing via an auto-linked sale.order (parts become SO lines; qty_delivered on done)",
+      "repair triggered from a sale order line (product service_tracking='repair')",
+      "repair triggered from a customer return transfer (action_repair_return)",
+      "parts availability/forecast state and scheduler-driven parts procurement (incl. MTO route)",
+      "lot/serial tracking and a Repair Order PDF report"
     ],
-    "typical_fits": [],
-    "common_gaps": [],
+    "typical_fits": [
+      "in-house repair/refurbishment of returned or owned products consuming spare parts",
+      "warranty vs billable repair via the under_warranty flag and SO linkage",
+      "single- or multi-warehouse repair via warehouse.repair_type_id",
+      "RMA-style flow: deliver -> customer return -> repair -> redeliver/invoice",
+      "lot/serial traceability of which parts went into which serviced unit"
+    ],
+    "common_gaps": [
+      "no field-service scheduling / on-site dispatch (industry_fsm / project territory)",
+      "no repair worksheets, labor-time/timesheet capture, or technician routing out of the box",
+      "no dedicated RMA / return-merchandise-authorization document (return is a generic stock.picking)",
+      "no preventive / condition-based triggers (that is maintenance, a separate support module)",
+      "valuation/COGS of consumed parts relies on stock_account; no repair-specific costing",
+      "no customer-facing repair portal/status page beyond the standard sale portal"
+    ],
     "drive_hints": [
-      "odoo shell: env['repair.order'].search([],limit=3)"
+      "odoo shell: ro = env['repair.order'].create({'product_id': env['product.product'].search([('is_storable','=',True)],limit=1).id}); ro.action_validate(); print(ro.state)",
+      "odoo shell: ro.action_repair_start(); env['stock.move'].create({'repair_id':ro.id,'product_id':<part>,'product_uom_qty':1,'repair_line_type':'add'}); ro.action_repair_end(); print(ro.state, ro.move_id)",
+      "odoo shell: so = env['sale.order'].create({'partner_id':<p>,'order_line':[(0,0,{'product_id':<service_tracking=repair product>})]}); so.action_confirm(); print(so.repair_order_ids)",
+      "odoo shell: pick = env['stock.picking'].search([('return_id','!=',False)],limit=1); pick.action_repair_return()  # opens a pre-seeded repair.order",
+      "odoo shell: env['stock.picking.type'].search([('code','=','repair_operation')]).mapped(('count_repair_confirmed','count_repair_under_repair','count_repair_late'))"
     ]
   },
   "reverse_eng_confidence": {
@@ -158,14 +312,18 @@
     "strategy": "human"
   },
   "open_questions": [
-    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+    "Exact stock.move state transitions for repair moves given they bypass reservation/split (_should_be_assigned/_split return early) - how 'add' parts reserve vs are forced picked at done.",
+    "How warehouse.repair_mto_pull_id (the repair MTO stock.rule) propagates parts procurement upstream to purchase/mrp when parts are not on hand.",
+    "Precise invoicing path: how qty_delivered on the repaired sale.order.line and the auto-created 'add' SO lines combine into the customer invoice across ordered/delivered policies.",
+    "Whether removed/recycled parts (remove->inventory-loss, recycle->recycle location) post any valuation entry (boundary with stock_account).",
+    "Whether a 7.x APQC 'after-sales service/support' classification is preferred by the org over the 4.0 reverse-logistics reading."
   ],
   "provenance": {
     "explorer_facts": "doc/revres/facts/repair.facts.json",
     "tools": [
+      "code-read",
       "extract_module.py",
-      "extract_frontend.py",
-      "gen_thin.py"
+      "extract_frontend.py"
     ],
     "odoo_version": "19.0"
   }

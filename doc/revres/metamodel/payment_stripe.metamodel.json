@@ -4,36 +4,77 @@
     "manifest": {
       "name": "Payment Provider: Stripe",
       "category": "Accounting/Payment Providers",
+      "summary": "An Irish-American payment provider covering the US and many others.",
+      "version": "2.0",
       "depends": [
         "payment"
       ],
       "auto_install": false,
       "application": false
     },
-    "models": [],
+    "models": [
+      {
+        "_name": "payment.provider (inherit)",
+        "_description": "Payment Provider (Stripe credentials + Connect onboarding)",
+        "fields": 4,
+        "relations": [
+          "code (Selection selection_add 'stripe')",
+          "stripe_publishable_key (Char, required_if_provider=stripe)",
+          "stripe_secret_key (Char, groups=base.group_system)",
+          "stripe_webhook_secret (Char, groups=base.group_system)"
+        ]
+      },
+      {
+        "_name": "payment.transaction (inherit)",
+        "_description": "Payment Transaction (Stripe PaymentIntent/SetupIntent/Refund flow)",
+        "fields": 0,
+        "relations": [
+          "no new fields; 14 methods overriding payment's request/notification hooks"
+        ]
+      },
+      {
+        "_name": "payment.token (inherit)",
+        "_description": "Payment Token (saved Stripe card / SCA migration)",
+        "fields": 2,
+        "relations": [
+          "stripe_payment_method (Char, Stripe PaymentMethod id)",
+          "stripe_mandate (Char, Stripe Mandate id for eMandates)"
+        ]
+      }
+    ],
     "routes": [
       {
-        "paths": [],
+        "paths": [
+          "/payment/stripe/return"
+        ],
         "auth": "public",
         "type": "http"
       },
       {
-        "paths": [],
+        "paths": [
+          "/payment/stripe/webhook"
+        ],
         "auth": "public",
         "type": "http"
       },
       {
-        "paths": [],
+        "paths": [
+          "/.well-known/apple-developer-merchantid-domain-association"
+        ],
         "auth": "public",
         "type": "http"
       },
       {
-        "paths": [],
+        "paths": [
+          "/payment/stripe/onboarding/return"
+        ],
         "auth": "user",
         "type": "http"
       },
       {
-        "paths": [],
+        "paths": [
+          "/payment/stripe/onboarding/refresh"
+        ],
         "auth": "user",
         "type": "http"
       }
@@ -41,19 +82,50 @@
     "security": {
       "access_rules": 0,
       "record_rules": 0,
-      "groups": 0
+      "groups": 0,
+      "note": "No own ACL/rules; relies on payment's security and on base.group_system field groups guarding stripe_secret_key / stripe_webhook_secret."
     },
     "views": {
       "form": 0,
       "list": 0,
-      "tree": 0,
       "kanban": 0,
       "search": 0,
       "pivot": 0,
       "graph": 0,
-      "calendar": 0,
-      "activity": 0
+      "note": "No own model views; xml_loc=134 is view inheritance (payment.provider form: Stripe keys + 'Generate Webhook' / 'Verify Apple Pay domain' buttons), QWeb templates (payment_stripe_templates.xml inline form, payment_templates.xml loads the Stripe.js SDK script tag only on pages with a payment form), plus payment_provider_data.xml."
     },
+    "behavioral_notes": [
+      {
+        "element": "payment.transaction._stripe_create_intent / _send_payment_request -> outbound POST to api.stripe.com (PaymentIntent / SetupIntent)",
+        "observation": "The outbound acquirer call (gap #7) is centralized through payment's payment.provider._send_api_request, which payment_stripe targets at https://api.stripe.com/v1/ via _build_request_url and authenticates with 'AUTHORIZATION: Bearer <stripe_secret_key>' + 'Stripe-Version: 2019-05-16' headers (_build_request_headers, secret fetched sudo via utils.get_secret_key). _stripe_create_intent POSTs to 'setup_intents' for a validation operation, else to 'payment_intents' (amount in minor units, capture_method manual/automatic from provider.capture_manually, payment_method_types[] mapped via const.PAYMENT_METHODS_MAPPING, expand[]=payment_method), passing an idempotency_key for payment intents and offline=True for off-session token charges. _send_payment_request (token/offline charge) and _get_specific_processing_values (online_direct inline flow) both create the intent and hand the client_secret to the front-end Stripe.js Elements. None of this server-to-server HTTP is visible in Python field/model metadata. NB: per README the legacy Checkout-Session redirect flow was replaced by the deferred Payment Intents API in v16.4 (this module creates PaymentIntents, not Checkout Sessions).",
+        "source": "code-read"
+      },
+      {
+        "element": "StripeController.stripe_webhook (/payment/stripe/webhook) -> Stripe-Signature (webhook secret) verification + tx state update",
+        "observation": "The public, csrf=False POST webhook at /payment/stripe/webhook parses the Stripe event, and for events in const.HANDLED_WEBHOOK_EVENTS (payment_intent.{processing,amount_capturable_updated,succeeded,payment_failed,canceled}, setup_intent.succeeded, charge.refunded, charge.refund.updated) locates the tx via payment.transaction._search_by_reference (by the intent's 'description' = Odoo reference, or by provider_reference for refund updates) and then calls _verify_signature BEFORE acting. _verify_signature implements Stripe's manual scheme (https://stripe.com/docs/webhooks/signatures): it reads the 'Stripe-Signature' header, rejects events older than WEBHOOK_AGE_TOLERANCE (10 min) or with a missing v1 signature with werkzeug Forbidden, then HMAC-SHA256s '<timestamp>.<raw-body>' with stripe_webhook_secret and compares with hmac.compare_digest (constant-time). On success it enriches the event (for setup_intents / tokenized payment_intents it fetches the PaymentMethod via GET payment_methods/<id>; for charge.refunded it paginates GET refunds and creates child refund transactions) and calls tx_sudo._process('stripe', data), driving payment's guarded state machine (_set_pending/_set_authorized/_set_done/_set_canceled/_set_error). The redirect-return route /payment/stripe/return instead GETs the PaymentIntent/SetupIntent from Stripe to confirm state, then _process + redirect to /payment/status. Signature trust, the constant-time compare, and the inbound state transition are all invisible to metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "Stripe Connect onboarding via odoo proxy (action_start_onboarding / _stripe_create_account_link / OnboardingController)",
+        "observation": "action_start_onboarding (override of payment) gates on const.SUPPORTED_COUNTRIES (RedirectWarning if the company country is unsupported), then _stripe_fetch_or_create_connected_account and _stripe_create_account_link POST 'accounts' / 'account_links' through Odoo's Stripe proxy at https://stripe.api.odoo.com/api/stripe/ (const.PROXY_URL, is_proxy_request=True, payload wrapped by _prepare_json_rpc_payload with proxy_data). The returned Stripe-hosted account_onboarding URL becomes an ir.actions.act_url redirect; Stripe sends the merchant back to /payment/stripe/onboarding/return (auth=user -> redirects to the provider form action) or /payment/stripe/onboarding/refresh (auth=user -> mints a fresh account link when the previous expired). Two @api.constrains forbid setting a connected-account provider to 'test' and forbid 'enabled' while onboarding is ongoing (_stripe_has_connected_account/_stripe_onboarding_is_ongoing are hooks returning False in core, fully implemented by a Stripe-Connect-Platform override). action_stripe_create_webhook auto-registers the webhook (POST webhook_endpoints with const.HANDLED_WEBHOOK_EVENTS) and stores the returned signing secret; action_stripe_verify_apple_pay_domain registers the web domain (POST apple_pay/domains) and serves the association file at /.well-known/...",
+        "source": "code-read"
+      },
+      {
+        "element": "tokenization for saved cards (_extract_token_values / _stripe_create_customer / _stripe_sca_migrate_customer)",
+        "observation": "When tx.tokenize is set, payment's engine calls _tokenize after a successful authorized/done intent; payment_stripe._extract_token_values mines the Stripe objects to vault a payment.token: provider_ref = the Stripe Customer id (POSTed up-front by _stripe_create_customer with the partner's billing details), stripe_payment_method = the PaymentMethod id, payment_details = card last4, and stripe_mandate when an eMandate was set up (Indian recurring flow, _stripe_prepare_mandate_options, currencies in const.INDIAN_MANDATES_SUPPORTED_CURRENCIES). Subsequent off-session charges (operation online_token/offline) POST a PaymentIntent with confirm=True, off_session=True, customer=token.provider_ref, payment_method=token.stripe_payment_method, mandate=token.stripe_mandate. Pre-SCA tokens are lazily migrated by payment.token._stripe_sca_migrate_customer (GET payment_methods for the customer, store the id). _send_refund_request (POST refunds), _send_capture_request (POST payment_intents/<id>/capture) and _send_void_request (POST payment_intents/<id>/cancel) round out the authorize/capture/void/refund operations, each re-using _process to fold the response into the state machine.",
+        "source": "code-read"
+      },
+      {
+        "element": "external integration surface (gap #7) -- endpoints, keys, SDK",
+        "observation": "Static gap-#7 facts (extract_frontend.py): uses_api_keys=true; two outbound endpoints -- https://api.stripe.com/v1/ (direct REST, Bearer secret-key auth) and https://stripe.api.odoo.com/api/stripe/ (Odoo's Stripe Connect proxy, jsonrpc) -- declared in const.py and models/payment_provider.py. No 'requests' import here: HTTP is delegated to payment.provider._send_api_request in the parent engine, which payment_stripe configures via the _build_request_url / _build_request_headers / _parse_response_* hook overrides. On the browser side the Stripe.js v3 Web Elements SDK is loaded by a <script> tag (payment_templates.xml) on pages showing the payment form -- a second, client-side channel to Stripe. This dual server-to-server + client-side acquirer link is the canonical metadata gap #7: none of it is reachable from model/field metadata.",
+        "source": "static"
+      },
+      {
+        "element": "frontend (static) -- Stripe.js inline form + Express Checkout patches",
+        "observation": "3 JS files, 0 OWL components, 0 registry adds (gap #3). The module patches two shared payment widgets rather than registering new components: PaymentForm.prototype (static/src/interactions/payment_form.js) drives the Stripe.js Payment Element -- it consumes the inline-form values JSON from payment.provider._stripe_get_inline_form_values (publishable_key, minor_amount, currency, capture_method, billing_details, payment method mapping) to mount Elements and confirm the intent client-side using the client_secret -- and ExpressCheckout.prototype (static/src/interactions/express_checkout.js, with stripe_options.js) implements the express-checkout (Apple Pay / Google Pay payment-request button). Assets load into web.assets_frontend (manifest globs static/src/**/*). These browser interactions and the Stripe.js SDK are invisible to Python metadata (gap #3).",
+        "source": "static"
+      }
+    ],
     "frontend": {
       "present": true,
       "js_files": 3,
@@ -85,57 +157,151 @@
     "runtime": {
       "models_with_data": 0,
       "top": []
-    },
-    "behavioral_notes": [
-      {
-        "element": "frontend (OWL/JS)",
-        "observation": "3 JS files, 0 OWL components, 0 registry adds; bundles ['web.assets_frontend'].",
-        "source": "static"
-      },
-      {
-        "element": "thin module",
-        "observation": "0 models, 5 routes, 1994 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
-        "source": "ast"
-      }
-    ]
+    }
   },
   "it_architecture": {
-    "application": "payment_stripe (Payment Provider: Stripe)",
-    "software_services": [],
-    "data_objects": [],
-    "logical_data_erm": [],
-    "information_flows": [
-      "depends: payment"
+    "application": "payment_stripe (Stripe acquirer adapter for the payment engine; _inherit-only, no own models/views)",
+    "software_services": [
+      "/payment/stripe/return (redirect-return: GET the intent from Stripe, confirm state)",
+      "/payment/stripe/webhook (signed async notifications, csrf=False)",
+      "/.well-known/apple-developer-merchantid-domain-association (Apple Pay domain proof)",
+      "/payment/stripe/onboarding/return (Stripe Connect onboarding return)",
+      "/payment/stripe/onboarding/refresh (re-mint expired onboarding link)"
     ],
-    "frontend_components": []
+    "data_objects": [
+      "payment.provider (+stripe_publishable_key, stripe_secret_key, stripe_webhook_secret)",
+      "payment.transaction (Stripe PaymentIntent/SetupIntent/Refund flow; no new fields)",
+      "payment.token (+stripe_payment_method, stripe_mandate)"
+    ],
+    "logical_data_erm": [
+      "payment.transaction -> payment.provider (provider_id; provider_code=='stripe' gates every override)",
+      "payment.transaction -> payment.token (token_id; off-session charges read stripe_payment_method)",
+      "payment.token -> payment.provider (provider_id)",
+      "payment.provider.code selection_add 'stripe'",
+      "external: payment.transaction.provider_reference == Stripe PaymentIntent/SetupIntent/Refund id (cross-system key)",
+      "external: payment.token.provider_ref == Stripe Customer id; payment.token.stripe_payment_method == Stripe PaymentMethod id"
+    ],
+    "information_flows": [
+      "depends: payment (inherits the provider/transaction/token engine + _send_api_request)",
+      "outbound: _stripe_create_intent / _send_{payment,refund,capture,void}_request -> POST https://api.stripe.com/v1/ (Bearer secret-key, Stripe-Version 2019-05-16, idempotency key)",
+      "outbound: Stripe Connect onboarding -> POST https://stripe.api.odoo.com/api/stripe/ proxy (accounts, account_links, jsonrpc)",
+      "client-side: Stripe.js v3 Web Elements SDK loaded via <script> on payment-form pages; confirms the intent in the browser with the client_secret",
+      "inbound (redirect): Stripe -> /payment/stripe/return -> GET intent -> _process -> /payment/status",
+      "inbound (webhook): Stripe -> /payment/stripe/webhook -> _verify_signature (HMAC-SHA256 of timestamp.body with stripe_webhook_secret) -> _process -> payment state machine",
+      "side-effect: successful authorized/done intent + tx.tokenize -> _extract_token_values -> payment.token vault (Customer id + PaymentMethod id [+ mandate])",
+      "side-effect: charge.refunded webhook -> paginate GET refunds -> _create_child_transaction (refund txs) -> _process"
+    ],
+    "frontend_components": [
+      "PaymentForm.prototype (patch; mounts the Stripe.js Payment Element from _stripe_get_inline_form_values, confirms the intent client-side via client_secret)",
+      "ExpressCheckout.prototype (patch; Apple Pay / Google Pay express-checkout payment-request button)",
+      "stripe_options.js (shared Stripe Elements options helper)",
+      "Stripe.js v3 Web Elements SDK (loaded via <script> tag on payment-form pages, payment_templates.xml)"
+    ],
+    "external_integrations": {
+      "sdk": "Stripe.js v3 (browser Web Elements); server side uses no python SDK -- HTTP via payment.provider._send_api_request",
+      "uses_api_keys": true,
+      "endpoints": [
+        "https://api.stripe.com/v1/",
+        "https://stripe.api.odoo.com/api/stripe/"
+      ],
+      "auth": "Bearer <stripe_secret_key> + Stripe-Version header (direct API); Odoo jsonrpc proxy (Connect)",
+      "files": [
+        "const.py",
+        "models/payment_provider.py",
+        "models/payment_transaction.py",
+        "models/payment_token.py",
+        "controllers/main.py",
+        "controllers/onboarding.py"
+      ],
+      "pattern": "Concrete realization of metadata gap #7: a real external acquirer integration. Outbound server-to-server REST to api.stripe.com (PaymentIntent / SetupIntent / Customer / Refund / capture / cancel / webhook_endpoints / apple_pay) authenticated with a secret API key; Stripe Connect onboarding routed through Odoo's stripe.api.odoo.com proxy; a parallel client-side Stripe.js Elements channel; and inbound settlement via a Stripe-Signature-verified webhook plus a redirect-return route. The base 'payment' engine flags uses_api_keys but ships no live acquirer -- this module is exactly that override.",
+      "note": "Prime gap-#7 example: none of the Stripe endpoints, the Bearer-key auth, the webhook HMAC trust, or the browser SDK channel are derivable from Python model/field metadata; they were established only by reading const.py + the model/controller code."
+    }
   },
   "business_architecture": {
     "capabilities": [
-      "Payment Provider: Stripe"
+      "Accept Card / Online Payments via Stripe (direct PaymentIntent flow)",
+      "Strong Customer Authentication (3DS) via Stripe.js client-side confirmation",
+      "Tokenization / Saved Cards (vault Stripe Customer + PaymentMethod, with eMandate support)",
+      "Authorize / Manual Capture (full) / Void",
+      "Full & Partial Refunds",
+      "Express Checkout (Apple Pay / Google Pay)",
+      "Stripe Connect Self-Onboarding & automatic Webhook registration"
     ],
-    "value_streams": [],
-    "information_concepts": [],
-    "organization": [],
+    "value_streams": [
+      "Collect-Payment (Stripe): initiate tx -> create PaymentIntent (api.stripe.com) -> Stripe.js Elements confirm (SCA) in browser -> redirect /payment/stripe/return OR async /payment/stripe/webhook (signed) -> _process -> state machine done/error -> downstream post-process settlement",
+      "Tokenize-and-Recharge: successful intent + tokenize -> vault payment.token (Customer+PaymentMethod) -> later off-session PaymentIntent (confirm,off_session) for card-not-present / recurring",
+      "Refund: backend refund -> POST refunds (or charge.refunded webhook) -> child refund payment.transaction -> _process",
+      "Onboard-Merchant: action_start_onboarding -> Stripe Connect account + account_link via odoo proxy -> Stripe-hosted onboarding -> /payment/stripe/onboarding/return -> provider enabled"
+    ],
+    "information_concepts": [
+      "payment.provider (Stripe credentials: publishable / secret / webhook-signing keys)",
+      "payment.transaction (mapped to a Stripe PaymentIntent / SetupIntent / Refund)",
+      "payment.token (saved Stripe card: Customer id + PaymentMethod id + Mandate)",
+      "Stripe Connect account (external; referenced via onboarding hooks)"
+    ],
+    "organization": [
+      "(no module-owned res.groups; stripe_secret_key and stripe_webhook_secret are restricted to base.group_system; everything else inherits payment's groups/record rules)"
+    ],
     "products": [],
-    "policies": [],
-    "stakeholders": [],
+    "policies": [
+      "Webhook authenticity: events must pass _verify_signature (Stripe-Signature HMAC-SHA256, <=10 min old, constant-time compare) or are rejected with HTTP 403 Forbidden",
+      "A connected (Stripe Connect) provider can never be set to Test mode (@api.constrains)",
+      "A provider cannot be set to Enabled while its Stripe onboarding is still ongoing (@api.constrains)",
+      "Stripe Connect onboarding only offered for companies in const.SUPPORTED_COUNTRIES (else RedirectWarning)",
+      "Apple Pay enablement requires live (not test) credentials (UserError otherwise)",
+      "Idempotency-Key sent on PaymentIntent creation to make charge POSTs safe to retry",
+      "Secret/webhook keys gated by base.group_system field groups"
+    ],
+    "stakeholders": [
+      "Payer / Cardholder (res.partner)",
+      "Merchant / Company (res.company, holds the Stripe account & keys)",
+      "Stripe (external acquirer / PSP)",
+      "Odoo Stripe proxy (stripe.api.odoo.com, mediates Connect onboarding)",
+      "Accountant (consumes settled payments via account_payment downstream)"
+    ],
     "strategy": null,
-    "metrics": []
+    "metrics": [
+      "(no own reports; transaction volumes/amounts/state surfaced by the parent payment.transaction pivot/graph)"
+    ]
   },
   "classification": {
     "value_model": "network",
     "activity_class": "support",
-    "apqc_category": "9.0 Manage Financial Resources",
-    "rationale": "payment_stripe: thin network/support module (auto-architect baseline)."
+    "apqc_category": "9.0 Manage Financial Resources (9.5 process payments / collect cash; manage external payment provider)",
+    "rationale": "payment_stripe is a value-NETWORK (Stabell & Fjeldstad mediating-technology) component: a concrete acquirer adapter whose purpose is to interconnect two parties who would not otherwise transact directly -- the cardholder/payer and the merchant -- by linking the merchant to Stripe's card network. It exhibits the three mediating-technology activities: network promotion & contract management (Stripe Connect onboarding, webhook registration, key management, Apple Pay domain verification), service provisioning (creating the PaymentIntent/SetupIntent and confirming the charge per transaction), and infrastructure operation (the server-to-server api.stripe.com link, the Stripe.js client channel, and the signed-webhook settlement loop). It does not transform inputs into outputs (chain) nor solve a bespoke customer problem (shop). It inherits the parent 'payment' engine's value_model exactly: the engine is the generic mediator and this module is its Stripe realization. activity_class is 'support' because, from the enterprise value-chain perspective, payment acceptance is an infrastructure/finance support function (category Accounting/Payment Providers, application=False, no end-user app) sitting under 9.0 Manage Financial Resources -- specifically 9.5 process payments / collect cash, with the side of 'manage an external payment provider'. So value_model=network (its own internal logic is mediation, an acquirer integration -- gap #7), activity_class=support (its place on the enterprise value chain). This mirrors the parent payment.metamodel.json (network/support) and contrasts with account_payment (support/support), whose own logic is ledger record-keeping rather than mediation."
   },
   "fit_to_standard": {
     "standard_capabilities": [
-      "Payment Provider: Stripe"
+      "direct card payment via Stripe PaymentIntents with client-side Stripe.js Elements (SCA/3DS handled by Stripe)",
+      "tokenization / saved cards (Stripe Customer + PaymentMethod), including off-session recurring and Indian eMandates",
+      "full manual capture, void, and full + partial refunds",
+      "express checkout (Apple Pay / Google Pay) via the payment-request button",
+      "asynchronous settlement via a Stripe-Signature-verified webhook plus a redirect-return confirmation route",
+      "Stripe Connect quick self-onboarding and one-click webhook creation",
+      "Apple Pay web-domain verification"
     ],
-    "typical_fits": [],
-    "common_gaps": [],
+    "typical_fits": [
+      "online shop / portal checkout collecting card payments through Stripe in a supported country",
+      "save-card-for-later and tokenized recurring/subscription charges (off_session PaymentIntents)",
+      "send-a-payment-link or pay-an-invoice-online collection (with account_payment / sale downstream)",
+      "merchant self-onboarding to Stripe via Connect rather than manual API-key entry",
+      "multi-currency acceptance (minor-unit + zero/3-decimal special-case handling in const.CURRENCY_DECIMALS)"
+    ],
+    "common_gaps": [
+      "partial MANUAL capture is explicitly NOT implemented (support_manual_capture='full_only'; README 'Not implemented')",
+      "full Stripe Connect platform behavior (managing connected sub-accounts, _stripe_has_connected_account / _stripe_onboarding_is_ongoing real logic) is left as hooks for a separate module",
+      "the public-URL requirement for webhooks means local/dev instances need a tunnel; without a webhook secret signature verification is skipped (events ignored with a warning)",
+      "API version pinned to 2019-05-16 in const.py -- newer Stripe features / payment methods need code changes",
+      "country support is bounded by const.SUPPORTED_COUNTRIES; unsupported regions cannot onboard via Connect",
+      "bespoke reconciliation / settlement document chains live downstream (account_payment, sale), not here"
+    ],
     "drive_hints": [
-      "n/a"
+      "odoo shell: env['payment.provider'].search([('code','=','stripe')]).mapped(('name','state','stripe_publishable_key'))",
+      "odoo shell: p=env['payment.provider'].search([('code','=','stripe')],limit=1); print(p.support_express_checkout, p.support_manual_capture, p.support_refund, p.support_tokenization)",
+      "odoo shell: tx=env['payment.transaction'].search([('provider_code','=','stripe')],limit=1); print(tx.reference, tx.state, tx.provider_reference)",
+      "odoo shell: print([m for m in dir(env['payment.transaction']) if m.startswith('_stripe_')])",
+      "curl -X POST https://<host>/payment/stripe/webhook (csrf=False, auth=public) with a missing/invalid Stripe-Signature header -> expect HTTP 403 Forbidden from _verify_signature",
+      "Stripe test card 4111111111111111, any future expiry, any CVC (README testing instructions)"
     ]
   },
   "reverse_eng_confidence": {
@@ -149,14 +315,20 @@
     "strategy": "human"
   },
   "open_questions": [
-    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+    "Exact request/response payloads of the Stripe Connect proxy (stripe.api.odoo.com) and what proxy_data/extra headers a full Stripe-Connect-Platform override injects.",
+    "Real-world distribution of Stripe transaction states, tokenization usage, and refund rates (no runtime row counts captured).",
+    "Which downstream modules consume the settled Stripe transactions (account_payment, sale, subscription) and how partial captures/voids split across child transactions.",
+    "Whether instances actually register the webhook (stripe_webhook_secret set) vs rely solely on the redirect-return route, since signature checks are skipped when the secret is empty."
   ],
   "provenance": {
     "explorer_facts": "doc/revres/facts/payment_stripe.facts.json",
     "tools": [
-      "extract_module.py",
-      "extract_frontend.py",
-      "gen_thin.py"
+      "apqc_odoo_map.tsv",
+      "code-read (models/payment_provider.py, models/payment_transaction.py, models/payment_token.py, controllers/main.py, controllers/onboarding.py, const.py, __manifest__.py, README.md)",
+      "extract_frontend.py (frontend/payment_stripe.frontend.json)",
+      "extract_module.py (facts/payment_stripe.facts.json)",
+      "Grep",
+      "Read"
     ],
     "odoo_version": "19.0"
   }
