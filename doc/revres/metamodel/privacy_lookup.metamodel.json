@@ -14,17 +14,35 @@
       {
         "_name": "privacy.log",
         "_description": "Privacy Log",
-        "fields": 7
+        "fields": 7,
+        "relations": [
+          "user_id->res.users"
+        ]
       },
       {
         "_name": "privacy.lookup.wizard",
         "_description": "Privacy Lookup Wizard",
-        "fields": 7
+        "fields": 7,
+        "relations": [
+          "line_ids->privacy.lookup.wizard.line",
+          "log_id->privacy.log"
+        ]
       },
       {
         "_name": "privacy.lookup.wizard.line",
         "_description": "Privacy Lookup Wizard Line",
-        "fields": 10
+        "fields": 10,
+        "relations": [
+          "wizard_id->privacy.lookup.wizard",
+          "res_model_id->ir.model",
+          "resource_ref->(dynamic Reference, any model)"
+        ]
+      },
+      {
+        "_name": "res.partner (extension)",
+        "_description": "Adds action_privacy_lookup launcher from a partner form",
+        "fields": 0,
+        "relations": []
       }
     ],
     "routes": [],
@@ -67,14 +85,34 @@
     },
     "behavioral_notes": [
       {
-        "element": "thin module",
-        "observation": "3 models, 0 routes, 585 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
-        "source": "ast"
+        "element": "privacy.lookup.wizard._get_query / action_lookup",
+        "observation": "The discovery engine. action_lookup() builds one raw SQL UNION ALL query (_get_query) and runs it via cr.execute, then materialises every matched row as a privacy.lookup.wizard.line (res_model_id, res_id, is_active). The query has three layers: (1) an indirect_references CTE of res_partner rows whose email_normalized equals, or name ilike, the subject; (2) explicit UNIONs over res_partner, res_users (matched by login or by partner_id), and mail_message (author_id in the CTE, to catch direct-message authorship); (3) a dynamic sweep across EVERY non-transient, non-abstract model in self.env. The cross-model UNION is the metadata-invisible core: the wizard does NOT have a fixed list of 'personal data' tables — it derives them at runtime.",
+        "source": "code-read"
+      },
+      {
+        "element": "privacy.lookup.wizard._get_query (model-discovery heuristic)",
+        "observation": "How it decides which models hold personal data, per model in self.env (minus a blacklist of res.partner/res.users/mail.notification/mail.followers/discuss.channel.member/mail.message): (3.1) DIRECT match — if the model has any stored field named email_normalized/email/email_from/company_email it adds an email condition (exact '=' on normalised columns, else ilike on the full 'Foo Bar <foo@bar.com>' string) and, when the model's _rec_name is a stored non-translated char, also an ilike on the name; (3.2) INDIRECT match — for every stored many2one field whose comodel is res.partner with ondelete != 'cascade', it adds `<fk> IN (SELECT id FROM indirect_references)`. Cascade FKs are skipped because deleting the partner already removes them. Each matching model contributes another UNION ALL branch carrying its ir.model id, row id and active flag.",
+        "source": "code-read"
+      },
+      {
+        "element": "privacy.lookup.wizard.line.action_unlink / _onchange_is_active (erasure execution)",
+        "observation": "Erasure is applied per matched record, not by a single global action. _onchange_is_active() writes active=True/False (archive/unarchive) on env[res_model].sudo().browse(res_id) and records 'Archived/Unarchived <Model> #id' into execution_details. action_unlink() calls .sudo().unlink() on the target record, sets is_unlinked=True and records 'Deleted <Model> #id'. action_archive_all/action_unlink_all iterate the lines to bulk-apply. Every action runs sudo() so it can reach records the privacy officer might not otherwise write/delete. No actual scrubbing of res.partner happens here — anonymisation of the subject's own identity is left to the audit log (see next note).",
+        "source": "code-read"
+      },
+      {
+        "element": "privacy.log (audit trail + name/email masking)",
+        "observation": "privacy.log is the immutable GDPR audit record, created automatically by wizard._post_log() when execution_details exist (compute side-effect of _compute_execution_details). Its create() override masks the subject's identity before storage: _anonymize_name turns 'John Doe' into 'J*** D**', _anonymize_email turns 'john.doe@example.com' into 'j***.d**@e******.com' while preserving common public domains (gmail.com/hotmail.com/yahoo.com) and the TLD. So the log proves WHAT was erased and by WHOM (user_id, date, records_description) without itself re-storing the personal data — the masking is in code, not visible from field metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "Privacy menu + partner launcher (UI surface)",
+        "observation": "Static UI only, no OWL/JS (frontend.present=false). The wizard is reached two ways: a 'Privacy' menu under Settings (base.menu_custom) exposing read-only Privacy Logs (list+form, create:False), and a res.partner.action_privacy_lookup button that opens the wizard pre-filled with the partner's email/name. Lines render via a generic ir.model Reference widget (resource_ref) so any matched record is clickable. All access (ir.model.access.csv) is restricted to base.group_system — only the System administrator can run a lookup or erase records.",
+        "source": "static"
       }
     ]
   },
   "it_architecture": {
-    "application": "privacy_lookup (Privacy)",
+    "application": "privacy_lookup (GDPR data-subject lookup & erasure utility)",
     "software_services": [],
     "data_objects": [
       "privacy.log",
@@ -82,48 +120,93 @@
       "privacy.lookup.wizard.line"
     ],
     "logical_data_erm": [
-      "privacy.log -> res.users",
-      "privacy.lookup.wizard -> privacy.log",
-      "privacy.lookup.wizard -> privacy.lookup.wizard.line",
-      "privacy.lookup.wizard.line -> ir.model",
-      "privacy.lookup.wizard.line -> privacy.lookup.wizard"
+      "privacy.log -> res.users (Handled By)",
+      "privacy.lookup.wizard -> privacy.log (log_id, audit trail)",
+      "privacy.lookup.wizard -> privacy.lookup.wizard.line (line_ids, matched records)",
+      "privacy.lookup.wizard.line -> privacy.lookup.wizard (wizard_id)",
+      "privacy.lookup.wizard.line -> ir.model (res_model_id, target model)",
+      "privacy.lookup.wizard.line -> * (resource_ref dynamic Reference to any matched record)"
     ],
     "information_flows": [
-      "depends: mail"
+      "depends: mail",
+      "lookup: partner.action_privacy_lookup / wizard -> _get_query (dynamic SQL UNION over all models) -> cr.execute -> privacy.lookup.wizard.line per matched record",
+      "erasure: wizard.line.action_unlink/_onchange_is_active -> sudo().unlink()/write(active) on env[res_model].browse(res_id) across arbitrary business models",
+      "audit: wizard._post_log -> privacy.log.create (anonymises subject name/email, captures execution_details + records_description + user_id)",
+      "discovery scope: every non-transient stored model with an email-like field or a non-cascade many2one->res.partner is swept (heuristic, not a fixed registry)"
     ],
     "frontend_components": []
   },
   "business_architecture": {
     "capabilities": [
-      "Privacy"
+      "Data-Subject Access / Lookup (find every record tied to a person across all models)",
+      "Right-to-Erasure Execution (archive or delete matched records)",
+      "Personal-Data Discovery (heuristic detection of which models hold PII)",
+      "Privacy Audit Logging (tamper-resistant, identity-masked record of erasures)",
+      "Data-Subject Identity Anonymisation (name/email masking)"
     ],
-    "value_streams": [],
+    "value_streams": [
+      "Request-to-Erasure: data-subject request -> lookup (build cross-model match set) -> review lines -> archive/unlink records -> masked privacy.log audit entry",
+      "Lookup-to-Disclosure: partner -> action_privacy_lookup -> enumerated matched records (subject-access support)"
+    ],
     "information_concepts": [
       "privacy.log",
       "privacy.lookup.wizard",
       "privacy.lookup.wizard.line"
     ],
-    "organization": [],
+    "organization": [
+      "base.group_system (System administrator — sole holder of all privacy_lookup access)"
+    ],
     "products": [],
-    "policies": [],
-    "stakeholders": [],
+    "policies": [
+      "Access to lookup/erasure and to Privacy Logs restricted to base.group_system",
+      "Privacy Logs are read-only in the UI (create:False) — append-only audit trail",
+      "privacy.log.create() masks subject name/email before persistence (data-minimisation)",
+      "Discovery skips cascade-delete FKs and a blacklist of mail/discuss link models to avoid double-handling",
+      "Erasure runs as sudo() to reach records the operator may not directly own"
+    ],
+    "stakeholders": [
+      "Data Protection Officer / privacy team (runs lookups and erasures)",
+      "System administrator (only group granted access)",
+      "Data subject (person whose records are looked up / erased)",
+      "Regulator / auditor (consumer of the privacy.log audit trail)"
+    ],
     "strategy": null,
-    "metrics": []
+    "metrics": [
+      "Count of records matched per model (records_description)",
+      "Erasure execution log volume (privacy.log entries over time)"
+    ]
   },
   "classification": {
     "value_model": "support",
     "activity_class": "support",
     "apqc_category": "13.0 Develop and Manage Business Capabilities",
-    "rationale": "privacy_lookup: thin support/support module (auto-architect baseline)."
+    "rationale": "privacy_lookup is a compliance / data-governance utility with no business object of its own — its only models (privacy.log + two transient wizard models) exist to operate ON other modules' data, sweeping every model for a person's PII and then archiving/deleting it. This is a classic Porter/Stabell-Fjeldstad 'support' activity: a firm-level risk/IT governance function, not a value-creating primary chain/shop/network step (there is no product, no customer-facing transaction, no document chain it owns). auto_install=true and access gated to base.group_system confirm it is internal administrative tooling. APQC 13.0 'Develop and Manage Business Capabilities' is chosen because the module operationalises a data-privacy governance capability — defining and enforcing how personal data is discovered, retained and erased across the enterprise's information assets (the 'manage knowledge/information governance' strand of 13.0). 11.0 'Manage Enterprise Risk, Compliance, Remediation, and Resiliency' was a close alternative (GDPR is a regulatory-compliance obligation and erasure is a compliance-remediation act); it is a defensible mapping. 13.0 is preferred here because the tool's substance is governance of the data/information capability itself (PII discovery + lifecycle/erasure across all data objects) rather than the broader risk-register/control-testing scope that 11.0 centres on — the module manages a capability over enterprise information, with compliance as the driver."
   },
   "fit_to_standard": {
     "standard_capabilities": [
-      "Privacy"
+      "Cross-model personal-data lookup by name + email (heuristic over all stored models)",
+      "Direct and indirect (partner_id) reference discovery",
+      "Per-record archive / unlink and bulk archive-all / unlink-all erasure",
+      "Auto-created, identity-masked privacy audit log",
+      "Launch from a partner form (action_privacy_lookup) or the Settings > Privacy menu"
     ],
-    "typical_fits": [],
-    "common_gaps": [],
+    "typical_fits": [
+      "Handling a GDPR data-subject access or erasure request for a known partner/email",
+      "Demonstrating an auditable erasure trail to a regulator (privacy.log)",
+      "Admin-only privacy operations under base.group_system"
+    ],
+    "common_gaps": [
+      "Pseudonymisation/scrubbing of field values in place is not offered — only archive or full unlink (records are removed, not redacted-but-kept)",
+      "Discovery is heuristic: models without an email-like field and without a non-cascade many2one to res.partner are invisible (free-text PII, custom link models, JSON blobs are missed)",
+      "No workflow / approval / SLA tracking around the request (single admin wizard run)",
+      "No automatic consent or retention-policy enforcement; erasure is manual and operator-driven",
+      "unlink() may fail on records protected by ORM constraints / referential integrity (not surfaced as a managed exception path)"
+    ],
     "drive_hints": [
-      "odoo shell: env['privacy.log'].search([],limit=3)"
+      "odoo shell: w = env['privacy.lookup.wizard'].create({'name':'John Doe','email':'john@example.com'}); w.action_lookup(); w.line_ids.mapped('res_model')  # see which models matched",
+      "odoo shell: print(env['privacy.lookup.wizard'].new({'name':'A','email':'a@b.com'})._get_query())  # inspect the generated discovery SQL",
+      "odoo shell: env['privacy.log'].create({'anonymized_name':'John Doe','anonymized_email':'john.doe@acme.com'}).read(['anonymized_name','anonymized_email'])  # observe masking",
+      "UI: open a res.partner form > Action > Privacy Lookup, then archive/delete matched lines and check Settings > Privacy > Privacy Logs"
     ]
   },
   "reverse_eng_confidence": {
@@ -137,14 +220,16 @@
     "strategy": "human"
   },
   "open_questions": [
-    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+    "Real-world recall of the heuristic: what fraction of PII-bearing custom models lack both an email-like field and a non-cascade partner FK (and are therefore missed)?",
+    "Whether downstream modules add their own privacy hooks/overrides to extend the sweep (none observed in this module).",
+    "Behaviour and failure handling when unlink() hits referential-integrity or access constraints on a matched record."
   ],
   "provenance": {
     "explorer_facts": "doc/revres/facts/privacy_lookup.facts.json",
     "tools": [
+      "code-read",
       "extract_module.py",
-      "extract_frontend.py",
-      "gen_thin.py"
+      "extract_frontend.py"
     ],
     "odoo_version": "19.0"
   }

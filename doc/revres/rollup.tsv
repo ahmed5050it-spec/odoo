@@ -66,7 +66,7 @@ delivery_mondialrelay	chain	support	4.4 Operate outbound transpo	0	0	1	1	meta+fe
 delivery_stock_picking_batch	chain	support	4.4 Operate outbound transpo	0	0	0	0	meta
 digest	support	support	13.0 Develop and Manage Busi	4	3	0	0	meta+code
 event	network	primary	3.0 Market and Sell Products	8	3	13	3	meta+code+fe+integ
-event_booth	network	primary	3.0 Market and Sell Products	3	0	0	0	meta
+event_booth	network	primary	3.0 Market and Sell Products	5	0	0	0	meta+code
 event_booth_sale	network	primary	3.0 Market and Sell Products	2	0	2	0	meta+fe
 event_crm	network	primary	3.0 Market and Sell Products	2	0	0	0	meta
 event_crm_sale	network	primary	3.0 Market and Sell Products	0	0	0	0	meta
@@ -447,7 +447,7 @@ pos_self_order_viva_com	chain	primary	3.0 Market and Sell Products	0	1	2	0	meta+
 pos_sms	chain	primary	3.0 Market and Sell Products	0	0	1	0	meta+fe
 pos_stripe	chain	primary	3.0 Market and Sell Products	0	0	3	0	meta+fe
 pos_viva_com	chain	primary	3.0 Market and Sell Products	0	1	4	0	meta+fe+integ
-privacy_lookup	support	support	13.0 Develop and Manage Busi	3	0	0	0	meta
+privacy_lookup	support	support	13.0 Develop and Manage Busi	4	0	0	0	meta+code
 product	support	support	2.0 Develop and Manage Produ	6	3	15	4	meta+code+fe
 product_email_template	support	support	2.0 Develop and Manage Produ	0	0	0	0	meta
 product_expiry	chain	support	4.0 Deliver Physical Product	6	0	2	0	meta+code+fe

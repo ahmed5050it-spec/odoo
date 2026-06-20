@@ -37,7 +37,7 @@ Activity class: support=470, primary=179
 | Layer | Records with it |
 |-------|----------------:|
 | metadata (facts) | 649/649 |
-| code-read (behavior) | 98/649 |
+| code-read (behavior) | 100/649 |
 | frontend (OWL/JS) | 246/649 |
 | integrations (HTTP/SDK) | 70/649 |
 | runtime (live data) | 1/649 |
@@ -139,7 +139,7 @@ Activity class: support=470, primary=179
 | stock_sms | chain | support | 4.0 Deliver Physical P | 1 | 0 | meta |
 | account_peppol | network | support | 9.0 Manage Financial R | 9 | 7 | meta+code+fe+integ |
 | event | network | primary | 3.0 Market and Sell Pr | 8 | 13 | meta+code+fe+integ |
-| event_booth | network | primary | 3.0 Market and Sell Pr | 3 | 0 | meta |
+| event_booth | network | primary | 3.0 Market and Sell Pr | 5 | 0 | meta+code |
 | event_booth_sale | network | primary | 3.0 Market and Sell Pr | 2 | 2 | meta+fe |
 | event_crm | network | primary | 3.0 Market and Sell Pr | 2 | 0 | meta |
 | event_crm_sale | network | primary | 3.0 Market and Sell Pr | 0 | 0 | meta |
@@ -605,7 +605,7 @@ Activity class: support=470, primary=179
 | onboarding | support | support | 13.0 Develop and Manag | 4 | 1 | meta+code+fe |
 | partner_autocomplete | support | support | 13.0 Develop and Manag | 1 | 5 | meta+fe+integ |
 | phone_validation | support | support | 8.0 Manage Information | 6 | 0 | meta+code |
-| privacy_lookup | support | support | 13.0 Develop and Manag | 3 | 0 | meta |
+| privacy_lookup | support | support | 13.0 Develop and Manag | 4 | 0 | meta+code |
 | product | support | support | 2.0 Develop and Manage | 6 | 15 | meta+code+fe |
 | product_email_template | support | support | 2.0 Develop and Manage | 0 | 0 | meta |
 | product_margin | support | support | 2.0 Develop and Manage | 1 | 0 | meta |
