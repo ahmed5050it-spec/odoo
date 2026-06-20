@@ -1,0 +1,235 @@
+{
+  "subsystem": "link_tracker",
+  "evidence": {
+    "manifest": {
+      "name": "Link Tracker",
+      "category": "Marketing",
+      "depends": [
+        "utm",
+        "mail"
+      ],
+      "auto_install": false,
+      "application": false
+    },
+    "models": [
+      {
+        "_name": "link.tracker",
+        "_description": "Link Tracker",
+        "fields": 14,
+        "relations": [
+          "link_code_ids->link.tracker.code",
+          "link_click_ids->link.tracker.click",
+          "campaign_id->utm.campaign",
+          "medium_id->utm.medium",
+          "source_id->utm.source"
+        ]
+      },
+      {
+        "_name": "link.tracker.click",
+        "_description": "Link Tracker Click",
+        "fields": 4,
+        "relations": [
+          "link_id->link.tracker",
+          "campaign_id->utm.campaign",
+          "country_id->res.country"
+        ]
+      },
+      {
+        "_name": "link.tracker.code",
+        "_description": "Link Tracker Code",
+        "fields": 2,
+        "relations": [
+          "link_id->link.tracker"
+        ]
+      }
+    ],
+    "routes": [
+      {
+        "paths": [
+          "/r/<string:code>"
+        ],
+        "auth": "public",
+        "type": "http"
+      }
+    ],
+    "security": {
+      "access_rules": 9,
+      "record_rules": 0,
+      "groups": 0
+    },
+    "views": {
+      "form": 2,
+      "list": 2,
+      "search": 2,
+      "graph": 2
+    },
+    "behavioral_notes": [
+      {
+        "element": "link.tracker.code._get_random_code_strings / link.tracker.create",
+        "observation": "Short-code generation: create() on link.tracker calls _get_random_code_strings to mint a random ascii_letters+digits code (min length 3, LINK_TRACKER_MIN_CODE_LENGTH); on collision it widens the size and retries, then sudo-creates a link.tracker.code with a unique('code') SQL constraint. The short_url is computed as base_url + '/r/' + code. Not visible in metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "controller.full_url_redirect (/r/<code>)",
+        "observation": "The public http route /r/<code> (controller/main.py, website=True) is the click-tracking entrypoint: it resolves the code via link.tracker.get_url_from_code and issues a 301 redirect to redirected_url (or 404 NotFound). Before redirecting it calls link.tracker.click.add_click, CREATING a link.tracker.click row as side-effect. This route lives in controller/main.py so the facts extractor (models-only) reported route_count=0; the route is real.",
+        "source": "code-read"
+      },
+      {
+        "element": "link.tracker.click.add_click + _prepare_click_values_from_route (GeoIP)",
+        "observation": "GeoIP on click: the controller passes request.geoip.country_code and request.httprequest.remote_addr; _prepare_click_values_from_route resolves the country_code to a res.country (country_id) and stores ip. is_a_bot() gates logging so bot/crawler hits do NOT create clicks. count on link.tracker is then recomputed (stored, @api.depends on link_click_ids).",
+        "source": "code-read"
+      },
+      {
+        "element": "link.tracker._compute_redirected_url (UTM attribution)",
+        "observation": "UTM attribution: _compute_redirected_url appends the utm.mixin tracking_fields (campaign/medium/source names) as GET query parameters on the target URL, so the destination receives utm_* params. System param link_tracker.no_external_tracking restricts UTM injection to local (base-url) destinations only. campaign_id/medium_id/source_id use ondelete='set null'.",
+        "source": "code-read"
+      },
+      {
+        "element": "tools/html.py + mail.render.mixin.convert_links",
+        "observation": "Mass-mailing integration: convert_links was moved to mail.render.mixin and raises NotImplementedError on link.tracker. tools/html.find_links_with_urls_and_labels walks an lxml tree, makes <a href> absolute and extracts a label, so every link in a mailing body can be wrapped into a tracked short link carrying UTMs. link.tracker.click.campaign_id is a stored related of link_id.campaign_id, and utm.campaign gains a click_count aggregate.",
+        "source": "code-read"
+      },
+      {
+        "element": "backend views (link_tracker_views.xml)",
+        "observation": "No OWL/JS frontend assets (extract_frontend: present=false). UI is server-rendered backend views only: list/form/graph for link.tracker and a pie/graph 'Click Statistics' for link.tracker.click (default grouped by country). Menu is parented under utm.menu_link_tracker_root and gated to base.group_no_one (debug/technical users).",
+        "source": "static"
+      }
+    ],
+    "frontend": {
+      "present": false,
+      "js_files": 0,
+      "xml_templates": 0,
+      "owl_components": [],
+      "registry_adds": [],
+      "patches": [],
+      "services": [],
+      "asset_bundles": {}
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": false,
+      "endpoints": [],
+      "files": []
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    }
+  },
+  "it_architecture": {
+    "application": "link_tracker (Link Tracker / short-link click-tracking application component)",
+    "software_services": [
+      "/r/<code> (public redirect + click capture)"
+    ],
+    "data_objects": [
+      "link.tracker",
+      "link.tracker.click",
+      "link.tracker.code"
+    ],
+    "logical_data_erm": [
+      "link.tracker.code -> link.tracker",
+      "link.tracker.click -> link.tracker",
+      "link.tracker -> utm.campaign",
+      "link.tracker.click -> res.country"
+    ],
+    "information_flows": [
+      "depends: utm, mail",
+      "side-effect: GET /r/<code> -> link.tracker.click.add_click creates link.tracker.click (with GeoIP country) -> 301 redirect to redirected_url",
+      "side-effect: link.tracker.create -> link.tracker.code (random unique short code)",
+      "side-effect: redirected_url carries utm_* GET params (UTM attribution) to the destination",
+      "extends: utm.campaign.click_count aggregates link.tracker.click"
+    ],
+    "frontend_components": []
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Generate Tracked Short Links (URL shortening)",
+      "Capture & Count Link Clicks",
+      "Attribute Clicks to UTM Campaign/Medium/Source",
+      "Geo-locate Clicks (country)"
+    ],
+    "value_streams": [
+      "Click-to-Insight: shorten URL -> distribute -> visitor hits /r/<code> -> click recorded (GeoIP + UTM) -> campaign click analytics"
+    ],
+    "information_concepts": [
+      "link.tracker (tracked short link)",
+      "link.tracker.click (recorded click event)",
+      "link.tracker.code (short URL code)",
+      "utm.campaign (marketing campaign)"
+    ],
+    "organization": [],
+    "products": [],
+    "policies": [
+      "9 model-access ACLs (user read-only; public no-access; system full); link.tracker.code unique('code') constraint; bot clicks excluded via is_a_bot(); link_tracker.no_external_tracking restricts external UTM injection"
+    ],
+    "stakeholders": [
+      "Marketer (campaign owner, res.users)",
+      "Link visitor (anonymous public)",
+      "mass_mailing / utm subsystems (consumers)"
+    ],
+    "strategy": null,
+    "metrics": [
+      "link.tracker.count (# clicks per link)",
+      "utm.campaign.click_count (clicks per campaign)",
+      "Click Statistics graph grouped by country / link"
+    ]
+  },
+  "classification": {
+    "value_model": "support",
+    "activity_class": "support",
+    "apqc_category": "3.0 Market and Sell Products and Services (3.4 Measure and evaluate marketing performance)",
+    "rationale": "link_tracker is cross-cutting click-tracking infrastructure, not a primary value-creating activity. It has no standalone primary flow: it is consumed by marketing/mass_mailing/utm to measure reach, so it is a support activity (Stabell & Fjeldstad 'support'). Its business contribution is marketing measurement, mapping to APQC 3.0 Market and Sell, specifically 3.4 measuring marketing performance (clicks, UTM attribution, geo). Depends only on utm + mail; exposes a single public redirect route rather than an operational document chain. strategy=null (human)."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "URL shortening with auto-generated unique short codes (/r/<code>)",
+      "click capture on redirect (IP + GeoIP country, bot filtering)",
+      "UTM tagging of destination URLs (campaign/medium/source)",
+      "click counters on links and per-campaign aggregation",
+      "auto-conversion of mailing links into tracked short links (via mail.render.mixin)"
+    ],
+    "typical_fits": [
+      "tracking clicks on links inside email campaigns / mass_mailing",
+      "measuring UTM campaign reach by country",
+      "shortening any backend URL and counting visits"
+    ],
+    "common_gaps": [
+      "no per-click timestamp/visitor-session model beyond ip+country (limited attribution depth)",
+      "no out-of-box public dashboard (backend graph views only; menu hidden behind group_no_one)",
+      "city/region/device/referrer geo-analytics require customization",
+      "deduplication / unique-visitor counting not provided (raw click rows)"
+    ],
+    "drive_hints": [
+      "odoo shell: env['link.tracker'].create({'url': 'https://odoo.com'}).short_url",
+      "curl -i http://localhost:8069/r/<code>  # expect 301 + a new link.tracker.click row",
+      "odoo shell: env['link.tracker.click'].search([], limit=5).mapped(('link_id.short_url','country_id.name'))"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Exact set of utm.mixin tracking_fields injected as utm_* params at runtime.",
+    "How mass_mailing/website call search_or_create + convert_links to wrap body links into trackers.",
+    "Whether GeoIP DB is provisioned in this deployment (request.geoip may be empty -> country_id false)."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/link_tracker.facts.json",
+    "tools": [
+      "code-read",
+      "extract_frontend.py",
+      "extract_module.py",
+      "extract_runtime.sh",
+      "run-odoo (odoo shell)"
+    ],
+    "odoo_version": "19.0"
+  }
+}

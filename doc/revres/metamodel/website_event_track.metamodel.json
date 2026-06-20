@@ -1,0 +1,379 @@
+{
+  "subsystem": "website_event_track",
+  "evidence": {
+    "manifest": {
+      "name": "Advanced Events",
+      "category": "Marketing",
+      "depends": [
+        "website_event"
+      ],
+      "auto_install": false,
+      "application": false
+    },
+    "models": [
+      {
+        "_name": "event.track",
+        "_description": "Event Track",
+        "fields": 53,
+        "relations": [
+          "event_id->event.event",
+          "stage_id->event.track.stage",
+          "tag_ids->event.track.tag",
+          "location_id->event.track.location",
+          "partner_id->res.partner",
+          "user_id->res.users",
+          "event_track_visitor_ids->event.track.visitor",
+          "wishlist_visitor_ids->website.visitor"
+        ]
+      },
+      {
+        "_name": "event.track.stage",
+        "_description": "Event Track Stage",
+        "fields": 12,
+        "relations": [
+          "mail_template_id->mail.template"
+        ]
+      },
+      {
+        "_name": "event.track.tag",
+        "_description": "Event Track Tag",
+        "fields": 5,
+        "relations": [
+          "track_ids->event.track",
+          "category_id->event.track.tag.category"
+        ]
+      },
+      {
+        "_name": "event.track.tag.category",
+        "_description": "Event Track Tag Category",
+        "fields": 3,
+        "relations": [
+          "tag_ids->event.track.tag"
+        ]
+      },
+      {
+        "_name": "event.track.location",
+        "_description": "Event Track Location",
+        "fields": 2,
+        "relations": []
+      },
+      {
+        "_name": "event.track.visitor",
+        "_description": "Track / Visitor Link",
+        "fields": 5,
+        "relations": [
+          "track_id->event.track",
+          "visitor_id->website.visitor",
+          "partner_id->res.partner"
+        ]
+      }
+    ],
+    "routes": [
+      {
+        "paths": [
+          "/event/<model(\"event.event\"):event>/track",
+          "/event/<model(\"event.event\"):event>/track/tag/<model(\"event.track.tag\"):tag>"
+        ],
+        "auth": "public",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/event/<model(\"event.event\"):event>/agenda"
+        ],
+        "auth": "public",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/event/<model(\"event.event\"):event>/track/<model(\"event.track\"):track>"
+        ],
+        "auth": "public",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/event/track/toggle_reminder"
+        ],
+        "auth": "public",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/event/track/send_email_reminder"
+        ],
+        "auth": "public",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/event/<model(\"event.event\"):event>/track_proposal",
+          "/event/<model(\"event.event\"):event>/track_proposal/post"
+        ],
+        "auth": "public",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/event/track_tag/search_read"
+        ],
+        "auth": "public",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/event/<model(\"event.event\"):event>/track/<model(\"event.track\"):track>/ics"
+        ],
+        "auth": "public",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/event/manifest.webmanifest",
+          "/event/service-worker.js",
+          "/event/offline"
+        ],
+        "auth": "public",
+        "type": "http"
+      }
+    ],
+    "security": {
+      "access_rules": 19,
+      "record_rules": 2,
+      "groups": 0
+    },
+    "views": {
+      "form": 8,
+      "list": 7,
+      "kanban": 2,
+      "search": 3,
+      "pivot": 0,
+      "graph": 1,
+      "calendar": 1,
+      "activity": 0
+    },
+    "frontend": {
+      "present": true,
+      "js_files": 9,
+      "xml_templates": 6,
+      "owl_components": [
+        "WebsiteEventTrackProposalFormTagsWrapper"
+      ],
+      "registry_adds": [
+        "public.interactions:website_event_track.website_event_pwa",
+        "public.interactions:website_event_track.website_event_track",
+        "public.interactions:website_event_track.website_event_track_proposal_form",
+        "public.interactions:website_event_track.website_event_track_proposal_form_tags",
+        "public.interactions:website_event_track.website_event_track_reminder",
+        "public.interactions:website_event_track.website_event_track_timer"
+      ],
+      "patches": [
+        "SearchBar.prototype"
+      ],
+      "services": [],
+      "asset_bundles": {
+        "web.assets_frontend": 10,
+        "web.assets_tests": 1,
+        "website.website_builder_assets": 1
+      }
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": false,
+      "endpoints": [
+        "https://www.google.com/calendar/render?"
+      ],
+      "files": [
+        "models/event_track.py"
+      ]
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    },
+    "behavioral_notes": [
+      {
+        "element": "event.track.stage + event.track._synchronize_with_stage / write / create",
+        "observation": "event.track is a kanban-pipelined talk record (stage_id default = first event.track.stage, group_expand shows all stages, kanban_state grey/red/green). Moving a track to a stage runs _synchronize_with_stage: a stage flagged is_fully_accessible auto-sets track.is_published=True (publishes the talk to the public agenda), while is_cancel sets is_published=False. On event.track.stage, is_visible_in_agenda / is_fully_accessible are computed-stored and mutually constrained (cancel forces both False; fully_accessible implies visible). So the stage a track sits in, not a manual publish toggle, drives whether the talk appears on the website. None of this stage->publish coupling is visible in metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "event.track.create -> chatter announcement + _track_template stage emails",
+        "observation": "Creating a track posts a 'website_event_track.event_track_template_new' message on the parent event.event (subtype mt_event_track) announcing the new talk, then synchronizes the stage. On stage change, _track_template attaches the stage's mail_template_id so an email is sent to the speaker/contact when a track reaches a stage, and _track_subtype emits mt_track_blocked / mt_track_ready subtypes on kanban_state red/green. _message_post_after_hook even back-fills partner_id on the track from a contact created via the chatter Suggested Recipients. These mail/automation side-effects are pure code behavior.",
+        "source": "code-read"
+      },
+      {
+        "element": "event.track.visitor + /event/track/toggle_reminder (wishlist/favorite)",
+        "observation": "Attendee 'favorite'/reminder is stored in event.track.visitor (track_id + visitor_id/partner_id + is_wishlisted + is_blacklisted), one row per (track, website.visitor). The public jsonrpc /event/track/toggle_reminder route calls track._get_event_track_visitors(force_create=...) which resolves the current website.visitor (_get_visitor_from_request, creating one for public users) and flips is_wishlisted; for a wishlisted_by_default 'key track' it instead flips is_blacklisted (key tracks cannot be un-favorited, only their reminder suppressed). event.track._compute_is_reminder_on / _compute_wishlist_visitor_ids derive per-visitor reminder state and aggregate wishlist counts. This personalized engagement layer is invisible to metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "EventTrackController agenda/list/proposal routes + iCal/Google Calendar",
+        "observation": "The public controller exposes the talks experience: /event/<id>/track renders a searchable, tag-faceted, day-grouped talk list; /event/<id>/agenda builds a per-location timetable by slicing the day into 15-minute slots and assigning each track a rowspan = duration/15min (_prepare_calendar_values); /event/<id>/track/<track> renders the talk page with _get_track_suggestions (live-first, then start-time, wishlist, tag/location match, random tie-break). _get_event_tracks_domain only shows published tracks unless the user is in event.group_event_registration_desk (which also sees is_visible_in_agenda preview stages). /event/<id>/track_proposal/post lets an anonymous visitor sudo-create a draft event.track (talk submission) with validated tags and a contact/partner. event.track._get_track_calendar_urls emits an outbound https://www.google.com/calendar/render? add-to-calendar link and a /event/<id>/track/<track>/ics iCal file (vobject). All controller behavior, not metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "frontend (OWL/JS + PWA service worker)",
+        "observation": "9 JS files / 6 XML templates implement the talks UX as website public.interactions (website_event_track talk page, website_event_track_proposal_form + _tags, website_event_track_reminder favorite toggle, website_event_track_timer countdown, website_event_pwa) plus a SearchBar.prototype patch and one OWL component WebsiteEventTrackProposalFormTagsWrapper; asset bundles ['web.assets_frontend','web.assets_tests','website.website_builder_assets']. The module also ships a Progressive Web App: /event/manifest.webmanifest, /event/service-worker.js (offline caching via idb-keyval) and /event/offline let attendees install the event agenda as an app. Entirely client-side / static, outside Python metadata.",
+        "source": "static"
+      }
+    ]
+  },
+  "it_architecture": {
+    "application": "website_event_track (Advanced Events tracks/agenda website component)",
+    "software_services": [
+      "/event/<event>/track (+ /track/tag/<tag>) -- public talk list with search & tag facets",
+      "/event/<event>/agenda -- per-location timetable (15-min slot grid)",
+      "/event/<event>/track/<track> -- public talk page with suggestions",
+      "/event/track/toggle_reminder (jsonrpc) -- favorite/wishlist a talk",
+      "/event/track/send_email_reminder (jsonrpc) -- email a talk reminder",
+      "/event/<event>/track_proposal (+ /post) -- submit a talk proposal",
+      "/event/track_tag/search_read (jsonrpc) -- public tag lookup for proposal form",
+      "/event/<event>/track/<track>/ics -- per-talk iCal download",
+      "/event/manifest.webmanifest, /event/service-worker.js, /event/offline -- agenda PWA"
+    ],
+    "data_objects": [
+      "event.track",
+      "event.track.stage",
+      "event.track.tag",
+      "event.track.tag.category",
+      "event.track.location",
+      "event.track.visitor"
+    ],
+    "logical_data_erm": [
+      "event.track -> event.event",
+      "event.track -> event.track.stage",
+      "event.track -> event.track.tag (many2many)",
+      "event.track -> event.track.location",
+      "event.track -> res.partner (speaker/contact)",
+      "event.track.visitor -> event.track / website.visitor / res.partner",
+      "event.track.tag -> event.track.tag.category",
+      "event.event -> event.track (track_ids, track_count)"
+    ],
+    "information_flows": [
+      "depends: website_event (-> event, website, website_partner, website_mail, html_builder)",
+      "side-effect: event.track stage move (is_fully_accessible) -> is_published=True (talk appears on public agenda); is_cancel -> unpublished",
+      "side-effect: event.track.create -> chatter announcement on event.event + per-stage mail_template_id emails to speaker",
+      "side-effect: /event/track/toggle_reminder -> event.track.visitor.sudo().create/write (is_wishlisted/is_blacklisted) for the current website.visitor",
+      "side-effect: /event/<id>/track_proposal/post -> event.track.sudo().create (draft talk submission from anonymous visitor)",
+      "outbound: event.track._get_track_calendar_urls -> https://www.google.com/calendar/render (add-to-calendar) + /event/<id>/track/<track>/ics iCal"
+    ],
+    "frontend_components": [
+      "WebsiteEventTrackProposalFormTagsWrapper"
+    ]
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Manage Talks / Tracks (kanban pipeline with stages)",
+      "Publish Talks & Agenda to the Website",
+      "Online Agenda / Timetable (per location, time-slotted)",
+      "Talk Proposal Intake (call for papers)",
+      "Attendee Talk Wishlist / Favorites & Reminders",
+      "Speaker Management & Tagging",
+      "Event Agenda Progressive Web App (offline)"
+    ],
+    "value_streams": [
+      "Propose-to-Publish: visitor submits talk proposal -> track in pipeline stage -> stage marked fully-accessible auto-publishes -> talk visible on agenda",
+      "Engage-the-Agenda: attendee browses talk list/agenda -> wishlists talks (event.track.visitor) -> receives reminders / add-to-calendar"
+    ],
+    "information_concepts": [
+      "event.track (talk)",
+      "event.track.stage",
+      "event.track.tag / event.track.tag.category",
+      "event.track.location",
+      "event.track.visitor (wishlist link)",
+      "res.partner (speaker)",
+      "website.visitor (attendee)"
+    ],
+    "organization": [
+      "event.group_event_user (manage tracks; reused from event)",
+      "event.group_event_manager (full track admin; reused from event)",
+      "event.group_event_registration_desk (agenda preview of visible-in-agenda stages)",
+      "base.group_public / base.group_portal (read-only frontend access)"
+    ],
+    "products": [],
+    "policies": [
+      "2 record rules + ir.model.access.csv: public/portal get read-only on event.track and event.track.tag; create/write reserved to event_user/event_manager",
+      "publish-by-stage policy: is_fully_accessible stage auto-publishes a talk, is_cancel unpublishes (no manual publish gate)",
+      "agenda visibility policy: only is_published tracks shown to visitors; registration-desk users additionally see is_visible_in_agenda preview stages",
+      "talk-proposal ACL: only existing/valid event.track.tag ids accepted; can_access_from_current_website guard on the proposal POST"
+    ],
+    "stakeholders": [
+      "Attendee / Website Visitor (browses & wishlists talks)",
+      "Speaker / Proposer (res.partner submitting a talk)",
+      "Event Organizer / Track Manager (event.group_event_user/manager)",
+      "Registration Desk operator (event.group_event_registration_desk)"
+    ],
+    "strategy": null,
+    "metrics": [
+      "event.track.wishlist_visitor_count (# attendees who favorited a talk)",
+      "website.visitor.event_track_wishlisted_count (# talks a visitor wishlisted)",
+      "event.event.track_count (# non-cancelled talks per event)",
+      "track kanban pipeline distribution by stage (graph/kanban views)"
+    ]
+  },
+  "classification": {
+    "value_model": "network",
+    "activity_class": "primary",
+    "apqc_category": "3.0 Market and Sell Products and Services",
+    "rationale": "website_event_track extends the event value network (Stabell & Fjeldstad mediating technology) with the agenda/talks engagement layer. It does not transform inputs into a delivered good (chain) nor solve cases one-by-one (shop): its reason to exist is to enrich the organizer<->attendee mediation by publishing a programme of talks, operating the public agenda/timetable, and letting attendees self-curate it (wishlist/favorite via event.track.visitor, reminders, add-to-calendar, install-as-PWA) while also crowdsourcing content from an open population of speakers via the talk-proposal (call-for-papers) intake. The economic logic is network promotion and audience matching around the event programme, not sequential fulfillment. activity_class is primary because publishing the agenda and driving attendee engagement is a customer-facing demand/marketing motion layered on the marketed event, not back-office support. apqc_category 3.0 Market and Sell is the closest PCF home, inherited from its parents event and website_event: surfacing talks and capturing attendee interest/proposals is part of the public market/sell motion around the event; post-sale service (6.0) is not its concern."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "talk/track records with a configurable kanban stage pipeline (event.track.stage) and color/priority/kanban-state",
+      "auto publish-by-stage: 'fully accessible' stages publish talks to the public agenda, 'cancel' stages unpublish",
+      "public talk list with content search and multi-category tag faceting (/event/<id>/track)",
+      "per-location, time-slotted online agenda/timetable (/event/<id>/agenda)",
+      "individual talk pages with related-talk suggestions, speaker bio, CTA 'magic button', and live timer",
+      "attendee wishlist/favorite + reminders (event.track.visitor) with key-track default-wishlist support",
+      "talk proposal / call-for-papers intake from the website (/event/<id>/track_proposal)",
+      "add-to-calendar (Google Calendar + per-talk iCal) and event-agenda Progressive Web App (offline)"
+    ],
+    "typical_fits": [
+      "conferences / summits publishing a multi-track agenda with speakers and rooms",
+      "events running an open call for talk proposals before finalising the programme",
+      "attendees building a personal schedule (favorites) and getting talk reminders / calendar entries"
+    ],
+    "common_gaps": [
+      "live video / streaming rooms, in-talk chat and quizzes (needs website_event_track_live / _quiz)",
+      "paid or gated talk access / per-track ticketing",
+      "bespoke agenda layouts or scheduling logic beyond the 15-minute slot grid",
+      "advanced speaker portals / proposal review workflows beyond the single proposal form + kanban stages"
+    ],
+    "drive_hints": [
+      "odoo shell: env['event.track'].search([], limit=5).mapped(('name','stage_id','is_published','wishlist_visitor_count'))",
+      "odoo shell: env['event.track.stage'].search([]).mapped(('name','is_visible_in_agenda','is_fully_accessible','is_cancel'))",
+      "odoo shell: env['event.track.visitor'].search([('is_wishlisted','=',True)], limit=5).mapped(('track_id','visitor_id'))",
+      "curl -s 'http://localhost:8069/event/1/agenda' | head  (public timetable; replace 1 with a published event id)",
+      "curl -s 'http://localhost:8069/event/manifest.webmanifest'  (agenda PWA manifest)"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "stakeholders": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Exact downstream behavior once website_event_track_live / website_event_track_quiz are installed (live rooms, CTA timing, quiz scoring) on top of these tracks.",
+    "How the publish-by-stage automation interacts with manual is_published toggles when an organizer overrides a stage's default.",
+    "Runtime row counts for event.track and event.track.visitor (wishlist adoption) were not captured (extract_runtime.sh not run)."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/website_event_track.facts.json",
+    "tools": [
+      "code-read",
+      "extract_frontend.py",
+      "extract_module.py",
+      "Grep",
+      "Read"
+    ],
+    "odoo_version": "19.0"
+  }
+}

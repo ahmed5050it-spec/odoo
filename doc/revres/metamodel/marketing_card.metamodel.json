@@ -1,0 +1,259 @@
+{
+  "subsystem": "marketing_card",
+  "evidence": {
+    "manifest": {
+      "name": "Marketing Card",
+      "category": "Marketing/Marketing Card",
+      "depends": [
+        "link_tracker",
+        "mass_mailing",
+        "website"
+      ],
+      "auto_install": false,
+      "application": true
+    },
+    "models": [
+      {
+        "_name": "card.campaign",
+        "_description": "Marketing Card Campaign",
+        "fields": 44,
+        "relations": [
+          "card_template_id->card.template",
+          "card_ids->card.card",
+          "mailing_ids->mailing.mailing",
+          "link_tracker_id->link.tracker",
+          "tag_ids->card.campaign.tag",
+          "user_id->res.users"
+        ]
+      },
+      {
+        "_name": "card.card",
+        "_description": "Marketing Card",
+        "fields": 7,
+        "relations": [
+          "campaign_id->card.campaign"
+        ]
+      },
+      {
+        "_name": "card.template",
+        "_description": "Marketing Card Template",
+        "fields": 7,
+        "relations": []
+      },
+      {
+        "_name": "card.campaign.tag",
+        "_description": "Marketing Card Campaign Tag",
+        "fields": 2,
+        "relations": []
+      }
+    ],
+    "routes": [
+      {
+        "paths": [
+          "/cards/<string:card_slug>/card.jpg",
+          "/cards/<int:card_id>/card.jpg"
+        ],
+        "auth": "public",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/cards/<string:card_slug>/preview",
+          "/cards/<int:card_id>/preview"
+        ],
+        "auth": "public",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/cards/<string:card_slug>/redirect",
+          "/cards/<int:card_id>/redirect"
+        ],
+        "auth": "public",
+        "type": "http"
+      }
+    ],
+    "security": {
+      "access_rules": 9,
+      "record_rules": 2,
+      "groups": 2
+    },
+    "views": {
+      "form": 2,
+      "list": 2,
+      "kanban": 1,
+      "search": 2
+    },
+    "behavioral_notes": [
+      {
+        "element": "card.campaign._get_image_b64 / _get_render_fields",
+        "observation": "Renders the QWeb body_html (related to card.template.body) per target record via mail.render.mixin, then rasterizes it to a JPEG with ir.actions.report._run_wkhtmltoimage at TEMPLATE_DIMENSIONS (600x315, ~2:1 OpenGraph ratio). Dynamic content fields (content_header/section/image paths) are resolved against the record at render time. The image is a generated artifact, not stored design data; _unrestricted_rendering=True trusts the stored body. Not visible in metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "card.card (per-recipient share card + token)",
+        "observation": "card.card is a unique (campaign_id, res_id) mapping = one shareable card per 'sharer'/record. URLs are built by _get_path() using ir.http._slug(self) producing /cards/<slug>/... tokens; card.campaign._update_cards batch-creates and renders missing cards (batches of 100, optional auto_commit). share_status (visited/shared) tracks engagement; _gc_card autovacuum unlinks cards after marketing_card.card_image_cleanup_interval_days (60) since social networks cache images. Not visible in metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "controllers/marketing_card.py (social preview / OpenGraph routes)",
+        "observation": "Three public http routes. /card.jpg serves the rendered JPEG and, when the visitor user-agent is a social crawler (Facebot, Twitterbot, LinkedInBot, WhatsApp, Pinterest...), flips share_status to 'shared'. /preview renders the share page and marks 'visited'. /redirect returns an OpenGraph meta-tag page (card_campaign_crawler template) to crawlers but redirects humans to the link.tracker short_url / target_url. This crawler-vs-human branching is the social-amplification mechanism. Not visible in metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "card.campaign.action_share / mailing.mailing (campaign send)",
+        "observation": "action_share opens a mailing.mailing prefilled with the campaign, model and a default body embedding the card preview image+link. mailing.mailing is extended so its model is forced to the campaign res_model, recipients are constrained to records that have a card (_get_recipients_domain), and action_put_in_queue/action_send_mail refuse to send while card_requires_sync_count>0 (cards out of date). action_update_cards renders the batch before sending. card.campaign.create auto-provisions a link.tracker (utm source) for click measurement. Not visible in metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "frontend (static)",
+        "observation": "No OWL/JS frontend: 0 js files, 0 xml OWL templates, 0 registry adds/patches; only asset bundle web.assets_backend (1). The public-facing surface is server-rendered QWeb (card preview, crawler OpenGraph pages) plus the wkhtmltoimage-rasterized card, not a client OWL app.",
+        "source": "static"
+      }
+    ],
+    "frontend": {
+      "present": true,
+      "js_files": 0,
+      "xml_templates": 0,
+      "owl_components": [],
+      "registry_adds": [],
+      "patches": [],
+      "services": [],
+      "asset_bundles": {
+        "web.assets_backend": 1
+      }
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": false,
+      "endpoints": [],
+      "files": []
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    }
+  },
+  "it_architecture": {
+    "application": "marketing_card (Marketing Card application component)",
+    "software_services": [
+      "/cards/<card>/card.jpg",
+      "/cards/<card>/preview",
+      "/cards/<card>/redirect"
+    ],
+    "data_objects": [
+      "card.campaign",
+      "card.card",
+      "card.template",
+      "card.campaign.tag"
+    ],
+    "logical_data_erm": [
+      "card.campaign -> card.template",
+      "card.card -> card.campaign",
+      "card.campaign -> link.tracker",
+      "card.campaign -> mailing.mailing"
+    ],
+    "information_flows": [
+      "depends: link_tracker, mass_mailing, website",
+      "side-effect: card.campaign._update_cards -> renders card.template body to per-record card.card JPEG (wkhtmltoimage)",
+      "side-effect: /card.jpg + /redirect crawler hits -> card.card.share_status shared/visited + link.tracker click counts",
+      "side-effect: action_share -> mailing.mailing send constrained to records with synced cards"
+    ],
+    "frontend_components": []
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Design Dynamic Share Cards (template + dynamic content)",
+      "Run Marketing Card Campaigns",
+      "Distribute Per-Recipient Share Cards (mass mailing)",
+      "Measure Share/Click Amplification"
+    ],
+    "value_streams": [
+      "Amplify-Reach: design card -> generate per-recipient cards -> mail to advocates -> advocates share -> crawlers fetch OpenGraph preview -> clicks tracked"
+    ],
+    "information_concepts": [
+      "card.campaign",
+      "card.card",
+      "card.template",
+      "card.campaign.tag"
+    ],
+    "organization": [
+      "marketing_card.marketing_card_group_user",
+      "marketing_card.marketing_card_group_manager"
+    ],
+    "products": [],
+    "policies": [
+      "2 record rules: own/responsible-scoped campaign visibility",
+      "_unrestricted_rendering=True: rendering trust delegated to card.template (base.group_system only)",
+      "card image autovacuum after marketing_card.card_image_cleanup_interval_days (60)"
+    ],
+    "stakeholders": [
+      "Marketing user (res.users / marketing_card groups)",
+      "Recipient/advocate (res.partner, event.track, event.booth, event.registration)",
+      "Social network audience (crawler + end clickers)"
+    ],
+    "strategy": null,
+    "metrics": [
+      "card_count, card_click_count, card_share_count (per campaign)",
+      "target_url_click_count (link.tracker)"
+    ]
+  },
+  "classification": {
+    "value_model": "network",
+    "activity_class": "support",
+    "apqc_category": "3.0 Market and Sell Products and Services",
+    "rationale": "marketing_card is a value-network (Stabell & Fjeldstad mediation logic): it does not transform inputs into a product (chain) nor match a buyer/seller per case (shop). Its purpose is to mediate and amplify connections between marketing advocates and a wider social audience - it issues a unique per-recipient share card (card.card with a slug token), recipients post it, and the OpenGraph crawler routes serve preview images that pull more viewers in. Value rises with network reach, measured by card_share_count/card_click_count and the link.tracker. It is a support activity for the 3.0 Market and Sell value system (3.4 marketing communications): a promotion/amplification tool, not the primary demand-to-order chain itself. depends on mass_mailing (distribution), link_tracker (UTM/click measurement) and website (public share/preview surface)."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "dynamic share-card templates with static + record-bound dynamic content",
+      "per-recipient card generation rasterized to OpenGraph-sized JPEG",
+      "public preview/redirect/image routes with social-crawler OpenGraph handling",
+      "campaign distribution via mass mailing with card-sync guardrails",
+      "share/visit/click tracking via card.card.share_status + link.tracker"
+    ],
+    "typical_fits": [
+      "event/partner promotion where advocates share a personalized card",
+      "campaigns over the hardcoded models (res.partner, event.track, event.booth, event.registration)",
+      "post suggestion + reward message + thank-you flow out of the box"
+    ],
+    "common_gaps": [
+      "supporting a new target model (selection is hardcoded in _get_model_selection)",
+      "card layout/design beyond the QWeb template fields and 600x315 ratio",
+      "extra social networks (crawler user-agent list is maintained in controller code)",
+      "deeper analytics beyond share/click counts"
+    ],
+    "drive_hints": [
+      "odoo shell: env['card.campaign'].search([], limit=5).mapped(('name','res_model','card_count','card_share_count'))",
+      "odoo shell: c = env['card.campaign'].search([], limit=1); c._fetch_or_create_preview_card()._get_path('preview')",
+      "curl -A 'Twitterbot' http://localhost:8069/cards/1/redirect  (returns OpenGraph crawler page, marks shared)"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Exact QWeb-to-image pipeline robustness (wkhtmltoimage availability) in target deployments.",
+    "Whether the hardcoded res_model selection is extended by other installed modules at runtime.",
+    "Real share-vs-visit conversion rates (no runtime row data captured)."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/marketing_card.facts.json",
+    "tools": [
+      "code-read",
+      "extract_frontend.py",
+      "extract_module.py",
+      "extract_runtime.sh",
+      "run-odoo (odoo shell)"
+    ],
+    "odoo_version": "19.0"
+  }
+}

@@ -1,0 +1,279 @@
+{
+  "subsystem": "stock_dropshipping",
+  "evidence": {
+    "manifest": {
+      "name": "Drop Shipping",
+      "category": "Supply Chain/Inventory",
+      "depends": [
+        "sale_purchase_stock"
+      ],
+      "auto_install": false,
+      "application": false
+    },
+    "models": [
+      {
+        "_name": null,
+        "_inherit": "stock.rule",
+        "_description": "(extension)",
+        "fields": 0,
+        "relations": []
+      },
+      {
+        "_name": null,
+        "_inherit": "stock.picking",
+        "_description": "(extension)",
+        "fields": 1,
+        "relations": []
+      },
+      {
+        "_name": null,
+        "_inherit": "stock.picking.type",
+        "_description": "(extension)",
+        "fields": 1,
+        "relations": []
+      },
+      {
+        "_name": null,
+        "_inherit": "purchase.order",
+        "_description": "(extension)",
+        "fields": 1,
+        "relations": []
+      },
+      {
+        "_name": null,
+        "_inherit": "purchase.order.line",
+        "_description": "(extension)",
+        "fields": 0,
+        "relations": []
+      },
+      {
+        "_name": null,
+        "_inherit": "sale.order",
+        "_description": "(extension)",
+        "fields": 1,
+        "relations": []
+      },
+      {
+        "_name": null,
+        "_inherit": "sale.order.line",
+        "_description": "(extension)",
+        "fields": 0,
+        "relations": []
+      },
+      {
+        "_name": null,
+        "_inherit": "res.company",
+        "_description": "(extension)",
+        "fields": 0,
+        "relations": []
+      },
+      {
+        "_name": null,
+        "_inherit": "stock.lot",
+        "_description": "(extension)",
+        "fields": 0,
+        "relations": []
+      },
+      {
+        "_name": null,
+        "_inherit": "product.product",
+        "_description": "(extension)",
+        "fields": 0,
+        "relations": []
+      },
+      {
+        "_name": null,
+        "_inherit": "stock.replenish.mixin",
+        "_description": "(extension)",
+        "fields": 0,
+        "relations": []
+      }
+    ],
+    "routes": [],
+    "security": {
+      "access_rules": 0,
+      "record_rules": 0,
+      "groups": 0
+    },
+    "views": {
+      "form": 0,
+      "list": 0,
+      "tree": 0,
+      "kanban": 0,
+      "search": 0,
+      "pivot": 0,
+      "graph": 0,
+      "calendar": 0,
+      "activity": 0
+    },
+    "behavioral_notes": [
+      {
+        "element": "stock_dropshipping.route_drop_shipping + res.company._create_dropship_rule",
+        "observation": "The module owns no _name model; its core artifact is a procurement route. _create_dropship_rule() builds a stock.rule with action='buy', location_src_id=Suppliers (usage='supplier'), location_dest_id=Customers (usage='customer'), procure_method='make_to_stock', on a 'dropship' picking.type. This single buy-rule from supplier directly to customer IS dropshipping: demand on the sale order is satisfied by a purchase whose receipt is the delivery to the end customer, bypassing the warehouse. Route/rule/sequence/picking-type are created per company (functions in data/stock_data.xml + _create_per_company_*), not as static XML records.",
+        "source": "code-read"
+      },
+      {
+        "element": "sale.order.line._purchase_service_prepare_order_values",
+        "observation": "When a dropship operation type exists for the company, this override injects dest_address_id = order.partner_shipping_id and picking_type_id = the dropship type into the PO values. Effect: the auto-generated purchase order ships to the end customer's address (not the company warehouse), and StockRule._get_partner_id returns False for the dropship route so the buy move is not re-pointed at the vendor. This is the purchase<->sale<->stock wiring metadata cannot show.",
+        "source": "code-read"
+      },
+      {
+        "element": "sale.order.line._compute_is_mto",
+        "observation": "MTO (make-to-order) chaining: a SO line is forced is_mto=True when any pull rule on the product/category routes has a picking type whose default_location_src_id.usage=='supplier' and default_location_dest_id.usage=='customer' (i.e. the dropship rule). This links the customer demand directly to vendor procurement so confirming the order triggers a purchase rather than a warehouse pick.",
+        "source": "code-read"
+      },
+      {
+        "element": "stock.picking._compute_is_dropship + sale/purchase counters",
+        "observation": "is_dropship is computed (not stored input) from location usages: source supplier|company-less transit AND dest customer|company-less transit. SaleOrder._compute_picking_ids and PurchaseOrder._compute_incoming_picking_count then subtract dropship pickings from delivery_count/incoming_picking_count and expose them as a separate dropship_picking_count, so one physical move is reported once as a dropship rather than double-counted as both a receipt and a delivery.",
+        "source": "code-read"
+      },
+      {
+        "element": "purchase.order._is_dropshipped / _should_set_dest_address / _prepare_reference_vals",
+        "observation": "A PO is dropshipped when picking_type_id.code=='dropship'; that forces the vendor delivery address to be set and links the PO back to its originating sale.order (sale_ids) when exactly one SO is involved, giving traceability across the procure-to-deliver bridge. sale.order.line._get_qty_procurement also reads back the dropshipped PO-line quantities (handling kits) to compute delivered qty on the sale.",
+        "source": "code-read"
+      },
+      {
+        "element": "frontend (OWL/JS)",
+        "observation": "No frontend: extract_frontend.py reports present=false, 0 JS files, 0 OWL components, 0 registry adds, 0 patches, no asset bundles. The module ships only backend Python overrides, XML data, and 3 backend form-view extensions (sale/purchase/stock pickings) to surface the dropship smart-button.",
+        "source": "static"
+      }
+    ],
+    "frontend": {
+      "present": false,
+      "js_files": 0,
+      "xml_templates": 0,
+      "owl_components": [],
+      "registry_adds": [],
+      "patches": [],
+      "services": [],
+      "asset_bundles": {}
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": false,
+      "endpoints": [],
+      "files": []
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    }
+  },
+  "it_architecture": {
+    "application": "stock_dropshipping (Drop Shipping route/rule bridge component over purchase + sale + stock)",
+    "software_services": [],
+    "data_objects": [
+      "(none — 0 own _name models; extends stock.rule, stock.picking, stock.picking.type, purchase.order, purchase.order.line, sale.order, sale.order.line, res.company, stock.lot, product.product, stock.replenish.mixin)"
+    ],
+    "logical_data_erm": [
+      "stock.rule (action=buy) -> route_drop_shipping (stock.route)",
+      "stock.rule -> stock.picking.type (code=dropship)",
+      "stock.rule.location_src_id -> stock.location (Suppliers)",
+      "stock.rule.location_dest_id -> stock.location (Customers)",
+      "purchase.order.sale_ids -> sale.order (dropship back-link)",
+      "stock.picking (is_dropship) -> sale.order + purchase.order"
+    ],
+    "information_flows": [
+      "depends: sale_purchase_stock (the tri-module bridge: sale + purchase + stock)",
+      "side-effect: sale.order.action_confirm + dropship route -> purchase.order to vendor whose receipt delivers Suppliers->Customers directly (no warehouse step)",
+      "side-effect: sale.order.line._purchase_service_prepare_order_values -> PO dest_address_id = customer ship-to + picking_type_id = dropship",
+      "side-effect: stock.picking.is_dropship reclassifies one move as dropship, decrementing both delivery_count (sale) and incoming_picking_count (purchase)"
+    ],
+    "frontend_components": []
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Drop-Ship Fulfillment (vendor ships directly to customer)",
+      "Direct Procure-to-Deliver Routing (buy rule Suppliers->Customers)",
+      "Make-to-Order Vendor Chaining for sold products"
+    ],
+    "value_streams": [
+      "Dropship Order-to-Delivery: confirmed sale order -> auto purchase order to vendor -> vendor ships to customer address -> single dropship picking validates delivery + receipt"
+    ],
+    "information_concepts": [
+      "(no new entity — owns 0 _name models)",
+      "stock.rule (dropship buy rule, extended)",
+      "stock.route (route_drop_shipping data record)",
+      "stock.picking.type (dropship code, extended)",
+      "sale.order / sale.order.line (extended)",
+      "purchase.order / purchase.order.line (extended)",
+      "stock.picking (is_dropship, extended)"
+    ],
+    "organization": [
+      "(none — module defines 0 security groups; reuses sale/purchase/stock groups)"
+    ],
+    "products": [],
+    "policies": [
+      "Per-company auto-provisioning: res.company creates the dropship sequence, picking type and buy-rule on company setup and via create_missing_* / _create_per_company_* hooks; uninstall_hook tears it down",
+      "StockRule._get_rule_domain scopes dropship rule selection to the order's company_id"
+    ],
+    "stakeholders": [
+      "Customer (res.partner ship-to)",
+      "Vendor / Supplier (res.partner)",
+      "Salesperson (res.users)",
+      "Purchaser (res.users)"
+    ],
+    "strategy": null,
+    "metrics": [
+      "dropship_picking_count on sale.order and purchase.order (separates dropship moves from ordinary deliveries/receipts)"
+    ]
+  },
+  "classification": {
+    "value_model": "chain",
+    "activity_class": "support",
+    "apqc_category": "4.0 Deliver Physical Products",
+    "rationale": "stock_dropshipping is a logistics/procurement ROUTE bridge of the value chain rather than a primary activity in its own right: it owns no business entity (0 _name models) and adds a single stock.rule (action=buy, Suppliers->Customers) plus picking type that splices the Procure (4.2) and Deliver (4.4) inbound/outbound activities into one direct move. It is the BRIDGE wiring purchase <-> sale <-> stock so a vendor purchase fulfills a customer sale directly (no warehouse). Classed support because it is an inbound-logistics fulfillment policy layered on the sale (3.0) and purchase (4.2) activities; the chain value model is inherited from the procure-and-deliver flow it short-circuits."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "pre-configured Dropship operation type and Dropship procurement route",
+      "buy-rule routing demand from Suppliers directly to the customer location",
+      "automatic purchase order to the vendor with the customer ship-to address",
+      "MTO chaining linking sale order line demand to vendor procurement",
+      "single is_dropship picking counted once, with dropship smart-buttons on SO and PO",
+      "back-link from purchase.order to originating sale.order for traceability"
+    ],
+    "typical_fits": [
+      "set the Dropship route on a product / product category / sale order line",
+      "vendor-direct fulfillment without holding stock",
+      "multi-company: per-company route, picking type and rule auto-created"
+    ],
+    "common_gaps": [
+      "partial / multi-vendor split dropship for one sale line",
+      "landed costs and margin reconciliation on vendor-direct shipments",
+      "carrier/label and tracking integration for the vendor-shipped parcel",
+      "mixed orders splitting some lines to dropship and others to warehouse delivery"
+    ],
+    "drive_hints": [
+      "odoo shell: env.ref('stock_dropshipping.route_drop_shipping')  # the Dropship route",
+      "odoo shell: env['stock.rule'].search([('route_id','=',env.ref('stock_dropshipping.route_drop_shipping').id),('action','=','buy')]).read(['location_src_id','location_dest_id','picking_type_id'])",
+      "odoo shell: env['stock.picking.type'].search([('code','=','dropship')]).mapped(('name','default_location_src_id','default_location_dest_id'))",
+      "odoo shell: env['stock.picking'].search([('is_dropship','=',True)], limit=5).mapped(('name','sale_id','purchase_id'))"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Exact downstream chain when action_confirm fires on an MTO dropship line: order of PO creation vs. stock.move generation.",
+    "How partial vendor deliveries / backorders on a dropship PO reflect onto the sale order delivered quantity.",
+    "Behaviour of kits (BoM) whose components are individually dropshipped vs. shipped from stock."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/stock_dropshipping.facts.json",
+    "tools": [
+      "code-read",
+      "extract_frontend.py",
+      "extract_module.py"
+    ],
+    "odoo_version": "19.0"
+  }
+}
