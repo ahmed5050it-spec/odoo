@@ -1,0 +1,161 @@
+{
+  "subsystem": "stock_landed_costs",
+  "evidence": {
+    "manifest": {
+      "name": "WMS Landed Costs",
+      "category": "Supply Chain/Inventory",
+      "depends": [
+        "stock_account",
+        "purchase_stock"
+      ],
+      "auto_install": false,
+      "application": false
+    },
+    "models": [
+      {
+        "_name": "stock.landed.cost",
+        "_description": "Stock Landed Cost",
+        "fields": 14
+      },
+      {
+        "_name": "stock.landed.cost.lines",
+        "_description": "Stock Landed Cost Line",
+        "fields": 7
+      },
+      {
+        "_name": "stock.valuation.adjustment.lines",
+        "_description": "Valuation Adjustment Lines",
+        "fields": 12
+      }
+    ],
+    "routes": [],
+    "security": {
+      "access_rules": 3,
+      "record_rules": 1,
+      "groups": 0
+    },
+    "views": {
+      "form": 3,
+      "list": 4,
+      "tree": 0,
+      "kanban": 1,
+      "search": 1,
+      "pivot": 0,
+      "graph": 0,
+      "calendar": 0,
+      "activity": 0
+    },
+    "frontend": {
+      "present": false,
+      "js_files": 0,
+      "xml_templates": 0,
+      "owl_components": [],
+      "registry_adds": [],
+      "patches": [],
+      "services": [],
+      "asset_bundles": {}
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": false,
+      "endpoints": [],
+      "files": []
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    },
+    "behavioral_notes": [
+      {
+        "element": "thin module",
+        "observation": "3 models, 0 routes, 3207 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
+        "source": "ast"
+      }
+    ]
+  },
+  "it_architecture": {
+    "application": "stock_landed_costs (WMS Landed Costs)",
+    "software_services": [],
+    "data_objects": [
+      "stock.landed.cost",
+      "stock.landed.cost.lines",
+      "stock.valuation.adjustment.lines"
+    ],
+    "logical_data_erm": [
+      "stock.landed.cost -> account.journal",
+      "stock.landed.cost -> account.move",
+      "stock.landed.cost -> res.company",
+      "stock.landed.cost -> res.currency",
+      "stock.landed.cost -> stock.landed.cost.lines",
+      "stock.landed.cost -> stock.picking",
+      "stock.landed.cost -> stock.valuation.adjustment.lines",
+      "stock.landed.cost.lines -> account.account",
+      "stock.landed.cost.lines -> product.product",
+      "stock.landed.cost.lines -> res.currency",
+      "stock.landed.cost.lines -> stock.landed.cost",
+      "stock.valuation.adjustment.lines -> product.product"
+    ],
+    "information_flows": [
+      "depends: stock_account, purchase_stock"
+    ],
+    "frontend_components": []
+  },
+  "business_architecture": {
+    "capabilities": [
+      "WMS Landed Costs"
+    ],
+    "value_streams": [],
+    "information_concepts": [
+      "stock.landed.cost",
+      "stock.landed.cost.lines",
+      "stock.valuation.adjustment.lines"
+    ],
+    "organization": [],
+    "products": [],
+    "policies": [
+      "1 record rules"
+    ],
+    "stakeholders": [],
+    "strategy": null,
+    "metrics": []
+  },
+  "classification": {
+    "value_model": "support",
+    "activity_class": "support",
+    "apqc_category": "9.0 Manage Financial Resources",
+    "rationale": "stock_landed_costs: thin support/support module (auto-architect baseline)."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "WMS Landed Costs"
+    ],
+    "typical_fits": [],
+    "common_gaps": [],
+    "drive_hints": [
+      "odoo shell: env['stock.landed.cost'].search([],limit=3)"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/stock_landed_costs.facts.json",
+    "tools": [
+      "extract_module.py",
+      "extract_frontend.py",
+      "gen_thin.py"
+    ],
+    "odoo_version": "19.0"
+  }
+}

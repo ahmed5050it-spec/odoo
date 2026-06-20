@@ -1,0 +1,377 @@
+{
+  "subsystem": "event",
+  "evidence": {
+    "manifest": {
+      "name": "Events Organization",
+      "category": "Marketing/Events",
+      "depends": [
+        "barcodes",
+        "base_setup",
+        "mail",
+        "phone_validation",
+        "portal",
+        "utm"
+      ],
+      "auto_install": false,
+      "application": false
+    },
+    "models": [
+      {
+        "_name": "event.event",
+        "_description": "Event",
+        "fields": 49,
+        "relations": [
+          "user_id->res.users",
+          "organizer_id->res.partner",
+          "address_id->res.partner",
+          "event_type_id->event.type",
+          "stage_id->event.stage",
+          "registration_ids->event.registration",
+          "event_ticket_ids->event.event.ticket",
+          "event_mail_ids->event.mail",
+          "event_slot_ids->event.slot"
+        ]
+      },
+      {
+        "_name": "event.registration",
+        "_description": "Event Registration",
+        "fields": 26,
+        "relations": [
+          "event_id->event.event",
+          "event_ticket_id->event.event.ticket",
+          "event_slot_id->event.slot",
+          "partner_id->res.partner",
+          "utm_campaign_id->utm.campaign",
+          "registration_answer_ids->event.registration.answer",
+          "mail_registration_ids->event.mail.registration"
+        ]
+      },
+      {
+        "_name": "event.event.ticket",
+        "_description": "Event Ticket",
+        "fields": 16,
+        "relations": [
+          "event_id->event.event",
+          "registration_ids->event.registration",
+          "company_id->res.company"
+        ]
+      },
+      {
+        "_name": "event.mail",
+        "_description": "Event Automated Mailing",
+        "fields": 15,
+        "relations": [
+          "event_id->event.event",
+          "template_ref->mail.template",
+          "mail_registration_ids->event.mail.registration",
+          "last_registration_id->event.registration"
+        ]
+      },
+      {
+        "_name": "event.type",
+        "_description": "Event Template",
+        "fields": 11,
+        "relations": [
+          "event_type_ticket_ids->event.type.ticket",
+          "event_type_mail_ids->event.type.mail",
+          "question_ids->event.question"
+        ]
+      },
+      {
+        "_name": "event.slot",
+        "_description": "Event Slot",
+        "fields": 14,
+        "relations": [
+          "event_id->event.event",
+          "registration_ids->event.registration"
+        ]
+      },
+      {
+        "_name": "event.question",
+        "_description": "Event Question",
+        "fields": 12,
+        "relations": [
+          "event_ids->event.event",
+          "answer_ids->event.question.answer"
+        ]
+      },
+      {
+        "_name": "event.stage",
+        "_description": "Event Stage",
+        "fields": 5,
+        "relations": []
+      }
+    ],
+    "routes": [
+      {
+        "paths": [
+          "/event/<model(\"event.event\"):event>/ics"
+        ],
+        "auth": "public",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/event/<int:event_id>/my_tickets"
+        ],
+        "auth": "public",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/event/init_barcode_interface"
+        ],
+        "auth": "user",
+        "type": "jsonrpc"
+      }
+    ],
+    "security": {
+      "access_rules": 37,
+      "record_rules": 3,
+      "groups": 3
+    },
+    "views": {
+      "form": 14,
+      "list": 20,
+      "kanban": 4,
+      "search": 5,
+      "pivot": 2,
+      "graph": 2,
+      "calendar": 3,
+      "activity": 1
+    },
+    "frontend": {
+      "present": true,
+      "js_files": 13,
+      "xml_templates": 6,
+      "owl_components": [
+        "EventRegistrationSummaryDialog",
+        "EventScanView",
+        "IconSelectionField"
+      ],
+      "registry_adds": [
+        "actions:event.event_barcode_scan_view",
+        "fields:EventMailTemplateReferenceField",
+        "fields:event_icon_selection",
+        "fields:event_state_selection",
+        "views:event_slot_calendar",
+        "views:registration_summary_dialog_kanban",
+        "views:registration_summary_dialog_list",
+        "web_tour.tours:event_tour"
+      ],
+      "patches": [],
+      "services": [],
+      "asset_bundles": {
+        "web.assets_backend": 8,
+        "web.assets_frontend": 1,
+        "web.report_assets_common": 3,
+        "web.report_assets_pdf": 1
+      }
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [
+        "requests"
+      ],
+      "uses_api_keys": true,
+      "endpoints": [
+        "https://maps.googleapis.com/maps/api/staticmap?",
+        "https://www.odoo.com/app/events"
+      ],
+      "files": [
+        "__manifest__.py",
+        "models/res_partner.py"
+      ]
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    },
+    "behavioral_notes": [
+      {
+        "element": "event.registration.state machine + event.event._compute_seats",
+        "observation": "Registration.state is a 4-value Selection draft/open/done/cancel (default 'open'). action_confirm writes state='open', action_set_done writes 'done', action_cancel writes 'cancel'. event.event._compute_seats runs a raw SQL GROUP BY over event_registration WHERE state IN ('open','done') AND active=true, mapping open->seats_reserved and done->seats_used, then seats_available = seats_max - (reserved + used); none of this aggregation logic is visible in metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "event.registration._check_seats_availability / event.event._verify_seats_availability",
+        "observation": "An @api.constrains on (active, state, event_id, event_slot_id, event_ticket_id) calls event._verify_seats_availability and raises ValidationError when a slot/ticket combination has fewer remaining seats than requested, enforcing the sold-out / overbooking rule at the ORM layer (not in metadata). _get_seats_availability returns None for unconstrained, applying the min of event-level and ticket-level limits per slot.",
+        "source": "code-read"
+      },
+      {
+        "element": "event.registration.create/write -> _update_mail_schedulers",
+        "observation": "Creating a registration or writing state to open/done calls _update_mail_schedulers, which finds event.mail rows with interval_type='after_sub' and either triggers the event.event_mail_scheduler cron or runs scheduler.execute() inline (config 'event.event_mail_async'). Writing state='done' also _message_log_batch's an 'Attended on ...' chatter note. This automation side-effect is invisible to metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "event.mail.execute / schedule_communications (cron event_mail_scheduler)",
+        "observation": "event.mail is a time-based mailing engine: _compute_scheduled_date derives a send datetime from event create/begin/end dates plus interval_nbr/unit, and the cron-driven schedule_communications/execute dispatch by interval_type (attendee-based after_sub via event.mail.registration sub-rows, slot-based via event.mail.slot, or one-shot event-based), batching and calling mail.compose.message in mass_mail mode via _send_mail. Pure runtime behavior, not metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "event.registration.register_attendee (barcode kiosk)",
+        "observation": "register_attendee(barcode, event_id) searches a registration by unique barcode and returns a status (invalid_ticket / canceled_registration / unconfirmed_registration / not_ongoing_event / need_manual_confirmation / already_registered / confirmed_registration); on a valid not-yet-attended ticket for the scanned event it calls action_set_done to mark attendance. Drives the barcode scan check-in flow.",
+        "source": "code-read"
+      },
+      {
+        "element": "frontend (OWL/JS)",
+        "observation": "13 JS files, 6 XML templates, 3 OWL components (EventScanView barcode-scan client action, EventRegistrationSummaryDialog, IconSelectionField); 8 registry adds incl. an actions entry event.event_barcode_scan_view, a custom EventMailTemplateReferenceField, the event_slot_calendar view and the event_tour web tour; asset bundles ['web.assets_backend','web.assets_frontend','web.report_assets_common','web.report_assets_pdf'].",
+        "source": "static"
+      },
+      {
+        "element": "res.partner static_map_url / res.config.settings google_maps_static_api_key",
+        "observation": "res.partner builds a Google Maps Static API URL (https://maps.googleapis.com/maps/api/staticmap?) signed with google_maps_static_api_key/secret from res.config.settings; the 'requests' library is imported. This outbound HTTP/api-key integration is gap #7 evidence not present in Python model metadata.",
+        "source": "static"
+      }
+    ]
+  },
+  "it_architecture": {
+    "application": "event (Events Organization application component)",
+    "software_services": [
+      "/event/<model(event.event):event>/ics",
+      "/event/<int:event_id>/my_tickets",
+      "/event/init_barcode_interface"
+    ],
+    "data_objects": [
+      "event.event",
+      "event.registration",
+      "event.event.ticket",
+      "event.mail",
+      "event.type",
+      "event.slot",
+      "event.question",
+      "event.stage"
+    ],
+    "logical_data_erm": [
+      "event.registration -> event.event",
+      "event.registration -> event.event.ticket",
+      "event.registration -> event.slot",
+      "event.registration -> res.partner",
+      "event.event.ticket -> event.event",
+      "event.mail -> event.event",
+      "event.mail -> mail.template",
+      "event.event -> event.type",
+      "event.event -> event.stage",
+      "event.event -> res.partner (organizer/venue)"
+    ],
+    "information_flows": [
+      "depends: barcodes, base_setup, mail, phone_validation, portal, utm",
+      "side-effect: event.registration.create/confirm -> event.mail._update_mail_schedulers -> queued attendee emails",
+      "side-effect: event.registration.action_set_done -> chatter 'Attended on' log + seats_used recompute",
+      "side-effect: event.mail cron schedule_communications -> mail.compose.message mass_mail to attendees",
+      "outbound: res.partner.static_map_url -> Google Maps Static API (requests, api-key)"
+    ],
+    "frontend_components": [
+      "EventRegistrationSummaryDialog",
+      "EventScanView",
+      "IconSelectionField"
+    ]
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Organize & Schedule Events (templates, stages, slots)",
+      "Manage Tickets & Seat Availability",
+      "Capture Attendee Registrations",
+      "Automated Attendee Communications (event.mail)",
+      "Attendee Check-in / Badge Scanning (barcode)",
+      "Collect Registration Questions & Answers"
+    ],
+    "value_streams": [
+      "Plan-to-Attend: create event -> open ticket sales/registration -> confirm registration -> scheduled communications -> on-site check-in (attended)"
+    ],
+    "information_concepts": [
+      "event.event",
+      "event.registration",
+      "event.event.ticket",
+      "event.type",
+      "event.slot",
+      "event.mail",
+      "event.question",
+      "res.partner (attendee/organizer)"
+    ],
+    "organization": [
+      "group_event_registration_desk",
+      "group_event_user",
+      "group_event_manager"
+    ],
+    "products": [],
+    "policies": [
+      "3 record rules: multi-company scoping on event.event, event.registration, event.event.ticket",
+      "@api.constrains seat-availability rule: registrations cannot exceed event/slot/ticket max (sold-out enforcement)",
+      "unique(barcode) constraint on event.registration",
+      "event.mail time-based scheduling automation + event_mail_scheduler cron + _gc_mark_events_done autovacuum stage transition"
+    ],
+    "stakeholders": [
+      "Attendee (res.partner)",
+      "Event Organizer (res.partner)",
+      "Event Responsible (res.users)",
+      "Registration Desk operator (group_event_registration_desk)"
+    ],
+    "strategy": null,
+    "metrics": [
+      "seats_reserved / seats_available / seats_used / seats_taken (per event, slot and ticket)",
+      "event.mail mail_count_done / mail_state (communication delivery tracking)",
+      "registration pivot/graph analysis views (2 pivot, 2 graph)"
+    ]
+  },
+  "classification": {
+    "value_model": "network",
+    "activity_class": "primary",
+    "apqc_category": "3.0 Market and Sell Products and Services",
+    "rationale": "event is a value network (Stabell & Fjeldstad): its core activity is mediation - it connects an organizer with an audience of attendees and operates the registration/ticketing platform that lets them join an event. The economic logic is membership/seat capacity (seats_max, seats_available, sold-out) and network promotion (event.mail communications, utm attribution, portal ticket access), not a sequential transformation of inputs into a delivered good (chain) nor case-by-case problem solving (shop). It is a primary, customer-facing activity. APQC 3.0 Market and Sell is the closest PCF home because registering attendees to a marketed event is a sell/market motion; the marketing-communication scheduling leans toward 3.x demand generation rather than a fulfillment category."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "event lifecycle via stages (event.stage) and kanban pipeline",
+      "ticket types with per-ticket and per-event seat limits + sold-out logic",
+      "multi-slot events (event.slot) with per-slot capacity",
+      "attendee registration with custom questions (event.question)",
+      "scheduled automated mailings before/after event and on each registration (event.mail)",
+      "barcode badge check-in / registration desk kiosk",
+      "registration analysis (pivot/graph) and calendar views"
+    ],
+    "typical_fits": [
+      "conferences, trainings, meetings and exhibitions with free or capacity-limited registration",
+      "organizer-driven mass communications to attendees by lifecycle stage",
+      "on-site attendance tracking via barcode scanning"
+    ],
+    "common_gaps": [
+      "paid ticketing / e-commerce checkout (needs event_sale / website_event_sale / pos_event)",
+      "public website event pages and online registration UX (needs website_event)",
+      "exhibitor booths, tracks/agenda, live sessions and quizzes (needs website_event_exhibitor / website_event_track*)",
+      "custom badge layouts and bespoke check-in workflows beyond the standard scan view"
+    ],
+    "drive_hints": [
+      "odoo shell: env['event.event'].search([], limit=5).mapped(('name','seats_available','seats_max'))",
+      "odoo shell: env['event.registration'].search([], limit=5).mapped(('name','state','barcode'))",
+      "odoo shell: env['event.mail'].search([('interval_type','=','after_sub')]).mapped(('event_id','scheduled_date','mail_state'))",
+      "curl jsonrpc /event/init_barcode_interface (auth=user) to open the barcode kiosk for an event"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Exact branching of event.mail.execute across attendee-based, slot-based and one-shot event-based modes under high registration volume.",
+    "How paid ticketing changes the registration state machine (draft vs open) once event_sale/website_event_sale is installed.",
+    "Whether the Google Maps Static API integration is on by default or gated behind use_google_maps_static_api config."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/event.facts.json",
+    "tools": [
+      "code-read",
+      "extract_frontend.py",
+      "extract_module.py",
+      "extract_runtime.sh",
+      "run-odoo (odoo shell)"
+    ],
+    "odoo_version": "19.0"
+  }
+}

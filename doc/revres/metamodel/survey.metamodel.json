@@ -1,0 +1,414 @@
+{
+  "subsystem": "survey",
+  "evidence": {
+    "manifest": {
+      "name": "Surveys",
+      "category": "Marketing/Surveys",
+      "depends": [
+        "auth_signup",
+        "http_routing",
+        "mail",
+        "web_tour",
+        "gamification"
+      ],
+      "auto_install": false,
+      "application": true
+    },
+    "models": [
+      {
+        "_name": "survey.survey",
+        "_description": "Survey",
+        "fields": 57,
+        "relations": [
+          "user_id->res.users",
+          "restrict_user_ids->res.users",
+          "question_and_page_ids->survey.question",
+          "user_input_ids->survey.user_input",
+          "certification_badge_id->gamification.badge",
+          "certification_mail_template_id->mail.template"
+        ]
+      },
+      {
+        "_name": "survey.question",
+        "_description": "Survey Question",
+        "fields": 56,
+        "relations": [
+          "survey_id->survey.survey",
+          "page_id->survey.question",
+          "suggested_answer_ids->survey.question.answer",
+          "matrix_row_ids->survey.question.answer",
+          "triggering_answer_ids->survey.question.answer",
+          "triggering_question_ids->survey.question"
+        ]
+      },
+      {
+        "_name": "survey.question.answer",
+        "_description": "Survey Label",
+        "fields": 11,
+        "relations": [
+          "question_id->survey.question",
+          "matrix_question_id->survey.question"
+        ]
+      },
+      {
+        "_name": "survey.user_input",
+        "_description": "Survey User Input",
+        "fields": 27,
+        "relations": [
+          "survey_id->survey.survey",
+          "partner_id->res.partner",
+          "user_input_line_ids->survey.user_input.line",
+          "predefined_question_ids->survey.question"
+        ]
+      },
+      {
+        "_name": "survey.user_input.line",
+        "_description": "Survey User Input Line",
+        "fields": 18,
+        "relations": [
+          "user_input_id->survey.user_input",
+          "question_id->survey.question",
+          "suggested_answer_id->survey.question.answer",
+          "matrix_row_id->survey.question.answer"
+        ]
+      },
+      {
+        "_name": "survey.invite",
+        "_description": "Survey Invitation Wizard (mail.composer.mixin)",
+        "fields": 17,
+        "relations": [
+          "survey_id->survey.survey",
+          "partner_ids->res.partner",
+          "mail_server_id->ir.mail_server"
+        ]
+      }
+    ],
+    "routes": [
+      {
+        "paths": [
+          "/survey/test/<string:survey_token>"
+        ],
+        "auth": "user",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/survey/start/<string:survey_token>",
+          "/survey/retry/<string:survey_token>/<string:answer_token>"
+        ],
+        "auth": "public",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/survey/<string:survey_token>",
+          "/survey/<string:survey_token>/<string:answer_token>"
+        ],
+        "auth": "public",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/survey/begin/<string:survey_token>/<string:answer_token>",
+          "/survey/next_question/<string:survey_token>/<string:answer_token>",
+          "/survey/submit/<string:survey_token>/<string:answer_token>"
+        ],
+        "auth": "public",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/survey/print/<string:survey_token>",
+          "/survey/results/<model(\"survey.survey\"):survey>"
+        ],
+        "auth": "public/user",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/survey/<int:survey_id>/get_certification",
+          "/survey/<model(\"survey.survey\"):survey>/certification_preview"
+        ],
+        "auth": "user",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/survey/session/manage/<string:survey_token>",
+          "/survey/session/next_question/<string:survey_token>",
+          "/survey/session/results/<string:survey_token>",
+          "/survey/session/leaderboard/<string:survey_token>"
+        ],
+        "auth": "user",
+        "type": "http/jsonrpc"
+      },
+      {
+        "paths": [
+          "/s",
+          "/s/<string:session_code>",
+          "/survey/check_session_code/<string:session_code>"
+        ],
+        "auth": "public",
+        "type": "http/jsonrpc"
+      }
+    ],
+    "security": {
+      "access_rules": 22,
+      "record_rules": 12,
+      "groups": 2
+    },
+    "views": {
+      "form": 7,
+      "list": 9,
+      "kanban": 2,
+      "search": 5,
+      "pivot": 1,
+      "graph": 1,
+      "activity": 1
+    },
+    "behavioral_notes": [
+      {
+        "element": "survey.user_input._mark_done",
+        "observation": "On completion, sets state='done' + end_datetime, then for certification surveys that were passed (scoring_success) it sends certification_mail_template_id with the PDF and, if certification_give_badge, runs the gamification.challenge cron (_cron_update) to award certification_badge_id (gamification.badge). It also fires _notify_new_participation_subscribers (mail.thread post) and strips inactive conditional questions. None of these cross-model effects (mail + gamification + messaging) are visible in metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "survey.user_input.line._compute_answer_score / survey.user_input._compute_scoring_values",
+        "observation": "Scoring is Python-computed, not metadata: per-line answer_score/answer_is_correct depends on question_type (choice -> suggested_answer.answer_score/is_correct; numerical/date/datetime -> exact match against question.answer_*). In live sessions with session_speed_rating, score is time-decayed (100% under 2s, then linear down to 50%). user_input.scoring_percentage = sum(line scores)/total_possible_score, and scoring_success = percentage >= survey.scoring_success_min; both stored compute_sudo for perf.",
+        "source": "code-read"
+      },
+      {
+        "element": "survey.question.validate_question (+ _validate_char_box/_numerical_box/_date/_choice/_matrix/_scale)",
+        "observation": "9 question_types (simple_choice, multiple_choice, text_box, char_box, numerical_box, scale, date, datetime, matrix) each have bespoke server-side validation: mandatory checks (constr_mandatory), email-format (validation_email), length/value/date ranges (validation_*), single-answer enforcement for simple_choice, and full-row coverage for matrix. char_box answers can be saved as the respondent email/nickname. Validation logic lives only in code.",
+        "source": "code-read"
+      },
+      {
+        "element": "controllers/main.py token-gated public answer flow",
+        "observation": "Public /survey/* routes are guarded by a two-token scheme (survey access_token + per-attempt answer_token) resolved sudo in _fetch_from_access_token; _check_validity returns business codes (survey_closed, survey_auth, token_required, answer_deadline, answer_wrong_user, etc.). AJAX navigation (begin/next_question/submit) re-validates each call, enforces attempts_limit and time limits server-side to prevent cheating, and conditional 'trigger' questions drive which question is served next via _get_next_page_or_question.",
+        "source": "code-read"
+      },
+      {
+        "element": "survey.survey live-session engine",
+        "observation": "A survey can run as a synchronous live quiz: action_start_session sets session_state and a numeric session_code (4-10 digits, unique), attendees join via /s/<code>; the host advances questions (session_question_id) broadcasting over bus.bus; next question for conditional surveys is chosen from _get_session_most_voted_answers (collective audience answers); a leaderboard (_prepare_leaderboard_values) ranks attendees by scoring_total. Entirely behavioral, not in metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "frontend (OWL/JS + public interactions)",
+        "observation": "30 JS files, 9 XML templates, 2 OWL components (SurveyQuestionTriggerWidget, SurveySurveyActionHelper) plus ~14 public.interactions widgets (SurveyForm, SurveyTimer, SurveyImageZoomer, SurveyResult, survey_session_chart/leaderboard/manage, survey_print, survey_quick_access). Asset bundles include dedicated survey.survey_assets (15) and survey.survey_user_input_session_assets (6).",
+        "source": "static"
+      }
+    ],
+    "frontend": {
+      "present": true,
+      "js_files": 30,
+      "xml_templates": 9,
+      "owl_components": [
+        "SurveyQuestionTriggerWidget",
+        "SurveySurveyActionHelper"
+      ],
+      "registry_adds": [
+        "error_handlers:surveySaveErrorHandler",
+        "fields:boolean_update_flag",
+        "fields:integer_update_flag",
+        "fields:question_page_one2many",
+        "fields:radio_selection_with_filter",
+        "fields:survey_description_page",
+        "public.interactions:survey.SurveyEnterTooltip",
+        "public.interactions:survey.SurveyForm",
+        "public.interactions:survey.SurveyImageZoomer",
+        "public.interactions:survey.SurveyResult",
+        "public.interactions:survey.SurveyTimer",
+        "public.interactions:survey.survey_print",
+        "public.interactions:survey.survey_quick_access",
+        "public.interactions:survey.survey_result_chart",
+        "public.interactions:survey.survey_result_pagination",
+        "public.interactions:survey.survey_session_chart",
+        "public.interactions:survey.survey_session_leaderboard",
+        "public.interactions:survey.survey_session_manage",
+        "public.interactions:survey.survey_session_text_answers",
+        "view_widgets:survey_question_trigger",
+        "views:survey_view_kanban",
+        "views:survey_view_tree",
+        "web_tour.tours:survey_tour"
+      ],
+      "patches": [],
+      "services": [
+        "triggering_answer_ids",
+        "triggering_question_ids"
+      ],
+      "asset_bundles": {
+        "survey.survey_assets": 15,
+        "survey.survey_user_input_session_assets": 6,
+        "web.report_assets_common": 1,
+        "web.assets_backend": 6,
+        "web.assets_web_dark": 1,
+        "web.assets_tests": 1,
+        "web.assets_unit_tests": 2,
+        "web.assets_frontend": 1
+      }
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": true,
+      "endpoints": [
+        "https://www.odoo.com/app/surveys"
+      ],
+      "files": [
+        "__manifest__.py"
+      ]
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    }
+  },
+  "it_architecture": {
+    "application": "survey (Surveys application component)",
+    "software_services": [
+      "/survey/start/* + /survey/<token>/* (take survey, public token-gated)",
+      "/survey/begin|next_question|submit/* (jsonrpc AJAX navigation)",
+      "/survey/print/* + /survey/results/* (answers & statistics)",
+      "/survey/<id>/get_certification + certification_preview (certificate PDF)",
+      "/survey/session/* + /s/<code> (live session host & attendee join)"
+    ],
+    "data_objects": [
+      "survey.survey",
+      "survey.question",
+      "survey.question.answer",
+      "survey.user_input",
+      "survey.user_input.line",
+      "survey.invite"
+    ],
+    "logical_data_erm": [
+      "survey.survey -> survey.question (question_and_page_ids)",
+      "survey.question -> survey.question.answer (suggested_answer_ids / matrix_row_ids)",
+      "survey.question -> survey.question.answer (triggering_answer_ids: conditional logic)",
+      "survey.user_input -> survey.survey",
+      "survey.user_input -> survey.user_input.line -> survey.question",
+      "survey.survey -> gamification.badge (certification_badge_id)"
+    ],
+    "information_flows": [
+      "depends: auth_signup, http_routing, mail, web_tour, gamification",
+      "side-effect: survey.user_input._mark_done -> mail.template (certification email) + gamification.challenge cron -> gamification.badge",
+      "side-effect: survey.user_input._mark_done -> mail.thread message_post (notify followers of new participation)",
+      "side-effect: survey.invite (mail.composer.mixin) -> mail.mail invitations + survey.user_input token creation",
+      "side-effect: live session -> bus.bus broadcast (next question / end_session)"
+    ],
+    "frontend_components": [
+      "SurveyQuestionTriggerWidget",
+      "SurveySurveyActionHelper",
+      "SurveyForm (public interaction)",
+      "SurveyTimer (public interaction)",
+      "SurveyResult (public interaction)",
+      "SurveyImageZoomer (public interaction)",
+      "survey_session_manage (public interaction)",
+      "survey_session_leaderboard (public interaction)",
+      "survey_session_chart (public interaction)",
+      "survey_print (public interaction)"
+    ]
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Design Surveys, Assessments & Certifications (questions, pages, 9 question types, conditional logic)",
+      "Distribute & Invite (public link, token/invite, multi-language)",
+      "Collect & Validate Responses (server-side validation, attempts & time limits)",
+      "Score & Certify (scoring, pass/fail vs required %, certification PDF + gamification badge)",
+      "Run Live Sessions (real-time quiz with session codes, timer, leaderboard)",
+      "Analyze Results (per-question statistics, charts, success ratio)"
+    ],
+    "value_streams": [
+      "Feedback/Assessment lifecycle: design survey -> invite/share -> respondent answers (validated) -> score & mark done -> (certify + badge) -> results & statistics"
+    ],
+    "information_concepts": [
+      "survey.survey",
+      "survey.question",
+      "survey.question.answer",
+      "survey.user_input",
+      "survey.user_input.line"
+    ],
+    "organization": [
+      "group_survey_user (User / officer)",
+      "group_survey_manager (Administrator)"
+    ],
+    "products": [],
+    "policies": [
+      "12 record rules: officer access scoped by survey.restrict_user_ids; user_input/line manager+officer rules scoped to survey_type in (assessment, custom, live_session, survey) so specialized surveys (recruitment, slides, etc.) are excluded",
+      "access_mode (public vs token) + users_login_required gate who can answer; attempts_limit / time_limit enforced server-side",
+      "SQL CHECK constraints: scoring required for certification, success % in 0-100, unique access/session tokens"
+    ],
+    "stakeholders": [
+      "Respondent / Attendee (res.partner or anonymous public + email/nickname)",
+      "Survey Officer (group_survey_user, res.users)",
+      "Survey Administrator (group_survey_manager)",
+      "Survey Responsible (survey.user_id)"
+    ],
+    "strategy": null,
+    "metrics": [
+      "survey.answer_count / answer_done_count (registered vs attempts)",
+      "survey.answer_score_avg, success_count, success_ratio",
+      "survey.answer_duration_avg (avg completion time)",
+      "per-question statistics (votes, correct/partial/incorrect/skipped) and session leaderboard scoring_total"
+    ]
+  },
+  "classification": {
+    "value_model": "support",
+    "activity_class": "support",
+    "apqc_category": "13.0 Develop and Manage Business Capabilities",
+    "rationale": "Survey is a horizontal assessment/feedback engine, not a primary value-creating line. It transforms nothing (not chain), runs no case-by-case solution loop as its core (not shop), and provides no matching/mediation infrastructure (not network) - it is a reusable support capability consumed by primary activities: recruitment screening, eLearning course quizzes/certifications (slides), marketing/NPS feedback, and the rating module. The record rules confirm this cross-cutting role by partitioning survey.user_input on survey_type so specialized embedders own their own data. Best PCF fit is 13.0 Develop and Manage Business Capabilities (capability/competency measurement, knowledge & certification via gamification badges); secondary fits are 3.5.x customer/market feedback (manifest category Marketing/Surveys) and 7.x human-capital competency assessment when used by HR/eLearning."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "Survey/assessment/certification/live-session builder with 9 question types, sections/pages and conditional (trigger) questions",
+      "Public token-gated or invite-only access, optional login/signup, multi-language",
+      "Scoring (4 modes), pass/fail vs required %, certification PDF (6 layouts) + optional gamification badge",
+      "Attempts & time limits, randomized question selection per section",
+      "Live sessions: session code, attendee join via /s/<code>, timer, speed scoring, leaderboard over bus.bus",
+      "Results dashboard: per-question charts/tables, success ratio, answer filters"
+    ],
+    "typical_fits": [
+      "Customer feedback / NPS / market-research questionnaires",
+      "Employee or training assessments and certifications (with badge reward)",
+      "Event/classroom live quiz sessions",
+      "Anonymous public surveys shared by link"
+    ],
+    "common_gaps": [
+      "Custom question widgets/types beyond the built-in 9",
+      "Advanced branching/skip-logic beyond single-answer triggers",
+      "External survey/analytics integrations (no outbound HTTP/SDK in module)",
+      "Bespoke certificate templates or scoring formulas beyond config"
+    ],
+    "drive_hints": [
+      "odoo shell: env['survey.survey'].search([], limit=5).mapped(('title','survey_type','scoring_type','certification'))",
+      "odoo shell: env['survey.user_input'].search([('state','=','done')], limit=5).mapped(('survey_id','scoring_percentage','scoring_success'))",
+      "curl public take-survey: GET /survey/start/<survey access_token> (auth=public), then jsonrpc /survey/submit/<survey_token>/<answer_token>"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Exact downstream consumers of survey in this install (recruitment / slides / rating) - facts cover the survey module only.",
+    "Whether certification_give_badge surveys are configured to award real gamification.badge records at runtime (no runtime row counts captured).",
+    "How conditional-question 'most voted answer' branching behaves at scale in large live sessions.",
+    "Which scoring_type modes are actually used and how scoring_success_min is tuned per survey."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/survey.facts.json",
+    "tools": [
+      "code-read",
+      "extract_frontend.py",
+      "extract_module.py",
+      "extract_runtime.sh",
+      "run-odoo (odoo shell)"
+    ],
+    "odoo_version": "19.0"
+  }
+}
