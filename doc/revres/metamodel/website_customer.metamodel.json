@@ -4,19 +4,41 @@
     "manifest": {
       "name": "Customer References",
       "category": "Website/Website",
+      "summary": "Publish your customer references",
       "depends": [
         "website_crm_partner_assign",
         "website_partner",
         "website_google_map"
       ],
       "auto_install": false,
-      "application": false
+      "application": false,
+      "license": "LGPL-3"
     },
     "models": [
       {
         "_name": "res.partner.tag",
         "_description": "Partner Tags - These tags can be used on website to find customers by sector, or ...",
-        "fields": 4
+        "_inherit": ["website.published.mixin"],
+        "fields": 4,
+        "relations": [
+          "partner_ids->res.partner (m2m via res_partner_res_partner_tag_rel)"
+        ]
+      },
+      {
+        "_name": "res.partner (inherit)",
+        "_description": "adds website_tag_ids",
+        "_inherit": "res.partner",
+        "fields": 1,
+        "relations": [
+          "website_tag_ids->res.partner.tag (m2m via res_partner_res_partner_tag_rel)"
+        ]
+      },
+      {
+        "_name": "website (inherit)",
+        "_description": "adds /customers to suggested controllers",
+        "_inherit": "website",
+        "fields": 0,
+        "relations": []
       }
     ],
     "routes": [
@@ -24,10 +46,15 @@
         "paths": [
           "/customers",
           "/customers/page/<int:page>",
-          "/customers/country/<model("
+          "/customers/country/<model(\"res.country\"):country>",
+          "/customers/country/<model(\"res.country\"):country>/page/<int:page>",
+          "/customers/industry/<model(\"res.partner.industry\"):industry>",
+          "/customers/industry/<model(\"res.partner.industry\"):industry>/page/<int:page>",
+          "/customers/industry/<model(\"res.partner.industry\"):industry>/country/<model(\"res.country\"):country>",
+          "/customers/industry/<model(\"res.partner.industry\"):industry>/country/<model(\"res.country\"):country>/page/<int:page>"
         ],
-        "auth": null,
-        "type": null
+        "auth": "public",
+        "type": "http"
       },
       {
         "paths": [
@@ -45,14 +72,40 @@
     "views": {
       "form": 2,
       "list": 1,
-      "tree": 0,
-      "kanban": 0,
       "search": 1,
-      "pivot": 0,
+      "kanban": 0,
       "graph": 0,
+      "pivot": 0,
       "calendar": 0,
       "activity": 0
     },
+    "behavioral_notes": [
+      {
+        "element": "WebsiteCustomer.customers (/customers route family)",
+        "observation": "The /customers listing is a sudo() public directory of published customer references. The base domain is [('website_published','=',True),('assigned_partner_id','!=',False)] -- a partner only appears if it is published AND has an assigned reseller/partner (assigned_partner_id from website_crm_partner_assign), so a 'customer reference' = a published res.partner attached to a partner-program assignment. Optional facets stack onto the domain: free-text search OR-matches name / website_description / industry_id.name; tag_id (unslugged) filters on website_tag_ids; industry and country path segments add equality filters. The controller runs two _read_group calls (by industry_id, by country_id) over the same domain to build the faceted sidebar counts before search_count + paginated search. All queries are sudo() so anonymous visitors can read otherwise-restricted partner data.",
+        "source": "code-read"
+      },
+      {
+        "element": "WebsiteCustomer._get_gmap_domains (map / geolocation display)",
+        "observation": "website_customer subclasses GoogleMap (from website_google_map) and overrides _get_gmap_domains: when dom == 'website_customer.customers' it returns [('assigned_partner_id','!=',False)] plus current_country / current_industry equality filters. This feeds the JSON map endpoint the front-end Google Maps widget calls to plot reference partners as geolocated markers; the page passes request.website.google_maps_api_key into the template so the map renders client-side. Geolocation/marker data is produced by this domain hook, not by any field on res.partner.tag -- invisible to metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "Pagination, faceted counts & country fallback",
+        "observation": "Paging uses request.website.pager(step=_references_per_page=20, scope=7) with url_args=post so search/tag query-string state survives navigation; the pager URL is rebuilt as /customers[/industry/<id>][/country/<id>]. Country handling has a graceful fallback: if a requested country has zero matching references but other countries do, fallback_all_countries is set, country is reset to None, and the full set is shown instead of a 404. Industry counts inject an 'All Industries' aggregate row, and a selected-but-empty industry is appended with count 0 so the active facet still renders. None of this faceting/fallback logic is derivable from the schema.",
+        "source": "code-read"
+      },
+      {
+        "element": "res.partner.tag + website.published.mixin (how a partner becomes a public reference)",
+        "observation": "Publishing is governed by website.published.mixin (website/models/mixins.py): it adds website_published (related to is_published, index=True), a computed website_url, and the website_publish_button() toggle. res.partner.tag _inherits the mixin and overrides _default_is_published()=True, so tags are public by default; the listing only shows tags where website_published=True AND partner_ids intersect the current page's partners (ordered by classname, name). The partner itself carries website_published via the same mixin chain pulled in through website_partner / website_crm_partner_assign, and website_description (sanitized Html from website_partner) supplies the reference body. Thus a public reference is materialised by flipping website_published on a res.partner that already has an assigned_partner_id -- a cross-module publishing convention, not a single field.",
+        "source": "code-read"
+      },
+      {
+        "element": "frontend (templates + map widget, static)",
+        "observation": "The UX is server-rendered QWeb (website_customer.index / .details, ~590 XML LOC) calling website.layout, with Bootstrap offcanvas faceted filters (industry/country/tag), a GET search form, and a responsive pager. Client-side JS is minimal (2 JS files, 1 XML template, asset bundle website.website_builder_assets): the only interactive component is the Google Maps reference map fed by the GoogleMap JSON endpoint. No OWL components, registry adds, or patches -- a classic published-content page, not a builder surface.",
+        "source": "static"
+      }
+    ],
     "frontend": {
       "present": true,
       "js_files": 2,
@@ -75,70 +128,124 @@
     "runtime": {
       "models_with_data": 0,
       "top": []
-    },
-    "behavioral_notes": [
-      {
-        "element": "frontend (OWL/JS)",
-        "observation": "2 JS files, 0 OWL components, 0 registry adds; bundles ['website.website_builder_assets'].",
-        "source": "static"
-      },
-      {
-        "element": "thin module",
-        "observation": "1 models, 2 routes, 288 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
-        "source": "ast"
-      }
-    ]
+    }
   },
   "it_architecture": {
-    "application": "website_customer (Customer References)",
+    "application": "website_customer (public Customer References / 'Our References' directory page)",
     "software_services": [
-      "/customers",
-      "/customers/<partner_id>",
-      "/customers/country/<model(",
-      "/customers/page/<int:page>"
+      "/customers (+ /page/<n>) (paginated public reference directory)",
+      "/customers/industry/<industry> (industry-faceted directory)",
+      "/customers/country/<country> (country-faceted directory)",
+      "/customers/industry/<industry>/country/<country> (combined facet + pages)",
+      "/customers/<partner_id> (single reference detail page, slug-redirecting)",
+      "GoogleMap JSON domain hook (geolocated reference map markers)"
     ],
     "data_objects": [
-      "res.partner.tag"
+      "res.partner.tag",
+      "res.partner (website_tag_ids extension)",
+      "website (get_suggested_controllers extension)"
     ],
     "logical_data_erm": [
-      "res.partner.tag -> res.partner"
+      "res.partner.tag <-> res.partner (m2m res_partner_res_partner_tag_rel: website_tag_ids / partner_ids)",
+      "res.partner.tag -> website.published.mixin (website_published / website_url)",
+      "res.partner -> res.partner.industry (industry_id facet, reused)",
+      "res.partner -> res.country (country_id facet, reused)",
+      "res.partner -> assigned_partner_id (res.partner, from website_crm_partner_assign; gates reference visibility)",
+      "res.partner -> website_description (Html, from website_partner)"
     ],
     "information_flows": [
-      "depends: website_crm_partner_assign, website_partner, website_google_map"
+      "depends: website_crm_partner_assign (assigned_partner_id + partner program), website_partner (website_description + partner publishing), website_google_map (GoogleMap controller + map widget)",
+      "side-effect: GET /customers -> sudo() _read_group x2 (industry, country) + search_count + paged search over published+assigned partners -> QWeb website_customer.index",
+      "side-effect: map widget -> GoogleMap JSON endpoint -> _get_gmap_domains -> geolocated reference markers (needs website.google_maps_api_key)",
+      "side-effect: website_publish_button on a res.partner / res.partner.tag flips website_published, adding/removing it from the public directory",
+      "sitemap: sitemap_industry yields /customers, /customers/industry/<slug>, /customers/country/<slug> for published+assigned+geolocated partners"
     ],
-    "frontend_components": []
+    "frontend_components": [
+      "Google Maps reference map (website_google_map widget)",
+      "website_customer.index (QWeb directory + faceted filters)",
+      "website_customer.details (QWeb single reference page)",
+      "Bootstrap offcanvas filter panel (industry / country / tag)",
+      "GET search form + responsive pager"
+    ]
   },
   "business_architecture": {
     "capabilities": [
-      "Customer References"
+      "Publish Customer References (social proof directory)",
+      "Faceted Reference Discovery (industry / country / tag / search)",
+      "Geolocated Reference Map Display",
+      "Per-Reference Public Profile Pages (SEO-friendly slugs)",
+      "Reference Curation via Publishing & Tagging"
     ],
-    "value_streams": [],
+    "value_streams": [
+      "Curate-to-Publish: assign partner + tag/describe res.partner -> website_publish_button -> reference appears in /customers directory & map & sitemap",
+      "Discover-to-Engage: visitor browses/filters/searches references -> opens /customers/<partner> detail -> social proof toward a sale"
+    ],
     "information_concepts": [
-      "res.partner.tag"
+      "res.partner.tag (website reference tag/sector)",
+      "res.partner (the published customer reference)",
+      "res.partner.industry (reference industry facet)",
+      "res.country (reference country facet)",
+      "website.published.mixin (publication state)"
     ],
-    "organization": [],
+    "organization": [
+      "base.group_public (anonymous visitor)",
+      "website group_website_publisher / group_website_designer (publishes references; no groups defined in this module)"
+    ],
     "products": [],
     "policies": [
-      "1 record rules"
+      "visibility rule: only website_published=True AND assigned_partner_id!=False partners are listed (controller domain)",
+      "tags shown only when website_published=True and linked to a visible partner",
+      "all reads via sudo() so public visitors can view curated reference data",
+      "1 record rule + 6 access rules (res.partner.tag public read / editor write)"
     ],
-    "stakeholders": [],
+    "stakeholders": [
+      "Website Visitor / Prospect (public user)",
+      "Marketing / Reference manager (publisher)",
+      "Referenced Customer (res.partner)",
+      "Assigned Partner / Reseller (assigned_partner_id)"
+    ],
     "strategy": null,
-    "metrics": []
+    "metrics": [
+      "faceted reference counts per industry / country (sidebar _read_group)",
+      "number of published references (website_published + assigned_partner_id)",
+      "directory pagination volume (_references_per_page=20)"
+    ]
   },
   "classification": {
     "value_model": "network",
     "activity_class": "primary",
     "apqc_category": "3.0 Market and Sell Products and Services",
-    "rationale": "website_customer: thin network/primary module (auto-architect baseline)."
+    "rationale": "website_customer is a value-network feature of the website storefront (Stabell & Fjeldstad mediating technology): it publishes the company's customer base as a curated social-proof directory that mediates between prospective buyers and the population of existing customers/references, with worth that grows as more references, industries and countries are published (directory network effect). It is not a sequential transformation (chain) nor a problem-solving cycle (shop). activity_class is primary because the module's whole purpose is the public-facing marketing artefact -- the 'Our References' page is a demand-side marketing/sell asset, not a back-office support function. apqc_category 3.0 Market and Sell Products and Services fits because publishing customer references is a marketing / social-proof activity that supports demand generation and selling; the page exists to market the company through its customers, aligning with the parent website module's 3.0 web-presence classification rather than 6.0 customer service."
   },
+  "apqc_category": "3.0 Market and Sell Products and Services",
   "fit_to_standard": {
     "standard_capabilities": [
-      "Customer References"
+      "public 'Our References / Customers' directory of published partners",
+      "faceted filtering by industry, country and website tag, plus free-text search",
+      "geolocated reference map via Google Maps integration",
+      "per-reference SEO-friendly detail page with slug redirect",
+      "publishing toggle + sitemap generation for references",
+      "publisher-curated tagging (res.partner.tag with bootstrap color classes)"
     ],
-    "typical_fits": [],
-    "common_gaps": [],
+    "typical_fits": [
+      "B2B reference / case-study showcase on the corporate site",
+      "partner-program customer map (resellers + their assigned customers)",
+      "industry/country segmented references for credibility",
+      "lightweight 'who uses us' social-proof page"
+    ],
+    "common_gaps": [
+      "rich case-study layout / testimonials beyond website_description Html",
+      "lead capture or CTA tied to a reference (no built-in form on detail page)",
+      "logo-wall / carousel presentation (directory + map only out-of-box)",
+      "analytics on which references drive conversion",
+      "approval workflow for publishing a customer as a reference"
+    ],
     "drive_hints": [
-      "odoo shell: env['res.partner.tag'].search([],limit=3)"
+      "curl -s 'http://localhost:8069/customers' | grep -i 'Our references'",
+      "curl -s 'http://localhost:8069/customers/page/2'",
+      "odoo shell: env['res.partner'].sudo().search_count([('website_published','=',True),('assigned_partner_id','!=',False)])",
+      "odoo shell: env['res.partner.tag'].search([('website_published','=',True)]).mapped('name')",
+      "odoo shell: env['res.partner'].sudo()._read_group([('website_published','=',True),('assigned_partner_id','!=',False)], ['industry_id'], ['__count'])"
     ]
   },
   "reverse_eng_confidence": {
@@ -149,17 +256,22 @@
     "value_streams": "inferred",
     "policies": "inferred",
     "metrics": "inferred",
+    "stakeholders": "inferred",
     "strategy": "human"
   },
   "open_questions": [
-    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+    "Runtime row counts for res.partner.tag and published reference partners were not captured (extract_runtime.sh not run).",
+    "Whether the Google Maps reference map degrades gracefully when website.google_maps_api_key is unset.",
+    "Exact ACL/record-rule scope letting public sudo() reads of res.partner.tag vs other partner data."
   ],
   "provenance": {
     "explorer_facts": "doc/revres/facts/website_customer.facts.json",
     "tools": [
+      "code-read",
       "extract_module.py",
       "extract_frontend.py",
-      "gen_thin.py"
+      "Grep",
+      "Read"
     ],
     "odoo_version": "19.0"
   }

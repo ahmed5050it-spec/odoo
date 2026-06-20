@@ -13,8 +13,9 @@
     "models": [
       {
         "_name": "google.service",
-        "_description": "Google Service",
-        "fields": 0
+        "_description": "Google Service (AbstractModel: generic Google OAuth2 + REST helper, no persisted fields)",
+        "fields": 0,
+        "relations": []
       }
     ],
     "routes": [
@@ -31,7 +32,39 @@
       "record_rules": 0,
       "groups": 0
     },
-    "views": {},
+    "views": {
+      "form": 0,
+      "list": 0,
+      "kanban": 0,
+      "search": 0
+    },
+    "behavioral_notes": [
+      {
+        "element": "google.service._get_authorize_uri / _get_google_tokens / _refresh_google_token (generic OAuth2 authorization-code flow)",
+        "observation": "google.service is an AbstractModel with no fields: it is a parameterized OAuth2 client shared by every Google integration. _get_authorize_uri(service, scope, redirect_uri, state, approval_prompt, access_type) builds the consent URL against https://accounts.google.com/o/oauth2/auth with response_type=code and the caller-supplied scope; access_type=offline is what makes Google return a refresh_token. The client_id is read per service from the ir.config_parameter google_<service>_client_id (treated as public, even logged in clear), and the client_secret from google_<service>_client_secret via the module-level _get_client_secret(ICP_sudo, service) hook -- a deliberate indirection so the secret is only ever read inside a request and never returned to a caller in clear. _get_google_tokens(authorize_code, service, redirect_uri) POSTs grant_type=authorization_code to https://accounts.google.com/o/oauth2/token and returns the (access_token, refresh_token, expires_in) tuple; on requests.HTTPError it raises res.config.settings.get_config_warning. _refresh_google_token(service, rtoken) POSTs grant_type=refresh_token to the same token endpoint and returns (access_token, expires_in). None of this token lifecycle is visible from field/model metadata -- the module exposes zero stored fields.",
+        "source": "code-read"
+      },
+      {
+        "element": "google.service._do_request (host-allow-listed outbound HTTP wrapper for all Google API calls)",
+        "observation": "_do_request(uri, params, headers, method='POST', preuri=GOOGLE_API_BASE_URL, timeout=20) is the single choke-point through which every downstream Google module makes outbound HTTPS calls (via python-requests). It hard-asserts that the resolved host of preuri+uri is one of the hosts of GOOGLE_TOKEN_ENDPOINT (accounts.google.com) or GOOGLE_API_BASE_URL (www.googleapis.com) -- a static SSRF/host allow-list. GET/DELETE pass params as query string; POST/PATCH/PUT send them as form data with the given headers. It scrubs client_secret from debug logs (first 4 chars + 12 x's), returns a (status, response_json, ask_time) tuple where ask_time is parsed from the response Date header (used by callers for clock-skew-tolerant token-expiry math), maps HTTP 204 to a False body, and swallows 204/404 errors while re-raising every other HTTPError. This generic request/error/redaction behavior is pure code, absent from metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "/google_account/authentication public controller (GoogleAuth.oauth2callback) -- shared OAuth2 redirect endpoint",
+        "observation": "The single route (controllers/main.py, type=http auth=public) is the OAuth2 redirect_uri that Google calls back after the user accepts/refuses consent. It JSON-decodes the round-tripped state param into {'s': service, 'f': url_return}, validates that a service is present (and that a code has a return url) else raises BadRequest. On success it reconstructs the redirect_uri from the request url_root, calls google.service._get_google_tokens(code, service, redirect_uri) to exchange the auth code, then dispatches the returned (access_token, refresh_token, ttl) to the current user's res_users_settings_id._set_google_auth_tokens(...) when that field exists (raising if no callback field is defined for the service), and finally redirects back to url_return. On error it appends ?error=<reason> to url_return. The whole module is thus a generic, service-agnostic token broker: it never persists tokens itself; storage and refresh-scheduling live in the downstream module's res.users.settings extension.",
+        "source": "code-read"
+      },
+      {
+        "element": "downstream consumption by google_calendar / google_gmail / google_drive (cloud_storage_google)",
+        "observation": "google_account owns no business object and is consumed as shared infrastructure. google_calendar/models/res_users_settings.py defines _set_google_auth_tokens (the callback the controller invokes, persisting google_calendar_rtoken/token/token_validity) and calls google.service._refresh_google_token('calendar', google_calendar_rtoken) to lazily renew an expired access token, wiping the stored tokens on failure. google_gmail/models/google_gmail_mixin.py and cloud_storage_google/models/res_config_settings.py reuse the same google_<service>_client_id/google_<service>_client_secret ICP convention and the /google_account/authentication callback, though google_gmail hand-builds its own oauth2/v2/auth consent URL rather than calling _get_authorize_uri. The per-service 'service' string ('calendar', 'gmail', 'drive', ...) is the parameter that lets one generic google.service serve every integration with distinct client credentials and scopes.",
+        "source": "code-read"
+      },
+      {
+        "element": "external integration -> Google OAuth2 + Google APIs (gap #7, static)",
+        "observation": "Outbound HTTPS integration via python-requests to Google, host allow-listed by assertion in google.service._do_request to accounts.google.com (oauth2 auth + token endpoints) and www.googleapis.com (all Google REST APIs reached by downstream modules). The OAuth2 client_id (google_<service>_client_id ICP, public, in clear) and client_secret (google_<service>_client_secret ICP, never returned in clear, scrubbed from logs) are admin-supplied per Google Cloud project/service. No vendored SDK -- the OAuth2/REST client is hand-rolled in models/google_service.py with a 20s timeout. This external SaaS dependency (Google identity + APIs) is invisible to Python model/field metadata and is the defining trait of the module.",
+        "source": "static"
+      }
+    ],
     "frontend": {
       "present": false,
       "js_files": 0,
@@ -60,63 +93,101 @@
     "runtime": {
       "models_with_data": 0,
       "top": []
-    },
-    "behavioral_notes": [
-      {
-        "element": "external integrations",
-        "observation": "0 HTTP call sites; SDKs ['requests']; api_keys=True.",
-        "source": "static"
-      },
-      {
-        "element": "thin module",
-        "observation": "1 models, 1 routes, 226 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
-        "source": "ast"
-      }
-    ]
+    }
   },
   "it_architecture": {
-    "application": "google_account (Google Users)",
+    "application": "google_account (shared Google OAuth2 / identity base component -- token & credential plumbing for all Google integrations)",
     "software_services": [
-      "/google_account/authentication"
+      "/google_account/authentication (http, public) - OAuth2 redirect callback: exchanges auth code and hands tokens to the downstream res.users.settings"
     ],
     "data_objects": [
       "google.service"
     ],
-    "logical_data_erm": [],
+    "logical_data_erm": [
+      "google.service (AbstractModel, no persisted fields -- pure OAuth2/REST helper)",
+      "credentials stored as ir.config_parameter google_<service>_client_id (public) + google_<service>_client_secret (secret)",
+      "tokens NOT stored here -- persisted by downstream modules on res.users.settings (e.g. google_calendar_rtoken/token/token_validity) via _set_google_auth_tokens"
+    ],
     "information_flows": [
-      "depends: base_setup"
+      "depends: base_setup (Settings UI host for client id/secret config)",
+      "outbound: Odoo -> accounts.google.com/o/oauth2/token (code exchange + refresh, POST form-encoded)",
+      "outbound: Odoo -> www.googleapis.com (all downstream Google REST calls funnel through google.service._do_request, host allow-listed)",
+      "inbound: Google -> /google_account/authentication?code&state -> _get_google_tokens -> downstream _set_google_auth_tokens",
+      "side-effect: consent URL built by _get_authorize_uri with access_type=offline yields a refresh_token for long-lived access",
+      "side-effect: _refresh_google_token renews an expired access_token from the stored refresh_token on demand",
+      "consumers: google_calendar, google_gmail, google_drive (cloud_storage_google) reuse google.service + the callback + the google_<service>_client_* ICP convention"
     ],
     "frontend_components": []
   },
   "business_architecture": {
     "capabilities": [
-      "Google Users"
+      "Provide Google OAuth2 Authorization-Code Flow (build consent URL, exchange code, refresh token)",
+      "Broker the OAuth2 Redirect Callback for all Google integrations (/google_account/authentication)",
+      "Manage Per-Service Google API Credentials (google_<service>_client_id / client_secret)",
+      "Mediate Outbound Google API Requests (host-allow-listed, secret-scrubbed HTTP wrapper)"
     ],
-    "value_streams": [],
+    "value_streams": [
+      "Connect-Google-Account: admin configures per-service client id/secret -> user is redirected to Google consent -> Google calls back /google_account/authentication -> google.service exchanges the code for access+refresh tokens -> tokens handed to the downstream module for storage and ongoing refresh"
+    ],
     "information_concepts": [
-      "google.service"
+      "google.service (generic Google OAuth2 + REST helper, AbstractModel, no business data)"
     ],
     "organization": [],
     "products": [],
-    "policies": [],
-    "stakeholders": [],
+    "policies": [
+      "no access rules / record rules / groups of its own (no persisted model)",
+      "client_secret read only inside a request via the _get_client_secret hook and never returned to a caller in clear",
+      "client_secret redacted in debug logs (first 4 chars + 12 mask chars)",
+      "google.service._do_request asserts the target host is accounts.google.com or www.googleapis.com (static allow-list)",
+      "OAuth2 redirect endpoint is auth=public (must be reachable by Google) but only acts on a JSON state round-trip and a valid auth code",
+      "access_type=offline requested so Google issues a refresh_token for long-lived, unattended access"
+    ],
+    "stakeholders": [
+      "ERP manager / system admin (configures the Google Cloud project client id/secret per service)",
+      "Internal user (grants OAuth consent for their account)",
+      "Google identity platform / Google APIs (external system / token authority)",
+      "Downstream Google modules (google_calendar, google_gmail, google_drive) consuming the base"
+    ],
     "strategy": null,
-    "metrics": []
+    "metrics": [
+      "is_configured per service (presence of google_<service>_client_id + client_secret)",
+      "token validity / expiry derived by downstream callers from expires_in + the Date-header ask_time"
+    ]
   },
   "classification": {
     "value_model": "support",
     "activity_class": "support",
-    "apqc_category": "13.0 Develop and Manage Business Capabilities",
-    "rationale": "google_account: thin support/support module (auto-architect baseline)."
+    "apqc_category": "8.0 Manage Information Technology",
+    "rationale": "google_account is shared OAuth2/identity infrastructure: it owns no business object (a single AbstractModel google.service with zero persisted fields, no security groups, no views) and produces no sellable output. It is the generic Google OAuth2 + REST plumbing -- consent-URL building, authorization-code exchange, refresh-token renewal and a host-allow-listed outbound request wrapper -- on which google_calendar, google_gmail and google_drive (cloud_storage_google) build by supplying a per-service 'service' string and google_<service>_client_id/secret credentials. Per Stabell & Fjeldstad this is a support / firm-infrastructure function (activity_class=support). For APQC it maps to 8.0 Manage Information Technology -- specifically the external-system-integration / credential-lifecycle band: the module's entire reason to exist is third-party SaaS integration (gap #7: it talks to accounts.google.com and www.googleapis.com) and OAuth2 credential management, which are IT-management concerns rather than business-capability development. This mirrors its sibling microsoft_account (and matches the 8.0 classification of the downstream google_calendar / microsoft_calendar connectors): the parent capability modules own their business capability (scheduling, mail, files); this base owns the IT identity/token plumbing that integrates those capabilities with Google. 13.0 'Develop and Manage Business Capabilities' was rejected because nothing here develops a new business capability -- it operates an external authentication interface; 9.0 'Acquire, Construct, and Manage Assets' was rejected since no physical/IT asset is managed, only API credentials and an OAuth2 token exchange."
   },
   "fit_to_standard": {
     "standard_capabilities": [
-      "Google Users"
+      "generic Google OAuth2 authorization-code flow reusable by any Google service (calendar/gmail/drive)",
+      "access_type=offline consent so Google returns a long-lived refresh_token",
+      "authorization-code -> token exchange and refresh-token renewal against accounts.google.com/o/oauth2/token",
+      "single public OAuth2 redirect callback (/google_account/authentication) that dispatches tokens to the right downstream store",
+      "per-service client id/secret configuration via ir.config_parameter (google_<service>_client_id / client_secret)",
+      "host-allow-listed, secret-redacting outbound HTTP wrapper (_do_request) for all Google API traffic"
     ],
-    "typical_fits": [],
-    "common_gaps": [],
+    "typical_fits": [
+      "downstream Google modules (calendar, gmail, drive) reusing one OAuth2 base instead of each re-implementing the flow",
+      "self-registered Google Cloud project: admin sets client id/secret per service in Settings",
+      "tokens persisted and refreshed by the consuming module on res.users.settings, not by this base"
+    ],
+    "common_gaps": [
+      "no token storage / no res.users(.settings) fields of its own -- every consuming module must implement _set_google_auth_tokens and its own *_rtoken/token/token_validity fields",
+      "no built-in UI: client id/secret config and any connect button live in base_setup / the downstream module",
+      "no automatic refresh scheduling -- _refresh_google_token must be invoked lazily by the caller on expiry",
+      "google_gmail hand-builds its own oauth2/v2/auth consent URL rather than calling _get_authorize_uri (inconsistent reuse)",
+      "single-project credentials per service; no multi-tenant / per-company client credential isolation",
+      "no token-revocation endpoint call -- 'disconnect' is handled by the downstream module wiping its stored tokens"
+    ],
     "drive_hints": [
-      "odoo shell: env['google.service'].search([],limit=3)"
+      "odoo shell: env['ir.config_parameter'].sudo().get_param('google_calendar_client_id')  # is the service configured",
+      "odoo shell: env['google.service']._get_authorize_uri('calendar', scope='...', redirect_uri='.../google_account/authentication', access_type='offline')  # build the consent URL",
+      "odoo shell: env['google.service']._refresh_google_token('calendar', '<refresh_token>')  # -> (access_token, expires_in)",
+      "curl '<host>/google_account/authentication?state=%7B%22s%22%3A%22calendar%22%2C%22f%22%3A%22/odoo%22%7D&code=...'  # simulate Google's OAuth2 redirect callback",
+      "external endpoints hit by google.service: https://accounts.google.com/o/oauth2/token (exchange/refresh), https://www.googleapis.com (downstream API calls)"
     ]
   },
   "reverse_eng_confidence": {
@@ -127,17 +198,20 @@
     "value_streams": "inferred",
     "policies": "inferred",
     "metrics": "inferred",
+    "stakeholders": "inferred",
     "strategy": "human"
   },
   "open_questions": [
-    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+    "Exact set of downstream 'service' strings in production (calendar / gmail / drive) and which still route their callback through /google_account/authentication vs a module-local one.",
+    "Whether google_gmail's bespoke oauth2/v2/auth consent URL (bypassing _get_authorize_uri) is intentional divergence or a candidate for consolidation onto google.service.",
+    "How clock skew is handled across services: ask_time is parsed from the Google Date header in _do_request, but token-validity math lives in each downstream res.users.settings."
   ],
   "provenance": {
     "explorer_facts": "doc/revres/facts/google_account.facts.json",
     "tools": [
-      "extract_module.py",
+      "code-read",
       "extract_frontend.py",
-      "gen_thin.py"
+      "extract_module.py"
     ],
     "odoo_version": "19.0"
   }

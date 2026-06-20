@@ -4,40 +4,56 @@
     "manifest": {
       "name": "Certificate",
       "category": "Hidden/Tools",
-      "depends": [
-        "base_setup"
-      ],
+      "depends": ["base_setup"],
       "auto_install": false,
-      "application": false
+      "application": false,
+      "version": "0.1",
+      "license": "OEEL-1",
+      "author": "Odoo S.A.",
+      "summary": "Manage certificate",
+      "data_files": 6,
+      "demo_files": 0,
+      "external_dependencies": {
+        "note": "manifest declares no external_dependencies, but models/certificate.py and models/key.py import the 'cryptography' package (x509, hazmat.primitives) at module top level; tools/certificate_adapter.py imports pyOpenSSL (OpenSSL.crypto), requests and urllib3 — these are de-facto hard runtime dependencies not surfaced by the manifest."
+      }
     },
     "models": [
       {
         "_name": "certificate.certificate",
         "_description": "Certificate",
-        "fields": 17
+        "_order": "date_end DESC",
+        "file": "models/certificate.py",
+        "fields": 17,
+        "methods": 12,
+        "relations": [
+          "private_key_id->certificate.key (domain public=False, check_company, computed/stored, readonly=False)",
+          "public_key_id->certificate.key (domain public=True, check_company)",
+          "company_id->res.company (required, ondelete=cascade)",
+          "country_code->related company_id.country_code"
+        ]
       },
       {
         "_name": "certificate.key",
         "_description": "Cryptographic Keys",
-        "fields": 8
+        "file": "models/key.py",
+        "fields": 8,
+        "methods": 12,
+        "relations": [
+          "company_id->res.company (required, ondelete=cascade)"
+        ]
       }
     ],
     "routes": [],
     "security": {
       "access_rules": 2,
       "record_rules": 2,
-      "groups": 0
+      "groups": 0,
+      "detail": "Both ACLs (certificate.certificate, certificate.key) grant full CRUD only to base.group_system (Settings/admin). Two ir.rule record rules enforce multi-company isolation via company_id parent_of company_ids on both models."
     },
     "views": {
       "form": 2,
       "list": 2,
-      "tree": 0,
-      "kanban": 0,
-      "search": 2,
-      "pivot": 0,
-      "graph": 0,
-      "calendar": 0,
-      "activity": 0
+      "search": 2
     },
     "frontend": {
       "present": false,
@@ -51,81 +67,142 @@
     },
     "integrations": {
       "http_call_sites": 0,
-      "sdk_imports": [
-        "requests"
-      ],
+      "sdk_imports": ["requests"],
       "uses_api_keys": false,
       "endpoints": [],
-      "files": [
-        "tools/certificate_adapter.py"
-      ]
-    },
-    "runtime": {
-      "models_with_data": 0,
-      "top": []
+      "files": ["tools/certificate_adapter.py"]
     },
     "behavioral_notes": [
       {
-        "element": "external integrations",
-        "observation": "0 HTTP call sites; SDKs ['requests']; api_keys=False.",
-        "source": "static"
+        "element": "certificate.certificate._compute_pem_certificate (stored compute on content, pkcs12_password)",
+        "observation": "The certificate.certificate record stores raw uploaded bytes (content: Binary) and parses them with the cryptography library, trying DER (x509.load_der_x509_certificate), then PKCS12 (pkcs12.load_key_and_certificates with the pkcs12_password), then PEM (x509.load_pem_x509_certificate). On success it derives and STORES content_format, a normalized pem_certificate, subject_common_name (from the COMMON_NAME OID), serial_number, and the validity window date_start/date_end read from the X.509 not_valid_before/not_valid_after (with a parse_version guard: cryptography <42.0.0 uses naive not_valid_before, >=42.0.0 uses not_valid_*_utc stripped to naive). On failure it sets loading_error. is_valid is a separate compute (date_start<=now<=date_end and no loading_error) with a matching _search_is_valid. These business attributes are produced entirely by reading the certificate bytes — invisible to ORM field metadata.",
+        "source": "code-read"
       },
       {
-        "element": "thin module",
-        "observation": "2 models, 0 routes, 1142 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
-        "source": "ast"
+        "element": "certificate.certificate._compute_private_key (PKCS12 self-extraction + cross-model write)",
+        "observation": "When a PKCS12 bundle is uploaded, _compute_private_key decodes the password-protected file, extracts the embedded private key, re-serializes it to unencrypted PKCS8 PEM, and CREATES (or de-duplicates against existing ir.attachment-stored content per company) a certificate.key record, linking it via private_key_id. So uploading one .p12 file silently spawns a second model record (the private key). The @api.constrains _constrains_certificate_key_compatibility then re-loads both and uses constant_time.bytes_eq to assert the certificate's public key matches the linked private/public key, raising ValidationError on mismatch. Cross-model side-effect + crypto consistency check not derivable from metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "certificate.key._compute_pem_key + _sign / _decrypt (private-key loading, decryption, signing)",
+        "observation": "certificate.key holds raw key bytes (content) plus an optional password and, via _compute_pem_key, attempts load_der/pem_private_key then load_der/pem_public_key to classify the key (public flag) and store a normalized pem_key (private keys re-encrypted with BestAvailableEncryption when a password is set, else NoEncryption). _sign loads the PEM private key (decrypting with the stored password) and dispatches by key type — EC -> ECDSA, RSA -> PKCS1v15, Ed25519 -> raw — over SHA1/SHA256, returning formatted signature bytes; _verify mirrors this with public keys; _decrypt handles RSA-OAEP. The model is a private-key vault that performs the actual cryptographic operations in-process.",
+        "source": "code-read"
+      },
+      {
+        "element": "certificate.certificate._sign (signing entry point) + key generation",
+        "observation": "certificate.certificate._sign is the public signing entry point used by document/e-invoice signing callers: it guards on is_valid (raising UserError if expired/invalid) and on the presence of private_key_id, then delegates to private_key_id._sign. Helper getters (_get_der_certificate_bytes, _get_fingerprint_bytes sha1/sha256, _get_signature_bytes, _get_public_key_bytes, _get_public_key_numbers_bytes) expose the certificate's DER/fingerprint/public-key material for embedding in signed XML/PDF. certificate.key also offers @api.model generators _generate_ec_private_key (SECP256R1), _generate_rsa_private_key (exp 65537/3, key_size>=512), and _generate_ed25519_private_key, each creating a certificate.key with a freshly generated, optionally password-encrypted PKCS8 key. These are the security primitives other modules (e.g. localized e-invoicing) consume.",
+        "source": "code-read"
+      },
+      {
+        "element": "cryptography / pyOpenSSL external dependency",
+        "observation": "The whole module is a thin ORM wrapper over the Python 'cryptography' package: certificate.py and key.py import cryptography.x509 and cryptography.hazmat.primitives (serialization, hashes, asymmetric ec/rsa/ed25519/padding, constant_time, pkcs12) at import time, and a runtime parse_version check against cryptography>=42.0.0 changes how validity dates are read. tools/certificate_adapter.py additionally imports pyOpenSSL (OpenSSL.crypto load_certificate/load_privatekey), requests and urllib3 to build a CertificateAdapter (requests.adapters.HTTPAdapter) that performs mutual-TLS using in-memory certificate.certificate / certificate.key records instead of on-disk files. None of these are declared in the manifest's external_dependencies.",
+        "source": "code-read"
+      },
+      {
+        "element": "frontend (OWL/JS)",
+        "observation": "certificate ships zero frontend: 0 JS files, 0 XML/OWL templates, 0 registry adds, 0 patches, 0 services, no asset bundles. All UI is plain backend form/list/search views (2 each) plus a res.config.settings extension; it is a pure server-side cryptographic utility with no client-side code.",
+        "source": "static"
       }
     ]
   },
   "it_architecture": {
-    "application": "certificate (Certificate)",
-    "software_services": [],
+    "application": "certificate (server-side X.509 certificate & private-key vault and signing/crypto utility)",
+    "software_services": [
+      "(no HTTP routes; exposes in-process ORM service methods: certificate.certificate._sign, _get_der_certificate_bytes, _get_fingerprint_bytes, _get_signature_bytes, _get_public_key_bytes, _get_public_key_numbers_bytes; certificate.key._sign/_verify/_decrypt and _generate_ec/rsa/ed25519_private_key)",
+      "tools.CertificateAdapter: a requests HTTPAdapter providing mutual-TLS from in-memory certificate records (outbound transport helper, no inbound route)"
+    ],
     "data_objects": [
       "certificate.certificate",
       "certificate.key"
     ],
     "logical_data_erm": [
-      "certificate.certificate -> certificate.key",
-      "certificate.certificate -> res.company",
-      "certificate.key -> res.company"
+      "certificate.certificate -> certificate.key (private_key_id, public=False)",
+      "certificate.certificate -> certificate.key (public_key_id, public=True)",
+      "certificate.certificate -> res.company (company_id, ondelete=cascade)",
+      "certificate.key -> res.company (company_id, ondelete=cascade)",
+      "certificate.certificate.country_code -related-> res.company.country_code"
     ],
     "information_flows": [
-      "depends: base_setup"
+      "depends: [base_setup] (-> base); auto_install=false",
+      "uses cryptography (x509/hazmat) to parse uploaded cert/key bytes into stored business attributes (subject, serial, validity, pem)",
+      "side-effect: uploading a PKCS12 bundle creates a derived certificate.key (private key) record",
+      "consumed by downstream signing modules (e-invoicing / document signing localizations) via _sign and certificate/key byte getters",
+      "tools.CertificateAdapter injects in-memory cert+key into pyOpenSSL/urllib3 for outbound mutual-TLS HTTPS"
     ],
     "frontend_components": []
   },
   "business_architecture": {
     "capabilities": [
-      "Certificate"
+      "Store & Normalize Digital Certificates (DER/PEM/PKCS12 -> stored PEM + parsed metadata)",
+      "Manage Cryptographic Key Pairs (private/public key vault: certificate.key)",
+      "Generate Asymmetric Keys (EC SECP256R1, RSA, Ed25519)",
+      "Digitally Sign Documents/Messages (ECDSA/RSA-PKCS1v15/Ed25519 over SHA1/SHA256)",
+      "Verify Signatures & Decrypt (RSA-OAEP) Data",
+      "Validate Certificate Lifecycle (validity window, cert/key compatibility check)",
+      "Provide Mutual-TLS Transport from In-Memory Certificates (CertificateAdapter)"
     ],
-    "value_streams": [],
+    "value_streams": [
+      "Upload-to-Usable-Credential: upload cert/key bytes -> cryptography parses & validates -> stored normalized PEM + validity + linked key -> credential ready for signing",
+      "Sign-on-Demand: caller invokes certificate._sign(message) -> validity & private-key guard -> key._sign dispatch by algorithm -> signature bytes returned to the document/e-invoice module"
+    ],
     "information_concepts": [
-      "certificate.certificate",
-      "certificate.key"
+      "certificate.certificate (digital certificate)",
+      "certificate.key (cryptographic key / key pair)"
     ],
-    "organization": [],
+    "organization": [
+      "base.group_system (Settings/admin) — the only group granted access to both models (no module-specific security groups defined)"
+    ],
     "products": [],
     "policies": [
-      "2 record rules"
+      "ACL: full CRUD on certificate.certificate and certificate.key restricted to base.group_system",
+      "ir.rule: multi-company isolation on both models (company_id = False OR company_id parent_of company_ids)",
+      "@api.constrains: certificate must load successfully (else ValidationError) and certificate/key public material must match (constant_time compare)",
+      "_sign refuses to sign with an invalid/expired certificate or without a linked private key"
     ],
-    "stakeholders": [],
+    "stakeholders": [
+      "System administrator (manages certificates/keys via Settings)",
+      "Downstream e-invoicing / document-signing localization modules (programmatic consumers)",
+      "External TLS endpoints requiring client-certificate authentication"
+    ],
     "strategy": null,
-    "metrics": []
+    "metrics": [
+      "is_valid / loading_error as operational health indicators per certificate (no reports or KPI dashboards shipped)"
+    ]
   },
   "classification": {
     "value_model": "support",
     "activity_class": "support",
-    "apqc_category": "13.0 Develop and Manage Business Capabilities",
-    "rationale": "certificate: thin support/support module (auto-architect baseline)."
+    "apqc_category": "8.0 Manage Information Technology (IT)",
+    "rationale": "By Stabell & Fjeldstad, certificate is a pure 'support' value model: it is firm IT/security infrastructure (a PKI credential vault plus signing/crypto primitives) with no business object, document flow or transaction of its own — it owns only certificate.certificate and certificate.key, has no routes, no reports, no product, and is restricted to base.group_system. It creates no customer value directly; it is consumed by primary/support activities (e-invoicing, document signing, mutual-TLS) as a technology-development/infrastructure utility. APQC 8.0 'Manage Information Technology' is the correct category because the module's whole purpose is cryptographic key and certificate management — i.e. IT security administration (key generation, secure key storage, certificate lifecycle, digital signing) which sits under 8.0 'Manage IT' (IT security, privacy and data protection / manage IT infrastructure). It was weighed against 11.0 'Manage Enterprise Risk, Compliance, Remediation, and Resiliency': although digital signatures serve legal/compliance (e-invoice authenticity, non-repudiation), this module supplies only the technical cryptographic mechanism, not the governance, risk assessment, audit or compliance process itself — that compliance use lives in the consuming localization modules. The dominant character here is cryptographic key/certificate management infrastructure, so 8.0 is chosen with 11.0 noted as the secondary (downstream) concern."
   },
   "fit_to_standard": {
     "standard_capabilities": [
-      "Certificate"
+      "upload and store X.509 certificates in DER, PEM or PKCS12, auto-detecting format",
+      "auto-extract subject common name, serial number and validity dates from certificate bytes",
+      "auto-derive and link the private key from an uploaded PKCS12 bundle",
+      "store and classify private/public keys, password-protected, per company",
+      "generate EC (SECP256R1), RSA and Ed25519 key pairs",
+      "sign (ECDSA/RSA/Ed25519, SHA1/SHA256), verify, and RSA-OAEP decrypt",
+      "certificate/key compatibility and validity enforcement via constraints",
+      "mutual-TLS HTTP transport from in-memory certificates (CertificateAdapter)"
     ],
-    "typical_fits": [],
-    "common_gaps": [],
+    "typical_fits": [
+      "credential store for country-specific e-invoicing / e-signature localizations reused unchanged",
+      "admin-only, multi-company certificate management out of the box",
+      "programmatic signing API (_sign) for any module needing X.509 signatures"
+    ],
+    "common_gaps": [
+      "no UI/workflow for certificate expiry alerts or rotation reminders (only the is_valid flag)",
+      "limited curve/algorithm coverage (EC fixed to SECP256R1; SHA1/SHA256 only)",
+      "no HSM / external key-store integration; private keys stored in the database",
+      "no certificate enrollment / CA issuance flow (import-only)",
+      "manifest omits the cryptography/pyOpenSSL external dependencies"
+    ],
     "drive_hints": [
-      "odoo shell: env['certificate.certificate'].search([],limit=3)"
+      "odoo shell: env['certificate.key']._generate_rsa_private_key(env.company, name='demo_rsa')  # generate a key pair",
+      "odoo shell: k = env['certificate.key']._generate_ec_private_key(env.company); k._sign('hello')  # sign a message",
+      "odoo shell: env['certificate.certificate'].search_count([('is_valid','=',True)])  # count usable certificates",
+      "odoo shell: c = env['certificate.certificate'].browse(id); (c.subject_common_name, c.date_end, c.is_valid)  # parsed cert metadata"
     ]
   },
   "reverse_eng_confidence": {
@@ -139,14 +216,16 @@
     "strategy": "human"
   },
   "open_questions": [
-    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+    "Which downstream modules call certificate.certificate._sign (e-invoicing localizations vs document signing) and with what hashing algorithms — not visible from this module alone.",
+    "Whether private keys stored in the database (Binary/ir.attachment) meet the deployment's key-protection / compliance requirements, given no HSM integration.",
+    "Whether CertificateAdapter is actually wired into a live outbound request flow in this codebase or only provided as a helper."
   ],
   "provenance": {
     "explorer_facts": "doc/revres/facts/certificate.facts.json",
     "tools": [
+      "code-read",
       "extract_module.py",
-      "extract_frontend.py",
-      "gen_thin.py"
+      "extract_frontend.py"
     ],
     "odoo_version": "19.0"
   }

@@ -4,32 +4,60 @@
     "manifest": {
       "name": "Web Routing",
       "category": "Hidden",
+      "summary": "Web Routing",
+      "author": "Odoo S.A.",
+      "license": "LGPL-3",
       "depends": [
         "web"
       ],
       "auto_install": false,
-      "application": false
+      "application": false,
+      "post_init_hook": "_post_init_hook"
     },
-    "models": [],
+    "models": [
+      {
+        "_name": "ir.http (extension)",
+        "_inherit": "ir.http",
+        "_description": "Routing/dispatch extension: slug tooling, multilang URL matching, reroute/redirect, frontend error rendering",
+        "fields": 0,
+        "methods": 22,
+        "relations": []
+      },
+      {
+        "_name": "ir.qweb (extension)",
+        "_inherit": "ir.qweb",
+        "_description": "Injects slug/unslug_url/url_for/url_localized helpers into the QWeb rendering context for frontend templates",
+        "fields": 0,
+        "methods": 2,
+        "relations": []
+      },
+      {
+        "_name": "res.lang (extension)",
+        "_inherit": "res.lang",
+        "_description": "Adds _get_frontend() returning the languages available for the current request",
+        "fields": 0,
+        "methods": 1,
+        "relations": []
+      }
+    ],
     "routes": [
       {
         "paths": [
           "/website/translations"
         ],
         "auth": "public",
-        "type": "http"
+        "type": "http",
+        "website": true,
+        "readonly": true
       },
       {
         "paths": [
           "/web/session/logout"
         ],
-        "auth": null,
-        "type": null
-      },
-      {
-        "paths": [],
-        "auth": "none",
-        "type": null
+        "auth": "inherited (web.Session)",
+        "type": "http",
+        "website": true,
+        "multilang": false
       }
     ],
     "security": {
@@ -40,13 +68,12 @@
     "views": {
       "form": 0,
       "list": 0,
-      "tree": 0,
       "kanban": 0,
-      "search": 0,
       "pivot": 0,
       "graph": 0,
       "calendar": 0,
-      "activity": 0
+      "activity": 0,
+      "note": "Ships QWeb error templates (http_routing.4xx / .http_error and per-code 404/500 pages) + res_lang form extension; xml_loc ~270"
     },
     "frontend": {
       "present": false,
@@ -71,52 +98,141 @@
     },
     "behavioral_notes": [
       {
-        "element": "thin module",
-        "observation": "0 models, 3 routes, 889 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
-        "source": "ast"
+        "element": "ir.http._slug / _unslug / _unslug_url + ModelConverter (_UNSLUG_RE)",
+        "observation": "_slug(record) builds the pretty URL token as '<slugified display_name>-<id>' (e.g. (14,'My Phone') -> 'my-phone-14'); if the name slugifies to empty it falls back to the bare id. _unslug() reverse-parses a token with the regex '(?:(\\w{1,2}|\\w[\\w-]+?\\w)-)?(-?\\d+)(?=$|/|#|?)', returning (slug|None, id|None) and tolerating no slug at all so '/foo/1' still resolves. _unslug_url('/blog/my-super-blog-1') -> '/blog/1' for canonicalization. ModelConverter (subclassing base ir_http.ModelConverter, registered in _get_converters) uses regex _UNSLUG_ROUTE_PATTERN and in to_python() browses the id, falling back to abs(id) when a negative id does not exist - the metadata-invisible glue that lets a werkzeug <model(...)> route accept human-readable slugs.",
+        "source": "code-read"
+      },
+      {
+        "element": "ir.http._match (multilang dispatch, 9 cases)",
+        "observation": "Overrides base _match to add multilang URL handling and to set request.is_frontend / request.is_frontend_multilang / request.lang. It first tries the base match; non-website endpoints pass through untouched. For frontend requests it derives the requested lang (order: lang in URL > 'frontend_lang' cookie > context lang > website default), then applies 9 branches: (2) no lang + default -> as-is; (3) no lang + bot -> as-is with default; (4) no lang + non-GET (e.g. POST) -> as-is; (5) no lang -> redirect injecting '/<url_code>' before the path (+ set frontend_lang cookie); (6) default lang explicitly in URL -> redirect stripping it; (7) lang alias (fr_FR vs url_code fr) -> 301 to canonical url_code; (8) homepage trailing slash '/fr/' -> 301 to '/fr'; (9) valid non-default lang in URL -> request.reroute(path_no_lang) to strip the prefix and continue dispatch. Double-slash '//' paths are collapsed via a 301. This is the core 'pretty/lang URL -> controller' translation that no ORM metadata exposes.",
+        "source": "code-read"
+      },
+      {
+        "element": "ir.http._pre_dispatch (SEO 301 to sluggified URL) + _frontend_pre_dispatch",
+        "observation": "After matching, for frontend multilang GET/HEAD requests it rebuilds the canonical path from the matched rule+args and compares it to the requested path; if they differ (browser hit '/foo/1' but canonical is '/foo/egg-1', or '/fr/foo/1' -> '/fr/foo/oeuf-1') it issues a 301 to the sluggified path, re-prefixing the lang url_code when not the default. Code comments state the real motivation is SEO. It also re-stamps the lang context on <model(...)> record args. _frontend_pre_dispatch sets request context lang and refreshes the 'frontend_lang' cookie. A structural read of the route table cannot reveal this id->slug canonical redirect.",
+        "source": "code-read"
+      },
+      {
+        "element": "ir.http._url_localized / _url_lang / _url_for / _is_multilang_url",
+        "observation": "Reverse direction of routing: given a relative URL these build the lang-correct, slug-translated link used in rendered pages. _url_localized re-matches the controller for the path, switches any <model(...)> record args to the target lang (translating the slug parts) and rebuilds via the db router, prefixing '/<url_code>' unless it is the default lang; it can also urljoin a canonical_domain for canonical/hreflang tags. _url_lang inserts/removes the lang segment for multilang URLs only (skips /static/ and /web/), honoring single-language installs. _url_for is the thin public wrapper exposed to QWeb as url_for(). _is_multilang_url decides translatability by re-matching the endpoint's website/multilang routing flags via url_rewrite.",
+        "source": "code-read"
+      },
+      {
+        "element": "ir.http._handle_error + url_rewrite (frontend error pages & cached reverse-routing)",
+        "observation": "_handle_error intercepts HTTPExceptions for frontend requests: it grants the public user, rolls back the cursor, and for 404/403 tries _serve_fallback() (website CMS page); otherwise it renders a QWeb template 'http_routing.<code>' (falling back to 'http_routing.4xx', then a last-ditch HTTP 418 'http_routing.http_error') and returns a text/html Response - turning raw exceptions into branded error pages. url_rewrite(path) is @tools.ormcache('path','query_args', cache='routing.rewrites'): it binds the db router, matches POST-then-GET, follows werkzeug RequestRedirect recursively, and returns (resolved_url, endpoint) - the cached reverse lookup _is_multilang_url and other helpers rely on.",
+        "source": "code-read"
+      },
+      {
+        "element": "frontend (static assets)",
+        "observation": "extract_frontend.py reports no OWL/JS surface (present=false; 0 js_files, 0 xml_templates with components, 0 registry_adds/patches/services/asset_bundles). http_routing is a pure server-side dispatch/routing layer: it ships no client widgets. All client-visible effects (slug links, lang prefixes, 404 pages) are produced server-side via QWeb context helpers and HTTP redirects, not via browser components.",
+        "source": "static"
       }
     ]
   },
   "it_architecture": {
-    "application": "http_routing (Web Routing)",
+    "application": "http_routing (web URL-routing layer: slug generation/parsing, multi-language URL prefix + 301/302 redirects, pretty-URL rerouting/dispatch into controllers, frontend error rendering)",
     "software_services": [
-      "/web/session/logout",
-      "/website/translations"
+      "/website/translations (public frontend translation bundle)",
+      "/web/session/logout (website-aware logout override, multilang=false)",
+      "ir.http._match (multilang URL match + reroute, dispatch hook)",
+      "ir.http._pre_dispatch (SEO sluggified-URL 301 redirect hook)",
+      "ir.http._url_localized / _url_for / _url_lang (QWeb link builders)",
+      "ir.http._handle_error (frontend 404/403/500 page rendering)",
+      "ir.http.url_rewrite (ormcache'd reverse routing)"
     ],
-    "data_objects": [],
-    "logical_data_erm": [],
+    "data_objects": [
+      "ir.http (extension, abstract)",
+      "ir.qweb (extension, abstract)",
+      "res.lang (extension)"
+    ],
+    "logical_data_erm": [
+      "ir.http (extension) -> request.lang (res.lang LangData, per-request, no stored relation)",
+      "ir.qweb (extension) -> ir.http (slug/url_for/url_localized helpers injected into render context)",
+      "res.lang (extension) -> res.lang._get_active_by('code') (frontend lang set)"
+    ],
     "information_flows": [
-      "depends: web"
+      "depends: web (-> base, ir.http/ir.qweb framework)",
+      "inbound: browser pretty/lang URL -> ir.http._match -> (reroute/redirect) -> super()._match -> controller endpoint",
+      "dispatch: ir.http._pre_dispatch -> 301 to sluggified canonical URL (SEO) + lang context/cookie stamp",
+      "outbound: QWeb template -> slug()/url_for()/url_localized() (via ir.qweb._prepare_frontend_environment) -> lang-prefixed slug links",
+      "error: HTTPException -> ir.http._handle_error -> _serve_fallback() or http_routing.<code> QWeb error page",
+      "cache: ir.http.url_rewrite via tools.ormcache(cache='routing.rewrites')",
+      "extends: ir.http (routing/dispatch), ir.qweb (render context), res.lang (frontend langs)"
     ],
     "frontend_components": []
   },
   "business_architecture": {
     "capabilities": [
-      "Web Routing"
+      "Generate human-readable / SEO-friendly slug URLs from records (slug/unslug)",
+      "Match and reroute pretty URLs into controller endpoints (dispatch)",
+      "Manage multi-language URL prefixes and 301/302 canonical redirects",
+      "Build lang-localized, slug-translated links inside rendered pages",
+      "Detect/select request language (URL > cookie > context > website default, incl. bot handling)",
+      "Render branded frontend error pages (404/403/500) and CMS fallbacks"
     ],
-    "value_streams": [],
-    "information_concepts": [],
+    "value_streams": [
+      "URL-to-Controller: inbound pretty/lang URL -> _match lang resolution -> reroute/redirect -> matched endpoint -> response",
+      "Record-to-Link: rendered QWeb page -> slug()/url_localized() -> canonical lang-prefixed slug URL emitted to the browser"
+    ],
+    "information_concepts": [
+      "ir.http (routing/dispatch extension)",
+      "ir.qweb (render-context extension)",
+      "res.lang (frontend language set)",
+      "request.lang / is_frontend / is_frontend_multilang (per-request routing state)",
+      "slug token (display_name-id)"
+    ],
     "organization": [],
     "products": [],
-    "policies": [],
-    "stakeholders": [],
+    "policies": [
+      "POST/non-GET requests are never redirected for lang (allow_redirect guard); only GET/HEAD get sluggified 301s",
+      "Search-engine bots keep the un-prefixed default-lang URL (is_a_bot branch)",
+      "/static/ and /web/ paths are treated as non-multilang and never translated",
+      "frontend_lang cookie is set/refreshed on every lang resolution to pin the visitor language"
+    ],
+    "stakeholders": [
+      "Website visitor / end user (receives pretty, localized URLs and error pages)",
+      "SEO / marketing (canonical slug + hreflang lang-prefixed URLs)",
+      "Module developer (website/portal builds on _match, slug, url_for)",
+      "Search-engine crawler (bot-specific routing behavior)"
+    ],
     "strategy": null,
     "metrics": []
   },
   "classification": {
     "value_model": "support",
     "activity_class": "support",
-    "apqc_category": "13.0 Develop and Manage Business Capabilities",
-    "rationale": "http_routing: thin support/support module (auto-architect baseline)."
+    "apqc_category": "8.0 Manage Information Technology",
+    "rationale": "http_routing is cross-cutting web-platform infrastructure (Porter support activity; Stabell & Fjeldstad 'support'): it owns no business object of its own - only three abstract/extension models (ir.http, ir.qweb, res.lang) with zero stored fields, zero security, ~889 Python LOC of routing/dispatch logic. It is firm IT infrastructure that every website/portal request transits, translating pretty/lang URLs into controller calls and emitting SEO links - not a value-creating primary activity of any chain/shop/network. APQC 8.0 'Manage Information Technology' fits because this is concrete application-platform/runtime delivery (the web routing & URL-localization layer of the application software), the same bucket as the 'web' framework analog (web.metamodel.json). 13.0 'Develop and Manage Business Capabilities' was considered (routing is plumbing other capabilities build on) but rejected: http_routing is a running runtime component performing IT delivery work, not a governance/portfolio capability - squarely 8.0.",
+    "apqc_alternatives_considered": [
+      "13.0 Develop and Manage Business Capabilities - rejected: concrete IT runtime/dispatch, not capability governance"
+    ]
   },
   "fit_to_standard": {
     "standard_capabilities": [
-      "Web Routing"
+      "Slug-based pretty URLs out of the box for any <model(...)> route",
+      "Automatic multi-language URL prefixing with 301/302 canonicalization",
+      "Default-language URL stripping and lang-alias normalization (fr_FR -> fr)",
+      "SEO 301 redirect from /foo/1 to /foo/egg-1",
+      "QWeb url_for / url_localized / slug helpers for templates",
+      "Branded frontend 404/403/500 error pages with website CMS fallback",
+      "ormcache-backed reverse routing (url_rewrite)"
     ],
-    "typical_fits": [],
-    "common_gaps": [],
+    "typical_fits": [
+      "Multilingual website/eCommerce with localized, SEO-friendly URLs",
+      "Portal pages reachable via readable record URLs",
+      "Custom website controllers declaring website=True/multilang routes"
+    ],
+    "common_gaps": [
+      "Custom URL schemes beyond the display_name-id slug pattern (requires overriding _slug/_unslug or ModelConverter)",
+      "Per-route language exceptions / advanced redirect rules (handled in the website module, not here)",
+      "Country/geoip-based language detection is NOT in http_routing - lang is URL/cookie/context/default + bot only (provided upstream by website/website_geoip)",
+      "Custom error-page design beyond the http_routing.<code> QWeb templates"
+    ],
     "drive_hints": [
-      "n/a"
+      "odoo shell: env['ir.http']._slug((14, 'My Phone')) -> 'my-phone-14'; env['ir.http']._unslug('my-phone-14') -> ('my-phone', 14)",
+      "curl -sI http://localhost:8069/shop -> expect 30x Location with /<lang>/shop when a non-default frontend lang is active",
+      "curl -sI 'http://localhost:8069/fr/shop/1' -> expect 301 to the sluggified /fr/shop/<slug>-1 (SEO redirect)",
+      "curl -s http://localhost:8069/some-missing-page -> rendered http_routing 404 page (text/html) rather than a bare werkzeug error"
     ]
   },
   "reverse_eng_confidence": {
@@ -130,14 +246,17 @@
     "strategy": "human"
   },
   "open_questions": [
-    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+    "Exact interaction with the website module's redirect (website.rewrite.rule) and homepage handling layered on top of _match.",
+    "How geoip/country-based language preselection feeds request.lang upstream (website / website_geoip), since http_routing itself only reads URL/cookie/context/default + bot.",
+    "Runtime hit-rate and invalidation pattern of the 'routing.rewrites' ormcache under live traffic.",
+    "Full set of QWeb error templates and 4xx/5xx variants shipped vs. overridden by website."
   ],
   "provenance": {
     "explorer_facts": "doc/revres/facts/http_routing.facts.json",
     "tools": [
+      "code-read",
       "extract_module.py",
-      "extract_frontend.py",
-      "gen_thin.py"
+      "extract_frontend.py"
     ],
     "odoo_version": "19.0"
   }

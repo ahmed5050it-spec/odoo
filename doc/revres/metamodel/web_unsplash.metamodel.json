@@ -4,6 +4,10 @@
     "manifest": {
       "name": "Unsplash Image Library",
       "category": "Hidden",
+      "summary": "Find free high-resolution images from Unsplash",
+      "version": "1.1",
+      "author": "Odoo S.A.",
+      "license": "LGPL-3",
       "depends": [
         "base_setup",
         "html_editor"
@@ -11,7 +15,34 @@
       "auto_install": true,
       "application": false
     },
-    "models": [],
+    "models": [
+      {
+        "_inherit": "ir.qweb.field.image",
+        "_description": "QWeb image field converter (extension)",
+        "file": "models/ir_qweb_fields.py",
+        "fields": 0,
+        "methods": 1,
+        "relations": []
+      },
+      {
+        "_inherit": "res.config.settings",
+        "_description": "General Settings (extension): adds Unsplash app id / access key",
+        "file": "models/res_config_settings.py",
+        "fields": 2,
+        "field_types": {
+          "Char": 2
+        },
+        "relations": []
+      },
+      {
+        "_inherit": "res.users",
+        "_description": "Users (extension): _can_manage_unsplash_settings gate",
+        "file": "models/res_users.py",
+        "fields": 0,
+        "methods": 1,
+        "relations": []
+      }
+    ],
     "routes": [
       {
         "paths": [
@@ -48,16 +79,46 @@
       "groups": 0
     },
     "views": {
-      "form": 0,
+      "form": 1,
       "list": 0,
-      "tree": 0,
       "kanban": 0,
-      "search": 0,
       "pivot": 0,
       "graph": 0,
       "calendar": 0,
       "activity": 0
     },
+    "behavioral_notes": [
+      {
+        "element": "Web_Unsplash.fetch_unsplash_images (/web_unsplash/fetch_images)",
+        "observation": "Server-side proxy to the Unsplash search API. Reads the access_key (ir.config_parameter 'unsplash.access_key') and app_id ('unsplash.app_id') via sudo(); if either is missing it returns {'error':'key_not_found'} (for managers) or {'error':'no_access'} (for non-managers, gated by res.users._can_manage_unsplash_settings). When configured it injects client_id=access_key into the POST params and does requests.get('https://api.unsplash.com/search/photos/'), relaying the raw Unsplash JSON to the browser. The key never reaches the client; the browser only ever sees search results. Metadata-invisible outbound HTTP call.",
+        "source": "code-read"
+      },
+      {
+        "element": "Web_Unsplash.save_unsplash_url (/web_unsplash/attachment/add)",
+        "observation": "Materialises a chosen Unsplash photo into a local ir.attachment. For each {url, download_url, description} it validates the URL host is images.unsplash.com / plus.unsplash.com, requests.get()s the binary, runs image_process(verify_resolution=True) + guess_mimetype, then delegates to html_editor's HTML_Editor._attachment_create to build the attachment named 'unsplash_<id>_<query>'. It then sudo()-sets attachment.url to '/unsplash/<id>/<query>' (deliberately bypassing _check_serving_attachments, which normally forbids a binary attachment having a URL) and generate_access_token(). Returns attachment._get_media_info() to the editor. Side effect: a free stock photo becomes an owned, servable record on res_model/res_id (default ir.ui.view).",
+        "source": "code-read"
+      },
+      {
+        "element": "Web_Unsplash._notify_download (Unsplash API terms callback)",
+        "observation": "After each image is saved, _notify_download(download_url) pings the photo's Unsplash download_url with client_id=access_key. This is mandated by Unsplash API guidelines (it increments the photographer's download counter) and is required to stay compliant with their terms; failures are swallowed and logged, never surfaced to the user. The URL is validated to start with 'https://api.unsplash.com/photos/'. Pure side-effect of a third-party compliance obligation, not in any model.",
+        "source": "code-read"
+      },
+      {
+        "element": "res.config.settings unsplash_access_key / unsplash_app_id + save_unsplash",
+        "observation": "API credentials are not module data: they are stored as ir.config_parameter rows 'unsplash.access_key' and 'unsplash.app_id', surfaced as config_parameter Char fields on res.config.settings (General Settings). The /web_unsplash/save_unsplash route lets a website restricted editor or ERP manager (res.users._can_manage_unsplash_settings: base.group_erp_manager OR website.group_website_restricted_editor) set them at runtime without the Settings form, raising NotFound otherwise. So the integration is keyed per-database via system parameters, configured by privileged users only.",
+        "source": "code-read"
+      },
+      {
+        "element": "ir.qweb.field.image.from_html (rendering path)",
+        "observation": "Extends the QWeb image field converter so that when website/editor HTML containing an <img src='/unsplash/...'> is saved back, from_html() resolves the local public ir.attachment (matched by url path + res_model/res_id) and returns its datas, instead of re-fetching from Unsplash. This stitches the saved stock photo into Odoo's normal image-serving pipeline.",
+        "source": "code-read"
+      },
+      {
+        "element": "External integration: Unsplash REST API (gap #7)",
+        "observation": "web_unsplash is an outbound third-party integration: controllers/main.py uses the `requests` library against https://api.unsplash.com/search/photos/ (search), https://api.unsplash.com/photos/ (download notify), and downloads binaries from https://images.unsplash.com/ / https://plus.unsplash.com/. Authentication is an Unsplash Access Key (client_id) held in ir.config_parameter. None of these HTTP call-sites or the api-key dependency are visible in Python ORM metadata.",
+        "source": "static"
+      }
+    ],
     "frontend": {
       "present": true,
       "js_files": 6,
@@ -100,70 +161,106 @@
     "runtime": {
       "models_with_data": 0,
       "top": []
-    },
-    "behavioral_notes": [
-      {
-        "element": "frontend (OWL/JS)",
-        "observation": "6 JS files, 2 OWL components, 2 registry adds; bundles ['web.assets_frontend', 'html_editor.assets_media_dialog', 'web.assets_unit_tests'].",
-        "source": "static"
-      },
-      {
-        "element": "external integrations",
-        "observation": "3 HTTP call sites; SDKs ['requests']; api_keys=True.",
-        "source": "static"
-      },
-      {
-        "element": "thin module",
-        "observation": "0 models, 4 routes, 355 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
-        "source": "ast"
-      }
-    ]
+    }
   },
   "it_architecture": {
-    "application": "web_unsplash (Unsplash Image Library)",
+    "application": "web_unsplash (Unsplash image-search/insert integration for the HTML editor & website; outbound Unsplash API proxy)",
     "software_services": [
-      "/web_unsplash/attachment/add",
-      "/web_unsplash/fetch_images",
-      "/web_unsplash/get_app_id",
-      "/web_unsplash/save_unsplash"
+      "/web_unsplash/fetch_images (proxy Unsplash search API, jsonrpc, auth=user)",
+      "/web_unsplash/attachment/add (download chosen image -> ir.attachment, jsonrpc, auth=user)",
+      "/web_unsplash/get_app_id (return unsplash.app_id, jsonrpc, auth=public)",
+      "/web_unsplash/save_unsplash (set app_id/access_key config params, jsonrpc, auth=user)"
     ],
-    "data_objects": [],
-    "logical_data_erm": [],
+    "data_objects": [
+      "ir.qweb.field.image (extension)",
+      "res.config.settings (extension)",
+      "res.users (extension)"
+    ],
+    "logical_data_erm": [
+      "web_unsplash -> ir.attachment (downloaded image stored as attachment, url=/unsplash/<id>/<query>)",
+      "web_unsplash -> ir.config_parameter (unsplash.access_key, unsplash.app_id)",
+      "ir.qweb.field.image.from_html -> ir.attachment (resolve saved /unsplash/ image by url + res_model/res_id)"
+    ],
     "information_flows": [
-      "depends: base_setup, html_editor"
+      "depends: base_setup, html_editor",
+      "search: OWL ImageSelector/MediaDialog -> /web_unsplash/fetch_images -> requests.get(api.unsplash.com/search/photos) -> JSON results to browser",
+      "insert: editor -> /web_unsplash/attachment/add -> requests.get(images.unsplash.com binary) -> image_process -> HTML_Editor._attachment_create -> ir.attachment(url=/unsplash/...)",
+      "compliance: attachment/add -> _notify_download -> requests.get(api.unsplash.com/photos/.../download?client_id) (Unsplash API terms)",
+      "config: General Settings / save_unsplash -> ir.config_parameter(unsplash.access_key, unsplash.app_id)",
+      "render: saved HTML <img src=/unsplash/...> -> ir.qweb.field.image.from_html -> attachment.datas"
     ],
     "frontend_components": [
-      "UnsplashCredentials",
-      "UnsplashError"
+      "ImageSelector (patched: adds Unsplash search tab/source)",
+      "MediaDialog (patched: wires Unsplash provider)",
+      "UnsplashCredentials (OWL: app id / access key entry for privileged users)",
+      "UnsplashError (OWL: surfaces no_access / key_not_found / API errors)",
+      "unsplash service (registry services:unsplash — client-side search/save orchestration)",
+      "unsplash_beacon (public.interactions: Unsplash download-tracking beacon on the public website)"
     ]
   },
   "business_architecture": {
     "capabilities": [
-      "Unsplash Image Library"
+      "Search free stock imagery from an external provider (Unsplash) inside the editor",
+      "Insert / download a chosen stock photo as a local managed attachment",
+      "Configure & secure third-party media-API credentials",
+      "Honour external-provider API compliance (download attribution callback)"
     ],
-    "value_streams": [],
-    "information_concepts": [],
+    "value_streams": [
+      "Find-to-Insert media: open media dialog -> search Unsplash -> pick image -> download to ir.attachment -> embed in page/record",
+      "Configure-integration: privileged user enters app id + access key -> stored as config parameters -> integration enabled"
+    ],
+    "information_concepts": [
+      "ir.attachment (downloaded Unsplash image)",
+      "ir.config_parameter (unsplash.access_key, unsplash.app_id)",
+      "res.config.settings (unsplash_access_key, unsplash_app_id)"
+    ],
     "organization": [],
     "products": [],
-    "policies": [],
-    "stakeholders": [],
+    "policies": [
+      "res.users._can_manage_unsplash_settings: only base.group_erp_manager OR website.group_website_restricted_editor may set credentials / see key-config errors",
+      "URL allow-listing: only images.unsplash.com / plus.unsplash.com binaries and api.unsplash.com/photos/ notify URLs are accepted (server-side validation)",
+      "Mandatory Unsplash download-notification callback per Unsplash API terms"
+    ],
+    "stakeholders": [
+      "Website editor / content author (searches & inserts stock photos)",
+      "ERP manager / website restricted editor (configures API credentials)",
+      "Unsplash (external API provider, attribution/usage terms)"
+    ],
     "strategy": null,
-    "metrics": []
+    "metrics": [
+      "Unsplash download-notification beacon (per-image download count reported back to Unsplash)"
+    ]
   },
   "classification": {
     "value_model": "support",
     "activity_class": "support",
     "apqc_category": "8.0 Manage Information Technology",
-    "rationale": "web_unsplash: thin support/support module (auto-architect baseline)."
+    "rationale": "web_unsplash is firm IT/content infrastructure (Porter support activity; Stabell & Fjeldstad 'support'), not a value-creating primary activity of any chain/shop/network. It is a thin media-tooling bridge that lets the html_editor and website pull free stock imagery from an external API: 0 business models (only 3 inherit-only extensions), 4 jsonrpc routes, ~355 Python LOC, and its real substance is an external integration (gap #7: requests against api.unsplash.com / images.unsplash.com, an api-key in ir.config_parameter) plus an OWL/JS image-picker UI patched into MediaDialog/ImageSelector (gap #3). auto_install=true makes it ubiquitous editor plumbing. APQC 8.0 'Manage Information Technology' fits because the work is IT delivery — develop/manage application software and integrate an external content/media service into the platform; 4.x/5.x (operations/marketing) were rejected because the module performs no primary operating activity, it only equips other modules' UIs with a media source."
   },
   "fit_to_standard": {
     "standard_capabilities": [
-      "Unsplash Image Library"
+      "Unsplash search tab inside the editor/website MediaDialog image picker",
+      "One-click download of a free high-res photo into a local ir.attachment",
+      "API credentials (app id + access key) configured in General Settings, stored as system parameters",
+      "Automatic Unsplash download-notification callback to stay API-terms compliant",
+      "Public-website beacon + QWeb rendering of saved /unsplash/ images"
     ],
-    "typical_fits": [],
-    "common_gaps": [],
+    "typical_fits": [
+      "Adding royalty-free imagery to website pages, blog posts, products, mail templates via the standard editor",
+      "Centrally provisioning one Unsplash account per database for all editors",
+      "No-code enablement: paste keys in Settings, feature appears in the media dialog"
+    ],
+    "common_gaps": [
+      "Custom image providers beyond Unsplash require JS dev (patch MediaDialog/ImageSelector, new service — gap #3)",
+      "Unsplash account/keys must be provisioned externally (not shipped); rate limits & terms are the provider's",
+      "No local caching/dedup beyond the per-insert ir.attachment; no usage governance UI",
+      "Credential errors only actionable by erp-manager / website-restricted-editor users"
+    ],
     "drive_hints": [
-      "n/a"
+      "odoo shell: env['ir.config_parameter'].sudo().set_param('unsplash.app_id','x'); set_param('unsplash.access_key','y') then GET /web_unsplash/get_app_id",
+      "curl -X POST /web_unsplash/fetch_images (auth=user) with {query:'lion',page:1,per_page:5} -> proxied Unsplash search JSON (or {'error':...} if unkeyed)",
+      "In website/editor: open Insert Media -> Images -> Unsplash tab, search a term, click an image -> inspect the created ir.attachment (url starts /unsplash/)",
+      "odoo shell: env['ir.attachment'].search([('url','=like','/unsplash/%')]) to list materialised Unsplash images"
     ]
   },
   "reverse_eng_confidence": {
@@ -177,14 +274,16 @@
     "strategy": "human"
   },
   "open_questions": [
-    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+    "Unsplash rate-limit / quota behaviour and how exhaustion surfaces in the UI (not in code, depends on provider plan).",
+    "Whether downloaded attachments are deduplicated across pages/records (each insert creates a fresh ir.attachment).",
+    "Exact client-side flow of the OWL 'unsplash' service and the public unsplash_beacon interaction (JS, gap #3 — not in Python metadata)."
   ],
   "provenance": {
     "explorer_facts": "doc/revres/facts/web_unsplash.facts.json",
     "tools": [
+      "code-read",
       "extract_module.py",
-      "extract_frontend.py",
-      "gen_thin.py"
+      "extract_frontend.py"
     ],
     "odoo_version": "19.0"
   }
