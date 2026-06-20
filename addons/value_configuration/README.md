@@ -2,6 +2,8 @@
 
 This module implements the value configuration methodology from **Stabell & Fjeldstad (1998)**: *"Configuring Value for Competitive Advantage: On Chains, Shops, and Networks"*.
 
+It also integrates with the **APQC Process Classification Framework (PCF)** v7.2.1 to provide a comprehensive process-to-value mapping system.
+
 ## Overview
 
 The module provides tools to configure and analyze your business's value creation logic across three generic value configuration models:
@@ -179,6 +181,113 @@ Value Drivers:
 - Quality: Client satisfaction target 95%
 ```
 
+## PCF Framework Integration
+
+The module integrates the **APQC Process Classification Framework (PCF)** - a cross-industry process taxonomy that provides standardized business process definitions.
+
+### PCF Structure
+
+The PCF organizes processes into **13 major categories**:
+
+| Category | Name | Examples |
+|----------|------|----------|
+| 1.0 | Develop Vision and Strategy | Competitive analysis, customer needs assessment |
+| 2.0 | Develop and Manage Products/Services | Product lifecycle, portfolio management |
+| 3.0 | Market and Sell | Market intelligence, customer acquisition |
+| 4.0 | Deliver Physical Products | Manufacturing, production planning |
+| 5.0 | Deliver Services | Service delivery, governance |
+| 6.0 | Manage Customer Service | Service strategy, warranty management |
+| 7.0 | Develop and Manage Human Capital | HR strategy, workforce planning |
+| 8.0 | Manage Information Technology | IT relationships, service management |
+| 9.0 | Manage Financial Resources | Budgeting, cost accounting |
+| 10.0 | Acquire, Construct, and Manage Assets | Property strategy, facility management |
+| 11.0 | Manage Enterprise Risk & Compliance | Risk framework, compliance |
+| 12.0 | Manage External Relationships | Investor relations, government relations |
+| 13.0 | Develop and Manage Business Capabilities | Process management, governance |
+
+Each category contains 2-3 nested levels of detailed processes.
+
+### Mapping PCF to Value Configurations
+
+**How to map PCF processes to your value configuration:**
+
+1. **Import PCF Framework**
+   - Go to **Tools → Value Configuration → PCF Framework → Import PCF Framework**
+   - Click **Import PCF Framework** to load all 13 categories and 50+ processes
+
+2. **Create Mappings**
+   - Open your **Value Configuration**
+   - Click the **PCF Mappings** tab
+   - Set **PCF Version** (e.g., 7.2.1)
+   - Set **PCF Adoption Level** (Partial or Full)
+
+3. **Map Processes to Activities**
+   - Click **Create** to add a mapping
+   - Select a PCF Process and Value Activity
+   - Set **Relevance Level**: 
+     - Primary: Core to the activity
+     - Secondary: Supports the activity
+     - Tertiary: Occasional reference
+   - Enter **Process Percentage** (effort allocation)
+   - Document applicable industries
+
+4. **Define KPIs**
+   - For each mapping, add Key Performance Indicators
+   - Track Cost, Quality, Time, Effectiveness, Efficiency KPIs
+   - Set current and target values
+   - Compare to industry benchmarks
+
+### Example: Manufacturing Value Chain + PCF
+
+```
+Value Configuration: Manufacturing Operations
+
+Value Activity: Operations
+├─ PCF 4.1.1 (Primary, 70%) - Develop production and materials strategies
+├─ PCF 4.1.2 (Primary, 20%) - Manage demand for products
+└─ PCF 8.0 (Secondary, 10%) - Manage Information Technology
+
+KPIs:
+├─ Production Cost per Unit (Target: $50)
+├─ On-time Delivery Rate (Target: 98%)
+├─ Machine Utilization (Target: 85%)
+└─ Defect Rate (Target: <0.5%)
+```
+
+### Example: Professional Services Value Shop + PCF
+
+```
+Value Configuration: Management Consulting
+
+Value Activity: Problem-solving
+├─ PCF 2.0 (Primary, 40%) - Develop and Manage Products and Services
+├─ PCF 3.1 (Secondary, 30%) - Understand markets and customers
+└─ PCF 13.1 (Secondary, 30%) - Manage business processes
+
+Value Drivers:
+├─ Reputation (tracked via PCF 3.0 metrics)
+├─ Solution Quality (measured by client satisfaction)
+└─ Expertise (tracked via team credentials in PCF 7.0)
+```
+
+### PCF Data Models
+
+The module includes:
+
+- **PCFCategory** - 13 major process categories (1.0-13.0)
+- **PCFProcess** - 50+ detailed processes with hierarchy
+- **PCFActivityMapping** - Links processes to value activities
+- **PCFActivityKPI** - Performance metrics for each mapping
+
+### Benefits of PCF Integration
+
+✅ **Standardized Process Language** - Industry-standard process definitions  
+✅ **Benchmarking** - Compare against industry practices  
+✅ **Comprehensive Coverage** - All business processes covered  
+✅ **Scalability** - From small teams to enterprise  
+✅ **Cross-Industry** - Applicable to any industry  
+✅ **Change Tracking** - Monitor PCF version changes  
+
 ## Reports and Analysis
 
 Use the configuration data for:
@@ -207,6 +316,44 @@ Use the configuration data for:
 
 ## Models
 
+### Core Value Configuration Models
+
 1. **value.configuration** - Main value configuration records
+   - Configuration type (chain/shop/network)
+   - Activities and drivers
+   - PCF mappings
+   
 2. **value.activity** - Primary and support activities
+   - Performance metrics
+   - Dependencies and relationships
+   - Cost and value impact
+   
 3. **value.driver** - Cost and value drivers
+   - Performance tracking (current vs. target)
+   - Strategic importance
+   - Optimization strategy
+
+### PCF Integration Models
+
+4. **pcf.category** - APQC PCF main categories (1.0-13.0)
+   - Hierarchy support for nested categories
+   - Metrics availability tracking
+   - Version change documentation
+   
+5. **pcf.process** - Detailed PCF processes
+   - Full process hierarchy (up to 4 levels deep)
+   - Process identifiers and codes
+   - Metrics availability
+   - Change tracking from previous versions
+   
+6. **pcf.activity.mapping** - Process-to-Activity relationships
+   - Links PCF processes to value activities
+   - Relevance level (primary/secondary/tertiary)
+   - Process effort allocation
+   - Industry applicability
+   
+7. **pcf.activity.kpi** - Performance metrics
+   - Cost, quality, time, effectiveness, efficiency KPIs
+   - Current and target performance
+   - Industry benchmarks
+   - Source tracking (PCF/organizational/industry)
