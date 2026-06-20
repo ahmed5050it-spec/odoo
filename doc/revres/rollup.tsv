@@ -7,7 +7,7 @@ account_edi	support	support	9.0 Manage Financial Resourc	2	0	0	0	meta
 account_edi_proxy_client	support	support	9.0 Manage Financial Resourc	1	0	0	0	meta+integ
 account_edi_ubl_cii	support	support	9.0 Manage Financial Resourc	9	0	0	0	meta+code
 account_fleet	support	support	9.0 Manage Financial Resourc	0	0	0	0	meta
-account_payment	support	support	9.0 Manage Financial Resourc	1	5	3	0	meta+fe
+account_payment	support	support	9.0 Manage Financial Resourc	12	5	3	0	meta+code+fe
 account_peppol	network	support	9.0 Manage Financial Resourc	9	4	7	1	meta+code+fe+integ
 account_peppol_advanced_fields	support	support	9.0 Manage Financial Resourc	0	0	0	0	meta
 account_peppol_response	support	support	9.0 Manage Financial Resourc	3	0	0	0	meta
@@ -31,7 +31,7 @@ auth_timeout	support	support	8.0 Manage Information Techn	0	5	1	2	meta+fe
 auth_totp	support	support	8.0 Manage Information Techn	3	1	0	0	meta
 auth_totp_mail	support	support	8.0 Manage Information Techn	0	1	0	0	meta
 auth_totp_portal	support	support	8.0 Manage Information Techn	0	0	5	0	meta+fe
-barcodes	chain	support	4.0 Deliver Physical Product	3	0	7	3	meta+fe
+barcodes	support	support	8.0 Manage Information Techn	5	0	7	3	meta+code+fe
 barcodes_gs1_nomenclature	chain	support	4.0 Deliver Physical Product	0	0	3	0	meta+fe
 base	support	support	8.0 Manage Information Techn	17	0	0	0	meta+code+integ+run
 base_address_extended	support	support	8.0 Manage Information Techn	1	0	0	0	meta
@@ -64,7 +64,7 @@ data_recycle	support	support	13.0 Develop and Manage Busi	2	0	2	0	meta+fe
 delivery	chain	support	4.4 Operate outbound transpo	5	2	7	6	meta+code+fe
 delivery_mondialrelay	chain	support	4.4 Operate outbound transpo	0	0	1	1	meta+fe
 delivery_stock_picking_batch	chain	support	4.4 Operate outbound transpo	0	0	0	0	meta
-digest	support	support	13.0 Develop and Manage Busi	2	3	0	0	meta
+digest	support	support	13.0 Develop and Manage Busi	4	3	0	0	meta+code
 event	network	primary	3.0 Market and Sell Products	8	3	13	3	meta+code+fe+integ
 event_booth	network	primary	3.0 Market and Sell Products	3	0	0	0	meta
 event_booth_sale	network	primary	3.0 Market and Sell Products	2	0	2	0	meta+fe
@@ -359,7 +359,7 @@ mass_mailing_event_track_sms	network	primary	3.0 Market and Sell Products	0	0	0	
 mass_mailing_sale	network	primary	3.0 Market and Sell Products	0	0	0	0	meta
 mass_mailing_sale_sms	network	primary	3.0 Market and Sell Products	0	0	0	0	meta
 mass_mailing_slides	network	primary	3.0 Market and Sell Products	0	0	0	0	meta
-mass_mailing_sms	network	primary	3.0 Market and Sell Products	2	3	1	0	meta+fe
+mass_mailing_sms	network	primary	3.0 Market and Sell Products	11	2	1	0	meta+code+fe
 mass_mailing_themes	network	primary	3.0 Market and Sell Products	0	0	0	0	meta
 microsoft_account	support	support	13.0 Develop and Manage Busi	1	1	0	0	meta+integ
 microsoft_calendar	support	support	8.0 Manage Information Techn	6	2	3	0	meta+code+fe+integ
@@ -608,7 +608,7 @@ website_event_booth_exhibitor	network	primary	3.0 Market and Sell Products	0	0	1
 website_event_booth_sale	network	primary	3.0 Market and Sell Products	0	1	1	0	meta+fe
 website_event_booth_sale_exhibitor	network	primary	3.0 Market and Sell Products	0	0	0	0	meta
 website_event_crm	network	primary	3.0 Market and Sell Products	0	0	0	0	meta
-website_event_exhibitor	network	primary	3.0 Market and Sell Products	2	3	3	1	meta+fe
+website_event_exhibitor	network	primary	3.0 Market and Sell Products	6	3	3	1	meta+code+fe
 website_event_sale	network	primary	3.0 Market and Sell Products	0	1	0	0	meta
 website_event_track	network	primary	3.0 Market and Sell Products	6	9	9	1	meta+code+fe
 website_event_track_live	network	primary	3.0 Market and Sell Products	0	1	3	0	meta+fe
@@ -616,7 +616,7 @@ website_event_track_live_quiz	network	primary	3.0 Market and Sell Products	0	0	2
 website_event_track_quiz	network	primary	3.0 Market and Sell Products	6	4	2	0	meta+code+fe
 website_forum	network	primary	3.0 Market and Sell Products	5	4	17	2	meta+code+fe+integ
 website_google_map	network	primary	3.0 Market and Sell Products	0	1	2	0	meta+fe
-website_hr_recruitment	network	support	7.0 Develop and Manage Human	1	6	7	1	meta+fe
+website_hr_recruitment	network	primary	7.0 Develop and Manage Human	6	6	7	1	meta+code+fe
 website_hr_recruitment_livechat	network	primary	3.0 Market and Sell Products	0	0	0	0	meta
 website_links	network	primary	3.0 Market and Sell Products	0	5	5	1	meta+fe
 website_livechat	network	primary	3.0 Market and Sell Products	0	1	6	0	meta+fe
@@ -642,7 +642,7 @@ website_sale_mrp	network	primary	3.0 Market and Sell Products	0	1	1	0	meta+fe
 website_sale_slides	network	primary	3.0 Market and Sell Products	0	1	3	0	meta+fe
 website_sale_stock	network	support	3.0 Market and Sell Products	0	2	10	0	meta+fe
 website_sale_stock_wishlist	network	primary	3.0 Market and Sell Products	0	1	3	0	meta+fe
-website_sale_wishlist	network	support	3.0 Market and Sell Products	1	5	6	0	meta+fe
+website_sale_wishlist	network	primary	3.0 Market and Sell Products	6	4	6	0	meta+code+fe
 website_slides	network	primary	3.0 Market and Sell Products	8	6	50	12	meta+code+fe+integ
 website_slides_forum	network	primary	3.0 Market and Sell Products	0	0	1	0	meta+fe
 website_slides_survey	network	primary	3.0 Market and Sell Products	0	3	3	0	meta+fe

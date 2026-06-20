@@ -4,6 +4,8 @@
     "manifest": {
       "name": "Payment - Account",
       "category": "Accounting/Accounting",
+      "summary": "Enable customers to pay invoices on the portal and post payments when transactions are processed.",
+      "version": "2.0",
       "depends": [
         "account",
         "payment"
@@ -15,9 +17,108 @@
     },
     "models": [
       {
+        "_name": "payment.transaction (inherit)",
+        "_description": "Payment Transaction (account bridge)",
+        "fields": 3,
+        "relations": [
+          "payment_id->account.payment",
+          "invoice_ids->account.move (m2m account_invoice_transaction_rel)",
+          "invoices_count (computed)"
+        ]
+      },
+      {
+        "_name": "account.move (inherit)",
+        "_description": "Journal Entry (online-payment bridge)",
+        "fields": 4,
+        "relations": [
+          "transaction_ids->payment.transaction (m2m)",
+          "authorized_transaction_ids->payment.transaction (computed)",
+          "transaction_count (computed)",
+          "amount_paid (computed Monetary)"
+        ]
+      },
+      {
+        "_name": "account.payment (inherit)",
+        "_description": "Payments (transaction/token bridge)",
+        "fields": 7,
+        "relations": [
+          "payment_transaction_id->payment.transaction",
+          "payment_token_id->payment.token",
+          "source_payment_id->account.payment (related, stored)",
+          "suitable_payment_token_ids->payment.token (computed m2m)",
+          "amount_available_for_refund (computed)"
+        ]
+      },
+      {
+        "_name": "payment.provider (inherit)",
+        "_description": "Payment Provider (journal wiring)",
+        "fields": 1,
+        "relations": [
+          "journal_id->account.journal (compute/inverse, domain type=bank)"
+        ]
+      },
+      {
+        "_name": "account.payment.method.line (inherit)",
+        "_description": "Payment Method Line (provider link)",
+        "fields": 2,
+        "relations": [
+          "payment_provider_id->payment.provider (computed, stored)",
+          "payment_provider_state (related selection)"
+        ]
+      },
+      {
         "_name": "payment.refund.wizard",
         "_description": "Payment Refund Wizard",
-        "fields": 9
+        "fields": 9,
+        "relations": [
+          "payment_id->account.payment",
+          "transaction_id->payment.transaction (related)",
+          "currency_id->res.currency (related)"
+        ]
+      },
+      {
+        "_name": "account.payment.register (inherit)",
+        "_description": "Register Payment (token support)",
+        "fields": 3,
+        "relations": [
+          "payment_token_id->payment.token",
+          "suitable_payment_token_ids->payment.token"
+        ]
+      },
+      {
+        "_name": "payment.link.wizard (inherit)",
+        "_description": "Generate Payment Link (installments/EPD)",
+        "fields": 7,
+        "relations": [
+          "open_installments (Json)",
+          "discount_date (Date, early-payment-discount)"
+        ]
+      },
+      {
+        "_name": "account.journal (inherit)",
+        "_description": "Journal (provider guard)",
+        "fields": 0,
+        "relations": [
+          "filters available payment-method lines by provider state; blocks delete while a provider is enabled/test"
+        ]
+      },
+      {
+        "_name": "account.payment.method (inherit)",
+        "_description": "Payment Method (provider setup)",
+        "fields": 0,
+        "relations": []
+      },
+      {
+        "_name": "account.bank.statement.line (inherit)",
+        "_description": "Bank Statement Line",
+        "fields": 0,
+        "relations": []
+      },
+      {
+        "_name": "res.config.settings (inherit)",
+        "_description": "Settings (pay_invoices_online)",
+        "fields": 1,
+        "relations": []
       }
     ],
     "routes": [
@@ -36,11 +137,6 @@
         "type": "jsonrpc"
       },
       {
-        "paths": [],
-        "auth": null,
-        "type": null
-      },
-      {
         "paths": [
           "/my/invoices/overdue"
         ],
@@ -48,9 +144,18 @@
         "type": "http"
       },
       {
-        "paths": [],
-        "auth": null,
-        "type": null
+        "paths": [
+          "/payment/pay (override, account.move-aware)"
+        ],
+        "auth": "public",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/my/invoices/<int:invoice_id> (override, payment-token guard)"
+        ],
+        "auth": "public",
+        "type": "http"
       }
     ],
     "security": {
@@ -61,14 +166,44 @@
     "views": {
       "form": 0,
       "list": 0,
-      "tree": 0,
       "kanban": 0,
       "search": 0,
       "pivot": 0,
       "graph": 0,
-      "calendar": 0,
-      "activity": 0
+      "note": "No own views; xml_loc=701 is view inheritance only (account.move / payment.provider / payment.transaction / account.payment forms, portal templates, payment-form templates)."
     },
+    "behavioral_notes": [
+      {
+        "element": "payment.transaction._post_process (override) -> account.payment + invoice reconcile",
+        "observation": "Overrides payment's base _post_process. For each tx whose state is 'done' it first posts any draft linked invoices (invoice_ids.filtered(state=='draft').action_post()), then -- unless it is a 'validation' operation, already has a payment_id, or its children already settled -- calls tx.with_company(company)._create_payment() to materialize the accounting payment. It then writes a chatter note on the tx, its account.payment and the linked invoices ('The payment related to transaction ... has been posted'). For txs whose state is 'cancel' it calls tx.payment_id.action_cancel(). This is the settlement hook payment's engine leaves abstract; metadata shows neither the cross-model creation nor the state-gating.",
+        "source": "code-read"
+      },
+      {
+        "element": "payment.transaction._create_payment -> account.payment.create + action_post + reconcile",
+        "observation": "Builds account.payment vals from the transaction: amount=abs(self.amount); payment_type 'inbound' if amount>0 else 'outbound'; journal_id=self.provider_id.journal_id; payment_method_line_id = that journal's inbound_payment_method_line_ids filtered to this provider; partner=commercial_partner_id (partner_type='customer'); carries payment_token_id, payment_transaction_id and invoice_ids. For a posted invoice eligible for an early-payment discount it appends counterpart write_off_line_vals (_get_invoice_counterpart_amls_for_early_payment_discount); destination_account_id is taken from the invoice's 'payment_term' line. It then creates the account.payment, calls payment.action_post() (which the account module turns into a balanced account.move), stores the one2one payment_id, and finally RECONCILES: (payment.move_id.line_ids + invoices.line_ids) on payment.destination_account_id (the receivable account), not-yet-reconciled -> .reconcile(). That reconcile is what flips the invoice's payment_state to in_payment/paid. None of this (journal pick, AR-account match, reconcile) is visible in field metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "account.move 'Pay Now' portal gate + amount_paid / payment_state link",
+        "observation": "account.move gains transaction_ids (m2m account_invoice_transaction_rel) and a computed amount_paid = sum of transaction amounts whose state is in {'authorized','done'} (depends on transaction_ids). _has_to_be_paid() is the boolean controlling whether the portal shows the 'Pay Now' dialog: it requires ir.config_parameter 'account_payment.enable_portal_payment' true AND state=='posted' AND move_type=='out_invoice' AND a non-zero amount_residual AND payment_state in {'not_paid','in_payment','partial'} AND no still-pending provider transaction; _get_online_payment_error() returns the matching human message when the gate is closed. payment_state itself is owned by the account module via reconciliation (this module feeds it by reconciling in _create_payment); amount_paid here is a parallel display figure summing live transactions, not the ledger residual. payment_action_capture()/payment_action_void() let the backend capture or void an invoice's authorized_transaction_ids.",
+        "source": "code-read"
+      },
+      {
+        "element": "provider <-> journal <-> payment.method.line wiring",
+        "observation": "payment.provider.journal_id (domain type=bank, check_company) is a compute/inverse pair: _compute_journal_id finds the account.payment.method.line whose payment_provider_id is this provider (else, for enabled/test providers, the first bank journal), and _ensure_payment_method_line()/_inverse_journal_id keep an account.payment.method.line in sync -- creating one (name=provider name, code=provider code, payment_account_id=outstanding/transfer account from the chart template) and stamping payment_provider_id+journal_id on it, or unlinking it when the journal is cleared. account.payment.method.line._compute_payment_provider_id back-fills the provider for 'electronic'-mode method lines and refuses to delete a line linked to an enabled/test provider. account.journal._get_available_payment_method_lines hides lines whose payment_provider_state=='disabled', and account.journal blocks its own deletion while a non-disabled provider points at it. _setup_provider/_remove_provider create/delete the matching account.payment.method on (un)install. This is how a configured online provider becomes a usable inbound payment method on a bank journal -- pure Python, invisible to metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "portal controllers: /invoice/transaction/<id> and account.payment.action_post token charge",
+        "observation": "controllers/payment.py (PaymentPortal extends payment's portal): /invoice/transaction/<int:invoice_id> (jsonrpc, public) checks the invoice access token, then _process_transaction -> _create_transaction with custom_create_values {'invoice_ids': Command.set([invoice_id])} so the draft payment.transaction is born already linked to the account.move; it returns the tx processing values. /invoice/transaction/overdue batches all same-currency overdue invoices into one transaction. payment_pay() is overridden to inject the invoice's reference/currency/partner/company; _get_extra_payment_form_values reroutes transaction_route to /invoice/transaction/<id> and landing_route back to the invoice portal page. Separately, account.payment.action_post() is overridden so a payment carrying a payment_token_id but no transaction first _create_payment_transaction() + tx._charge_with_token() ('offline' card-not-present), then posts only if the resulting tx state is 'done' (else action_cancel) -- the backend 'pay by saved card' path.",
+        "source": "code-read"
+      },
+      {
+        "element": "frontend (static) -- portal Pay-Now interactions + PaymentForm patch",
+        "observation": "3 JS files, 0 XML/OWL: two public.interactions are registered -- account_payment.portal_invoice_page_payment (selector #portal_pay; opens the Bootstrap '#pay_with' Modal on the portal invoice page when data-payment is set) and account_payment.portal_my_invoices_payment_list -- plus a patch of PaymentForm.prototype (extends the shared payment widget for the invoice/overdue context). Assets land in web.assets_frontend. These public interactions are not represented in Python model/field metadata (gap #3).",
+        "source": "static"
+      }
+    ],
     "frontend": {
       "present": true,
       "js_files": 3,
@@ -97,71 +232,140 @@
     "runtime": {
       "models_with_data": 0,
       "top": []
-    },
-    "behavioral_notes": [
-      {
-        "element": "frontend (OWL/JS)",
-        "observation": "3 JS files, 0 OWL components, 2 registry adds; bundles ['web.assets_unit_tests', 'web.assets_frontend'].",
-        "source": "static"
-      },
-      {
-        "element": "thin module",
-        "observation": "1 models, 5 routes, 2520 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
-        "source": "ast"
-      }
-    ]
+    }
   },
   "it_architecture": {
-    "application": "account_payment (Payment - Account)",
+    "application": "account_payment (Payment-Account bridge component; auto_install with account)",
     "software_services": [
       "/invoice/transaction/<int:invoice_id>",
       "/invoice/transaction/overdue",
-      "/my/invoices/overdue"
+      "/my/invoices/overdue",
+      "/payment/pay (override)",
+      "/my/invoices/<int:invoice_id> (override)"
     ],
     "data_objects": [
+      "payment.transaction (+invoice_ids, payment_id)",
+      "account.move (+transaction_ids, amount_paid)",
+      "account.payment (+payment_transaction_id, payment_token_id)",
+      "payment.provider (+journal_id)",
+      "account.payment.method.line (+payment_provider_id)",
       "payment.refund.wizard"
     ],
     "logical_data_erm": [
-      "payment.refund.wizard -> account.payment",
-      "payment.refund.wizard -> payment_id.payment_transaction_id",
-      "payment.refund.wizard -> transaction_id.currency_id"
+      "payment.transaction -> account.payment (one2one payment_id)",
+      "payment.transaction -> account.move (m2m invoice_ids, account_invoice_transaction_rel)",
+      "account.move -> payment.transaction (m2m transaction_ids)",
+      "account.payment -> payment.transaction (payment_transaction_id)",
+      "account.payment -> payment.token (payment_token_id)",
+      "account.payment -> account.payment (source_payment_id, refund traceability)",
+      "payment.provider -> account.journal (journal_id)",
+      "account.payment.method.line -> payment.provider (payment_provider_id)"
     ],
     "information_flows": [
-      "depends: account, payment"
+      "depends: account, payment (this module is the bridge between them)",
+      "inbound: acquirer webhook/redirect -> payment.transaction done -> _post_process override",
+      "side-effect: payment.transaction._post_process -> posts draft account.move, calls _create_payment",
+      "side-effect: payment.transaction._create_payment -> creates+posts account.payment (=> balanced account.move via account) and reconciles invoice AR lines -> invoice payment_state",
+      "side-effect: account.payment.action_post (token) -> creates payment.transaction + _charge_with_token (offline/CNP)",
+      "config: payment.provider.journal_id <-> account.payment.method.line (provider becomes an inbound bank-journal payment method)",
+      "portal: /invoice/transaction/<id> -> _create_transaction with invoice_ids preset; PaymentForm patch reroutes transaction/landing routes to invoice portal"
     ],
-    "frontend_components": []
+    "frontend_components": [
+      "account_payment.portal_invoice_page_payment (public interaction; opens #pay_with modal on portal invoice)",
+      "account_payment.portal_my_invoices_payment_list (public interaction)",
+      "PaymentForm.prototype (patch of the shared payment widget for the invoice/overdue context)"
+    ],
+    "external_integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": true,
+      "endpoints": [],
+      "files": [],
+      "note": "This bridge makes no outbound acquirer calls itself; the actual HTTP to acquirers lives in the base payment engine (payment.provider._send_api_request) and per-provider modules. uses_api_keys is inherited transitively via the payment dependency. Inbound settlement arrives through payment's webhook/redirect controllers and is handled here via the _post_process override."
+    }
   },
   "business_architecture": {
     "capabilities": [
-      "Payment - Account"
+      "Pay Invoices Online (portal self-service checkout for customer invoices)",
+      "Auto-Post & Reconcile Payments from confirmed transactions",
+      "Pay-by-Saved-Token from the backend register-payment / payment flow",
+      "Online Refunds against transaction-originated payments",
+      "Provider-to-Journal Configuration (online provider as an inbound payment method)",
+      "Payment Links & Overdue-Invoice batch collection"
     ],
-    "value_streams": [],
+    "value_streams": [
+      "Collect-AR-Online: portal 'Pay Now' (/invoice/transaction) -> payment.transaction -> acquirer -> done -> _post_process -> _create_payment (account.payment) -> reconcile invoice -> payment_state in_payment/paid",
+      "Settle-Authorized: authorized transaction -> payment_action_capture -> child capture tx done -> account.payment + reconcile",
+      "Refund-Collected: account.payment.amount_available_for_refund -> payment.refund.wizard -> refund transaction -> negative/outbound account.payment"
+    ],
     "information_concepts": [
-      "payment.refund.wizard"
+      "payment.transaction (bridged to invoices/payment)",
+      "account.move (customer invoice being paid)",
+      "account.payment (the settlement record)",
+      "payment.provider (with its bank journal)",
+      "account.payment.method.line (online inbound method)",
+      "payment.token (saved card)"
     ],
-    "organization": [],
+    "organization": [
+      "(no module-owned res.groups; relies on account's accounting groups and payment/portal record rules; 1 own record rule + 3 access rules)"
+    ],
     "products": [],
     "policies": [
-      "1 record rules"
+      "ir.config_parameter 'account_payment.enable_portal_payment' gates whether invoices can be paid online (account.move._has_to_be_paid)",
+      "Online payment only for posted out_invoice with non-zero residual and payment_state in not_paid/in_payment/partial, and no pending provider transaction",
+      "account.journal / account.payment.method.line cannot be deleted while linked to an enabled or test payment.provider",
+      "Uninstall is blocked if account.payments already use a provider's payment method (data-integrity guard)",
+      "1 record rule scoping bridged data"
     ],
-    "stakeholders": [],
+    "stakeholders": [
+      "Customer / Payer (res.partner, portal user)",
+      "Accountant (consumes the auto-created, reconciled account.payment)",
+      "Merchant / Company (res.company, configures provider+journal)",
+      "Payment Acquirer (external; reached via the payment engine, not this module)"
+    ],
     "strategy": null,
-    "metrics": []
+    "metrics": [
+      "account.move.amount_paid / transaction_count (paid-via-transaction figures)",
+      "account.payment.amount_available_for_refund / refunds_count",
+      "payment.transaction invoices_count (invoices settled per transaction)"
+    ]
   },
   "classification": {
     "value_model": "support",
     "activity_class": "support",
-    "apqc_category": "9.0 Manage Financial Resources",
-    "rationale": "account_payment: thin support/support module (auto-architect baseline)."
+    "apqc_category": "9.0 Manage Financial Resources (9.2.x process accounts receivable / 9.5.x process payments)",
+    "rationale": "account_payment is a financial-management SUPPORT extension, not a primary value activity. It is a thin bridge (1 own model + 11 inherit-only extensions, no own views) whose job is to connect the cash/payment rail (the payment engine: payment.transaction / payment.provider / payment.token) to the accounts-receivable ledger (the account module: account.move / account.payment / reconciliation). Its central side-effect -- payment.transaction._post_process -> _create_payment -> action_post + reconcile invoice -- is exactly the act of recording the financial consequence of a collection event into the double-entry ledger, i.e. APQC 9.0 Manage Financial Resources: 9.2.x process accounts receivable (mark the customer invoice paid) and 9.5.x process payments / collect cash (post the account.payment). It does NOT mediate the parties itself (the value-network mediation -- onboarding acquirers, provisioning the transaction, the requests-based acquirer link -- lives in the 'payment' engine, classified network); and it does NOT transform inputs into outputs (chain) or solve a bespoke customer problem (shop). On the enterprise value chain it sits under the accounting/finance support function alongside its parent 'account' (also support/support). Hence value_model=support, activity_class=support -- inheriting account's classification rather than payment's, because its own logic is ledger record-keeping, not mediation."
   },
   "fit_to_standard": {
     "standard_capabilities": [
-      "Payment - Account"
+      "pay a customer invoice online from the portal (Pay Now dialog, single or overdue-batch)",
+      "automatic creation + posting of an account.payment when a transaction is confirmed",
+      "automatic reconciliation of that payment against the invoice (payment_state -> in_payment/paid)",
+      "pay-by-saved-token from the backend (account.payment.action_post / register payment)",
+      "manual capture / void of authorized transactions from the invoice",
+      "online refunds via payment.refund.wizard (amount_available_for_refund guard)",
+      "wiring an online provider to a bank journal as an inbound payment method line",
+      "payment links with installment / early-payment-discount awareness"
     ],
-    "typical_fits": [],
-    "common_gaps": [],
+    "typical_fits": [
+      "B2B/B2C customers paying posted invoices online through a supported acquirer",
+      "self-service collection of overdue invoices in one batch transaction",
+      "tokenized follow-up charges initiated by the accountant against an invoice",
+      "multi-company / multi-provider setup, each provider bound to its own bank journal"
+    ],
+    "common_gaps": [
+      "needs a live payment_<provider> module (Stripe, PayPal, ...) underneath -- this bridge ships no acquirer",
+      "online payment is gated off by default (ir.config_parameter enable_portal_payment must be enabled)",
+      "out_invoice only -- paying vendor bills / other move types online is out of scope of _has_to_be_paid",
+      "bespoke reconciliation / outstanding-account mapping beyond the standard payment-method-line outstanding account",
+      "custom settlement document chains (subscriptions, deposits) need their own _create_payment/_post_process overrides"
+    ],
     "drive_hints": [
-      "odoo shell: env['payment.refund.wizard'].search([],limit=3)"
+      "odoo shell: env['payment.provider'].search([('state','in',('enabled','test'))]).mapped(('name','code','journal_id'))",
+      "odoo shell: env['account.payment.method.line'].search([('payment_provider_id','!=',False)]).mapped(('name','journal_id','payment_provider_state'))",
+      "odoo shell: inv=env['account.move'].search([('move_type','=','out_invoice'),('state','=','posted')],limit=1); print(inv._has_to_be_paid(), inv.amount_paid, inv.payment_state)",
+      "odoo shell: tx=env['payment.transaction'].search([('invoice_ids','!=',False)],limit=1); print(tx.reference, tx.state, tx.payment_id, tx.invoice_ids.mapped('payment_state'))",
+      "curl jsonrpc /invoice/transaction/<invoice_id> (auth=public, needs invoice access_token) to start a portal invoice payment"
     ]
   },
   "reverse_eng_confidence": {
@@ -175,14 +379,20 @@
     "strategy": "human"
   },
   "open_questions": [
-    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+    "Exact account.payment -> account.move synchronization and which outstanding vs liquidity accounts the chosen payment_method_line resolves to (owned by the account module's _synchronize_to_moves).",
+    "How partial captures / voids split reconciliation across source vs child transactions and their invoices in real data.",
+    "Real-world share of invoices actually paid online vs by other means, and tokenized-charge usage (no runtime row counts captured).",
+    "Behavior of the early-payment-discount write-off path (_get_invoice_counterpart_amls_for_early_payment_discount) on multi-installment invoices."
   ],
   "provenance": {
     "explorer_facts": "doc/revres/facts/account_payment.facts.json",
     "tools": [
+      "apqc_odoo_map.tsv",
+      "code-read (payment_transaction.py, account_move.py, account_payment.py, payment_provider.py, account_payment_method_line.py, account_journal.py, controllers/payment.py, controllers/portal.py)",
+      "extract_frontend.py (frontend/account_payment.frontend.json)",
       "extract_module.py",
-      "extract_frontend.py",
-      "gen_thin.py"
+      "Grep",
+      "Read"
     ],
     "odoo_version": "19.0"
   }

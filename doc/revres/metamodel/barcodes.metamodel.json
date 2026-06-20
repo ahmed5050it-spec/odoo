@@ -14,17 +14,38 @@
       {
         "_name": "barcode.nomenclature",
         "_description": "Barcode Nomenclature",
-        "fields": 3
+        "fields": 3,
+        "relations": [
+          "rule_ids->barcode.rule"
+        ]
       },
       {
         "_name": "barcode.rule",
         "_description": "Barcode Rule",
-        "fields": 7
+        "fields": 7,
+        "relations": [
+          "barcode_nomenclature_id->barcode.nomenclature"
+        ]
       },
       {
         "_name": "barcodes.barcode_events_mixin",
-        "_description": "Barcode Event Mixin",
-        "fields": 1
+        "_description": "Barcode Event Mixin (AbstractModel)",
+        "fields": 1,
+        "relations": []
+      },
+      {
+        "_name": "ir.http (extension)",
+        "_description": "Adds max_time_between_keys_in_ms to session_info for the scan buffer",
+        "fields": 0,
+        "relations": []
+      },
+      {
+        "_name": "res.company (extension)",
+        "_description": "Adds nomenclature_id (per-company active barcode nomenclature)",
+        "fields": 1,
+        "relations": [
+          "nomenclature_id->barcode.nomenclature"
+        ]
       }
     ],
     "routes": [],
@@ -80,19 +101,39 @@
     },
     "behavioral_notes": [
       {
-        "element": "frontend (OWL/JS)",
-        "observation": "7 JS files, 3 OWL components, 4 registry adds; bundles ['web.assets_backend', 'web.tests_assets', 'web.assets_unit_tests'].",
-        "source": "static"
+        "element": "barcode.nomenclature.parse_barcode / parse_nomenclature_barcode (models/barcode_nomenclature.py)",
+        "observation": "The classification engine of the framework, invisible to metadata. parse_barcode routes 'urn:' codes to parse_uri (GS1 EPC URI) and everything else to parse_nomenclature_barcode, which iterates self.rule_ids in `sequence asc` order and, for the first rule whose encoding and pattern both match, returns a dict {type, code, value, base_code, encoding}. Per rule it first applies upc_ean_conv (prefix a '0' to convert UPC-A->EAN-13 or strip a leading '0' for EAN-13->UPC-A) so a code can be tried under the other encoding, then calls check_barcode_encoding (length + check-digit validation). type 'alias' rewrites the scanned code to rule.alias and keeps scanning; any other type (product, and the lot/weight/price/package types extended by downstream modules) is returned. This ordered-regex + check-digit dispatch is what turns one raw scanned string into a typed business reference, and it is pure method logic no field/relation can express.",
+        "source": "code-read"
       },
       {
-        "element": "thin module",
-        "observation": "3 models, 0 routes, 655 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
-        "source": "ast"
+        "element": "barcode.nomenclature.match_pattern (models/barcode_nomenclature.py)",
+        "observation": "Decodes embedded numeric content (quantity / weight / price) from the barcode. The pattern grammar uses a single `{N..D..}` brace group where N digits are the whole part and D digits the decimal part; match_pattern escapes regex metacharacters, locates the brace group, slices the corresponding barcode substring into whole_part + '0.'+decimal_part to compute match['value'] as int+float, then rebuilds 'base_code' with the variable digits zeroed out (the stable code printed on the product master). So scanning a weight-embedded EAN like 21xxxxx<weight>C yields both the product base_code and the decoded weight value in one pass — embedded-quantity/price decoding that exists only in this method.",
+        "source": "code-read"
+      },
+      {
+        "element": "barcode.nomenclature.parse_uri + _convert_uri_gtin_data_into_tracking_number / _convert_uri_sscc_data_into_package (models/barcode_nomenclature.py)",
+        "observation": "GS1 EPC-URI / RFID parsing. For 'urn:...' tags it splits the identifier (lgtin, sgtin, sgtin-96/198, sscc, sscc-96) and the data segment, reassembles the GS1 company prefix + item reference + indicator into a GTIN product barcode (appending get_barcode_check_digit), and returns a LIST of typed results: GTIN tags emit a {type:'product'} plus {type:'lot'} (tracking number) pair, while SSCC tags emit a {type:'package'}. The -96/-198 variants strip the leading filter element of data. This is how an RFID/GS1 URI scan is decomposed into product + lot/serial + package references; none of it is reverse-engineerable from the 3 ORM models.",
+        "source": "code-read"
+      },
+      {
+        "element": "barcode.rule._check_pattern constraint + barcode.rule._order (models/barcode_rule.py)",
+        "observation": "A @api.constrains('pattern') ValidationError guard, not visible as a plain field. It enforces the `{N*D*}` brace grammar at write time: rejects more than one brace pair, empty braces, braces not of the form N-then-D, the literal '*' (suggesting '.*'), and any pattern that does not compile as a regex once the brace group is stripped. Combined with _order = 'sequence asc, id', this is the integrity layer that keeps the ordered rule set well-formed so parse_nomenclature_barcode's first-match-wins iteration is deterministic.",
+        "source": "code-read"
+      },
+      {
+        "element": "barcodes.barcode_events_mixin + ir.http.session_info (models/barcode_events_mixin.py, models/ir_http.py)",
+        "observation": "The server side of the scan-anywhere contract. barcodes.barcode_events_mixin is an AbstractModel exposing a non-stored _barcode_scanned Char; its @api.onchange('_barcode_scanned') fires like an onchange when the form widget writes a scanned code, clears the field, and delegates to on_barcode_scanned(barcode) (NotImplementedError by default — concrete models such as stock pickings override it). ir.http.session_info is overridden to inject barcode.max_time_between_keys_in_ms (default 150 ms, from ir.config_parameter) into the web session, which is exactly the inter-keystroke threshold the JS keystroke buffer reads. These two hooks bind the Python ORM to the OWL scan layer.",
+        "source": "code-read"
+      },
+      {
+        "element": "frontend (OWL/JS scan-capture + parser + widgets — gap #3, static/src)",
+        "observation": "The substance of this module is JS, not Python (7 JS / 3 XML). barcodeService (static/src/barcode_service.js, registry services:'barcode') installs a document.body 'keydown' listener implementing the keystroke-buffer heuristic: it accumulates printable keys into bufferedBarcode, ignores special keys, treats Enter/Tab as terminators, and flushes via a setTimeout of maxTimeBetweenKeysInMs (session.max_time_between_keys_in_ms || 150) — distinguishing a fast hardware scanner burst from human typing, with a hidden off-screen input + mobileChromeHandler fallback for mobile Chrome. It emits a 'barcode_scanned' EventBus event. barcodeGenericHandlers (barcode_handlers.js, services:'barcode_handlers') listens and dispatches OBT* (barcode_trigger element clicks) and OCD* navigation commands (OCDEDIT/OCDSAVE/OCDNEXT...) via Macro. BarcodeHandlerField (fields:'barcode_handler') and FloatScannableField (fields:'field_float_scannable') wire scans into form fields; barcode_parser.js (BarcodeParser) is the line-for-line JS port of the Python nomenclature/check-digit/GS1-URI algorithm so the same classification runs client-side; BarcodeScanner / ManualBarcodeScanner (static/src/components) provide the camera (BarcodeDetector / ZXing) and manual-entry dialogs, with audio/error.{mp3,ogg} feedback. None of this is in Python metadata.",
+        "source": "static"
       }
     ]
   },
   "it_architecture": {
-    "application": "barcodes (Barcode)",
+    "application": "barcodes (Barcode nomenclature/parsing framework + scan-anywhere OWL capture layer)",
     "software_services": [],
     "data_objects": [
       "barcode.nomenclature",
@@ -100,49 +141,103 @@
       "barcodes.barcode_events_mixin"
     ],
     "logical_data_erm": [
-      "barcode.nomenclature -> barcode.rule",
-      "barcode.rule -> barcode.nomenclature"
+      "barcode.nomenclature -> barcode.rule (rule_ids, one2many)",
+      "barcode.rule -> barcode.nomenclature (barcode_nomenclature_id, many2one)",
+      "res.company -> barcode.nomenclature (nomenclature_id, active nomenclature per company)"
     ],
     "information_flows": [
-      "depends: web"
+      "depends: web",
+      "no HTTP routes: the module ships no controllers; it is consumed as a model/mixin API + OWL service, not a service surface",
+      "scan capture: browser keydown burst -> barcodeService keystroke buffer -> 'barcode_scanned' EventBus event -> BarcodeHandlerField/FloatScannableField/barcodeGenericHandlers",
+      "server hook: barcode_handler widget writes _barcode_scanned -> barcodes.barcode_events_mixin.on_barcode_scanned (overridden by stock/pos/mrp) acts like an onchange",
+      "classification: parse_barcode -> ordered barcode.rule regex + check-digit -> typed result {product/lot/weight/price/package} (mirrored client-side by BarcodeParser)",
+      "config: ir.http.session_info injects barcode.max_time_between_keys_in_ms into the web session for the JS buffer; res.company.nomenclature_id selects the active rule set"
     ],
     "frontend_components": [
-      "BarcodeHandlerField",
-      "BarcodeInput",
-      "BarcodeScanner"
+      "barcodeService (services:'barcode' — keystroke buffer / scan capture)",
+      "barcodeGenericHandlers (services:'barcode_handlers' — OBT*/OCD* command dispatch)",
+      "BarcodeParser (static/src/js/barcode_parser.js — JS nomenclature/check-digit/GS1 port)",
+      "BarcodeHandlerField (fields:'barcode_handler')",
+      "FloatScannableField (fields:'field_float_scannable')",
+      "BarcodeScanner (camera scanner OWL component)",
+      "BarcodeInput / ManualBarcodeScanner (manual entry dialog)"
     ]
   },
   "business_architecture": {
     "capabilities": [
-      "Barcode"
+      "Capture a Scanned Code Anywhere in the UI (hardware-scanner keystroke buffer + camera + manual entry)",
+      "Define & Maintain Barcode Nomenclatures and ordered Rules (reference data)",
+      "Parse & Classify a Barcode into a typed business reference (product / lot / weight / price / package)",
+      "Decode embedded quantity / weight / price from a barcode pattern",
+      "Parse GS1 / EPC-URI and RFID tags (GTIN, SSCC) into product + lot/serial + package",
+      "Validate encoding via EAN/UPC check digits and UPC<->EAN conversion",
+      "Provide the on_barcode_scanned mixin + scannable field widgets other apps extend"
     ],
-    "value_streams": [],
+    "value_streams": [
+      "Scan-to-Action: physical scan -> keystroke buffer -> parse/classify -> on_barcode_scanned handler in the consuming app (stock/pos/mrp) acts on the record",
+      "Configure-Nomenclature: admin defines barcode.nomenclature + ordered barcode.rule set -> assigned to res.company -> governs every downstream parse"
+    ],
     "information_concepts": [
       "barcode.nomenclature",
       "barcode.rule",
-      "barcodes.barcode_events_mixin"
+      "barcodes.barcode_events_mixin",
+      "parsed-barcode result {type, code, value, base_code, encoding}"
     ],
-    "organization": [],
+    "organization": [
+      "base.group_user (read nomenclature & rules)",
+      "base.group_erp_manager (maintain nomenclature & rules)"
+    ],
     "products": [],
-    "policies": [],
-    "stakeholders": [],
+    "policies": [
+      "barcode.rule._check_pattern (@api.constrains): enforces the {N*D*} brace grammar / single brace pair / valid-regex pattern integrity",
+      "barcode.nomenclature._unlink_except_default (@api.ondelete): blocks deletion of the default nomenclature",
+      "barcode.max_time_between_keys_in_ms (ir.config_parameter, default 150 ms): scanner-vs-typing discrimination threshold",
+      "rule ordering policy: _order='sequence asc, id' makes parsing first-match-wins and deterministic"
+    ],
+    "stakeholders": [
+      "Warehouse / shop-floor / POS operator (scans codes during operations)",
+      "ERP / inventory administrator (maintains nomenclatures and rules)",
+      "Module developer (stock, pos, mrp, point_of_sale, stock_barcode — overrides on_barcode_scanned and reuses the parser/service)"
+    ],
     "strategy": null,
     "metrics": []
   },
   "classification": {
-    "value_model": "chain",
+    "value_model": "support",
     "activity_class": "support",
-    "apqc_category": "4.0 Deliver Physical Products",
-    "rationale": "barcodes: thin chain/support module (auto-architect baseline)."
+    "apqc_category": "8.0 Manage Information Technology",
+    "rationale": "barcodes is a cross-cutting scanning/identification framework — firm technical infrastructure (Porter support activity; Stabell & Fjeldstad 'support'), not a value-creating primary activity of any one value chain/shop/network. It owns no business object of its own beyond barcode.nomenclature/barcode.rule reference data and the barcodes.barcode_events_mixin; it has 0 HTTP routes and ~655 py LOC, and its real substance is the OWL/JS scan-capture buffer, parser and widgets in static/src (gap #3) that EVERY scanning app (stock, stock_barcode, point_of_sale, mrp) reuses. It is a shared technical capability that underpins 4.0 'Deliver Physical Products / Logistics' (warehouse/POS scanning) but is itself the identification-and-input platform, not the logistics process — so it classifies as APQC 8.0 'Manage Information Technology' (develop & manage the application capability / IT service that delivers barcode identification across the suite), mirroring the precedent set for the 'web' framework module. 4.0 was considered because barcodes is consumed almost entirely by inventory/logistics flows, but rejected: those flows live in stock/pos and merely call into this infrastructure; nothing here advances a logistics value stream by itself. 13.0 'Develop and Manage Business Capabilities' was also considered (it is a reusable capability others build on) but rejected because barcodes is a concrete running runtime/library, i.e. IT delivery (8.0), not governance/portfolio management."
   },
   "fit_to_standard": {
     "standard_capabilities": [
-      "Barcode"
+      "Configurable barcode nomenclatures with ordered, regex-pattern rules (Default Nomenclature + GS1 nomenclature shipped as data)",
+      "Server- and client-side parsing of a scanned code into a typed reference (product / lot / weight / price / package / alias)",
+      "Embedded quantity / weight / price decoding via the {N*D*} pattern grammar",
+      "EAN-8 / EAN-13 / UPC-A check-digit validation and automatic UPC<->EAN conversion",
+      "GS1 / EPC-URI and RFID (GTIN, SSCC) tag parsing",
+      "Scan-anywhere hardware-scanner capture (inter-keystroke-timing buffer), camera scanner, and manual-entry dialog",
+      "barcode_handler / field_float_scannable form widgets and the barcodes.barcode_events_mixin.on_barcode_scanned hook for other apps",
+      "OBT* element-trigger and OCD* navigation barcode commands"
     ],
-    "typical_fits": [],
-    "common_gaps": [],
+    "typical_fits": [
+      "Out-of-box EAN/UPC product scanning in Inventory, POS and Manufacturing with the default nomenclature",
+      "Adding a custom rule (type + encoding + pattern) to recognize a new code family without code",
+      "Switching a company to the GS1 nomenclature for GS1-128 / weight-embedded barcodes",
+      "Reusing the on_barcode_scanned mixin to make a new model react to scans"
+    ],
+    "common_gaps": [
+      "New parsed barcode TYPES beyond the shipped selection require Python (extend barcode.rule.type + the consuming model's on_barcode_scanned) — gap #3/code",
+      "Non-Code128/EAN/UPC symbologies or proprietary encodings need custom rules or parser work",
+      "Tuning scanner timing (barcode.max_time_between_keys_in_ms) for unusual hardware",
+      "Camera scanning depends on the browser BarcodeDetector / ZXing support and HTTPS context",
+      "No external integration surface (gap #7: 0 HTTP call sites, no SDK/API keys) — purely in-suite infrastructure"
+    ],
     "drive_hints": [
-      "odoo shell: env['barcode.nomenclature'].search([],limit=3)"
+      "odoo shell: env.ref('barcodes.default_barcode_nomenclature').parse_barcode('012345678905') -> inspect {type,base_code,value}",
+      "odoo shell: env.ref('barcodes.default_barcode_nomenclature').parse_barcode('urn:epc:id:sgtin:0614141.812345.6789') -> product+lot list",
+      "odoo shell: env['barcode.rule'].search_read([], ['name','sequence','encoding','type','pattern']) to view the ordered rule set",
+      "odoo shell: env['ir.http'].session_info()['max_time_between_keys_in_ms'] to confirm the scan-buffer threshold injected into the client",
+      "browser: focus any backend form and emit a fast keystroke burst ending in Enter to fire the 'barcode_scanned' EventBus event"
     ]
   },
   "reverse_eng_confidence": {
@@ -156,14 +251,18 @@
     "strategy": "human"
   },
   "open_questions": [
-    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+    "Full inventory of parsed barcode TYPES contributed by downstream modules (stock/stock_barcode/point_of_sale extend barcode.rule.type and on_barcode_scanned beyond this module's product/alias).",
+    "Exact browser support matrix for the camera scanner (BarcodeDetector vs ZXing fallback) and HTTPS/permission requirements at runtime.",
+    "Runtime nomenclature/rule row counts and which nomenclature each company actually uses (runtime not captured; models_with_data=0).",
+    "Divergences between the Python parser and its JS port (e.g. JS sanitizes only ean13 base_code, Python also sanitizes upca)."
   ],
   "provenance": {
     "explorer_facts": "doc/revres/facts/barcodes.facts.json",
     "tools": [
+      "code-read",
       "extract_module.py",
       "extract_frontend.py",
-      "gen_thin.py"
+      "run-odoo (odoo shell)"
     ],
     "odoo_version": "19.0"
   }

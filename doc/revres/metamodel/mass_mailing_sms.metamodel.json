@@ -4,6 +4,7 @@
     "manifest": {
       "name": "SMS Marketing",
       "category": "Marketing/Email Marketing",
+      "summary": "Design, send and track SMS",
       "depends": [
         "portal",
         "mass_mailing",
@@ -14,55 +15,176 @@
     },
     "models": [
       {
-        "_name": "mailing.contact",
-        "_description": null,
-        "fields": 1
+        "_name": "mailing.mailing",
+        "_description": "Mass Mailing (extended: SMS mailing_type)",
+        "_inherit": "mailing.mailing",
+        "fields": 10,
+        "relations": [
+          "sms_template_id->sms.template",
+          "campaign_id->utm.campaign (ab_testing_sms_winner_selection)"
+        ]
+      },
+      {
+        "_name": "mailing.trace",
+        "_description": "Mailing Statistics (extended: SMS trace_type)",
+        "_inherit": "mailing.trace",
+        "fields": 7,
+        "relations": [
+          "sms_id->sms.sms (compute, store=False)",
+          "sms_tracker_ids->sms.tracker",
+          "sms_id_int->sms.sms (loose int link, no FK)"
+        ]
+      },
+      {
+        "_name": "sms.sms",
+        "_description": "Outgoing SMS (extended: mailing link)",
+        "_inherit": "sms.sms",
+        "fields": 2,
+        "relations": [
+          "mailing_id->mailing.mailing",
+          "mailing_trace_ids->mailing.trace (via sms_id_int)"
+        ]
+      },
+      {
+        "_name": "sms.tracker",
+        "_description": "Link SMS to mailing/sms tracking models (extended)",
+        "_inherit": "sms.tracker",
+        "fields": 1,
+        "relations": [
+          "mailing_trace_id->mailing.trace"
+        ]
+      },
+      {
+        "_name": "sms.composer",
+        "_description": "Send SMS Wizard (extended: mass mailing mode)",
+        "_inherit": "sms.composer",
+        "fields": 3,
+        "relations": [
+          "mailing_id->mailing.mailing",
+          "utm_campaign_id->utm.campaign"
+        ]
       },
       {
         "_name": "mailing.sms.test",
         "_description": "Test SMS Mailing",
-        "fields": 2
+        "_inherit": null,
+        "fields": 2,
+        "relations": [
+          "mailing_id->mailing.mailing"
+        ]
+      },
+      {
+        "_name": "mailing.contact",
+        "_description": "Mailing Contact (extended: mobile + mail.thread.phone)",
+        "_inherit": [
+          "mailing.contact",
+          "mail.thread.phone"
+        ],
+        "fields": 1,
+        "relations": []
+      },
+      {
+        "_name": "mailing.list",
+        "_description": "Mailing List (extended: SMS contact stats)",
+        "_inherit": "mailing.list",
+        "fields": 1,
+        "relations": []
+      },
+      {
+        "_name": "utm.campaign",
+        "_description": "UTM Campaign (extended: SMS A/B testing)",
+        "_inherit": "utm.campaign",
+        "fields": 4,
+        "relations": [
+          "mailing_sms_ids->mailing.mailing"
+        ]
+      },
+      {
+        "_name": "utm.medium",
+        "_description": "UTM Medium (extended)",
+        "_inherit": "utm.medium",
+        "fields": 0,
+        "relations": []
+      },
+      {
+        "_name": "res.users",
+        "_description": "Users (extended: split mailing/SMS systray activities)",
+        "_inherit": "res.users",
+        "fields": 0,
+        "relations": []
       }
     ],
     "routes": [
       {
         "paths": [
-          "/sms/<int:mailing_id>/<string:trace_code>"
-        ],
-        "auth": "public",
-        "type": "http"
-      },
-      {
-        "paths": [
+          "/sms/<int:mailing_id>/<string:trace_code>",
           "/sms/<int:mailing_id>/unsubscribe/<string:trace_code>"
         ],
         "auth": "public",
-        "type": "http"
+        "type": "http",
+        "note": "website=True; public SMS unsubscribe / mailing-list opt-out + phone blacklist pages"
       },
       {
         "paths": [
           "/r/<string:code>/s/<int:sms_id_int>"
         ],
         "auth": "public",
-        "type": "http"
+        "type": "http",
+        "note": "short-link redirect adding the sms_id_int so a click resolves to its mailing.trace"
       }
     ],
     "security": {
       "access_rules": 3,
       "record_rules": 0,
-      "groups": 0
+      "groups": 0,
+      "note": "No own res.groups; 3 ir.model.access entries (mailing.sms.test, sms.tracker, phone.blacklist.remove) reuse mass_mailing.group_mass_mailing_user."
     },
     "views": {
       "form": 2,
       "list": 3,
-      "tree": 0,
-      "kanban": 0,
       "search": 0,
       "pivot": 0,
       "graph": 0,
       "calendar": 0,
-      "activity": 0
+      "note": "Adds SMS form/list variants for mailing.mailing + mailing.trace, an SMS mailing-list view, portal templates, and SMS A/B campaign columns; reuses the parent mass_mailing pivot/graph statistics views."
     },
+    "behavioral_notes": [
+      {
+        "element": "mailing.mailing._action_send_mail / action_send_sms (SMS send dispatch)",
+        "observation": "mass_mailing's queue cron drives both channels: action_put_in_queue -> ir_cron_mass_mailing_queue -> _process_mass_mailing_queue -> _action_send_mail. This module overrides _action_send_mail to split off mailing_type=='sms' records and route them to action_send_sms, leaving the email branch to super(). action_send_sms calls _get_remaining_recipients(), then creates an sms.composer in composition_mode='mass' (via _send_sms_get_composer_values, carrying body_plaintext, sms_template_id, mailing_id, mass_force_send, use_exclusion_list) and calls composer._action_send_sms(). So an SMS mailing reuses the email mailing state machine and audience computation but emits sms.sms rows instead of mail.mail.",
+        "source": "code-read"
+      },
+      {
+        "element": "sms.composer mass override -> sms.sms queue + IAP credit consumption",
+        "observation": "The inherited sms.composer._action_send_sms_mass builds per-recipient sms.sms via _prepare_mass_sms; the override _prepare_mass_sms_values nests a mailing.trace (trace_type='sms', sms_code, sms_number, an sms.tracker keyed by sms.uuid) directly into each sms.sms create, and _update_body_short_links rewrites /r/<code> links to /r/<code>/s/<sms_id>. If sms_force_send the rows are sent inline via sms.sms.send(); otherwise the sms.sms create() triggers sms.ir_cron_sms_scheduler_action, whose _process_queue batch-sends (sms.session.batch.size, default 500) through SmsApi._send_sms_batch -> iap_jsonrpc POST to https://sms.api.odoo.com (this is where IAP SMS credits are consumed). Insufficient credit / unregistered account map back to failure_type sms_credit / sms_acc, surfaced on the mailing via _compute_sms_has_iap_failure (buy-credits / register-account banners).",
+        "source": "code-read"
+      },
+      {
+        "element": "mailing.trace per-recipient tracking + click/bounce via sms.tracker (mailing_trace.py, sms_tracker.py, controllers/main.py)",
+        "observation": "Each recipient gets one mailing.trace (sms_code random 3-char obfuscator, sms_number, sms_id_int loose link because the sms.sms can be GC'd independently). Delivery state flows IAP-side through sms.tracker._action_update_from_sms_state / _action_update_from_provider_error, whose overrides call _update_sms_traces (mapping sms state -> trace_status via SMS_STATE_TO_TRACE_STATUS, monotonic guard against regressing status) and _update_sms_mailings (flips the mailing to 'sending' on process, then to 'done' once no trace is still in 'process'). Click tracking: the public /r/<code>/s/<sms_id_int> route resolves the trace by sms_id_int and calls link.tracker.click.add_click(mailing_trace_id=...) before a 301 to the real URL. Pre-send cancellations (blacklist/duplicate/optout) are persisted as 'cancel' traces by _filter_out_and_handle_revoked_sms_values before any IAP call.",
+        "source": "code-read"
+      },
+      {
+        "element": "Public unsubscribe / mailing-list opt-out + phone blacklist (controllers/main.py)",
+        "observation": "When sms_allow_unsubscribe is on, each body gets a 'STOP SMS: <base>/sms/<mailing_id>/<trace_code>' link (sms.composer._get_unsubscribe_info/_get_unsubscribe_url). /sms/<mailing_id>/<trace_code> (blacklist_page) validates the trio code/mailing/number, geoip-sanitizes the entered number to E164, then redirects to /sms/<mailing_id>/unsubscribe/<trace_code> (blacklist_number). There the logic branches: if the mailing targeted contact_list_ids it writes opt_out=True on matching mailing.subscription rows (list-level opt-out, leaving the contact opted-in on other lists); otherwise (document/blacklist mode) it adds the sanitized number to phone.blacklist via add() and logs the source mailing. Opt-out, void in the base sms module, is implemented here via _get_optout_record_ids -> mailing._get_opt_out_list_sms and mailing.list._mailing_get_opt_out_list_sms (opt-out only if opted-out on every involved list).",
+        "source": "code-read"
+      },
+      {
+        "element": "SMS A/B testing + de-duplication seen-list (mailing_mailing.py, utm.py)",
+        "observation": "SMS variants share a utm.campaign with ab_testing_sms_winner_selection (default clicks_ratio); _get_ab_testing_siblings_mailings restricts siblings to campaign.mailing_sms_ids, and the inherited campaign winner cron sends the SMS winner at 100%. _get_seen_list_sms runs a raw SQL JOIN of mailing_trace against the target table's phone fields (phone_sanitized for mail.thread.phone models, else the model's phone fields or a res.partner phone) to exclude numbers already reached by the same mailing, feeding sms.composer._get_done_record_ids. action_retry_failed_sms deletes errored sms.sms + their traces and re-queues.",
+        "source": "code-read"
+      },
+      {
+        "element": "frontend (OWL/JS) SmsWidget patch",
+        "observation": "Single JS file fields_sms_widget.js patches the base sms module's SmsWidget.prototype (no own OWL component / registry add). On mailing.mailing records it calls get_sms_link_replacements_placeholders over ORM to learn the character length the link-tracker short URL and the 'STOP SMS' opt-out link will occupy, then corrects the live SMS character/segment counter (nbrChar / nbrCharExplanation / _getValueForSmsCounts) so the GSM-160 segment estimate accounts for tracked-link and opt-out expansion. Bundles: web.assets_backend, web.assets_tests.",
+        "source": "static"
+      },
+      {
+        "element": "external integrations (IAP, no own SDK)",
+        "observation": "0 raw http_call_sites and no third-party SDK imports in this module; all SMS delivery is delegated to the base sms module's IAP layer (iap_tools.iap_jsonrpc -> https://sms.api.odoo.com), with the inbound /sms/status delivery-report webhook (defined in sms) updating sms.tracker -> mailing.trace. The manifest exposes the product page https://www.odoo.com/app/sms-marketing. uses_api_keys=false: auth is the IAP account_token + database.uuid, not a customer-held API key.",
+        "source": "static"
+      }
+    ],
     "frontend": {
       "present": true,
       "js_files": 1,
@@ -92,69 +214,145 @@
     "runtime": {
       "models_with_data": 0,
       "top": []
-    },
-    "behavioral_notes": [
-      {
-        "element": "frontend (OWL/JS)",
-        "observation": "1 JS files, 0 OWL components, 0 registry adds; bundles ['web.assets_backend', 'web.assets_tests'].",
-        "source": "static"
-      },
-      {
-        "element": "thin module",
-        "observation": "2 models, 3 routes, 1873 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
-        "source": "ast"
-      }
-    ]
+    }
   },
   "it_architecture": {
-    "application": "mass_mailing_sms (SMS Marketing)",
+    "application": "mass_mailing_sms (SMS Marketing application component - an SMS broadcast channel layered on the Email Marketing engine via the sms/IAP gateway)",
     "software_services": [
-      "/r/<string:code>/s/<int:sms_id_int>",
       "/sms/<int:mailing_id>/<string:trace_code>",
-      "/sms/<int:mailing_id>/unsubscribe/<string:trace_code>"
+      "/sms/<int:mailing_id>/unsubscribe/<string:trace_code>",
+      "/r/<string:code>/s/<int:sms_id_int>"
     ],
     "data_objects": [
+      "mailing.mailing (mailing_type='sms')",
+      "mailing.trace (trace_type='sms')",
+      "sms.sms",
+      "sms.tracker",
+      "sms.composer",
+      "mailing.sms.test",
       "mailing.contact",
-      "mailing.sms.test"
+      "mailing.list",
+      "utm.campaign",
+      "utm.medium"
     ],
     "logical_data_erm": [
-      "mailing.sms.test -> mailing.mailing"
+      "mailing.mailing -> sms.template (sms_template_id)",
+      "mailing.mailing -> utm.campaign (SMS A/B variants: mailing_sms_ids / ab_testing_sms_winner_selection)",
+      "mailing.mailing -> sms.composer (mass mode) -> sms.sms",
+      "sms.sms -> mailing.mailing (mailing_id)",
+      "sms.sms -> mailing.trace (via sms_id_int loose link)",
+      "mailing.trace -> sms.tracker -> mail.notification",
+      "mailing.trace -> link.tracker.click (via /r/<code>/s/<sms_id>)",
+      "mailing.subscription.opt_out / phone.blacklist <- public unsubscribe routes"
     ],
     "information_flows": [
-      "depends: portal, mass_mailing, sms"
+      "depends: portal, mass_mailing, sms",
+      "side-effect: action_put_in_queue -> ir_cron_mass_mailing_queue -> _action_send_mail (override) -> action_send_sms -> sms.composer(mass) -> sms.sms rows + nested mailing.trace",
+      "side-effect: sms.sms create -> sms.ir_cron_sms_scheduler_action -> _process_queue -> SmsApi._send_sms_batch -> IAP https://sms.api.odoo.com (consumes SMS credits)",
+      "side-effect: IAP delivery report -> sms.tracker._action_update_from_sms_state -> mailing.trace.trace_status + mailing state -> done; failure_type sms_credit/sms_acc -> buy-credits/register banners",
+      "side-effect: click HTTP /r/<code>/s/<sms_id_int> -> link.tracker.click.add_click(mailing_trace_id)",
+      "side-effect: public /sms/<mailing>/<code> unsubscribe -> mailing.subscription.opt_out (list mode) or phone.blacklist.add (document mode)",
+      "side-effect: SMS A/B -> campaign winner cron sends mailing_sms_ids winner @100%"
     ],
-    "frontend_components": []
+    "frontend_components": [
+      "SmsWidget (patched: SMS character/segment counter accounting for tracked-link + opt-out expansion on mailing.mailing)"
+    ],
+    "external_integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "endpoints": [
+        "https://sms.api.odoo.com (via base sms / IAP)",
+        "https://www.odoo.com/app/sms-marketing"
+      ],
+      "notes": "No own SDK/HTTP. SMS delivery and credit consumption go through the base sms module's IAP layer (iap_tools.iap_jsonrpc -> sms.api.odoo.com); inbound /sms/status webhook (sms module) feeds delivery status back into sms.tracker -> mailing.trace. Auth = IAP account_token + database.uuid (uses_api_keys=false)."
+    }
   },
   "business_architecture": {
     "capabilities": [
-      "SMS Marketing"
+      "Design SMS Campaigns (SMS body, templates, live segment/character counter)",
+      "Send & Schedule Mass SMS (queued via sms IAP gateway, or force-send)",
+      "Target Audiences via Mailing Lists / Contacts / Domain Filters (phone-aware)",
+      "Track SMS Engagement (delivery, clicks, bounce/failure) per recipient via mailing.trace",
+      "SMS Opt-out / Unsubscribe & Phone Blacklist Compliance (public routes)",
+      "SMS A/B Testing with automatic winner selection",
+      "Manage IAP SMS Credits & Account Registration"
     ],
-    "value_streams": [],
+    "value_streams": [
+      "Campaign-to-Engagement (SMS): design SMS mailing -> select audience (lists/domain, phone-valid) -> queue & send (sms.sms -> IAP) -> track traces (delivered/clicked/bounced) -> analyze (mailing.trace.report) / pick A/B winner",
+      "Opt-out: recipient taps 'STOP SMS' link -> /sms/<mailing>/<code> -> list opt-out (mailing.subscription) or phone.blacklist add"
+    ],
     "information_concepts": [
+      "mailing.mailing (mailing_type='sms')",
+      "mailing.trace (trace_type='sms')",
+      "sms.sms",
+      "sms.tracker",
+      "mailing.list",
       "mailing.contact",
-      "mailing.sms.test"
+      "utm.campaign (SMS A/B)"
     ],
-    "organization": [],
+    "organization": [
+      "mass_mailing.group_mass_mailing_user (reused; module defines no own groups)"
+    ],
     "products": [],
-    "policies": [],
-    "stakeholders": [],
+    "policies": [
+      "3 ACLs reuse group_mass_mailing_user; no own record rules",
+      "Opt-out: list-level via mailing.subscription.opt_out (opted-out only if opted-out on every involved list)",
+      "Phone blacklist enforced before send (use_exclusion_list) -> failure_type sms_blacklist; document-mode unsubscribe adds to phone.blacklist",
+      "De-duplication: same sanitized number already reached (raw-SQL seen-list) or duplicate in batch -> sms_duplicate (canceled trace)",
+      "Number validation: phone_validation E164 sanitization gates send -> sms_number_missing / sms_number_format",
+      "IAP credit/account gating: insufficient credit -> sms_credit, unregistered account -> sms_acc (banners on the mailing)"
+    ],
+    "stakeholders": [
+      "Marketing user (res.users / group_mass_mailing_user)",
+      "SMS recipient / contact (mailing.contact, phone number)",
+      "Audience / mailing list (mailing.list)",
+      "Odoo IAP SMS service (external delivery provider + credits)"
+    ],
     "strategy": null,
-    "metrics": []
+    "metrics": [
+      "mailing.trace.report (SMS variant: sent/delivered/clicked/bounced counts)",
+      "mailing.mailing computed ratios (received_ratio, clicks_ratio, bounced_ratio) reused for SMS",
+      "24H SMS KPI statistics email (_prepare_statistics_email_values SMS branch: RECEIVED / CLICKED / BOUNCED)",
+      "mailing.list contact_count_sms (valid SMS recipients) / contact_count_blacklisted",
+      "IAP SMS credit balance / consumption"
+    ]
   },
   "classification": {
     "value_model": "network",
     "activity_class": "primary",
     "apqc_category": "3.0 Market and Sell Products and Services",
-    "rationale": "mass_mailing_sms: thin network/primary module (auto-architect baseline)."
+    "rationale": "mass_mailing_sms is the SMS channel of the mass_mailing value network and inherits its classification: a value-network mediating activity (Stabell & Fjeldstad) that connects the firm to a large audience at scale, brokering the relationship through mediating infrastructure (mailing lists/subscriptions, the SMS/IAP gateway, UTM campaigns, per-recipient delivery/click/bounce tracking). It reuses mass_mailing.mailing.mailing/mailing.trace and the whole queue+statistics machinery, only swapping the delivery substrate from SMTP/mail.mail to sms.sms over Odoo IAP. Per the network model the primary activities are network promotion & contract management (audience selection, opt-out/blacklist), service provisioning (queued SMS send), and infrastructure operation (IAP credits, link tracking) - broadcasting to a contact network rather than transforming inputs (chain) or solving a client problem (shop). It maps to APQC 3.0 Market and Sell (3.4 Develop and manage marketing communications - the SMS execution channel). It is classified primary (not support like the base sms gateway) because here SMS is the marketing campaign itself, not a cross-cutting notification channel: it adds a mailing_type='sms', a marketing audience/opt-out model, and campaign A/B testing on top of the gateway."
   },
   "fit_to_standard": {
     "standard_capabilities": [
-      "SMS Marketing"
+      "SMS mailings as a mailing_type on the Email Marketing engine (shared lists, campaigns, scheduling, statistics)",
+      "SMS body editing with templates and a live character/segment counter aware of tracked links + opt-out text",
+      "queued/force send of sms.sms through the sms module's IAP gateway with credit checks",
+      "per-recipient delivery + click + bounce/failure tracking into mailing.trace (sms.tracker bridge, /r/<code>/s/<sms_id> click route)",
+      "public 'STOP SMS' unsubscribe -> mailing-list opt-out (mailing.subscription) or phone.blacklist",
+      "blacklist / duplicate / opt-out / invalid-number pre-send suppression with explicit failure_type codes",
+      "SMS A/B testing with automatic winner selection on a shared utm.campaign",
+      "buy-credits / register-IAP-account banners and retry-failed-SMS action"
     ],
-    "typical_fits": [],
-    "common_gaps": [],
+    "typical_fits": [
+      "promotional / reminder SMS blasts to mailing lists",
+      "targeted SMS on any phone-bearing mailing model via domain filters",
+      "campaign-level SMS A/B test then broadcast the winner",
+      "SMS + email multichannel campaigns sharing one utm.campaign and statistics dashboard"
+    ],
+    "common_gaps": [
+      "non-Odoo SMS provider requires subclassing the base SmsApi (delivery is hard-wired to Odoo IAP)",
+      "two-way / inbound SMS (replies) not modeled - delivery is one-way + status webhook only",
+      "no SMS send-time throttling/scheduling UI beyond the queue cron batch size",
+      "advanced drip / multi-step SMS journeys belong to marketing_automation, not this module",
+      "IAP credits, country support, and sender registration depend on external Odoo service state"
+    ],
     "drive_hints": [
-      "odoo shell: env['mailing.contact'].search([],limit=3)"
+      "odoo shell: env['mailing.mailing'].search([('mailing_type','=','sms')], limit=5).mapped(('subject','state','expected','delivered','clicked'))",
+      "odoo shell: env['mailing.trace'].read_group([('trace_type','=','sms')], ['__count'], ['trace_status'])",
+      "odoo shell: m = env['mailing.mailing'].create({'mailing_type':'sms','sms_subject':'demo','body_plaintext':'Hi','mailing_model_id': env.ref('mass_mailing.model_mailing_list').id}); m.action_test()",
+      "odoo shell: env['sms.sms'].search([('mailing_id','!=',False)], limit=5).mapped(('number','state','failure_type'))",
+      "curl public: GET /sms/<mailing_id>/<trace_code> (renders the SMS unsubscribe page for that trace)"
     ]
   },
   "reverse_eng_confidence": {
@@ -168,14 +366,16 @@
     "strategy": "human"
   },
   "open_questions": [
-    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+    "Exact mapping of all IAP/Twilio delivery-report states into the SMS failure_type selection (sms_expired/sms_rejected/sms_not_delivered/twilio_*) and how each surfaces in mailing.trace vs the mailing banners.",
+    "Live IAP-dependent behavior (credit consumption, country support, sender registration) cannot be observed without an activated database + credits.",
+    "Interaction between the mass_mailing queue cron (ir_cron_mass_mailing_queue) and the sms scheduler cron (ir_cron_sms_scheduler_action) under partial-batch failure and retry."
   ],
   "provenance": {
     "explorer_facts": "doc/revres/facts/mass_mailing_sms.facts.json",
     "tools": [
+      "code-read (models/mailing_mailing.py, models/mailing_trace.py, models/sms_sms.py, models/sms_tracker.py, models/mailing_list.py, models/res_users.py, wizard/sms_composer.py, wizard/mailing_sms_test.py, controllers/main.py, static/src/components/sms_widget/fields_sms_widget.js; cross-ref addons/sms/models/sms_sms.py + addons/sms/wizard/sms_composer.py)",
       "extract_module.py",
-      "extract_frontend.py",
-      "gen_thin.py"
+      "extract_frontend.py"
     ],
     "odoo_version": "19.0"
   }

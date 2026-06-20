@@ -17,8 +17,45 @@
     "models": [
       {
         "_name": "hr.job",
-        "_description": null,
-        "fields": 6
+        "_description": "Job Position (extended: published online jobs + SEO + website search)",
+        "_inherit": [
+          "hr.job",
+          "website.seo.metadata",
+          "website.published.multi.mixin",
+          "website.searchable.mixin"
+        ],
+        "fields": 6,
+        "relations": []
+      },
+      {
+        "_inherit": "hr.applicant",
+        "_description": "Applicant (extended: website apply-form intake)",
+        "fields": 0,
+        "relations": []
+      },
+      {
+        "_inherit": "hr.department",
+        "_description": "Department (extended: sudo display_name for portal/public)",
+        "fields": 1,
+        "relations": []
+      },
+      {
+        "_inherit": "hr.recruitment.source",
+        "_description": "Source of Applicants (extended: UTM tracker URL)",
+        "fields": 1,
+        "relations": []
+      },
+      {
+        "_inherit": "website",
+        "_description": "Website (extended: jobs search provider + suggested controller)",
+        "fields": 0,
+        "relations": []
+      },
+      {
+        "_inherit": "website.page",
+        "_description": "Website Page (extended: disable cache on /job-thank-you)",
+        "fields": 0,
+        "relations": []
       }
     ],
     "routes": [
@@ -39,24 +76,24 @@
       },
       {
         "paths": [
-          "/jobs/detail/<model("
+          "/jobs/detail/<model(\"hr.job\"):job>"
         ],
-        "auth": null,
-        "type": null
+        "auth": "public",
+        "type": "http"
       },
       {
         "paths": [
-          "/jobs/<model("
+          "/jobs/<model(\"hr.job\"):job>"
         ],
-        "auth": null,
-        "type": null
+        "auth": "public",
+        "type": "http"
       },
       {
         "paths": [
-          "/jobs/apply/<model("
+          "/jobs/apply/<model(\"hr.job\"):job>"
         ],
-        "auth": null,
-        "type": null
+        "auth": "public",
+        "type": "http"
       },
       {
         "paths": [
@@ -130,70 +167,168 @@
     },
     "behavioral_notes": [
       {
-        "element": "frontend (OWL/JS)",
-        "observation": "7 JS files, 1 OWL components, 4 registry adds; bundles ['web.assets_frontend', 'web.assets_backend', 'website.website_builder_assets'].",
-        "source": "static"
+        "element": "WebsiteHrRecruitment.jobs (controller /jobs, /jobs/page/<int:page>)",
+        "observation": "The public jobs listing runs website._search_with_fuzzy('jobs', ...) to fuzzy-match job names/descriptions, then filters in Python by department_id, address_id (office), res.country, hr.contract.type and res.partner.industry (plus is_remote/is_other_department/is_untyped/is_industry_untyped 'unset' buckets). It contaminates the result set per filter to compute live facet counters (count_per_office/department/employment_type/industry/country) so each filter shows its remaining count, geo-detects the visitor country via request.geoip.country_code to pre-filter, then paginates 12 jobs/page via website.pager. This routing/filtering logic is invisible in Python field metadata.",
+        "source": "code-read"
       },
       {
-        "element": "thin module",
-        "observation": "1 models, 6 routes, 708 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
-        "source": "ast"
+        "element": "hr.applicant.website_form_input_filter + extract_data (apply-online submission)",
+        "observation": "The /jobs/apply/<job> page renders a website.form posting to /website/form/ with data-model_name='hr.applicant' and a hidden data-for='hr_recruitment_form' carrying job_id/department_id. On POST, WebsiteForm creates an hr.applicant: HrApplicant.website_form_input_filter checks the hr.job is still active (raises UserError 'The job offer has been closed.' otherwise) and stamps stage_id to the first non-folded recruitment stage for that job; extract_data relabels the free-text 'short_introduction'. The uploaded resume becomes an ir.attachment on the applicant. config_data.xml whitelists the postable fields (email_from, partner_name, partner_phone, job_id, department_id, linkedin_profile, applicant_properties) via formbuilder_whitelist and sets website_form_key='apply_job'. This anonymous public record creation is the module's core side-effect, driven by Python, not schema.",
+        "source": "code-read"
+      },
+      {
+        "element": "hr.job website.published.multi.mixin + ir.rule (public/portal gating)",
+        "observation": "hr.job._inherit adds website.published.multi.mixin; website_published (tracked) is the public-visibility gate. _onchange_website_published mirrors website_published into is_published, set_open() and action_archive() force website_published=False, and _compute_published_date stamps published_date=today on publish. Four ir.rule record rules enforce that base.group_public and base.group_portal can only read hr.job where website_published=True (hr_recruitment.group_hr_recruitment_user sees all); a parallel rule exposes hr.department only when it has a published job or children. _search_get_detail re-asserts ('website_published','=',True) when a sudo() country search bypasses the rule. Visibility semantics live in code/data, not metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "WebsiteHrRecruitment.check_recent_application (/website_hr_recruitment/check_recent_application)",
+        "observation": "A public jsonrpc endpoint called on form focus-out (by the hr_recruitment_form interaction) de-duplicates candidates before submit: it searches hr.applicant.sudo() by normalized email / partner_name / partner_phone / linkedin_profile scoped to the job's website, groups by application_status, and returns a human-readable warning if an ongoing application exists or a refused one was created within the last 6 months (relativedelta(months=6)), optionally surfacing the recruiter's contact. Anti-duplicate UX logic invisible in field metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "hr.job detail template — Google for Jobs structured data (SEO/og)",
+        "observation": "The /jobs/<job> detail view inherits website.seo.metadata (so SEO/og tags are editable per job) and emits JobPosting microdata: itemprop employmentType (from hr.contract.type), datePosted (published_date), title, directApply=true, hiringOrganization name + /logo.png, jobLocation address (res.partner.contact_address) or jobLocationType=TELECOMMUTE for remote. full_url is computed by joining the base URL with website_url (/jobs/<slug>) for sharing. This SEO surface is template/code-level, not Python metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "frontend (OWL/JS)",
+        "observation": "7 JS files; 1 OWL component (CopyClipboardCharField); the public apply page is driven by the public.interaction 'website_hr_recruitment.hr_recruitment_form' (live LinkedIn-URL regex validation + RPC duplicate warnings + conditional resume/linkedin requirement); registry adds fields:CopyClipboardJobLinkButton + fields:boolean_toggle_labeled and website.form_editor_actions:apply_job (so the builder can drop the Apply form); patches NewContentSystrayItem.prototype (New > Job Position). Asset bundles {web.assets_frontend:2, web.assets_backend:3, website.website_builder_assets:2, website.assets_editor:1, web.assets_tests:1}.",
+        "source": "static"
       }
     ]
   },
   "it_architecture": {
-    "application": "website_hr_recruitment (Online Jobs)",
+    "application": "website_hr_recruitment (Online Jobs — public careers site for hr_recruitment)",
     "software_services": [
-      "/jobs",
-      "/jobs/<model(",
-      "/jobs/add",
-      "/jobs/apply/<model(",
-      "/jobs/detail/<model(",
-      "/jobs/page/<int:page>",
-      "/website_hr_recruitment/check_recent_application"
+      "GET /jobs, /jobs/page/<int:page> (public job listing + filter facets)",
+      "POST /jobs/add (jsonrpc, auth=user — create draft job from website)",
+      "GET /jobs/detail/<model(\"hr.job\"):job> (301 redirect to canonical slug)",
+      "GET /jobs/<model(\"hr.job\"):job> (public job detail + JobPosting SEO)",
+      "GET /jobs/apply/<model(\"hr.job\"):job> (public apply form page)",
+      "POST /website_hr_recruitment/check_recent_application (jsonrpc, public — duplicate warning)"
     ],
     "data_objects": [
-      "hr.job"
+      "hr.job",
+      "hr.applicant",
+      "hr.department",
+      "hr.recruitment.source",
+      "website",
+      "website.page"
     ],
-    "logical_data_erm": [],
+    "logical_data_erm": [
+      "hr.job -> website.published.multi.mixin (website_published gate)",
+      "hr.job -> website.seo.metadata (per-job SEO/og)",
+      "hr.job -> website.searchable.mixin (fuzzy site search)",
+      "hr.job -> res.partner (address_id office / jobLocation)",
+      "hr.job -> hr.contract.type (employmentType facet)",
+      "hr.applicant -> hr.job (apply form target)",
+      "hr.applicant -> ir.attachment (uploaded resume/CV)",
+      "hr.applicant -> hr.recruitment.stage (first non-folded stage on intake)",
+      "hr.recruitment.source -> utm.campaign / utm.medium (tracker URL)"
+    ],
     "information_flows": [
-      "depends: hr_recruitment, website_mail"
+      "depends: hr_recruitment (hr.job/hr.applicant pipeline), website_mail (website + mail templates)",
+      "side-effect: POST /website/form/ -> hr.applicant.website_form_input_filter -> create hr.applicant (+ ir.attachment resume) at first stage",
+      "side-effect: website_published=True -> is_published=True -> hr.job visible to public/portal (ir.rule), published_date=today",
+      "flow: /jobs search -> website._search_with_fuzzy('jobs') -> hr.job._search_get_detail (country/department/office/contract filters)",
+      "flow: focus-out -> /website_hr_recruitment/check_recent_application -> hr.applicant.sudo() dedup lookup (email/name/phone/linkedin)",
+      "flow: hr.job detail -> JobPosting microdata (Google for Jobs) + website.seo.metadata og tags"
     ],
     "frontend_components": [
-      "CopyClipboardCharField"
+      "CopyClipboardCharField",
+      "public.interaction: HrRecruitmentForm (apply form validation + dedup RPC)",
+      "website.form_editor_actions: apply_job (website-builder Apply block)",
+      "NewContentSystrayItem patch (New > Job Position)"
     ]
   },
   "business_architecture": {
     "capabilities": [
-      "Online Jobs"
+      "Publish Job Positions Online (careers website)",
+      "Public Job Search & Filtering (country/department/office/contract/industry)",
+      "Apply Online (anonymous candidate self-service application)",
+      "Capture Resume / LinkedIn / Candidate Details",
+      "Duplicate-Application Detection (pre-submit warning)",
+      "Employer-Brand & Job SEO (Google for Jobs structured data, og tags)",
+      "UTM Source Tracking for Job Postings"
     ],
-    "value_streams": [],
+    "value_streams": [
+      "Attract-to-Apply: publish opening -> candidate discovers via search/SEO -> views job detail -> submits apply form -> hr.applicant created in the recruiter pipeline (hands off to hr_recruitment source-to-hire)"
+    ],
     "information_concepts": [
-      "hr.job"
+      "hr.job (published job position)",
+      "hr.applicant (online application)",
+      "hr.department (public department facet)",
+      "hr.recruitment.source (UTM-tracked channel)",
+      "ir.attachment (uploaded resume/CV)",
+      "website (careers site)"
     ],
-    "organization": [],
+    "organization": [
+      "base.group_public (anonymous visitor — read published jobs)",
+      "base.group_portal (portal user — read published jobs)",
+      "hr_recruitment.group_hr_recruitment_user (recruiter — also website restricted editor via implied group)"
+    ],
     "products": [],
     "policies": [
-      "4 record rules"
+      "ir.rule hr_job_public / hr_job_portal: public & portal read hr.job only where website_published = True",
+      "ir.rule hr_job_officer: recruiters (group_hr_recruitment_user) read all job positions",
+      "ir.rule hr_department_public: department visible only when it has a published job or child departments",
+      "config: website_form_access + formbuilder_whitelist restrict which hr.applicant fields the public form may post"
     ],
-    "stakeholders": [],
+    "stakeholders": [
+      "Candidate / Job Seeker (anonymous public)",
+      "Recruiter (res.users / hr_recruitment.group_hr_recruitment_user)",
+      "Website Editor / Marketing (publishes & styles careers pages)",
+      "Hiring / Department Manager (hr.department)"
+    ],
     "strategy": null,
-    "metrics": []
+    "metrics": [
+      "hr.job application_count / open jobs (published positions vs applications received)",
+      "hr.recruitment.source UTM tracker URLs (channel attribution: campaign/medium/source)",
+      "published_date (how long a position has been live online)"
+    ]
   },
   "classification": {
     "value_model": "network",
-    "activity_class": "support",
+    "activity_class": "primary",
     "apqc_category": "7.0 Develop and Manage Human Capital",
-    "rationale": "website_hr_recruitment: thin network/support module (auto-architect baseline)."
+    "rationale": "website_hr_recruitment is a value-network mediation layer (Stabell & Fjeldstad): it operates a website storefront/portal that publishes the employer brand and connects two parties — job seekers and the recruiting organization — over a shared infrastructure (the careers site, SEO/Google-for-Jobs exposure, and the apply channel). Its routes are public web/portal surfaces (/jobs listing + search, /jobs/<job> detail, /jobs/apply submission) rather than a transform document-flow (chain) or a problem-solving engagement (shop), the signature of the 'network' configuration shared by website/portal modules. It is a primary activity because it is the front-facing acquisition channel that directly captures candidates (creating hr.applicant), the inbound edge of the talent-acquisition stream — not a behind-the-scenes support function. It maps to APQC PCF 7.0 Develop and Manage Human Capital, specifically 7.1 'Recruit, source and select employees' (the online sourcing/application channel). The terminal output is an hr.applicant handed to hr_recruitment's source-to-hire pipeline; no flow to stock/account. Note: the parent module hr_recruitment is classed 'support'; this website channel is the candidate-facing network/primary storefront layered on top of it."
   },
   "fit_to_standard": {
     "standard_capabilities": [
-      "Online Jobs"
+      "public careers website with /jobs listing and per-job detail pages",
+      "fuzzy site search over job name/description with facet counters",
+      "filter jobs by country, department, office (address), contract type and industry, plus remote/untyped buckets",
+      "geo-IP country pre-filtering of the job list",
+      "publish/unpublish a job via website_published with public/portal ir.rule gating",
+      "drag-and-drop Apply form (website builder) creating hr.applicant from anonymous visitors",
+      "resume/CV upload as ir.attachment + LinkedIn URL validation",
+      "pre-submit duplicate-application warning (email/name/phone/linkedin, 6-month refused window)",
+      "Google for Jobs JobPosting structured data + per-job SEO/og metadata",
+      "UTM-tracked recruitment source URLs for channel attribution",
+      "thank-you page (/job-thank-you) with cache disabled"
     ],
-    "typical_fits": [],
-    "common_gaps": [],
+    "typical_fits": [
+      "standard published-jobs board with department/office/contract filtering",
+      "anonymous online application creating an applicant in the recruiter pipeline",
+      "employer-brand careers pages styled in the website builder",
+      "SEO-optimized job postings indexable by Google for Jobs"
+    ],
+    "common_gaps": [
+      "candidate assessment questionnaires on the public form (hr_recruitment_survey)",
+      "automated resume/CV field extraction (hr_recruitment_extract)",
+      "candidate self-service portal to track application status post-submit",
+      "multi-language / localized job descriptions beyond html_translate defaults",
+      "captcha / advanced anti-spam beyond the duplicate-application check",
+      "external job-board syndication (LinkedIn/Indeed posting) — only inbound UTM links here"
+    ],
     "drive_hints": [
-      "odoo shell: env['hr.job'].search([],limit=3)"
+      "curl -sS http://localhost:8069/jobs | head -40   # public job listing",
+      "curl -sS 'http://localhost:8069/jobs?department_id=1' | grep -o 'count_per' | head   # facet filters",
+      "odoo shell: env['hr.job'].sudo().search([('website_published','=',True)]).mapped(('name','full_url','published_date'))",
+      "odoo shell: env['hr.job'].with_user(env.ref('base.public_user')).search([])   # only published jobs visible (ir.rule)",
+      "odoo shell: env['hr.applicant'].search([('job_id','!=',False)], limit=5).mapped(('partner_name','job_id.name','stage_id.name','application_status'))",
+      "odoo shell: env['hr.recruitment.source'].search([], limit=5).mapped('url')   # UTM tracker URLs"
     ]
   },
   "reverse_eng_confidence": {
@@ -207,14 +342,19 @@
     "strategy": "human"
   },
   "open_questions": [
-    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+    "Exact set of fields rendered on the apply form vs the formbuilder_whitelist (email_from, partner_name, partner_phone, job_id, department_id, linkedin_profile, applicant_properties) is template-driven and website-editor-customizable at runtime.",
+    "Whether website_id multi-website scoping is configured so different sites publish different job subsets (hr.job.website_id is referenced in check_recent_application).",
+    "Demo data (hr_job_demo.xml) seeds sample published positions; real published-job and applicant counts are install/runtime dependent (runtime extract returned 0 rows).",
+    "How hr_recruitment_survey / hr_recruitment_extract further extend the public application flow when co-installed."
   ],
   "provenance": {
     "explorer_facts": "doc/revres/facts/website_hr_recruitment.facts.json",
     "tools": [
-      "extract_module.py",
+      "code-read",
       "extract_frontend.py",
-      "gen_thin.py"
+      "extract_module.py",
+      "extract_runtime.sh",
+      "run-odoo (odoo shell)"
     ],
     "odoo_version": "19.0"
   }

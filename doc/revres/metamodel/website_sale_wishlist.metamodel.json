@@ -14,7 +14,46 @@
       {
         "_name": "product.wishlist",
         "_description": "Product Wishlist",
-        "fields": 7
+        "fields": 7,
+        "relations": [
+          "partner_id->res.partner",
+          "product_id->product.product",
+          "pricelist_id->product.pricelist",
+          "currency_id->res.currency",
+          "website_id->website"
+        ]
+      },
+      {
+        "_name": "product.product",
+        "_description": "(extension) _is_in_wishlist helper",
+        "fields": 0,
+        "relations": []
+      },
+      {
+        "_name": "product.template",
+        "_description": "(extension) _is_in_wishlist helper",
+        "fields": 0,
+        "relations": []
+      },
+      {
+        "_name": "res.partner",
+        "_description": "(extension) wishlist_ids One2many",
+        "fields": 1,
+        "relations": [
+          "wishlist_ids->product.wishlist"
+        ]
+      },
+      {
+        "_name": "res.users",
+        "_description": "(extension) merge session wishlist on login",
+        "fields": 0,
+        "relations": []
+      },
+      {
+        "_name": "website",
+        "_description": "(extension) wishlist page layout settings",
+        "fields": 4,
+        "relations": []
       }
     ],
     "routes": [
@@ -45,11 +84,6 @@
         ],
         "auth": "public",
         "type": "jsonrpc"
-      },
-      {
-        "paths": [],
-        "auth": null,
-        "type": null
       }
     ],
     "security": {
@@ -60,13 +94,9 @@
     "views": {
       "form": 0,
       "list": 0,
-      "tree": 0,
       "kanban": 0,
       "search": 0,
-      "pivot": 0,
-      "graph": 0,
-      "calendar": 0,
-      "activity": 0
+      "graph": 0
     },
     "frontend": {
       "present": true,
@@ -100,71 +130,143 @@
     },
     "behavioral_notes": [
       {
-        "element": "frontend (OWL/JS)",
-        "observation": "6 JS files, 0 OWL components, 4 registry adds; bundles ['web.assets_frontend', 'web.assets_tests', 'website.website_builder_assets'].",
-        "source": "static"
+        "element": "product.wishlist (per partner / per website) + add/remove routes (controllers/main.py, models/product_wishlist.py)",
+        "observation": "The wishlist is one product.wishlist row per (product_id, partner_id) — enforced by a UNIQUE(product_id, partner_id) SQL constraint — carrying website_id (ondelete='cascade', required), the pricelist_id and the price snapshotted when the product was added. /shop/wishlist/add (jsonrpc, public) browses the product.product, reads its variant price via _get_combination_info_variant()['price'] and calls product.wishlist._add_to_wishlist(...) to create the row; /shop/wishlist (http, public) renders the website_sale_wishlist.product_wishlist template with current() items; /shop/wishlist/remove/<wish_id> (jsonrpc) unlinks one entry; /shop/wishlist/get_product_ids (jsonrpc, readonly) returns the current product ids so the storefront can mark already-wishlisted products. Not visible in metadata.",
+        "source": "code-read"
       },
       {
-        "element": "thin module",
-        "observation": "1 models, 5 routes, 350 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
-        "source": "ast"
+        "element": "guest vs logged-in wishlist (product.wishlist.current / _add_to_wishlist / controllers/main.py)",
+        "observation": "Anonymous visitors are detected via request.website.is_public_user(): for them the wishlist is created sudo() with partner_id=False and the new wish.id is appended to request.session['wishlist_ids'] (session-scoped list), so guests get a wishlist without a partner. For a logged-in user the row is owned by request.env.user.partner_id and scoped to request.website.id. product.wishlist.current() returns session-id rows (sudo) for public users and partner+website rows otherwise, then filters out items whose product template is not website_published or fails _is_add_to_cart_possible(). Not visible in metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "merge session wishlist on login (res.users._check_credentials -> product.wishlist._check_wishlist_from_session)",
+        "observation": "res.users._check_credentials is overridden so that on successful login, if request.session holds wishlist_ids, _check_wishlist_from_session() runs: it loads the session's partner-less wishes and the user's existing wishes, drops session wishes whose product already exists for the partner (unlink, avoiding the UNIQUE(product_id, partner_id) clash), reassigns the remaining session wishes to the user's partner_id, and pops wishlist_ids from the session. This is the guest->customer hand-off that persists an anonymous wishlist across login. Not visible in metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "price snapshot / current-price (price + pricelist_id fields, _add_to_wishlist)",
+        "observation": "product.wishlist stores the variant price at add-time (price Monetary, help='Price of the product when it has been added in the wishlist') together with the pricelist_id and a currency_id related to website_id.currency_id. Keeping the original price alongside the live computed price lets the wishlist page compare the as-saved price with the current price (price-drop / changed-price indication) per stored pricelist/currency. Not visible in metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "add-to-cart from wishlist + autovacuum GC (frontend interactions + product.wishlist._gc_sessions)",
+        "observation": "The wishlist page is an action surface, not just a saved list: its public.interactions (add_product_to_wishlist_button, product_detail, product_wishlist, wishlist_navbar) let the shopper add a wishlisted product into the website_sale cart (move-to-cart) and remove it, driving conversion back into the /shop/cart flow. Stale guest wishlists are cleaned by @api.autovacuum _gc_sessions, which unlinks partner-less rows older than ~5 weeks (create_date threshold) so orphaned session wishlists do not accumulate. Not visible in metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "frontend (OWL/JS public interactions)",
+        "observation": "6 JS files, 0 OWL components, 4 public.interactions registry adds (add_product_to_wishlist_button, product_detail, product_wishlist, wishlist_navbar); 3 entries in web.assets_frontend plus a web.assets_tests bundle and a website.website_builder_assets bundle (wishlist-page grid layout options exposed in the website builder). The wishlist UX is delivered as website public interactions over QWeb templates, not backend OWL views.",
+        "source": "static"
       }
     ]
   },
   "it_architecture": {
-    "application": "website_sale_wishlist (Shopper's Wishlist)",
+    "application": "website_sale_wishlist (Shopper's Wishlist; storefront engagement add-on on website_sale)",
     "software_services": [
-      "/shop/wishlist",
-      "/shop/wishlist/add",
-      "/shop/wishlist/get_product_ids",
-      "/shop/wishlist/remove/<int:wish_id>"
+      "/shop/wishlist (render wishlist page)",
+      "/shop/wishlist/add (add product to wishlist)",
+      "/shop/wishlist/remove/<wish_id> (remove entry)",
+      "/shop/wishlist/get_product_ids (already-wishlisted product ids)"
     ],
     "data_objects": [
       "product.wishlist"
     ],
     "logical_data_erm": [
-      "product.wishlist -> product.pricelist",
-      "product.wishlist -> product.product",
-      "product.wishlist -> res.currency",
-      "product.wishlist -> res.partner",
-      "product.wishlist -> website"
+      "product.wishlist -> res.partner (partner_id, owner)",
+      "product.wishlist -> product.product (product_id)",
+      "product.wishlist -> website (website_id, ondelete cascade)",
+      "product.wishlist -> product.pricelist (pricelist_id at add-time)",
+      "product.wishlist -> res.currency (currency_id, related website.currency_id)",
+      "res.partner -> product.wishlist (wishlist_ids One2many)"
     ],
     "information_flows": [
-      "depends: website_sale"
+      "depends: website_sale (storefront, public users, product catalog, cart)",
+      "inbound: website public user / portal customer -> /shop/wishlist/add -> product.wishlist row (session-scoped for guests, partner-scoped for logged-in)",
+      "side-effect: res.users login (_check_credentials) -> _check_wishlist_from_session merges anonymous session wishes onto the partner",
+      "side-effect: wishlist page move-to-cart -> website_sale cart (/shop/cart) -> feeds the eCommerce browse-to-order flow",
+      "side-effect: @api.autovacuum _gc_sessions purges stale partner-less (guest) wishlists (~5 weeks)"
     ],
-    "frontend_components": []
+    "frontend_components": [
+      "add_product_to_wishlist_button (public.interaction)",
+      "product_detail (public.interaction)",
+      "product_wishlist (public.interaction)",
+      "wishlist_navbar (public.interaction)"
+    ]
   },
   "business_architecture": {
     "capabilities": [
-      "Shopper's Wishlist"
+      "Save Products to a Wishlist (add / remove)",
+      "Persist Wishlist per Customer and per Website",
+      "Anonymous (session) Wishlist with Merge-on-Login",
+      "Price-at-Add Tracking (price-drop / current-price comparison)",
+      "Move Wishlisted Product to Cart (conversion)"
     ],
-    "value_streams": [],
+    "value_streams": [
+      "Save-for-later: shopper marks a product -> product.wishlist entry (guest session or partner) -> returns later via /shop/wishlist",
+      "Wishlist-to-cart: wishlist page -> add to website_sale cart -> joins the eCommerce browse-to-order flow (conversion)"
+    ],
     "information_concepts": [
-      "product.wishlist"
+      "product.wishlist (wishlisted product entry)"
     ],
-    "organization": [],
-    "products": [],
+    "organization": [
+      "base.group_public (anonymous visitor — session wishlist)",
+      "base.group_portal (online customer — own wishlist)",
+      "base.group_user (internal user)",
+      "sales_team.group_sale_manager (sees all wishlists)"
+    ],
+    "products": [
+      "product.product (wishlisted variant)",
+      "product.template (wishlist membership helpers)"
+    ],
     "policies": [
-      "2 record rules"
+      "ir.rule 'See own Wishlist' (portal + internal user limited to partner_id = user.partner_id)",
+      "ir.rule 'See all wishlist' (sales_team.group_sale_manager sees all)",
+      "4 ACLs: public/portal/user access on product.wishlist (public read-only, portal/user CRUD)",
+      "UNIQUE(product_id, partner_id) constraint — one wishlist entry per product per owner"
     ],
-    "stakeholders": [],
+    "stakeholders": [
+      "Online Shopper (res.partner / anonymous public visitor)",
+      "Sales Manager (sees aggregate wishlists)",
+      "eCommerce Manager / Website Publisher (configures wishlist page layout)"
+    ],
     "strategy": null,
-    "metrics": []
+    "metrics": [
+      "product.wishlist row counts (saved demand / interest signal per product)"
+    ]
   },
   "classification": {
     "value_model": "network",
-    "activity_class": "support",
+    "activity_class": "primary",
     "apqc_category": "3.0 Market and Sell Products and Services",
-    "rationale": "website_sale_wishlist: thin network/support module (auto-architect baseline)."
+    "rationale": "website_sale_wishlist is a storefront mediation/engagement feature of the website_sale value network: it lets the shared eCommerce platform remember each visitor's product interest (session-scoped for anonymous visitors, partner-scoped once logged in, merged on login) so the storefront can re-engage shoppers and convert saved interest into orders. Its value logic is network (Stabell & Fjeldstad): matchmaking/mediation over shared channel infrastructure that increases the value of the website_sale network by driving return visits and conversion (move-to-cart back into the browse-to-order flow), not a linear transform-inputs-to-output chain. It owns no order/document chain of its own; it decorates website_sale's catalog and cart. Activity is primary because it is a revenue- and customer-facing online merchandising/engagement capability on the sell-side channel, hence APQC 3.0 Market and Sell Products and Services (eCommerce merchandising / customer engagement), not a back-office support function."
   },
   "fit_to_standard": {
     "standard_capabilities": [
-      "Shopper's Wishlist"
+      "Add-to-wishlist button on product pages and product tiles",
+      "Per-customer wishlist persisted across sessions (logged-in)",
+      "Anonymous session wishlist merged onto the customer on login",
+      "Wishlist page (/shop/wishlist) listing saved products with remove and add-to-cart",
+      "Price snapshot at add-time vs current price per stored pricelist/currency",
+      "Configurable wishlist page grid layout (columns, mobile columns, gap) via website builder",
+      "Automatic garbage-collection of stale guest wishlists (~5 weeks)"
     ],
-    "typical_fits": [],
-    "common_gaps": [],
+    "typical_fits": [
+      "B2C save-for-later on a public storefront (guest or registered)",
+      "Multi-website storefront (wishlist scoped per website_id)",
+      "Customer returns, opens wishlist, moves an item into the cart"
+    ],
+    "common_gaps": [
+      "Wishlist sharing / public or social wishlists (not standard)",
+      "Multiple named wishlists / registries (gift registry) per customer",
+      "Automated price-drop or back-in-stock notification emails (only the price snapshot is stored; no mailing here)",
+      "Wishlist analytics / demand reporting dashboards beyond raw rows"
+    ],
     "drive_hints": [
-      "odoo shell: env['product.wishlist'].search([],limit=3)"
+      "curl -s http://localhost:8069/shop/wishlist  # render the wishlist page (auth=public)",
+      "odoo shell: env['product.wishlist'].search([], limit=5).mapped(('partner_id.name','product_id.display_name','price','website_id.name'))",
+      "odoo shell: env['product.wishlist'].search([('partner_id','=',False)])  # guest/session wishlists awaiting merge or GC",
+      "curl jsonrpc /shop/wishlist/add {product_id}  # add a product variant to the wishlist (auth=public)"
     ]
   },
   "reverse_eng_confidence": {
@@ -178,14 +280,17 @@
     "strategy": "human"
   },
   "open_questions": [
-    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+    "Whether the stored price/pricelist snapshot drives any UI price-drop badge on the wishlist page or is informational only (template-level, not in the Python facts).",
+    "How move-to-cart from the wishlist resolves product variants/options into the website_sale sale.order.line (delegated to website_sale's cart add path).",
+    "Whether any downstream module (e.g. marketing/automation) consumes product.wishlist as a re-engagement trigger; none is present in this module."
   ],
   "provenance": {
     "explorer_facts": "doc/revres/facts/website_sale_wishlist.facts.json",
     "tools": [
+      "code-read",
       "extract_module.py",
       "extract_frontend.py",
-      "gen_thin.py"
+      "run-odoo (odoo shell)"
     ],
     "odoo_version": "19.0"
   }
