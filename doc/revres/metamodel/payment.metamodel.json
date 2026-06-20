@@ -1,0 +1,347 @@
+{
+  "subsystem": "payment",
+  "evidence": {
+    "manifest": {
+      "name": "Payment Engine",
+      "category": "Hidden",
+      "depends": [
+        "onboarding",
+        "portal"
+      ],
+      "auto_install": false,
+      "application": false
+    },
+    "models": [
+      {
+        "_name": "payment.transaction",
+        "_description": "Payment Transaction",
+        "fields": 32,
+        "relations": [
+          "provider_id->payment.provider",
+          "payment_method_id->payment.method",
+          "token_id->payment.token",
+          "currency_id->res.currency",
+          "partner_id->res.partner",
+          "source_transaction_id->payment.transaction",
+          "child_transaction_ids->payment.transaction"
+        ]
+      },
+      {
+        "_name": "payment.provider",
+        "_description": "Payment Provider",
+        "fields": 32,
+        "relations": [
+          "company_id->res.company",
+          "payment_method_ids->payment.method",
+          "available_country_ids->res.country",
+          "module_id->ir.module.module"
+        ]
+      },
+      {
+        "_name": "payment.method",
+        "_description": "Payment Method",
+        "fields": 16,
+        "relations": [
+          "primary_payment_method_id->payment.method",
+          "brand_ids->payment.method",
+          "provider_ids->payment.provider",
+          "supported_country_ids->res.country",
+          "supported_currency_ids->res.currency"
+        ]
+      },
+      {
+        "_name": "payment.token",
+        "_description": "Payment Token",
+        "fields": 10,
+        "relations": [
+          "provider_id->payment.provider",
+          "payment_method_id->payment.method",
+          "partner_id->res.partner",
+          "transaction_ids->payment.transaction"
+        ]
+      },
+      {
+        "_name": "payment.link.wizard",
+        "_description": "Generate Payment Link",
+        "fields": 10,
+        "relations": [
+          "currency_id->res.currency",
+          "partner_id->res.partner",
+          "company_id->res.company"
+        ]
+      },
+      {
+        "_name": "payment.capture.wizard",
+        "_description": "Payment Capture Wizard",
+        "fields": 12,
+        "relations": [
+          "transaction_ids->payment.transaction"
+        ]
+      }
+    ],
+    "routes": [
+      {
+        "paths": [
+          "/payment/pay"
+        ],
+        "auth": "public",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/payment/transaction"
+        ],
+        "auth": "public",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/payment/status",
+          "/payment/status/poll"
+        ],
+        "auth": "public",
+        "type": "http|jsonrpc"
+      },
+      {
+        "paths": [
+          "/payment/confirmation"
+        ],
+        "auth": "public",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/my/payment_method",
+          "/payment/archive_token"
+        ],
+        "auth": "user",
+        "type": "http|jsonrpc"
+      }
+    ],
+    "security": {
+      "access_rules": 12,
+      "record_rules": 5,
+      "groups": 0
+    },
+    "views": {
+      "form": 6,
+      "list": 5,
+      "kanban": 3,
+      "search": 4,
+      "pivot": 1,
+      "graph": 1
+    },
+    "behavioral_notes": [
+      {
+        "element": "payment.transaction state machine (_set_pending/_set_authorized/_set_done/_set_canceled/_set_error)",
+        "observation": "The transaction lifecycle is a guarded state machine implemented in _update_state: each target state declares allowed source states (e.g. 'done' is reachable only from draft/pending/authorized/error; 'authorized' only from draft/pending). Transitions from a disallowed state are refused with a warning log, same-state writes are skipped, and every write stamps last_state_change and resets is_post_processed. _set_done/_set_canceled additionally call _update_source_transaction_state to roll up child capture/void amounts onto the parent. None of this guard logic is visible in metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "payment.transaction._process / _tokenize (notification/webhook flow)",
+        "observation": "_process(provider_code, payment_data) is the generic webhook/redirect entry point: it locates the tx via _search_by_reference (extracting the reference from provider data), validates the amount, applies provider updates via _apply_updates (which calls the _set_* methods), and if tx.tokenize and the resulting state is authorized/done it calls _tokenize to mint a payment.token (vaulting provider_ref so future charges run card-not-present). Provider modules override _extract_reference/_apply_updates/_extract_token_values to plug in acquirer-specific payloads.",
+        "source": "code-read"
+      },
+      {
+        "element": "payment.transaction post-processing (_cron_post_process / _post_process)",
+        "observation": "Because acquirers confirm asynchronously, a cron retries post-processing of any tx with is_post_processed=False for up to 4 days (PayPal verification window), committing per-tx and rolling back on OperationalError. The base _post_process only flags the tx; downstream modules (account_payment, sale) override it to create the account.payment / confirm the sale.order once the payment is done. This decoupled settlement is invisible to metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "payment.provider tokenization & capture support",
+        "observation": "payment.provider exposes allow_tokenization, capture_manually and support_* selection flags that gate the transaction operations. _send_payment_request (token charge) and _send_capture_request are no-op hooks on the base transaction; the engine creates child capture/void transactions (_capture creates a child tx and calls _send_capture_request, trapping ValidationError into _set_error). The actual acquirer API calls live in provider override modules.",
+        "source": "code-read"
+      },
+      {
+        "element": "external acquirer integration (gap #7 prime example)",
+        "observation": "payment_provider.py imports the 'requests' SDK and centralizes outbound HTTP in _send_api_request: it builds URL/headers/auth via hook methods (provider override supplies API keys/secrets), POSTs with a 10s timeout, raises ValidationError on ConnectionError/Timeout/HTTPError, and logs request+response. This is the canonical example of metadata gap #7 — the module talks to external payment acquirers over HTTP with api-key auth, which no Python field/model metadata reveals.",
+        "source": "static"
+      }
+    ],
+    "frontend": {
+      "present": true,
+      "js_files": 5,
+      "xml_templates": 1,
+      "owl_components": [],
+      "registry_adds": [
+        "fields:PaymentWizardCopyClipboardButtonField",
+        "public.interactions:payment.express_checkout",
+        "public.interactions:payment.payment_button",
+        "public.interactions:payment.payment_form",
+        "public.interactions:payment.payment_post_processing"
+      ],
+      "patches": [],
+      "services": [],
+      "asset_bundles": {
+        "web.assets_frontend": 2,
+        "web.assets_backend": 2,
+        "web.assets_unit_tests_setup": 2,
+        "web.assets_unit_tests": 1
+      }
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [
+        "requests"
+      ],
+      "uses_api_keys": true,
+      "endpoints": [],
+      "files": [
+        "models/payment_provider.py"
+      ]
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    }
+  },
+  "it_architecture": {
+    "application": "payment (Payment Engine application component)",
+    "software_services": [
+      "/payment/pay",
+      "/payment/transaction",
+      "/payment/status (+/poll)",
+      "/payment/confirmation",
+      "/my/payment_method",
+      "/payment/archive_token"
+    ],
+    "data_objects": [
+      "payment.transaction",
+      "payment.provider",
+      "payment.method",
+      "payment.token"
+    ],
+    "logical_data_erm": [
+      "payment.transaction -> payment.provider",
+      "payment.transaction -> payment.method",
+      "payment.transaction -> payment.token",
+      "payment.transaction -> res.partner",
+      "payment.transaction -> payment.transaction (source/child)",
+      "payment.token -> payment.provider",
+      "payment.method -> payment.provider (m2m)"
+    ],
+    "information_flows": [
+      "depends: onboarding, portal",
+      "outbound: payment_provider._send_api_request -> external acquirer over HTTPS (requests SDK, api-key auth)",
+      "inbound: acquirer webhook/redirect -> /payment/transaction + _process -> _set_* state machine",
+      "side-effect: _post_process override (account_payment/sale) -> account.payment / sale.order confirmation",
+      "side-effect: _tokenize -> creates payment.token from successful authorized/done transaction"
+    ],
+    "frontend_components": [
+      "PaymentWizardCopyClipboardButtonField",
+      "payment.payment_form (public interaction)",
+      "payment.payment_button (public interaction)",
+      "payment.express_checkout (public interaction)",
+      "payment.payment_post_processing (public interaction)"
+    ],
+    "external_integrations": {
+      "sdk": "requests",
+      "uses_api_keys": true,
+      "files": [
+        "models/payment_provider.py"
+      ],
+      "pattern": "Centralized outbound HTTP in payment.provider._send_api_request; provider-override modules (Stripe, PayPal, Mercado Pago, etc.) supply endpoints, API keys and auth via _build_request_url/_build_request_headers/_build_request_auth hooks. Inbound settlement via acquirer webhooks/redirects to public controllers.",
+      "note": "Prime example of metadata gap #7: external acquirer communication is invisible to model/field metadata."
+    }
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Accept Online Payments (provider-agnostic checkout)",
+      "Manage Payment Providers & Methods",
+      "Tokenization / Vaulting (save card for reuse)",
+      "Authorize / Capture / Void / Refund",
+      "Generate Payment Links",
+      "Express Checkout"
+    ],
+    "value_streams": [
+      "Collect-Payment: initiate transaction -> redirect/inline to acquirer -> webhook notification -> state machine (done/error) -> post-process settlement",
+      "Tokenize: successful transaction -> vault payment.token -> later card-not-present charge via _send_payment_request"
+    ],
+    "information_concepts": [
+      "payment.transaction",
+      "payment.provider",
+      "payment.method",
+      "payment.token",
+      "res.partner (payer)"
+    ],
+    "organization": [
+      "(no module-owned res.groups; relies on portal/base account groups and 5 record rules for scoping)"
+    ],
+    "products": [],
+    "policies": [
+      "5 record rules: partner-scoped visibility of own payment.token / payment.transaction (portal self-service)",
+      "payment.provider.state (disabled/enabled/test) gates whether a provider can process; test mode runs a fake interface",
+      "guarded state machine: _update_state refuses illegal transitions"
+    ],
+    "stakeholders": [
+      "Payer / Customer (res.partner)",
+      "Merchant / Company (res.company)",
+      "Payment Acquirer (external provider)",
+      "Accountant (consumes settled payments downstream)"
+    ],
+    "strategy": null,
+    "metrics": [
+      "payment.transaction pivot/graph (transaction volumes, amounts, state distribution)"
+    ]
+  },
+  "classification": {
+    "value_model": "network",
+    "activity_class": "support",
+    "apqc_category": "9.0 Manage Financial Resources (9.5 Process payments / collect cash)",
+    "rationale": "payment is a value-network (Stabell & Fjeldstad mediating-technology) component: its purpose is to interconnect two parties who would not otherwise transact directly — the payer and the merchant/acquirer — by provisioning a mediation service (network promotion & contract management = provider/method onboarding and tokenization; service provisioning = the transaction; infrastructure operation = the requests-based acquirer link and webhook settlement). It does not transform inputs into outputs (chain) nor solve a bespoke customer problem (shop); it brokers a financial exchange across a network of acquirers. We chose 'network' over 'support' deliberately: although it is an infrastructure/engine module (category Hidden, no end-user app) and from the enterprise's value-chain perspective sits in the support activity_class under 9.0 Manage Financial Resources, its own internal logic is mediation, not transformation — hence value_model=network, activity_class=support."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "provider-agnostic payment flow (redirect, inline, token, express)",
+      "transaction state machine with authorize/capture/void/refund",
+      "tokenization / saved payment methods (portal /my/payment_method)",
+      "payment links (payment.link.wizard)",
+      "manual & partial capture (payment.capture.wizard)",
+      "asynchronous settlement via webhook + post-processing cron"
+    ],
+    "typical_fits": [
+      "standard online checkout collecting card payments through a supported acquirer",
+      "save-card-for-later (tokenized recurring charges)",
+      "send-a-payment-link collection workflow",
+      "multi-provider / multi-company provider configuration with test mode"
+    ],
+    "common_gaps": [
+      "the base engine ships no live acquirer — a payment_<provider> override module is required to actually reach an acquirer",
+      "custom acquirer integrations (new provider, regional gateway) need a dedicated module implementing the API/webhook hooks",
+      "bespoke post-processing (custom document confirmation beyond account/sale)",
+      "PCI/SCA-specific flows and provider-specific reconciliation"
+    ],
+    "drive_hints": [
+      "odoo shell: env['payment.provider'].search([]).mapped(('name','code','state'))",
+      "odoo shell: env['payment.transaction'].search([], limit=5).mapped(('reference','state','amount'))",
+      "odoo shell: tx = env['payment.transaction'].search([],limit=1); print([m for m in dir(tx) if m.startswith('_set_')])",
+      "curl http jsonrpc /payment/transaction (auth=public) to initiate a transaction"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Exact acquirer endpoints / auth schemes live in per-provider override modules (Stripe, PayPal, Mercado Pago), not in this base engine.",
+    "Which downstream modules override _post_process and what documents they settle (account_payment, sale, subscription).",
+    "Real-world distribution of transaction states and tokenization usage (no runtime row counts captured)."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/payment.facts.json",
+    "tools": [
+      "code-read",
+      "extract_frontend.py",
+      "extract_module.py",
+      "Grep",
+      "Read"
+    ],
+    "odoo_version": "19.0"
+  }
+}
