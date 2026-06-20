@@ -1,0 +1,15 @@
+module	category	depends	models	routes	py_loc	auto_install
+base	Hidden		124	0	66392	True
+web	Hidden	base	2	68	10767	True
+bus	Hidden	base,web	8	7	2880	True
+account	Accounting/Accounting	base_setup,onboarding,product,analytic,portal,digest	57	12	96690	False
+mail	Productivity/Discuss	base,base_setup,bus,web_tour,html_editor	58	64	41728	False
+stock	Supply Chain/Inventory	product,barcodes_gs1_nomenclature,digest	51	1	44942	False
+sale	Sales/Sales	sales_team,account_payment,utm	7	14	17901	False
+purchase	Supply Chain/Purchase	account	6	5	8095	False
+mrp	Supply Chain/Manufacturing	product,stock,resource	26	0	31029	False
+product	Sales/Sales	base,mail,uom	26	4	10913	False
+payment	Hidden	onboarding,portal	6	7	7141	False
+website	Website/Website	digest,web,html_editor,http_routing,portal,social_media,auth	35	57	21204	False
+hr	Human Resources/Employees	base_setup,digest,phone_validation,resource_mail,web	15	0	8615	False
+project	Services/Project	analytic,base_setup,mail,portal,rating,resource,web,web_tour	20	9	15225	False
