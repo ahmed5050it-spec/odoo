@@ -16,37 +16,73 @@
       {
         "_name": "account.analytic.account",
         "_description": "Analytic Account",
-        "fields": 13
-      },
-      {
-        "_name": "account.analytic.applicability",
-        "_description": "Analytic Plan's Applicabilities",
-        "fields": 4
-      },
-      {
-        "_name": "account.analytic.distribution.model",
-        "_description": "Analytic Distribution Model",
-        "fields": 4
+        "fields": 13,
+        "relations": [
+          "plan_id->account.analytic.plan",
+          "root_plan_id->account.analytic.plan",
+          "line_ids->account.analytic.line",
+          "partner_id->res.partner",
+          "company_id->res.company"
+        ]
       },
       {
         "_name": "account.analytic.line",
         "_description": "Analytic Line",
-        "fields": 13
+        "fields": 13,
+        "relations": [
+          "account_id->account.analytic.account",
+          "auto_account_id->account.analytic.account",
+          "product_uom_id->uom.uom",
+          "partner_id->res.partner",
+          "user_id->res.users"
+        ]
       },
       {
         "_name": "account.analytic.plan",
         "_description": "Analytic Plans",
-        "fields": 15
+        "fields": 15,
+        "relations": [
+          "parent_id->account.analytic.plan",
+          "children_ids->account.analytic.plan",
+          "account_ids->account.analytic.account",
+          "applicability_ids->account.analytic.applicability"
+        ]
+      },
+      {
+        "_name": "account.analytic.applicability",
+        "_description": "Analytic Plan's Applicabilities",
+        "fields": 4,
+        "relations": [
+          "analytic_plan_id->account.analytic.plan",
+          "company_id->res.company"
+        ]
+      },
+      {
+        "_name": "account.analytic.distribution.model",
+        "_description": "Analytic Distribution Model",
+        "fields": 4,
+        "relations": [
+          "partner_id->res.partner",
+          "partner_category_id->res.partner.category",
+          "company_id->res.company"
+        ]
       },
       {
         "_name": "analytic.mixin",
         "_description": "Analytic Mixin",
-        "fields": 3
+        "fields": 3,
+        "relations": [
+          "distribution_analytic_account_ids->account.analytic.account"
+        ]
       },
       {
         "_name": "analytic.plan.fields.mixin",
         "_description": "Analytic Plan Fields",
-        "fields": 2
+        "fields": 2,
+        "relations": [
+          "account_id->account.analytic.account",
+          "auto_account_id->account.analytic.account"
+        ]
       }
     ],
     "routes": [],
@@ -66,6 +102,33 @@
       "calendar": 0,
       "activity": 0
     },
+    "behavioral_notes": [
+      {
+        "element": "account.analytic.line (the universal cost/revenue line)",
+        "observation": "The single model where every cost and revenue line in Odoo lands: hr_timesheet, sale_timesheet, project, hr_expense, purchase and account all _inherit or post account.analytic.line records, grouped on account.analytic.account (the value unit: project/order/cost centre). _compute_debit_credit_balance aggregates line amounts (>=0 credit / <0 debit) per plan column, currency-converted to the company currency, to yield balance/debit/credit on the account. This is the support<->primary join point and is invisible in metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "account.analytic.plan dynamic plan columns (_sync_plan_column / _column_name)",
+        "observation": "Plans are not just a hierarchy: each ROOT plan materialises a real m2o column on every analytic.plan.fields.mixin model. The project root plan maps to the fixed 'account_id'; every other root plan gets a generated 'x_plan{id}_id' ir.model.fields column (created/renamed/dropped on plan create/write/unlink via _sync_plan_column, with a btree partial index). Sub-plans add non-stored related grouping fields (_hierarchy_name). account.analytic.account.write moves line data across columns via raw SQL UPDATE when a plan changes. Pure runtime schema mutation, not in static metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "account.analytic.distribution.model._get_distribution (auto-apply)",
+        "observation": "A rules engine that pre-fills the analytic_distribution JSON on documents. _get_applicable_models matches by partner_id / partner_category_id / company_id (each optional, False = wildcard) and merges the matching models' distributions, skipping any whose root plan is already applied. This is how an invoice/SO/expense automatically inherits an analytic account from its partner without manual entry.",
+        "source": "code-read"
+      },
+      {
+        "element": "analytic.mixin.analytic_distribution (JSON percentage split + GIN index)",
+        "observation": "The reusable mixin every analytic-bearing document inherits. analytic_distribution is a Json map of 'comma-joined account ids' -> percentage; a GIN index on regexp_split_to_array(jsonb keys) makes 'which docs hit this account' searchable, and _read_group_groupby rewrites group-by-distribution into a per-account subquery. _validate_distribution enforces that mandatory plans sum to 100%, and _merge_distribution recombines partial ('__update__') edits proportionally. The split/validation logic lives entirely in Python.",
+        "source": "code-read"
+      },
+      {
+        "element": "frontend (OWL/JS)",
+        "observation": "8 JS files, 1 OWL component (AnalyticDistribution), 6 registry adds; bundles ['web.assets_backend', 'web.assets_backend_lazy', 'web.assets_unit_tests']. The AnalyticDistribution widget renders the plan columns dynamically and edits the distribution JSON inline.",
+        "source": "static"
+      }
+    ],
     "frontend": {
       "present": true,
       "js_files": 8,
@@ -109,48 +172,34 @@
     "runtime": {
       "models_with_data": 0,
       "top": []
-    },
-    "behavioral_notes": [
-      {
-        "element": "frontend (OWL/JS)",
-        "observation": "8 JS files, 1 OWL components, 6 registry adds; bundles ['web.assets_backend', 'web.assets_backend_lazy', 'web.assets_unit_tests'].",
-        "source": "static"
-      },
-      {
-        "element": "thin module",
-        "observation": "7 models, 0 routes, 2354 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
-        "source": "ast"
-      }
-    ]
+    }
   },
   "it_architecture": {
-    "application": "analytic (Analytic Accounting)",
+    "application": "analytic (Analytic Accounting application component)",
     "software_services": [],
     "data_objects": [
       "account.analytic.account",
-      "account.analytic.applicability",
-      "account.analytic.distribution.model",
       "account.analytic.line",
       "account.analytic.plan",
+      "account.analytic.applicability",
+      "account.analytic.distribution.model",
       "analytic.mixin",
       "analytic.plan.fields.mixin"
     ],
     "logical_data_erm": [
-      "account.analytic.account -> account.analytic.line",
-      "account.analytic.account -> account.analytic.plan",
-      "account.analytic.account -> company_id.currency_id",
-      "account.analytic.account -> res.company",
-      "account.analytic.account -> res.partner",
-      "account.analytic.applicability -> account.analytic.plan",
-      "account.analytic.applicability -> res.company",
-      "account.analytic.distribution.model -> res.company",
-      "account.analytic.distribution.model -> res.partner",
-      "account.analytic.distribution.model -> res.partner.category",
-      "account.analytic.line -> company_id.currency_id",
-      "account.analytic.line -> res.company"
+      "account.analytic.line -> account.analytic.account (account_id / dynamic plan columns)",
+      "account.analytic.account -> account.analytic.plan (plan_id, root_plan_id)",
+      "account.analytic.plan -> account.analytic.plan (parent_id, _parent_store hierarchy)",
+      "account.analytic.plan -> account.analytic.applicability (applicability_ids)",
+      "account.analytic.account -> res.partner (customer)",
+      "account.analytic.distribution.model -> res.partner / res.partner.category (matching keys)",
+      "analytic.mixin -> account.analytic.account (distribution_analytic_account_ids, via analytic_distribution JSON)"
     ],
     "information_flows": [
-      "depends: base, mail, uom"
+      "depends: base, mail, uom",
+      "inbound side-effect: hr_timesheet/sale_timesheet/project/hr_expense/purchase/account post account.analytic.line records onto account.analytic.account",
+      "side-effect: account.analytic.distribution.model._get_distribution pre-fills analytic_distribution on documents from partner/company rules",
+      "side-effect: account.analytic.plan create/write/unlink mutates ir.model.fields columns (x_plan{id}_id) on every analytic.plan.fields.mixin model"
     ],
     "frontend_components": [
       "AnalyticDistribution"
@@ -158,40 +207,76 @@
   },
   "business_architecture": {
     "capabilities": [
-      "Analytic Accounting"
+      "Cost & Revenue Aggregation (analytic accounting)",
+      "Manage Analytic Plans & Accounts (cost-centre hierarchy)",
+      "Analytic Distribution & Auto-Distribution Rules",
+      "Profitability / Cost-Centre Reporting (balance/debit/credit)"
     ],
-    "value_streams": [],
+    "value_streams": [
+      "Cost-to-Profit: support cost lines + primary revenue lines posted onto one account.analytic.account -> balance (revenue - cost) per value unit",
+      "Tag-to-Allocate: document analytic_distribution -> account.analytic.line per plan -> rolled up per analytic account"
+    ],
     "information_concepts": [
-      "account.analytic.account",
-      "account.analytic.applicability",
-      "account.analytic.distribution.model",
-      "account.analytic.line",
-      "account.analytic.plan",
-      "analytic.mixin"
+      "account.analytic.account (value unit: project/order/cost centre)",
+      "account.analytic.line (universal cost/revenue line)",
+      "account.analytic.plan (cost-centre dimension)",
+      "account.analytic.distribution.model (auto-distribution rule)",
+      "account.analytic.applicability (plan applicability rule)",
+      "analytic.mixin (analytic_distribution carrier)"
     ],
-    "organization": [],
+    "organization": [
+      "group_analytic_accounting"
+    ],
     "products": [],
     "policies": [
-      "4 record rules"
+      "4 global multi-company record rules scope analytic accounts/lines/applicabilities/distribution-models by company_ids",
+      "plan applicability (optional/mandatory/unavailable) + _validate_distribution enforces mandatory plans sum to 100%",
+      "_check_company_consistency / _check_company_accounts block cross-company analytic data"
     ],
-    "stakeholders": [],
+    "stakeholders": [
+      "Accountant / Controller (res.users in group_analytic_accounting)",
+      "Project / Cost-centre owner",
+      "Customer (res.partner on the analytic account)"
+    ],
     "strategy": null,
-    "metrics": []
+    "metrics": [
+      "account.analytic.account balance / debit / credit (profitability per value unit)",
+      "analytic pivot & graph views (cost/revenue by plan, account, partner, period)"
+    ]
   },
   "classification": {
     "value_model": "support",
     "activity_class": "support",
     "apqc_category": "9.0 Manage Financial Resources",
-    "rationale": "analytic: thin support/support module (auto-architect baseline)."
+    "rationale": "Analytic Accounting is the financial cost-aggregation BACKBONE of the value system, not a primary value-creating activity itself: it provides the dimensional ledger (analytic accounts/plans) onto which other modules post cost and revenue. It is value-model 'support' and activity_class 'support' under Stabell & Fjeldstad / Porter, mapping to APQC 9.0 Manage Financial Resources (specifically 9.3 perform cost accounting / management accounting). Its defining role per PRIMARY_SUPPORT_INTEGRATION_AR.md: account.analytic.line is THE join where support costs meet primary-activity value. Support activities (HR labour via hr_timesheet, purchasing, expenses via hr_expense) post their costs as analytic lines onto the same account.analytic.account that primary activities (sale_timesheet revenue, project delivery) credit -- so profit-per-value-unit is computable. The dynamic plan columns and distribution model exist precisely to route every transaction's value into that shared vessel. It is the support<->primary integration vessel rather than a member of any single primary value configuration."
   },
   "fit_to_standard": {
     "standard_capabilities": [
-      "Analytic Accounting"
+      "multi-dimensional analytic accounts grouped under plans (hierarchical, _parent_store)",
+      "analytic distribution as a percentage JSON split across accounts/plans",
+      "auto-distribution rules by partner / partner category / company",
+      "plan applicability (optional / mandatory / unavailable) with 100% mandatory enforcement",
+      "balance / debit / credit roll-up per analytic account (multi-currency converted)",
+      "dynamic per-plan columns + AnalyticDistribution OWL widget on any analytic-bearing document",
+      "analytic pivot / graph / kanban reporting"
     ],
-    "typical_fits": [],
-    "common_gaps": [],
+    "typical_fits": [
+      "project / job / cost-centre profitability via a project plan + extra plans",
+      "tagging invoices, bills, timesheets, expenses with an analytic distribution",
+      "default analytic account auto-applied from a customer or company",
+      "multi-company analytic scoping via the global record rules"
+    ],
+    "common_gaps": [
+      "domain-specific business_domain selections (base ships only 'general'/'other') usually extended by other apps",
+      "bespoke cost-allocation / overhead-spreading algorithms beyond percentage distribution",
+      "custom KPI dashboards combining analytic balances with budgets (needs account/budget modules)",
+      "rules to auto-pick analytic accounts on dimensions other than partner/category/company"
+    ],
     "drive_hints": [
-      "odoo shell: env['account.analytic.account'].search([],limit=3)"
+      "odoo shell: env['account.analytic.account'].search([], limit=5).mapped(('display_name','plan_id.name','balance'))",
+      "odoo shell: env['account.analytic.line'].search([], limit=5).mapped(('name','amount','account_id.display_name'))",
+      "odoo shell: env['account.analytic.plan']._get_all_plans()  # project plan + other root plans, and ._column_name() per plan",
+      "odoo shell: env['account.analytic.distribution.model']._get_distribution({'partner_id': <id>, 'company_id': <cid>})  # auto-distribution preview"
     ]
   },
   "reverse_eng_confidence": {
@@ -205,14 +290,18 @@
     "strategy": "human"
   },
   "open_questions": [
-    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+    "Exact downstream posting paths: how each consumer (hr_timesheet, sale_timesheet, hr_expense, purchase, account.move.line) constructs its account.analytic.line and computes the amount.",
+    "How report/budget modules consume account.analytic.account.balance for profitability dashboards.",
+    "Multi-currency edge cases in _compute_debit_credit_balance when line, account, and company currencies differ.",
+    "Performance/locking behaviour of _sync_plan_column raw-SQL column creation and the analytic-line column migration UPDATE on large datasets."
   ],
   "provenance": {
     "explorer_facts": "doc/revres/facts/analytic.facts.json",
     "tools": [
+      "code-read",
       "extract_module.py",
       "extract_frontend.py",
-      "gen_thin.py"
+      "run-odoo (odoo shell)"
     ],
     "odoo_version": "19.0"
   }

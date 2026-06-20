@@ -16,7 +16,7 @@ account_qr_code_sepa	support	support	9.0 Manage Financial Resourc	0	0	0	0	meta
 account_tax_python	support	support	9.0 Manage Financial Resourc	0	0	1	0	meta+fe
 account_test	support	support	9.0 Manage Financial Resourc	2	0	0	0	meta
 account_update_tax_tags	support	support	9.0 Manage Financial Resourc	1	0	0	0	meta
-analytic	support	support	9.0 Manage Financial Resourc	7	0	8	1	meta+fe
+analytic	support	support	9.0 Manage Financial Resourc	7	0	8	1	meta+code+fe
 api_doc	support	support	13.0 Develop and Manage Busi	0	5	17	10	meta+fe
 attachment_indexation	support	support	13.0 Develop and Manage Busi	0	0	0	0	meta
 auth_ldap	support	support	8.0 Manage Information Techn	1	0	0	0	meta
@@ -74,7 +74,7 @@ event_product	network	primary	3.0 Market and Sell Products	0	0	0	0	meta
 event_sale	network	primary	3.0 Market and Sell Products	4	0	2	0	meta+fe
 event_sms	network	primary	3.0 Market and Sell Products	0	0	0	0	meta
 fleet	support	support	10.0 Acquire, Construct, and	7	0	1	0	meta+code+fe
-gamification	support	support	7.0 Develop and Manage Human	10	0	0	0	meta
+gamification	support	support	7.0 Develop and Manage Human	8	0	0	0	meta+code
 gamification_sale_crm	support	support	7.0 Develop and Manage Human	0	0	0	0	meta
 google_account	support	support	13.0 Develop and Manage Busi	1	1	0	0	meta+integ
 google_address_autocomplete	support	support	13.0 Develop and Manage Busi	0	2	2	0	meta+fe+integ
@@ -101,7 +101,7 @@ hr_recruitment	support	support	7.0 Develop and Manage Human	5	0	16	1	meta+code+f
 hr_recruitment_skills	support	support	7.0 Develop and Manage Human	1	0	2	1	meta+fe
 hr_recruitment_sms	support	support	7.0 Develop and Manage Human	0	0	0	0	meta
 hr_recruitment_survey	support	support	7.0 Develop and Manage Human	0	0	0	0	meta
-hr_skills	support	support	7.0 Develop and Manage Human	13	1	11	2	meta+fe
+hr_skills	support	support	7.0 Develop and Manage Human	8	1	11	2	meta+code+fe
 hr_skills_event	support	support	7.0 Develop and Manage Human	0	0	0	0	meta
 hr_skills_slides	support	support	7.0 Develop and Manage Human	0	0	0	0	meta
 hr_skills_survey	support	support	7.0 Develop and Manage Human	0	0	0	0	meta
@@ -345,7 +345,7 @@ lunch	support	support	7.0 Develop and Manage Human	9	6	7	7	meta+fe
 mail	support	support	9.4 Manage internal controls	14	8	383	40	meta+code+fe+integ
 mail_bot	support	support	9.4 Manage internal communic	1	1	0	0	meta
 mail_bot_hr	support	support	9.4 Manage internal communic	0	0	0	0	meta
-mail_group	support	support	9.4 Manage internal communic	5	9	2	0	meta+fe
+mail_group	network	primary	9.4 Deliver internal communi	5	3	2	0	meta+code+fe
 mail_plugin	support	support	9.4 Manage internal communic	1	12	0	0	meta+integ
 maintenance	support	support	10.0 Acquire, Construct, and	6	0	7	0	meta+code+fe
 marketing_card	network	support	3.0 Market and Sell Products	4	3	0	0	meta+code

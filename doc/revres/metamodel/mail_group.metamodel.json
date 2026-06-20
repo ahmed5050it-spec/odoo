@@ -15,74 +15,66 @@
       {
         "_name": "mail.group",
         "_description": "Mail Group",
-        "fields": 25
+        "fields": 24,
+        "relations": [
+          "member_ids->mail.group.member",
+          "mail_group_message_ids->mail.group.message",
+          "moderation_rule_ids->mail.group.moderation",
+          "moderator_ids->res.users",
+          "member_partner_ids->res.partner",
+          "access_group_id->res.groups"
+        ]
       },
       {
         "_name": "mail.group.member",
         "_description": "Mailing List Member",
-        "fields": 4
+        "fields": 4,
+        "relations": [
+          "mail_group_id->mail.group",
+          "partner_id->res.partner"
+        ]
       },
       {
         "_name": "mail.group.message",
         "_description": "Mailing List Message",
-        "fields": 15
-      },
-      {
-        "_name": "mail.group.message.reject",
-        "_description": "Reject Group Message",
-        "fields": 6
+        "fields": 15,
+        "relations": [
+          "mail_group_id->mail.group",
+          "mail_message_id->mail.message",
+          "group_message_parent_id->mail.group.message",
+          "moderator_id->res.users"
+        ]
       },
       {
         "_name": "mail.group.moderation",
         "_description": "Mailing List black/white list",
-        "fields": 3
+        "fields": 3,
+        "relations": [
+          "mail_group_id->mail.group"
+        ]
+      },
+      {
+        "_name": "mail.group.message.reject",
+        "_description": "Reject Group Message",
+        "fields": 6,
+        "relations": [
+          "mail_group_message_id->mail.group.message"
+        ]
       }
     ],
     "routes": [
       {
         "paths": [
-          "/groups"
+          "/groups",
+          "/groups/<model('mail.group'):group>",
+          "/groups/<model('mail.group'):group>/<model('mail.group.message'):message>"
         ],
         "auth": "public",
         "type": "http"
       },
       {
         "paths": [
-          "/groups/<model("
-        ],
-        "auth": null,
-        "type": null
-      },
-      {
-        "paths": [
-          "/groups/<model("
-        ],
-        "auth": null,
-        "type": null
-      },
-      {
-        "paths": [
-          "/groups/<model("
-        ],
-        "auth": null,
-        "type": null
-      },
-      {
-        "paths": [
-          "/group/<int:group_id>/unsubscribe_oneclick"
-        ],
-        "auth": "public",
-        "type": "http"
-      },
-      {
-        "paths": [
-          "/group/subscribe"
-        ],
-        "auth": "public",
-        "type": "jsonrpc"
-      },
-      {
-        "paths": [
+          "/group/subscribe",
           "/group/unsubscribe"
         ],
         "auth": "public",
@@ -90,13 +82,8 @@
       },
       {
         "paths": [
-          "/group/subscribe-confirm"
-        ],
-        "auth": "public",
-        "type": "http"
-      },
-      {
-        "paths": [
+          "/group/<int:group_id>/unsubscribe_oneclick",
+          "/group/subscribe-confirm",
           "/group/unsubscribe-confirm"
         ],
         "auth": "public",
@@ -111,14 +98,43 @@
     "views": {
       "form": 2,
       "list": 4,
-      "tree": 0,
       "kanban": 1,
       "search": 4,
       "pivot": 0,
-      "graph": 0,
-      "calendar": 0,
-      "activity": 0
+      "graph": 0
     },
+    "behavioral_notes": [
+      {
+        "element": "mail.group.message_post",
+        "observation": "mail.group does NOT inherit mail.thread; it inherits only mail.alias.mixin. message_post is custom-overridden (models/mail_group.py:280): it builds a mail.message via mail.thread._message_create, then wraps it in a mail.group.message, sets moderation_status ('pending_moderation' if group.moderation else 'accepted'), links the group-message parent for threading, and either calls _notify_members (open group) or queues for moderation. message_new/message_update are no-op stubs so the inbound mail gateway routes to this custom flow.",
+        "source": "code-read"
+      },
+      {
+        "element": "mail.group._notify_members",
+        "observation": "Accepted messages fan out to every member email by creating mail.mail rows (NOT via the follower/notification pipeline). Each mail carries RFC-2369 list headers (List-Id, List-Archive, List-Post, List-Subscribe) and an RFC-8058 one-click List-Unsubscribe header, plus a per-member QWeb footer with mailto/group/unsubscribe links; the author is skipped and sends are batched (GROUP_SEND_BATCH_SIZE=500 / mail.session.batch.size).",
+        "source": "code-read"
+      },
+      {
+        "element": "mail.group.message moderation API",
+        "observation": "action_moderate_accept/reject/allow/ban gate each pending mail.group.message (models/mail_group_message.py); accept triggers _notify_members, reject can email the author a comment via mail.group.message.reject. allow/ban create a persistent mail.group.moderation white/black-list rule (email+status, unique per group) and cascade the decision to all same-author pending messages. _cron_notify_moderators pushes Inbox/Email reminders (mail.thread.message_notify) to moderators with messages awaiting action.",
+        "source": "code-read"
+      },
+      {
+        "element": "mail.group email gateway + access control",
+        "observation": "_alias_get_error enforces access_mode at the alias: 'groups' mode rejects senders not in access_group_id, 'members' mode rejects non-members (returns AliasError). _routing_check_route bounces inbound email to a closed group (renders email_template_mail_group_closed via _routing_create_bounce_email). Posting through the alias therefore creates a group thread or a moderated/rejected message depending on sender identity and group state.",
+        "source": "code-read"
+      },
+      {
+        "element": "subscription via email (HMAC token + RFC 8058)",
+        "observation": "Public-user subscribe/unsubscribe is double-opt-in: /group/subscribe sends a confirmation email carrying an hmac action token, and /group/subscribe-confirm (/unsubscribe-confirm) validates it before _join_group/_leave_group. Logged users join/leave immediately. /group/<id>/unsubscribe_oneclick is POST-only, csrf-disabled, consteq-validated against a per-email hmac token to honour mail-client one-click unsubscribe. Joining a moderated group with moderation_guidelines auto-emails the guidelines template.",
+        "source": "code-read"
+      },
+      {
+        "element": "frontend (public interactions, static)",
+        "observation": "2 JS files registered as website public.interactions (mail_group.mail_group, mail_group.mail_group_message) under web.assets_frontend; no OWL components, no registry field/view widgets, no patches. Portal archive/thread pages are server-rendered QWeb (controllers/portal.py + views/portal_templates.xml); backend adds only a stylesheet (web.assets_backend).",
+        "source": "static"
+      }
+    ],
     "frontend": {
       "present": true,
       "js_files": 2,
@@ -145,92 +161,116 @@
     "runtime": {
       "models_with_data": 0,
       "top": []
-    },
-    "behavioral_notes": [
-      {
-        "element": "frontend (OWL/JS)",
-        "observation": "2 JS files, 0 OWL components, 2 registry adds; bundles ['web.assets_frontend', 'web.assets_backend'].",
-        "source": "static"
-      },
-      {
-        "element": "thin module",
-        "observation": "5 models, 9 routes, 2591 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
-        "source": "ast"
-      }
-    ]
+    }
   },
   "it_architecture": {
-    "application": "mail_group (Mail Group)",
+    "application": "mail_group (Mail Group / mailing-list application component)",
     "software_services": [
-      "/group/<int:group_id>/unsubscribe_oneclick",
-      "/group/subscribe",
-      "/group/subscribe-confirm",
-      "/group/unsubscribe",
-      "/group/unsubscribe-confirm",
-      "/groups",
-      "/groups/<model("
+      "/groups (+ /groups/<group> thread & message pages)",
+      "/group/subscribe + /group/unsubscribe (jsonrpc)",
+      "/group/subscribe-confirm + /group/unsubscribe-confirm",
+      "/group/<id>/unsubscribe_oneclick"
     ],
     "data_objects": [
       "mail.group",
       "mail.group.member",
       "mail.group.message",
-      "mail.group.message.reject",
-      "mail.group.moderation"
+      "mail.group.moderation",
+      "mail.group.message.reject"
     ],
     "logical_data_erm": [
-      "mail.group -> mail.group.member",
-      "mail.group -> mail.group.message",
-      "mail.group -> mail.group.moderation",
-      "mail.group -> res.groups",
-      "mail.group -> res.partner",
-      "mail.group -> res.users",
       "mail.group.member -> mail.group",
       "mail.group.member -> res.partner",
       "mail.group.message -> mail.group",
-      "mail.group.message -> mail.group.message",
       "mail.group.message -> mail.message",
-      "mail.group.message -> mail_message_id.attachment_ids"
+      "mail.group.message -> mail.group.message (parent thread)",
+      "mail.group.moderation -> mail.group",
+      "mail.group -> res.groups (access_group_id)"
     ],
     "information_flows": [
-      "depends: mail, portal"
+      "depends: mail, portal",
+      "side-effect: inbound email -> mail.alias -> mail.group.message_post -> mail.message + mail.group.message",
+      "side-effect: mail.group._notify_members -> mail.mail (fan-out to members, List-* headers)",
+      "side-effect: action_moderate_accept -> _notify_members; action_moderate_allow/ban -> mail.group.moderation rule",
+      "side-effect: _cron_notify_moderators -> mail.thread.message_notify (Inbox/Email to moderators)"
     ],
-    "frontend_components": []
+    "frontend_components": [
+      "public.interactions:mail_group.mail_group",
+      "public.interactions:mail_group.mail_group_message"
+    ]
   },
   "business_architecture": {
     "capabilities": [
-      "Mail Group"
+      "Manage Mailing Lists / Discussion Groups",
+      "Subscription Management (join/leave, double opt-in, one-click unsubscribe)",
+      "Message Moderation (accept/reject, white/black list)",
+      "Public Group Archive & Threaded Discussion (portal)"
     ],
-    "value_streams": [],
+    "value_streams": [
+      "Post-to-distribute: member email -> alias gateway -> (moderation) -> fan-out to all members + portal archive"
+    ],
     "information_concepts": [
-      "mail.group",
-      "mail.group.member",
-      "mail.group.message",
-      "mail.group.message.reject",
-      "mail.group.moderation"
+      "mail.group (mailing list)",
+      "mail.group.member (subscriber)",
+      "mail.group.message (list message)",
+      "mail.group.moderation (allow/ban rule)",
+      "res.partner (member identity)"
     ],
-    "organization": [],
+    "organization": [
+      "mail_group.group_mail_group_manager (Mail Group Administrator, data/res_groups.xml)",
+      "moderator_ids (per-group moderators on mail.group)"
+    ],
     "products": [],
     "policies": [
-      "10 record rules"
+      "10 record rules: portal/public visibility scoping of groups & messages",
+      "access_mode (public / members / groups) gates who may read and email the list",
+      "moderation flag + mail.group.moderation white/black list gate message publication",
+      "is_closed bounces inbound email and blocks joining"
     ],
-    "stakeholders": [],
+    "stakeholders": [
+      "Member / Subscriber (res.partner or raw email)",
+      "Moderator (res.users)",
+      "Mail Group Administrator (group_mail_group_manager)",
+      "Public / Portal visitor"
+    ],
     "strategy": null,
-    "metrics": []
+    "metrics": [
+      "mail_group_message_count, mail_group_message_last_month_count (activity volume)",
+      "mail_group_message_moderation_count (pending-moderation backlog)",
+      "member_count (audience size)"
+    ]
   },
   "classification": {
-    "value_model": "support",
-    "activity_class": "support",
-    "apqc_category": "9.4 Manage internal communications",
-    "rationale": "mail_group: thin support/support module (auto-architect baseline)."
+    "value_model": "network",
+    "activity_class": "primary",
+    "apqc_category": "9.4 Deliver internal communications",
+    "rationale": "mail_group is a value-network (Stabell & Fjeldstad mediating technology): the list is the intermediary that connects a community of subscribers to one another, and value rises with membership (network effect) rather than flowing along a transformation chain. Its core service is mediation/relationship-brokering - registering members (mail.group.member), routing each posted message to every other member (_notify_members fan-out), and maintaining the shared archive - not converting an input into an output (chain) or matching a problem to expertise (shop). Moderation (mail.group.moderation) is the network 'admission/contract management' control. Classed primary because operating the discussion-group community is the module's own end-product; mapped to APQC 9.4 (internal communications) as the closest PCF process for running a list/community communications channel."
   },
   "fit_to_standard": {
     "standard_capabilities": [
-      "Mail Group"
+      "email-driven mailing lists with auto-created alias (mail.alias.mixin)",
+      "self-service subscribe/unsubscribe (portal, confirmation email, RFC 8058 one-click)",
+      "three privacy modes (public / members-only / selected user group)",
+      "message moderation with per-author allow/ban lists and reject-with-comment",
+      "public threaded web archive with monthly archive navigation",
+      "moderator reminder cron + new-member guidelines email"
     ],
-    "typical_fits": [],
-    "common_gaps": [],
+    "typical_fits": [
+      "internal/community discussion groups reachable by email and web",
+      "moderated announcement or support lists",
+      "standards-compliant list headers (List-Id / List-Unsubscribe) for deliverability"
+    ],
+    "common_gaps": [
+      "no digest / periodic-summary delivery mode",
+      "no bounce-driven auto-unsubscribe or per-member delivery health",
+      "moderation rules are exact-email allow/ban only (no regex / content filters)",
+      "no double-opt-in audit / GDPR consent log beyond the hmac token flow"
+    ],
     "drive_hints": [
-      "odoo shell: env['mail.group'].search([],limit=3)"
+      "odoo shell: env['mail.group'].search([]).mapped(('name','access_mode','moderation','member_count'))",
+      "odoo shell: g=env['mail.group'].create({'name':'Test List'}); g.alias_id.alias_name  # auto alias",
+      "curl jsonrpc /group/subscribe {group_id, email} (auth=public) -> 'email_sent' | 'added' | 'is_already_member'",
+      "GET /groups  (public portal index of lists)"
     ]
   },
   "reverse_eng_confidence": {
@@ -244,14 +284,16 @@
     "strategy": "human"
   },
   "open_questions": [
-    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+    "Exact alias routing precedence between _alias_get_error access checks and global mail.alias contact policy.",
+    "Whether closed-group bounce and moderation-notify emails interact when a banned author posts to a moderated list.",
+    "How portal record rules expose accepted vs pending messages to non-member public visitors versus members."
   ],
   "provenance": {
     "explorer_facts": "doc/revres/facts/mail_group.facts.json",
     "tools": [
-      "extract_module.py",
+      "code-read",
       "extract_frontend.py",
-      "gen_thin.py"
+      "extract_module.py"
     ],
     "odoo_version": "19.0"
   }
