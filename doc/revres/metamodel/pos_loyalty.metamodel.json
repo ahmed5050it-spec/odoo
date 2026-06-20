@@ -1,0 +1,194 @@
+{
+  "subsystem": "pos_loyalty",
+  "evidence": {
+    "manifest": {
+      "name": "Point of Sale - Coupons & Loyalty",
+      "category": "Sales/Point Of Sale",
+      "depends": [
+        "loyalty",
+        "point_of_sale"
+      ],
+      "auto_install": true,
+      "application": false
+    },
+    "models": [
+      {
+        "_name": "loyalty.card",
+        "_description": null,
+        "fields": 2
+      },
+      {
+        "_name": "loyalty.program",
+        "_description": null,
+        "fields": 4
+      },
+      {
+        "_name": "loyalty.reward",
+        "_description": null,
+        "fields": 0
+      },
+      {
+        "_name": "loyalty.rule",
+        "_description": null,
+        "fields": 3
+      }
+    ],
+    "routes": [],
+    "security": {
+      "access_rules": 13,
+      "record_rules": 0,
+      "groups": 0
+    },
+    "views": {
+      "form": 0,
+      "list": 0,
+      "tree": 0,
+      "kanban": 0,
+      "search": 0,
+      "pivot": 0,
+      "graph": 0,
+      "calendar": 0,
+      "activity": 0
+    },
+    "frontend": {
+      "present": true,
+      "js_files": 13,
+      "xml_templates": 6,
+      "owl_components": [
+        "ManageGiftCardPopup"
+      ],
+      "registry_adds": [],
+      "patches": [
+        "ControlButtons.prototype",
+        "DataServiceOptions.prototype",
+        "OrderPaymentValidation.prototype",
+        "OrderSummary.prototype",
+        "PartnerLine.prototype",
+        "PartnerList.prototype",
+        "PosOrder",
+        "PosOrder.prototype",
+        "PosOrderline",
+        "PosOrderline.prototype",
+        "PosStore.prototype",
+        "ProductScreen.prototype",
+        "TicketScreen.prototype"
+      ],
+      "services": [
+        "_code_activated_coupon_ids",
+        "_e_wallet_program_id",
+        "_gift_barcode",
+        "_gift_card_id",
+        "_reward_product_id",
+        "gift_code"
+      ],
+      "asset_bundles": {
+        "web.assets_frontend": 1,
+        "point_of_sale._assets_pos": 2,
+        "web.assets_tests": 1,
+        "web.assets_unit_tests": 1
+      }
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": false,
+      "endpoints": [],
+      "files": []
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    },
+    "behavioral_notes": [
+      {
+        "element": "frontend (OWL/JS)",
+        "observation": "13 JS files, 1 OWL components, 0 registry adds; bundles ['web.assets_frontend', 'point_of_sale._assets_pos', 'web.assets_tests'].",
+        "source": "static"
+      },
+      {
+        "element": "thin module",
+        "observation": "4 models, 0 routes, 5084 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
+        "source": "ast"
+      }
+    ]
+  },
+  "it_architecture": {
+    "application": "pos_loyalty (Point of Sale - Coupons & Loyalty)",
+    "software_services": [],
+    "data_objects": [
+      "loyalty.card",
+      "loyalty.program",
+      "loyalty.reward",
+      "loyalty.rule"
+    ],
+    "logical_data_erm": [
+      "loyalty.card -> pos.order",
+      "loyalty.card -> res.partner",
+      "loyalty.program -> ir.actions.report",
+      "loyalty.program -> pos.config",
+      "loyalty.rule -> product.product"
+    ],
+    "information_flows": [
+      "depends: loyalty, point_of_sale"
+    ],
+    "frontend_components": [
+      "ManageGiftCardPopup"
+    ]
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Point of Sale - Coupons & Loyalty"
+    ],
+    "value_streams": [],
+    "information_concepts": [
+      "loyalty.card",
+      "loyalty.program",
+      "loyalty.reward",
+      "loyalty.rule"
+    ],
+    "organization": [],
+    "products": [],
+    "policies": [],
+    "stakeholders": [],
+    "strategy": null,
+    "metrics": []
+  },
+  "classification": {
+    "value_model": "chain",
+    "activity_class": "support",
+    "apqc_category": "3.0 Market and Sell Products and Services",
+    "rationale": "pos_loyalty: thin chain/support module (auto-architect baseline)."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "Point of Sale - Coupons & Loyalty"
+    ],
+    "typical_fits": [],
+    "common_gaps": [],
+    "drive_hints": [
+      "odoo shell: env['loyalty.card'].search([],limit=3)"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/pos_loyalty.facts.json",
+    "tools": [
+      "extract_module.py",
+      "extract_frontend.py",
+      "gen_thin.py"
+    ],
+    "odoo_version": "19.0"
+  }
+}

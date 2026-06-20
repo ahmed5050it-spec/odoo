@@ -11,9 +11,13 @@ hr	support	support	7.0 Develop and Manage Human	6	0	36	6	meta+code+fe
 hr_attendance	support	support	7.0 Develop and Manage Human	5	5	13	11	meta+code+fe+integ
 hr_expense	support	support	7.0 Develop and Manage Human	6	0	11	3	meta+code+fe
 hr_holidays	support	support	7.0 Develop and Manage Human	14	5	37	6	meta+fe
+hr_holidays_attendance	support	support	7.0 Develop and Manage Human	3	0	1	1	meta+fe
 hr_recruitment	support	support	7.0 Develop and Manage Human	5	0	16	1	meta+code+fe
 hr_timesheet	shop	primary	5.0 Deliver Services	5	1	16	2	meta+code+fe
 im_livechat	network	primary	6.0 Manage Customer Service	8	5	102	11	meta+code+fe
+l10n_fr	support	support	9.0 Manage Financial Resourc	0	0	0	0	meta
+l10n_us	support	support	9.0 Manage Financial Resourc	0	0	0	0	meta
+loyalty	support	support	3.0 Market and Sell Products	6	2	5	2	meta+code+fe
 lunch	support	support	7.0 Develop and Manage Human	9	6	7	7	meta+fe
 mail	support	support	9.4 Manage internal controls	14	8	383	40	meta+code+fe+integ
 maintenance	support	support	10.0 Acquire, Construct, and	6	0	7	0	meta+code+fe
@@ -24,8 +28,10 @@ mrp_subcontracting	chain	support	4.3 Produce/Manufacture/Deli	0	3	10	1	meta+fe
 payment	network	support	9.0 Manage Financial Resourc	6	5	5	0	meta+code+fe+integ
 point_of_sale	chain	primary	3.0 Market and Sell Products	7	7	166	23	meta+code+fe
 portal	network	support	6.0 Manage Customer Service	4	7	27	2	meta+code+fe
+pos_loyalty	chain	support	3.0 Market and Sell Products	4	0	13	1	meta+fe
 pos_restaurant	chain	primary	3.0 Market and Sell Products	6	0	31	7	meta+code+fe
 product	support	support	2.0 Develop and Manage Produ	6	3	15	4	meta+code+fe
+product_expiry	chain	support	4.0 Deliver Physical Product	6	0	2	0	meta+code+fe
 project	shop	primary	5.0 Deliver Services	8	6	119	14	meta+code+fe
 purchase	support	support	4.2 Procure Materials and Se	7	5	15	4	meta+code+fe
 purchase_requisition	support	support	4.2 Procure Materials and Se	5	0	3	0	meta+fe
@@ -33,6 +39,7 @@ purchase_stock	support	support	4.2 Procure Materials and Se	1	0	12	0	meta+fe
 repair	chain	support	4.0 Deliver Physical Product	3	0	2	0	meta+fe
 resource	support	support	7.0 Develop and Manage Human	5	0	5	0	meta+fe
 sale	chain	primary	3.0 Market and Sell Products	5	2	37	10	meta+code+fe
+sale_expense	support	support	9.0 Manage Financial Resourc	0	0	0	0	meta
 sale_management	chain	primary	3.0 Market and Sell Products	2	1	4	0	meta+fe
 sale_stock	chain	primary	4.0 Deliver Physical Product	6	2	4	2	meta+code+fe
 sale_timesheet	shop	primary	5.0 Deliver Services	8	1	1	1	meta+code+fe
@@ -40,6 +47,7 @@ sales_team	support	support	3.0 Market and Sell Products	3	0	1	0	meta+fe
 spreadsheet_dashboard	support	support	13.0 Develop and Manage Busi	3	4	14	6	meta+fe
 stock	chain	primary	4.0 Deliver Physical Product	14	1	40	20	meta+code+fe
 stock_account	support	support	9.0 Manage Financial Resourc	6	0	8	4	meta+code+fe
+stock_delivery	chain	support	4.4 Operate outbound transpo	8	0	0	0	meta+code
 stock_landed_costs	support	support	9.0 Manage Financial Resourc	3	0	0	0	meta
 stock_picking_batch	chain	support	4.0 Deliver Physical Product	3	0	1	0	meta+fe
 survey	support	support	13.0 Develop and Manage Busi	6	8	30	2	meta+code+fe
@@ -47,5 +55,8 @@ uom	support	support	2.0 Develop and Manage Produ	1	0	2	1	meta+fe
 utm	support	support	3.0 Market and Sell Products	7	0	1	0	meta+fe
 web	support	support	8.0 Manage Information Techn	4	12	526	32	meta+code+fe
 website	network	primary	3.0 Market and Sell Products	8	16	350	40	meta+code+fe+integ
+website_blog	network	primary	3.0 Market and Sell Products	4	4	15	0	meta+code+fe
 website_event	network	primary	3.0 Market and Sell Products	7	8	17	0	meta+code+fe
 website_sale	network	primary	3.0 Market and Sell Products	6	7	83	6	meta+code+fe
+website_sale_stock	network	support	3.0 Market and Sell Products	0	2	10	0	meta+fe
+website_slides	network	primary	3.0 Market and Sell Products	8	6	50	12	meta+code+fe+integ

@@ -1,0 +1,257 @@
+{
+  "subsystem": "product_expiry",
+  "evidence": {
+    "manifest": {
+      "name": "Products Expiration Date",
+      "category": "Supply Chain/Inventory",
+      "depends": [
+        "stock"
+      ],
+      "auto_install": false,
+      "application": false
+    },
+    "models": [
+      {
+        "_name": "expiry.picking.confirmation",
+        "_description": "Confirm Expiry",
+        "fields": 4,
+        "relations": [
+          "lot_ids->stock.lot",
+          "picking_ids->stock.picking"
+        ]
+      },
+      {
+        "_name": "stock.lot",
+        "_description": "(extension)",
+        "fields": 7,
+        "relations": [
+          "use_expiration_date->product.product"
+        ]
+      },
+      {
+        "_name": "stock.move.line",
+        "_description": "(extension)",
+        "fields": 4,
+        "relations": [
+          "is_expired->stock.lot",
+          "use_expiration_date->product.product"
+        ]
+      },
+      {
+        "_name": "stock.quant",
+        "_description": "(extension)",
+        "fields": 4,
+        "relations": [
+          "expiration_date->stock.lot",
+          "removal_date->stock.lot"
+        ]
+      },
+      {
+        "_name": "product.template",
+        "_description": "(extension)",
+        "fields": 5,
+        "relations": []
+      },
+      {
+        "_name": "stock.picking",
+        "_description": "(extension)",
+        "fields": 0,
+        "relations": []
+      }
+    ],
+    "routes": [],
+    "security": {
+      "access_rules": 1,
+      "record_rules": 0,
+      "groups": 1
+    },
+    "views": {
+      "form": 0,
+      "list": 0,
+      "kanban": 0,
+      "pivot": 0,
+      "graph": 0,
+      "calendar": 0,
+      "activity": 0
+    },
+    "behavioral_notes": [
+      {
+        "element": "stock.lot._compute_expiration_date / _compute_dates",
+        "observation": "On lot/serial creation when product.use_expiration_date is set, expiration_date = now + product_tmpl.expiration_time (days); use_date, removal_date and alert_date are then derived by subtracting product_tmpl.use_time/removal_time/alert_time from expiration_date. These four lot dates are computed in Python from the product template lead-times, not stored as static metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "stock.quant._get_removal_strategy_order (FEFO)",
+        "observation": "Adds the 'fefo' removal strategy: when active, reservation ordering becomes 'removal_date, in_date, id', i.e. First-Expiry-First-Out (oldest removal_date picked first). stock.move._update_reserved_quantity/_get_available_quantity inject a with_expiration context so reservation respects expiry; stock.quant._compute_available_quantity zeroes available_quantity once removal_date is past.",
+        "source": "code-read"
+      },
+      {
+        "element": "stock.picking._pre_action_done_hook / _check_expired_lots",
+        "observation": "On validating a delivery, _check_expired_lots flags move lines whose lot is expired (product_expiry_alert) or whose removal_date has passed and pops the expiry.picking.confirmation wizard. The user can confirm delivery of expired goods (process) or strip the expired move lines and proceed (process_no_expired). Side-effect not visible in metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "stock.lot._alert_date_exceeded (cron)",
+        "observation": "Scheduled job: searches internally-stored lots with alert_date <= today and product_expiry_reminded=False, schedules a mail.activity (To Do) on the product responsible, then sets product_expiry_reminded=True so each lot is reminded once. Drives the proactive expiry-alert workflow.",
+        "source": "code-read"
+      },
+      {
+        "element": "frontend ForecastedDetails/ForecastedHeader patches",
+        "observation": "2 JS files patch the stock Forecasted (replenishment) report client-side: lines are sorted by removal_date and 'Free Stock' lines without an expiry have the to-remove quantity subtracted, surfacing fresh-vs-expiring stock in the OWL report. UI-only behavior, no models added.",
+        "source": "static"
+      }
+    ],
+    "frontend": {
+      "present": true,
+      "js_files": 2,
+      "xml_templates": 2,
+      "owl_components": [],
+      "registry_adds": [],
+      "patches": [
+        "ForecastedDetails.prototype",
+        "ForecastedHeader.prototype"
+      ],
+      "services": [],
+      "asset_bundles": {
+        "web.assets_tests": 1,
+        "web.assets_backend": 1
+      }
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": false,
+      "endpoints": [],
+      "files": []
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    }
+  },
+  "it_architecture": {
+    "application": "product_expiry (Inventory expiration-date extension component)",
+    "software_services": [],
+    "data_objects": [
+      "expiry.picking.confirmation",
+      "stock.lot",
+      "stock.move.line",
+      "stock.quant",
+      "product.template"
+    ],
+    "logical_data_erm": [
+      "stock.lot -> product.product (use_expiration_date)",
+      "stock.quant -> stock.lot (expiration_date, removal_date)",
+      "stock.move.line -> stock.lot (is_expired)",
+      "expiry.picking.confirmation -> stock.lot (lot_ids)",
+      "expiry.picking.confirmation -> stock.picking (picking_ids)"
+    ],
+    "information_flows": [
+      "depends: stock",
+      "side-effect: stock.lot creation -> expiration_date/use_date/removal_date/alert_date computed from product.template lead-times",
+      "side-effect: stock.picking validation -> expiry.picking.confirmation wizard when delivering expired/past-removal lots",
+      "side-effect: stock.quant FEFO removal strategy -> reservation ordered by removal_date (first-expiry-first-out)",
+      "side-effect: stock.lot._alert_date_exceeded cron -> mail.activity (To Do) on product responsible"
+    ],
+    "frontend_components": [
+      "ForecastedDetails.prototype (patch)",
+      "ForecastedHeader.prototype (patch)"
+    ]
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Track Product Expiration Dates (end-of-life / best-before / removal / alert)",
+      "FEFO Removal Strategy (First-Expiry-First-Out)",
+      "Expiry Alerting on Lots/Serials",
+      "Block/Confirm Delivery of Expired Stock"
+    ],
+    "value_streams": [
+      "Perishable inventory lifecycle: receipt/production -> dated lot -> FEFO reservation -> expiry alert -> remove or deliver-with-confirmation"
+    ],
+    "information_concepts": [
+      "stock.lot (lot/serial with expiration)",
+      "stock.quant (on-hand fresh quantity)",
+      "stock.move.line (expiry/removal date on operation)",
+      "product.template (use_expiration_date + lead-times)"
+    ],
+    "organization": [
+      "group_expiry_date_on_delivery_slip"
+    ],
+    "products": [
+      "product.template (perishable goods bearing expiration lead-times)"
+    ],
+    "policies": [
+      "FEFO removal ordering (removal_date, in_date, id) when strategy = fefo",
+      "Past-removal_date stock excluded from available/fresh quantity",
+      "Delivery of expired lots requires explicit wizard confirmation",
+      "alert_date cron reminds product responsible once per lot"
+    ],
+    "stakeholders": [
+      "Inventory/Warehouse user (res.users)",
+      "Product responsible (res.users, alert recipient)",
+      "Quality / compliance owner"
+    ],
+    "strategy": null,
+    "metrics": [
+      "Fresh On Hand vs to-remove quantity (Forecasted/replenishment report)",
+      "Expiration Alerts filter (expired lots count)"
+    ]
+  },
+  "classification": {
+    "value_model": "chain",
+    "activity_class": "support",
+    "apqc_category": "4.0 Deliver Physical Products",
+    "rationale": "product_expiry is a lean support extension of the inventory/logistics leg of the value chain (Stabell & Fjeldstad: a manufacturing/distribution firm is a value chain; warehousing is its inbound/outbound logistics). It adds expiration dating, the FEFO removal strategy and expiry alerting onto stock's lots/quants/moves without introducing its own process or routes, so it augments the chain's stock rather than constituting a primary activity. Maps to APQC 4.3.2 Manage logistics and warehousing / inventory management."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "Per-lot/serial expiration, best-before, removal and alert dates auto-computed from product lead-times",
+      "FEFO (First-Expiry-First-Out) removal strategy",
+      "Expiry alerts via scheduled activity on the product responsible",
+      "Confirmation wizard when delivering expired or past-removal stock",
+      "Expiration dates on delivery slips / lot barcodes (GS1 AI 15/17)"
+    ],
+    "typical_fits": [
+      "Food, pharma and cosmetics perishable inventory with shelf-life dating",
+      "Warehouses needing FEFO picking instead of FIFO",
+      "Operations requiring an explicit guard before shipping expired goods"
+    ],
+    "common_gaps": [
+      "Quarantine / disposal workflow for removed stock (not provided)",
+      "Industry-specific date rules (lot-level overrides, partial-batch expiry)",
+      "Hard block (vs. confirm) on shipping expired stock requires customization",
+      "Regulatory traceability/recall reporting beyond the alert activity"
+    ],
+    "drive_hints": [
+      "odoo shell: env['product.template'].search([('use_expiration_date','=',True)], limit=5).mapped(('name','expiration_time','removal_time'))",
+      "odoo shell: env['stock.lot'].search([('expiration_date','!=',False)], limit=5).mapped(('name','expiration_date','removal_date','product_expiry_alert'))",
+      "odoo shell: env['stock.quant']._get_removal_strategy_order('fefo')  # -> 'removal_date, in_date, id'"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Exact post_init_hook (_enable_tracking_numbers) effect on existing products at install.",
+    "How FEFO interacts with reserved-but-not-yet-removed quants near the removal_date boundary.",
+    "Whether downstream apps (mrp, stock_landed_costs) consume removal_date beyond reservation."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/product_expiry.facts.json",
+    "tools": [
+      "code-read",
+      "extract_frontend.py",
+      "extract_module.py",
+      "extract_runtime.sh",
+      "run-odoo (odoo shell)"
+    ],
+    "odoo_version": "19.0"
+  }
+}
