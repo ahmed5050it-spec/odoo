@@ -1,0 +1,303 @@
+{
+  "subsystem": "hr_timesheet",
+  "evidence": {
+    "manifest": {
+      "name": "Task Logs",
+      "category": "Services/Timesheets",
+      "depends": [
+        "hr",
+        "hr_hourly_cost",
+        "analytic",
+        "project",
+        "uom"
+      ],
+      "auto_install": false,
+      "application": false
+    },
+    "models": [
+      {
+        "_name": "account.analytic.line",
+        "_description": "(extension) Analytic Line / Timesheet",
+        "fields": 14,
+        "relations": [
+          "task_id->project.task",
+          "project_id->project.project",
+          "employee_id->hr.employee",
+          "department_id->hr.department",
+          "encoding_uom_id->uom.uom"
+        ]
+      },
+      {
+        "_name": "project.task",
+        "_description": "(extension) Task",
+        "fields": 13,
+        "relations": [
+          "timesheet_ids->account.analytic.line",
+          "project_id->project.project"
+        ]
+      },
+      {
+        "_name": "project.project",
+        "_description": "(extension) Project",
+        "fields": 12,
+        "relations": [
+          "timesheet_ids->account.analytic.line",
+          "account_id->account.analytic.account",
+          "timesheet_encode_uom_id->uom.uom"
+        ]
+      },
+      {
+        "_name": "timesheets.analysis.report",
+        "_description": "Timesheets Analysis Report",
+        "fields": 15,
+        "relations": [
+          "project_id->project.project",
+          "task_id->project.task",
+          "manager_id->hr.employee"
+        ]
+      },
+      {
+        "_name": "account.analytic.line.calendar.employee",
+        "_description": "Personal Filters on Employees for the Calendar view",
+        "fields": 4,
+        "relations": [
+          "user_id->res.users",
+          "employee_id->hr.employee"
+        ]
+      }
+    ],
+    "routes": [
+      {
+        "paths": [
+          "/my/timesheets",
+          "/my/timesheets/page/<int:page>"
+        ],
+        "auth": "user",
+        "type": "http"
+      }
+    ],
+    "security": {
+      "access_rules": 7,
+      "record_rules": 9,
+      "groups": 4
+    },
+    "views": {
+      "form": 3,
+      "list": 3,
+      "kanban": 3,
+      "pivot": 2,
+      "graph": 3,
+      "calendar": 2,
+      "activity": 0
+    },
+    "behavioral_notes": [
+      {
+        "element": "account.analytic.line (_inherit)",
+        "observation": "hr_timesheet does NOT define its own timesheet model: it _inherit = 'account.analytic.line' (models/hr_timesheet.py) and adds task_id/project_id/employee_id. A timesheet IS literally an analytic cost line — this is the structural bridge that lets a support activity (HR labour) be posted onto the value-shop's analytic account (the project). Not visible in metadata as the model name is reused.",
+        "source": "code-read"
+      },
+      {
+        "element": "account.analytic.line._timesheet_postprocess_values / _hourly_cost",
+        "observation": "On create/write, when unit_amount/employee_id/account_id change, the analytic line's monetary `amount` is recomputed as amount = -unit_amount * cost, where cost = employee_id.hourly_cost (via _hourly_cost(), from the hr_hourly_cost dependency), then currency-converted to the analytic account currency. This is the support->primary cost computation: logged hours become a signed cost on the project's analytic account. Formula lives in Python, not metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "project.task._compute_effective_hours / _compute_progress_hours",
+        "observation": "effective_hours rolls up via _read_group on timesheet_ids.unit_amount:sum onto each task; subtask_effective_hours recurses over child_ids; progress = (effective+subtask)/allocated_hours, overtime = max(total-allocated,0), remaining_hours = allocated - spent. The delivered effort of the shop is measured here; these stored computes are the task-level KPIs metadata cannot show.",
+        "source": "code-read"
+      },
+      {
+        "element": "project.project.create / _check_allow_timesheet",
+        "observation": "project.project.create auto-creates an account.analytic.account when allow_timesheets is set and none is provided (and _check_allow_timesheet raises if timesheets are on without an analytic account). The analytic account is the 'vessel' of the value-shop into which support costs and primary revenue converge; the module enforces its existence.",
+        "source": "code-read"
+      },
+      {
+        "element": "frontend (OWL/JS)",
+        "observation": "16 JS files, 2 OWL components (TaskWithHours, TimesheetUOM), 12 registry registrations (timesheet_uom field/formatter/service, project_task_progressbar, timesheet calendar views), 1 patch (Model.prototype); asset bundles ['web.assets_backend','web.assets_backend_lazy','web.assets_unit_tests','project.webclient']. The timesheet_uom widget renders/encodes duration in the company UoM (hours/days toggle).",
+        "source": "static"
+      }
+    ],
+    "frontend": {
+      "present": true,
+      "js_files": 16,
+      "xml_templates": 2,
+      "owl_components": [
+        "TaskWithHours",
+        "TimesheetUOM"
+      ],
+      "registry_adds": [
+        "fields:project_task_progressbar",
+        "fields:task_with_hours",
+        "fields:time_hour_uom",
+        "fields:timesheet_duration_uom",
+        "fields:timesheet_uom",
+        "fields:timesheet_uom_no_toggle",
+        "formatters:project_task_progressbar",
+        "formatters:timesheet_uom",
+        "formatters:timesheet_uom_no_toggle",
+        "services:timesheet_uom",
+        "views:timesheet_calendar",
+        "views:timesheet_calendar_my_timesheets"
+      ],
+      "patches": [
+        "Model.prototype"
+      ],
+      "services": [],
+      "asset_bundles": {
+        "web.assets_backend": 4,
+        "web.assets_backend_lazy": 3,
+        "web.assets_unit_tests": 2,
+        "project.webclient": 3
+      }
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": true,
+      "endpoints": [
+        "https://www.odoo.com/app/timesheet"
+      ],
+      "files": [
+        "__manifest__.py"
+      ]
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    }
+  },
+  "it_architecture": {
+    "application": "hr_timesheet (Task Logs / Timesheets application component)",
+    "software_services": [
+      "/my/timesheets",
+      "/my/timesheets/page/<int:page>"
+    ],
+    "data_objects": [
+      "account.analytic.line",
+      "project.task",
+      "project.project",
+      "timesheets.analysis.report"
+    ],
+    "logical_data_erm": [
+      "account.analytic.line -> project.task",
+      "account.analytic.line -> project.project",
+      "account.analytic.line -> hr.employee",
+      "project.task -> account.analytic.line (timesheet_ids)",
+      "project.project -> account.analytic.account (account_id)"
+    ],
+    "information_flows": [
+      "depends: hr, hr_hourly_cost, analytic, project, uom",
+      "side-effect: account.analytic.line(timesheet) amount = -unit_amount * employee.hourly_cost -> analytic cost on project's analytic account",
+      "side-effect: timesheet_ids.unit_amount:sum -> project.task.effective_hours / progress / remaining_hours roll-up",
+      "side-effect: project.project.create (allow_timesheets) -> auto-create account.analytic.account",
+      "support->primary bridge: HR labour cost posted onto the value-shop analytic account (consumed by sale_timesheet for billing)"
+    ],
+    "frontend_components": [
+      "TaskWithHours",
+      "TimesheetUOM"
+    ]
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Log Time on Tasks & Projects (timesheet encoding)",
+      "Measure Delivered Effort (effective/remaining hours, progress)",
+      "Cost Labour to the Analytic Account (hours x hourly cost)",
+      "Timesheets Analysis (reporting)"
+    ],
+    "value_streams": [
+      "Effort-to-Cost: log hours -> analytic cost line (-unit_amount x hourly_cost) on the project analytic account",
+      "Plan-vs-Actual: allocated_hours -> effective/subtask hours roll-up -> progress / overtime / remaining"
+    ],
+    "information_concepts": [
+      "account.analytic.line (timesheet = analytic cost line)",
+      "project.task (effort container)",
+      "project.project (value-shop engagement / analytic account)",
+      "hr.employee (the resource bearing hourly_cost)"
+    ],
+    "organization": [
+      "group_hr_timesheet_user",
+      "group_hr_timesheet_approver",
+      "group_timesheet_manager",
+      "project.group_project_user"
+    ],
+    "products": [],
+    "policies": [
+      "9 record rules: own-timesheet visibility (user_id = current user unless approver), portal/commercial-partner scoping, multi-company",
+      "_check_can_write/_check_can_create: a basic user may only edit their own timesheets",
+      "_check_allow_timesheet: a timesheet project must have an active analytic account"
+    ],
+    "stakeholders": [
+      "Employee (hr.employee / res.users) — logs time",
+      "Project/Service Manager — reads effort & cost",
+      "Timesheet Approver (group_hr_timesheet_approver)",
+      "Customer (res.partner) — engagement beneficiary (portal /my/timesheets)"
+    ],
+    "strategy": null,
+    "metrics": [
+      "timesheets.analysis.report (Timesheets Analysis: unit_amount, amount, by project/task/employee/department)",
+      "project.task: effective_hours, remaining_hours, progress, overtime",
+      "project.project: total_timesheet_time, effective_hours, remaining_hours, is_project_overtime"
+    ]
+  },
+  "classification": {
+    "value_model": "shop",
+    "activity_class": "primary",
+    "rationale": "hr_timesheet measures and costs the delivered effort of the value-shop: it _inherit's account.analytic.line so a logged hour IS an analytic cost line posted onto the project's analytic account (the engagement's value vessel), priced via employee.hourly_cost (hr_hourly_cost). It is the execution/control activity of the shop — the bridge that makes consulting/services billable (consumed downstream by sale_timesheet) and lets profit-per-engagement be computed by comparing accumulated support costs (labour, expenses, purchases) against primary revenue on the same analytic account. The depends (hr, hr_hourly_cost, analytic, project) wire this support->primary integration. Activity is primary because it is the engagement's effort-execution and cost-control loop, not back-office enablement.",
+    "apqc_category": "5.0 Deliver Services"
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "log hours against a project/task (analytic line, hours or days UoM)",
+      "automatic labour costing: amount = -hours x employee hourly_cost, currency-converted to the analytic account",
+      "effort roll-up: effective/subtask hours, progress, overtime, remaining_hours on task & project",
+      "analytic account auto-created per timesheet-enabled project",
+      "portal timesheet listing (/my/timesheets) + timesheet calendar view",
+      "Timesheets Analysis report (pivot/graph by project/task/employee/department)"
+    ],
+    "typical_fits": [
+      "internal time tracking on the company internal_project_id",
+      "service/consulting engagements priced from hourly cost",
+      "own-timesheet self-service with approver oversight",
+      "hours-vs-days encoding via company timesheet_encode_uom_id"
+    ],
+    "common_gaps": [
+      "billing the logged effort to the customer (needs sale_timesheet)",
+      "timesheet validation/lock & leave integration (needs timesheet_grid / project_timesheet_holidays)",
+      "custom approval workflows beyond the basic approver group",
+      "non-labour or blended-rate costing beyond a single employee hourly_cost"
+    ],
+    "drive_hints": [
+      "odoo shell: env['account.analytic.line'].search([('project_id','!=',False)], limit=5).mapped(('project_id.display_name','unit_amount','amount'))",
+      "odoo shell: t = env['project.task'].search([('timesheet_ids','!=',False)], limit=1); (t.effective_hours, t.remaining_hours, t.progress)",
+      "odoo shell: p = env['project.project'].create({'name':'Demo','allow_timesheets':True}); p.account_id  # auto-created analytic account",
+      "curl -b session http://localhost:8069/my/timesheets  (auth=user portal)"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "stakeholders": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Exact downstream billing path: how sale_timesheet turns these analytic lines into invoiceable sale.order.line revenue on the same analytic account.",
+    "Interaction with timesheet_grid validation/lock and project_timesheet_holidays (leave-as-timesheet) when those modules are installed.",
+    "Multi-currency edge cases in _timesheet_postprocess_values when employee currency, analytic account currency, and company currency differ."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/hr_timesheet.facts.json",
+    "tools": [
+      "code-read",
+      "extract_frontend.py",
+      "extract_module.py",
+      "extract_runtime.sh",
+      "run-odoo (odoo shell)"
+    ],
+    "odoo_version": "19.0"
+  }
+}

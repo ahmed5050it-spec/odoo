@@ -1,0 +1,186 @@
+{
+  "subsystem": "resource",
+  "evidence": {
+    "manifest": {
+      "name": "Resource",
+      "category": "Hidden",
+      "depends": [
+        "base",
+        "web"
+      ],
+      "auto_install": false,
+      "application": false
+    },
+    "models": [
+      {
+        "_name": "resource.calendar",
+        "_description": "Resource Working Time",
+        "fields": 21
+      },
+      {
+        "_name": "resource.calendar.attendance",
+        "_description": "Work Detail",
+        "fields": 13
+      },
+      {
+        "_name": "resource.calendar.leaves",
+        "_description": "Resource Time Off Detail",
+        "fields": 7
+      },
+      {
+        "_name": "resource.mixin",
+        "_description": "Resource Mixin",
+        "fields": 4
+      },
+      {
+        "_name": "resource.resource",
+        "_description": "Resources",
+        "fields": 12
+      }
+    ],
+    "routes": [],
+    "security": {
+      "access_rules": 8,
+      "record_rules": 5,
+      "groups": 0
+    },
+    "views": {
+      "form": 4,
+      "list": 4,
+      "tree": 0,
+      "kanban": 0,
+      "search": 3,
+      "pivot": 0,
+      "graph": 0,
+      "calendar": 1,
+      "activity": 0
+    },
+    "frontend": {
+      "present": true,
+      "js_files": 5,
+      "xml_templates": 2,
+      "owl_components": [],
+      "registry_adds": [
+        "fields:section_one2many",
+        "views:form_description_expander"
+      ],
+      "patches": [],
+      "services": [],
+      "asset_bundles": {
+        "web.assets_backend": 1,
+        "web.assets_unit_tests": 1
+      }
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": false,
+      "endpoints": [],
+      "files": []
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    },
+    "behavioral_notes": [
+      {
+        "element": "frontend (OWL/JS)",
+        "observation": "5 JS files, 0 OWL components, 2 registry adds; bundles ['web.assets_backend', 'web.assets_unit_tests'].",
+        "source": "static"
+      },
+      {
+        "element": "thin module",
+        "observation": "5 models, 0 routes, 2576 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
+        "source": "ast"
+      }
+    ]
+  },
+  "it_architecture": {
+    "application": "resource (Resource)",
+    "software_services": [],
+    "data_objects": [
+      "resource.calendar",
+      "resource.calendar.attendance",
+      "resource.calendar.leaves",
+      "resource.mixin",
+      "resource.resource"
+    ],
+    "logical_data_erm": [
+      "resource.calendar -> res.company",
+      "resource.calendar -> resource.calendar.attendance",
+      "resource.calendar -> resource.calendar.leaves",
+      "resource.calendar.attendance -> resource.calendar",
+      "resource.calendar.leaves -> res.company",
+      "resource.calendar.leaves -> resource.calendar",
+      "resource.calendar.leaves -> resource.resource",
+      "resource.mixin -> res.company",
+      "resource.mixin -> resource.calendar",
+      "resource.mixin -> resource.resource",
+      "resource.resource -> res.company",
+      "resource.resource -> res.users"
+    ],
+    "information_flows": [
+      "depends: base, web"
+    ],
+    "frontend_components": []
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Resource"
+    ],
+    "value_streams": [],
+    "information_concepts": [
+      "resource.calendar",
+      "resource.calendar.attendance",
+      "resource.calendar.leaves",
+      "resource.mixin",
+      "resource.resource"
+    ],
+    "organization": [],
+    "products": [],
+    "policies": [
+      "5 record rules"
+    ],
+    "stakeholders": [],
+    "strategy": null,
+    "metrics": []
+  },
+  "classification": {
+    "value_model": "support",
+    "activity_class": "support",
+    "apqc_category": "7.0 Develop and Manage Human Capital",
+    "rationale": "resource: thin support/support module (auto-architect baseline)."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "Resource"
+    ],
+    "typical_fits": [],
+    "common_gaps": [],
+    "drive_hints": [
+      "odoo shell: env['resource.calendar'].search([],limit=3)"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/resource.facts.json",
+    "tools": [
+      "extract_module.py",
+      "extract_frontend.py",
+      "gen_thin.py"
+    ],
+    "odoo_version": "19.0"
+  }
+}

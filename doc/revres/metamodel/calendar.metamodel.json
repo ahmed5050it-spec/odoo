@@ -1,0 +1,308 @@
+{
+  "subsystem": "calendar",
+  "evidence": {
+    "manifest": {
+      "name": "Calendar",
+      "category": "Productivity/Calendar",
+      "depends": [
+        "base",
+        "mail"
+      ],
+      "auto_install": false,
+      "application": true
+    },
+    "models": [
+      {
+        "_name": "calendar.event",
+        "_description": "Calendar Event",
+        "fields": 65,
+        "relations": [
+          "user_id->res.users",
+          "partner_id->res.partner",
+          "partner_ids->res.partner",
+          "attendee_ids->calendar.attendee",
+          "alarm_ids->calendar.alarm",
+          "recurrence_id->calendar.recurrence",
+          "videocall_channel_id->discuss.channel"
+        ]
+      },
+      {
+        "_name": "calendar.attendee",
+        "_description": "Calendar Attendee Information",
+        "fields": 10,
+        "relations": [
+          "event_id->calendar.event",
+          "partner_id->res.partner",
+          "recurrence_id->calendar.recurrence"
+        ]
+      },
+      {
+        "_name": "calendar.recurrence",
+        "_description": "Event Recurrence Rule",
+        "fields": 23,
+        "relations": [
+          "base_event_id->calendar.event",
+          "calendar_event_ids->calendar.event",
+          "trigger_id->ir.cron.trigger"
+        ]
+      },
+      {
+        "_name": "calendar.alarm",
+        "_description": "Event Alarm",
+        "fields": 8,
+        "relations": [
+          "mail_template_id->mail.template"
+        ]
+      },
+      {
+        "_name": "calendar.alarm_manager",
+        "_description": "Event Alarm Manager (AbstractModel)",
+        "fields": 0,
+        "relations": []
+      }
+    ],
+    "routes": [
+      {
+        "paths": [
+          "/calendar/meeting/accept",
+          "/calendar/meeting/decline",
+          "/calendar/meeting/view",
+          "/calendar/recurrence/accept",
+          "/calendar/recurrence/decline"
+        ],
+        "auth": "calendar",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/calendar/meeting/join",
+          "/calendar/join_videocall/<string:access_token>"
+        ],
+        "auth": "user/public",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/calendar/notify",
+          "/calendar/notify_ack",
+          "/calendar/check_credentials"
+        ],
+        "auth": "user",
+        "type": "jsonrpc"
+      }
+    ],
+    "security": {
+      "access_rules": 15,
+      "record_rules": 4,
+      "groups": 0
+    },
+    "views": {
+      "form": 5,
+      "list": 4,
+      "kanban": 1,
+      "search": 1,
+      "calendar": 1
+    },
+    "behavioral_notes": [
+      {
+        "element": "calendar.recurrence._apply_recurrence",
+        "observation": "Recurrence expansion: serializes the UI fields (rrule_type/interval/byday/until/count...) into an iCalendar RRULE via _get_rrule (dateutil.rrule), then materializes concrete calendar.event rows for each occurrence by copying the base event's data and setting start/stop. It reconciles against existing events (_reconcile_events), creates only missing ranges, and detaches (_detach_events) events that no longer follow the rule. Occurrence count is hard-capped at MAX_RECURRENT_EVENT=720, and _get_occurrences applies DST-aware timezone localization so stored UTC times stay correct across daylight-saving transitions. None of this rrule->event materialization is visible from field/model metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "calendar.attendee.do_accept / do_decline / do_tentative + _notify_attendees",
+        "observation": "Attendee RSVP: do_accept/do_decline/do_tentative set state (accepted/declined/tentative) AND post a chatter message on event_id (message_post with subtype calendar.subtype_invitation) so the organizer sees the response. On invite/reschedule, _send_invitation_emails -> _notify_attendees renders a mail.template (calendar_template_meeting_invitation / _changedate), generates and attaches an ICS calendar file (_get_ics_file, mimetype text/calendar), and sends per-attendee mail via event.message_notify. Sending is gated by ir.config_parameter calendar.block_mail and the no_mail_to_attendees context. Side-effects into mail (mail.message/mail.mail) are not reconstructable from metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "calendar.event._setup_alarms + calendar.alarm_manager (_send_reminder / _notify_next_alarm)",
+        "observation": "Alarm/reminder dual channel. Email alarms: _setup_alarms schedules ir.cron.trigger entries against cron calendar.ir_cron_scheduler_alarm at (event.start - alarm.duration_minutes); the cron runs calendar.alarm_manager._send_reminder, which finds due email alarms (_get_events_by_alarm_to_notify) and re-uses _notify_attendees to mail non-declined attendees. Notification alarms: _notify_next_alarm computes get_next_notif (next 24h) and pushes it over the bus per non-share user via user._bus_send('calendar.alarm', notif). Cron scheduling and live bus pushes are runtime behavior absent from metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "frontend calendarNotificationService (static/src/js/services/calendar_notification_service.js)",
+        "observation": "OWL/JS service subscribes to the 'calendar.alarm' bus channel (the same channel the backend _notify_next_alarm pushes to) and renders a sticky warning notification per reminder, with an OK button that calls rpc('/calendar/notify_ack') to acknowledge (updating res.partner.calendar_last_notif_ack) and a Details button that opens the calendar.event form. 28 JS files, 14 XML templates; OWL components AskRecurrenceUpdatePolicyDialog and CalendarConnectProvider; patches the mail Activity/ActivityMenu/Store to surface meetings. Not in Python metadata.",
+        "source": "static"
+      }
+    ],
+    "frontend": {
+      "present": true,
+      "js_files": 28,
+      "xml_templates": 14,
+      "owl_components": [
+        "AskRecurrenceUpdatePolicyDialog",
+        "CalendarConnectProvider"
+      ],
+      "registry_adds": [
+        "fields:calendar_event_notes_html",
+        "fields:many2manyattendee",
+        "fields:many2manyattendeeexpandable",
+        "sample_server:get_selected_calendars_partner_ids",
+        "services:calendarNotification",
+        "view_widgets:calendar_connect_provider",
+        "view_widgets:calendar_week_days",
+        "views:attendee_calendar",
+        "views:calendar_form",
+        "views:calendar_list_view",
+        "views:calendar_quick_create_form_view"
+      ],
+      "patches": [
+        "Activity",
+        "Activity.prototype",
+        "ActivityListPopoverItem.prototype",
+        "ActivityMenu.prototype",
+        "Store.prototype"
+      ],
+      "services": [
+        "Meetings"
+      ],
+      "asset_bundles": {
+        "web.assets_backend": 1,
+        "web.assets_unit_tests": 3,
+        "web.qunit_suite_tests": 1,
+        "web.assets_tests": 1
+      }
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": true,
+      "endpoints": [],
+      "files": []
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    }
+  },
+  "it_architecture": {
+    "application": "calendar (Calendar application component)",
+    "software_services": [
+      "/calendar/meeting/* (accept|decline|view|join)",
+      "/calendar/recurrence/* (accept|decline)",
+      "/calendar/notify + /calendar/notify_ack",
+      "/calendar/join_videocall/<access_token>",
+      "/calendar/check_credentials"
+    ],
+    "data_objects": [
+      "calendar.event",
+      "calendar.attendee",
+      "calendar.recurrence",
+      "calendar.alarm"
+    ],
+    "logical_data_erm": [
+      "calendar.event -> res.users (organizer)",
+      "calendar.event -> res.partner (partner_ids attendees)",
+      "calendar.attendee -> calendar.event",
+      "calendar.attendee -> res.partner",
+      "calendar.recurrence -> calendar.event (base_event_id + calendar_event_ids)",
+      "calendar.event -> calendar.alarm (alarm_ids)",
+      "calendar.recurrence -> ir.cron.trigger"
+    ],
+    "information_flows": [
+      "depends: base, mail",
+      "side-effect: calendar.recurrence._apply_recurrence -> creates/detaches calendar.event occurrences from RRULE",
+      "side-effect: calendar.attendee RSVP/invite -> mail.template render + ICS attachment + mail.message/mail.mail via message_notify",
+      "side-effect: calendar.event._setup_alarms -> ir.cron.trigger (email) + bus push 'calendar.alarm' (notification)",
+      "side-effect: mail.activity calendar_event_id links scheduled activities to meetings"
+    ],
+    "frontend_components": [
+      "AskRecurrenceUpdatePolicyDialog",
+      "CalendarConnectProvider"
+    ]
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Schedule Meetings & Events",
+      "Manage Attendees & RSVP Invitations",
+      "Configure Recurring Events",
+      "Send Reminders & Notifications (email + in-app)"
+    ],
+    "value_streams": [
+      "Schedule-to-Attend: create meeting -> invite attendees (email + ICS) -> RSVP -> reminder -> join videocall"
+    ],
+    "information_concepts": [
+      "calendar.event (meeting)",
+      "calendar.attendee (invitee + status)",
+      "calendar.recurrence (recurrence rule)",
+      "calendar.alarm (reminder)",
+      "res.partner (attendee/organizer)"
+    ],
+    "organization": [],
+    "products": [],
+    "policies": [
+      "4 record rules: privacy scoping (public/private/confidential) + own/attended meeting visibility",
+      "ir.config_parameter calendar.block_mail and calendar.max_recurrence_years gate mailing and recurrence horizon",
+      "cron calendar.ir_cron_scheduler_alarm drives reminder dispatch"
+    ],
+    "stakeholders": [
+      "Organizer (res.users)",
+      "Attendee (res.partner)",
+      "Internal user (calendar owner)"
+    ],
+    "strategy": null,
+    "metrics": [
+      "attendees_count / accepted_count / declined_count / tentative_count / awaiting_count (RSVP rollups on calendar.event)"
+    ]
+  },
+  "classification": {
+    "value_model": "support",
+    "activity_class": "support",
+    "apqc_category": "13.0 Develop and Manage Business Capabilities",
+    "rationale": "Calendar is cross-cutting scheduling infrastructure, not a line-of-business value chain. It produces no sellable output and sits in category Productivity/Calendar, depending only on base+mail. It is consumed by primary/support subsystems (crm meetings, hr appointments, project deadlines, mail.activity due dates link to calendar.event), making it shared enabling capability rather than a primary activity. Per Stabell & Fjeldstad it is a support function (infrastructure/firm-infrastructure), and in APQC PCF it maps to the management/enabling band 13.0 Develop and Manage Business Capabilities (information/collaboration infrastructure) rather than any operating category 1.0-9.0; the alternative 9.0 'Acquire, Construct, and Manage Assets' was rejected because calendar manages people's time/coordination, not physical/IT assets."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "meeting/event creation with attendees and locations",
+      "RSVP invitations with ICS attachments and chatter tracking",
+      "recurring events (daily/weekly/monthly/yearly RRULE, end by count/date/forever)",
+      "email + in-app (bus) reminders via configurable alarms",
+      "videocall link generation and public join page",
+      "attendee calendar view (day/week/month/year) with availability filters"
+    ],
+    "typical_fits": [
+      "internal team meeting scheduling",
+      "activity due-dates surfaced on a calendar (mail.activity link)",
+      "privacy-scoped event visibility (public/private/confidential)"
+    ],
+    "common_gaps": [
+      "external calendar sync (Google/Microsoft) lives in separate calendar_google/microsoft_calendar modules; base calendar only configures the provider wizard",
+      "self-service public booking/appointment slots (the appointment module)",
+      "resource/room double-booking and capacity rules beyond free/busy",
+      "custom reminder escalation logic beyond duration-before alarms"
+    ],
+    "drive_hints": [
+      "odoo shell: env['calendar.event'].search([], limit=5).mapped(('name','start','recurrency'))",
+      "odoo shell: e = env['calendar.event'].create({'name':'Test','start':'2026-07-01 09:00:00','stop':'2026-07-01 10:00:00','recurrency':True,'rrule_type':'weekly','mon':True,'count':3,'end_type':'count'}); e.recurrence_id.calendar_event_ids.mapped('start')",
+      "odoo shell: env['calendar.alarm_manager']._notify_next_alarm(env.user.partner_id.ids)  # pushes bus reminder",
+      "curl http GET /calendar/meeting/accept (auth=calendar token, RSVP accept)"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "stakeholders": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Exact precedence between privacy field and effective_privacy when organizer default vs event-level privacy differ.",
+    "How the 'recurrence_update' policy (self_only/future_events/all_events) routes writes in calendar.event.write to recurrence split vs bulk update.",
+    "Whether videocall_source='discuss' always creates a discuss.channel or only on demand."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/calendar.facts.json",
+    "tools": [
+      "code-read",
+      "extract_frontend.py",
+      "extract_module.py",
+      "extract_runtime.sh",
+      "run-odoo (odoo shell)"
+    ],
+    "odoo_version": "19.0"
+  }
+}
