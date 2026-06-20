@@ -37,7 +37,7 @@ Activity class: support=468, primary=181
 | Layer | Records with it |
 |-------|----------------:|
 | metadata (facts) | 649/649 |
-| code-read (behavior) | 157/649 |
+| code-read (behavior) | 169/649 |
 | frontend (OWL/JS) | 246/649 |
 | integrations (HTTP/SDK) | 70/649 |
 | runtime (live data) | 1/649 |
@@ -59,7 +59,7 @@ Activity class: support=468, primary=181
 | mrp_subcontracting_landed_costs | chain | primary | 4.3 Produce/Manufactur | 0 | 0 | meta |
 | mrp_subcontracting_purchase | chain | primary | 4.3 Produce/Manufactur | 0 | 0 | meta |
 | mrp_subcontracting_repair | chain | primary | 4.3 Produce/Manufactur | 0 | 0 | meta |
-| partnership | chain | primary | 3.0 Market and Sell Pr | 1 | 0 | meta |
+| partnership | chain | primary | 3.0 Market and Sell Pr | 7 | 0 | meta+code |
 | point_of_sale | chain | primary | 3.0 Market and Sell Pr | 7 | 166 | meta+code+fe |
 | pos_account_tax_python | chain | primary | 3.0 Market and Sell Pr | 0 | 0 | meta |
 | pos_adyen | chain | primary | 3.0 Market and Sell Pr | 0 | 4 | meta+fe+integ |
@@ -163,19 +163,19 @@ Activity class: support=468, primary=181
 | mass_mailing_themes | network | primary | 3.0 Market and Sell Pr | 0 | 0 | meta |
 | payment | network | support | 9.0 Manage Financial R | 6 | 5 | meta+code+fe+integ |
 | payment_adyen | network | support | 9.0 Manage Financial R | 4 | 1 | meta+code+fe |
-| payment_aps | network | support | 9.0 Manage Financial R | 0 | 0 | meta |
-| payment_asiapay | network | support | 9.0 Manage Financial R | 0 | 0 | meta |
+| payment_aps | network | support | 9.0 Manage Financial R | 2 | 0 | meta+code |
+| payment_asiapay | network | support | 9.0 Manage Financial R | 2 | 0 | meta+code |
 | payment_authorize | network | support | 9.0 Manage Financial R | 0 | 1 | meta+fe+integ |
-| payment_buckaroo | network | support | 9.0 Manage Financial R | 0 | 0 | meta |
+| payment_buckaroo | network | support | 9.0 Manage Financial R | 2 | 0 | meta+code |
 | payment_custom | network | support | 9.0 Manage Financial R | 0 | 1 | meta+fe |
 | payment_demo | network | support | 9.0 Manage Financial R | 0 | 3 | meta+fe |
 | payment_dpo | network | support | 9.0 Manage Financial R | 0 | 0 | meta |
-| payment_ecpay | network | support | 9.0 Manage Financial R | 0 | 0 | meta |
+| payment_ecpay | network | support | 9.0 Manage Financial R | 2 | 0 | meta+code |
 | payment_flutterwave | network | support | 9.0 Manage Financial R | 3 | 1 | meta+code+fe |
-| payment_iyzico | network | support | 9.0 Manage Financial R | 0 | 0 | meta |
+| payment_iyzico | network | support | 9.0 Manage Financial R | 2 | 0 | meta+code |
 | payment_mercado_pago | network | support | 9.0 Manage Financial R | 3 | 1 | meta+code+fe |
-| payment_mollie | network | support | 9.0 Manage Financial R | 0 | 0 | meta |
-| payment_nuvei | network | support | 9.0 Manage Financial R | 0 | 0 | meta |
+| payment_mollie | network | support | 9.0 Manage Financial R | 2 | 0 | meta+code |
+| payment_nuvei | network | support | 9.0 Manage Financial R | 2 | 0 | meta+code |
 | payment_paymob | network | support | 9.0 Manage Financial R | 0 | 0 | meta |
 | payment_paypal | network | support | 9.0 Manage Financial R | 0 | 2 | meta+fe |
 | payment_razorpay | network | support | 9.0 Manage Financial R | 3 | 1 | meta+code+fe |
@@ -329,7 +329,7 @@ Activity class: support=468, primary=181
 | gamification | support | support | 7.0 Develop and Manage | 8 | 0 | meta+code |
 | gamification_sale_crm | support | support | 7.0 Develop and Manage | 0 | 0 | meta |
 | google_account | support | support | 8.0 Manage Information | 1 | 0 | meta+code+integ |
-| google_address_autocomplete | support | support | 13.0 Develop and Manag | 0 | 2 | meta+fe+integ |
+| google_address_autocomplete | support | support | 13.0 Develop and Manag | 2 | 2 | meta+code+fe+integ |
 | google_calendar | support | support | 8.0 Manage Information | 5 | 3 | meta+code+fe+integ |
 | google_gmail | support | support | 8.0 Manage Information | 5 | 0 | meta+code+integ |
 | google_recaptcha | support | support | 13.0 Develop and Manag | 0 | 2 | meta+fe+integ |
@@ -342,15 +342,15 @@ Activity class: support=468, primary=181
 | hr_holidays | support | support | 7.0 Develop and Manage | 5 | 37 | meta+code+fe |
 | hr_holidays_attendance | support | support | 7.0 Develop and Manage | 11 | 1 | meta+code+fe |
 | hr_holidays_homeworking | support | support | 7.0 Develop and Manage | 0 | 1 | meta+fe |
-| hr_homeworking | support | support | 7.0 Develop and Manage | 1 | 1 | meta+fe |
-| hr_homeworking_calendar | support | support | 7.0 Develop and Manage | 1 | 5 | meta+fe |
+| hr_homeworking | support | support | 7.0 Develop and Manage | 6 | 1 | meta+code+fe |
+| hr_homeworking_calendar | support | support | 7.0 Develop and Manage | 3 | 5 | meta+code+fe |
 | hr_hourly_cost | support | support | 7.0 Develop and Manage | 0 | 0 | meta |
 | hr_livechat | support | support | 7.0 Develop and Manage | 0 | 0 | meta |
 | hr_maintenance | support | support | 7.0 Develop and Manage | 0 | 0 | meta |
 | hr_org_chart | support | support | 7.0 Develop and Manage | 2 | 5 | meta+code+fe |
 | hr_presence | support | support | 7.0 Develop and Manage | 0 | 5 | meta+fe |
 | hr_recruitment | support | support | 7.0 Develop and Manage | 5 | 16 | meta+code+fe |
-| hr_recruitment_skills | support | support | 7.0 Develop and Manage | 1 | 2 | meta+fe |
+| hr_recruitment_skills | support | support | 7.0 Develop and Manage | 3 | 2 | meta+code+fe |
 | hr_recruitment_sms | support | support | 7.0 Develop and Manage | 0 | 0 | meta |
 | hr_recruitment_survey | support | support | 7.0 Develop and Manage | 0 | 0 | meta |
 | hr_skills | support | support | 7.0 Develop and Manage | 8 | 11 | meta+code+fe |

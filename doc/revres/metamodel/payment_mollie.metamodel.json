@@ -4,21 +4,47 @@
     "manifest": {
       "name": "Payment Provider: Mollie",
       "category": "Accounting/Payment Providers",
+      "summary": "A Dutch payment provider covering several European countries.",
+      "version": "1.0",
+      "author": "Odoo S.A., Applix BV, Droggol Infotech Pvt. Ltd.",
+      "license": "LGPL-3",
       "depends": [
         "payment"
       ],
       "auto_install": false,
       "application": false
     },
-    "models": [],
+    "models": [
+      {
+        "_name": "payment.provider (inherit)",
+        "_description": "Payment Provider (Mollie credential: single API key, Test or Live)",
+        "fields": 2,
+        "relations": [
+          "code (Selection selection_add 'mollie', ondelete set default)",
+          "mollie_api_key (Char, required_if_provider=mollie, copy=False, groups=base.group_system)"
+        ]
+      },
+      {
+        "_name": "payment.transaction (inherit)",
+        "_description": "Payment Transaction (Mollie Payments API redirect flow; no new fields, 5 override methods)",
+        "fields": 0,
+        "relations": [
+          "no new fields; 5 methods overriding payment's rendering/notification hooks (_get_specific_rendering_values, _mollie_prepare_payment_request_payload, _extract_reference, _extract_amount_data, _apply_updates)"
+        ]
+      }
+    ],
     "routes": [
       {
-        "paths": [],
+        "paths": [
+          "/payment/mollie/return"
+        ],
         "auth": "public",
         "type": "http"
       },
       {
-        "paths": [],
+        "paths": [
+          "/payment/mollie/webhook"
+        ],
         "auth": "public",
         "type": "http"
       }
@@ -26,19 +52,50 @@
     "security": {
       "access_rules": 0,
       "record_rules": 0,
-      "groups": 0
+      "groups": 0,
+      "note": "No own ACL/rules; relies on payment's security and on the base.group_system field group guarding mollie_api_key (the sole credential)."
     },
     "views": {
       "form": 1,
       "list": 0,
-      "tree": 0,
       "kanban": 0,
       "search": 0,
       "pivot": 0,
       "graph": 0,
-      "calendar": 0,
-      "activity": 0
+      "note": "xml_loc=39 across three data files: payment_provider_views.xml inherits payment.payment_provider_form to add the Mollie API Key field (password, invisible unless code=='mollie'); payment_mollie_templates.xml defines the QWeb redirect_form (a method='get' auto-submit form to the Mollie-hosted checkout url with url_params re-attached); payment_provider_data.xml seeds payment.provider_mollie and wires redirect_form_view_id. No own model views."
     },
+    "behavioral_notes": [
+      {
+        "element": "payment.transaction._get_specific_rendering_values -> outbound POST https://api.mollie.com/v2/payments (hosted-redirect Payments API)",
+        "observation": "For a Mollie transaction, _get_specific_rendering_values builds a payload via _mollie_prepare_payment_request_payload (description=tx.reference; amount={currency, value formatted to CURRENCY_MINOR_UNITS decimals}; locale clamped to const.SUPPORTED_LOCALES else 'en_US'; method=[const.PAYMENT_METHODS_MAPPING.get(payment_method_code) -- e.g. card->creditcard, apple_pay->applepay, bank_transfer->banktransfer, kbc_cbc->kbc, p24->przelewy24, sepa_direct_debit->directdebit]; redirectUrl=<return_url>?ref=<reference>; webhookUrl=<webhook_url>?ref=<reference>) and POSTs it to '/payments' via the parent engine's _send_api_request. It stores provider_reference = payment_data['id'] up-front (so the status can be re-fetched after redirection), then reads the Mollie-hosted checkout link payment_data['_links']['checkout']['href'], splits its query string out into url_params, and hands {api_url, url_params} to the QWeb redirect_form so the browser is auto-submitted to Mollie's hosted checkout page. On ValidationError the tx is _set_error and an empty dict is returned. The ?ref= is carried because Mollie does not echo the transaction reference back on redirect. None of this server-to-server HTTP nor the hosted-redirect handoff is visible in Python field/model metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "MollieController.mollie_webhook (/payment/mollie/webhook) + mollie_return_from_checkout (/payment/mollie/return) -> _verify_and_process re-fetches the payment by id from Mollie (GET /payments/<provider_reference>)",
+        "observation": "Both the public csrf=False POST webhook and the public GET/POST redirect-return route call the SAME staticmethod _verify_and_process(data). Mollie posts only an opaque payment id; the Odoo reference travels in the URL query as ?ref=, so _search_by_reference('mollie', data) routes through _extract_reference -> data['ref'] to find the tx. Crucially, the inbound POST body is NOT trusted for state: _verify_and_process re-fetches the authoritative payment object via tx_sudo._send_api_request('GET', f'/payments/{tx_sudo.provider_reference}') (Bearer-authenticated, server-to-server) and only THEN calls tx_sudo._process('mollie', verified_data). Authenticity therefore comes from the trusted Mollie-side re-fetch over the API key, not from a signature on the notification. On a fetch ValidationError it logs an error and processes nothing; the webhook returns '' and the return route redirects to /payment/status. This re-fetch-by-id trust model is invisible to metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "payment.transaction._apply_updates -> Mollie payment status -> payment state machine; method back-mapping via cardLabel",
+        "observation": "_apply_updates reads the re-fetched payment object. It refines the payment.method: when method=='creditcard' it drills into details.cardLabel (lowercased -- e.g. 'visa','mastercard') and resolves a payment.method via _get_from_code(..., mapping=const.PAYMENT_METHODS_MAPPING). It then maps Mollie's status to payment's guarded state machine: 'pending'/'open' -> _set_pending; 'authorized' -> _set_authorized; 'paid' -> _set_done; 'expired'/'canceled'/'failed' -> _set_canceled (with the status in the message); anything else logs and _set_error. _extract_amount_data pulls amount.value/amount.currency from the same object for the amount check. The status->state mapping and the cardLabel brand back-resolution are invisible to metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "outbound auth & request plumbing (models/payment_provider.py: _build_request_url / _build_request_headers / _parse_response_error)",
+        "observation": "payment_mollie ships NO 'requests' import; outbound HTTP is delegated to payment.provider._send_api_request in the parent engine, configured by three overrides: _build_request_url joins endpoints onto 'https://api.mollie.com/v2/' (urls.urljoin, endpoint.strip('/')); _build_request_headers returns Accept/Content-Type application/json, 'Authorization: Bearer <mollie_api_key>', and a Mollie partner User-Agent 'Odoo/<server_version> MollieNativeOdoo/<module_version>' (per Mollie's user-agent-strings integration requirement); _parse_response_error pulls response.json()['detail']. Auth is thus a single Bearer API key (Test or Live, chosen by the merchant), with no separate webhook secret -- consistent with the re-fetch-by-id verification model. This Bearer scheme and the api.mollie.com base are invisible to metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "external integration surface (gap #7) -- endpoints, key, no SDK",
+        "observation": "Static gap-#7 facts (extract_frontend.py): uses_api_keys=true; endpoints https://api.mollie.com/v2/ (the live REST base reached via _build_request_url; concrete endpoints POST /payments and GET /payments/<id>) and https://www.mollie.com (manifest website only). Auth is HTTP Bearer with mollie_api_key. There is no python Mollie SDK and no client-side JS SDK: card data is entered on Mollie's own hosted checkout page after redirect (the module ships no static/src assets, only description icons), so PCI scope stays with Mollie. The whole acquirer link -- outbound create-payment + the inbound webhook/return re-fetch -- is the canonical metadata gap #7: none of it is reachable from model/field metadata; it was established only by reading payment_provider.py + payment_transaction.py + controllers/main.py + const.py.",
+        "source": "static"
+      },
+      {
+        "element": "frontend (static) -- no own JS/OWL (gap #3)",
+        "observation": "extract_frontend.py reports present=false: 0 JS files, 0 XML templates beyond the server-rendered QWeb redirect_form, 0 OWL components, 0 registry adds, 0 patches, no asset bundles. Unlike Stripe/Xendit there is no client-side SDK and no PaymentForm patch: the module relies entirely on the generic 'payment' redirect-with-form-submission flow, and the only template is the server-side auto-submit redirect_form that POSTs/GETs the browser to Mollie's hosted checkout. So gap #3 is effectively empty here -- the browser-side acquirer interaction happens on Mollie's hosted page, not in Odoo-shipped JS.",
+        "source": "static"
+      }
+    ],
     "frontend": {
       "present": false,
       "js_files": 0,
@@ -65,52 +122,124 @@
     "runtime": {
       "models_with_data": 0,
       "top": []
-    },
-    "behavioral_notes": [
-      {
-        "element": "thin module",
-        "observation": "0 models, 2 routes, 456 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
-        "source": "ast"
-      }
-    ]
+    }
   },
   "it_architecture": {
-    "application": "payment_mollie (Payment Provider: Mollie)",
-    "software_services": [],
-    "data_objects": [],
-    "logical_data_erm": [],
-    "information_flows": [
-      "depends: payment"
+    "application": "payment_mollie (Mollie acquirer adapter for the payment engine; _inherit-only, no own models/views)",
+    "software_services": [
+      "/payment/mollie/return (redirect-return: http GET/POST, csrf=False, save_session=False; re-fetches the payment by id then redirects to /payment/status)",
+      "/payment/mollie/webhook (async notification: http POST, csrf=False; re-fetches the payment by id then _process)"
     ],
-    "frontend_components": []
+    "data_objects": [
+      "payment.provider (+mollie_api_key)",
+      "payment.transaction (Mollie Payments API redirect flow; no new fields)"
+    ],
+    "logical_data_erm": [
+      "payment.transaction -> payment.provider (provider_id; provider_code=='mollie' gates every override)",
+      "payment.provider.code selection_add 'mollie'",
+      "external: payment.transaction reference carried as the ?ref= URL parameter (cross-system lookup key via _extract_reference -> data['ref'])",
+      "external: payment.transaction.provider_reference == Mollie payment id (payment_data['id']; used to re-fetch GET /payments/<id>)"
+    ],
+    "information_flows": [
+      "depends: payment (inherits the provider/transaction engine + _send_api_request request plumbing)",
+      "outbound (create): _get_specific_rendering_values -> POST https://api.mollie.com/v2/payments (Bearer mollie_api_key) -> Mollie-hosted checkout url",
+      "browser: server-rendered redirect_form auto-submits (GET) to the Mollie-hosted checkout page; card details entered on Mollie's page (no Odoo-shipped JS/SDK)",
+      "inbound (return): Mollie -> /payment/mollie/return?ref=... -> _verify_and_process -> GET /payments/<id> re-fetch -> _process -> /payment/status",
+      "inbound (webhook): Mollie -> /payment/mollie/webhook?ref=... -> _verify_and_process -> GET /payments/<id> re-fetch -> _process -> payment state machine"
+    ],
+    "frontend_components": [
+      "redirect_form (server-side QWeb auto-submit GET form to the Mollie-hosted checkout url; no client-side JS/OWL)"
+    ],
+    "external_integrations": {
+      "sdk": "none (no python Mollie SDK; no client-side JS SDK -- card entry on Mollie's hosted checkout); HTTP via payment.provider._send_api_request",
+      "uses_api_keys": true,
+      "endpoints": [
+        "https://api.mollie.com/v2/ (POST /payments to create the hosted payment; GET /payments/<id> to re-fetch authoritative status)"
+      ],
+      "auth": "HTTP Bearer -- 'Authorization: Bearer <mollie_api_key>' (single Test-or-Live key; no separate webhook secret) (_build_request_headers)",
+      "files": [
+        "models/payment_provider.py",
+        "models/payment_transaction.py",
+        "controllers/main.py",
+        "const.py"
+      ],
+      "pattern": "Concrete realization of metadata gap #7: a real external acquirer integration. Outbound server-to-server REST to api.mollie.com/v2 (POST /payments) authenticated with a single Bearer API key creates a Mollie-hosted checkout to which the browser is redirected; inbound settlement arrives as a notification (webhook) or a redirect-return, but neither is trusted on its body -- the server re-fetches GET /payments/<id> by the stored provider_reference and processes THAT. The base 'payment' engine flags uses_api_keys but ships no live acquirer -- this module is exactly that override.",
+      "note": "Prime gap-#7 example: none of the Mollie endpoints, the Bearer-key auth, or the re-fetch-by-id verification model are derivable from Python model/field metadata; they were established only by reading payment_provider.py + payment_transaction.py + controllers/main.py + const.py. Distinctive vs signature-based acquirers: Mollie webhooks/returns carry only an id, so authenticity is delegated to a Bearer-authenticated re-fetch rather than an HMAC/checksum on the notification."
+    }
   },
   "business_architecture": {
     "capabilities": [
-      "Payment Provider: Mollie"
+      "Accept European card / local-method payments via Mollie hosted checkout (redirect flow: card, Apple Pay, Bancontact/KBC-CBC, iDEAL, Przelewy24, SEPA direct debit, bank transfer, etc.)",
+      "Asynchronous settlement confirmation via a Mollie webhook plus a redirect-return route (both re-fetching the payment by id)",
+      "Multi-currency acceptance across the Mollie-supported set (EUR, GBP, USD, and ~30 currencies in const.SUPPORTED_CURRENCIES)",
+      "Locale-aware hosted checkout (const.SUPPORTED_LOCALES, default en_US)"
     ],
-    "value_streams": [],
-    "information_concepts": [],
-    "organization": [],
+    "value_streams": [
+      "Collect-Payment (redirect): _get_specific_rendering_values -> POST /payments (api.mollie.com) -> browser redirect to Mollie-hosted checkout -> /payment/mollie/return -> re-fetch GET /payments/<id> -> _process -> /payment/status",
+      "Confirm-Settlement (async): Mollie -> /payment/mollie/webhook -> re-fetch GET /payments/<id> -> _apply_updates status mapping -> _set_pending/_set_authorized/_set_done/_set_canceled",
+      "Settle: Mollie status 'paid' -> _set_done -> downstream post-process settlement (account_payment / sale)"
+    ],
+    "information_concepts": [
+      "payment.provider (Mollie credential: a single Test-or-Live API key)",
+      "payment.transaction (mapped to a Mollie payment; keyed by ?ref= reference and provider_reference=payment id)"
+    ],
+    "organization": [
+      "(no module-owned res.groups; mollie_api_key is restricted to base.group_system; everything else inherits payment's groups/record rules)"
+    ],
     "products": [],
-    "policies": [],
-    "stakeholders": [],
+    "policies": [
+      "Notification trust by re-fetch: neither the webhook nor the redirect-return body is trusted for state; _verify_and_process re-fetches GET /payments/<provider_reference> over the Bearer API key and processes that authoritative object (no notification signature/secret)",
+      "Supported currencies bounded to const.SUPPORTED_CURRENCIES; others filtered out by _get_supported_currencies",
+      "Checkout locale bounded to const.SUPPORTED_LOCALES (fallback en_US)",
+      "Amount formatted to CURRENCY_MINOR_UNITS decimals for the Mollie amount.value",
+      "Single API key gated by the base.group_system field group; chosen Test vs Live by the merchant"
+    ],
+    "stakeholders": [
+      "Payer / Cardholder / bank-method user (res.partner)",
+      "Merchant / Company (res.company, holds the Mollie account & API key)",
+      "Mollie (external acquirer / PSP for the Netherlands and several European countries)",
+      "Accountant (consumes settled payments via account_payment downstream)"
+    ],
     "strategy": null,
-    "metrics": []
+    "metrics": [
+      "(no own reports; transaction volumes/amounts/state surfaced by the parent payment.transaction pivot/graph)"
+    ]
   },
   "classification": {
     "value_model": "network",
     "activity_class": "support",
-    "apqc_category": "9.0 Manage Financial Resources",
-    "rationale": "payment_mollie: thin network/support module (auto-architect baseline)."
+    "apqc_category": "9.0 Manage Financial Resources (9.5 process payments / collect cash; manage external payment provider)",
+    "rationale": "payment_mollie is a value-NETWORK (Stabell & Fjeldstad mediating-technology) component: a concrete acquirer adapter whose purpose is to interconnect two parties who would not otherwise transact directly -- the payer (cardholder / bank-method user) and the merchant -- by linking the merchant to Mollie's European card / local-payment-method network. It exhibits the mediating-technology activities: network promotion & contract management (a single Mollie API key + currency/locale/payment-method enablement), service provisioning (creating a Mollie hosted payment and confirming its status per transaction), and infrastructure operation (the server-to-server api.mollie.com link plus the webhook/return re-fetch settlement loop). It does not transform inputs into outputs (chain) nor solve a bespoke customer problem (shop). It inherits the parent 'payment' engine's value_model exactly: the engine is the generic mediator and this module is its Mollie realization. activity_class is 'support' because, from the enterprise value-chain perspective, payment acceptance is an infrastructure/finance support function (category Accounting/Payment Providers, application=False, no end-user app) sitting under 9.0 Manage Financial Resources -- specifically 9.5 process payments / collect cash, with the side of 'manage an external payment provider'. So value_model=network (its own internal logic is mediation, an acquirer integration -- gap #7), activity_class=support (its place on the enterprise value chain). This mirrors the sibling payment_stripe / payment_xendit metamodels (network/support) and the parent payment engine."
   },
   "fit_to_standard": {
     "standard_capabilities": [
-      "Payment Provider: Mollie"
+      "hosted-redirect acceptance of European card and local methods via the Mollie Payments API v2 (POST /payments; form-submission redirect flow)",
+      "asynchronous settlement via a webhook plus a redirect-return route, both re-fetching the authoritative payment by id (no signature needed)",
+      "multi-currency acceptance across const.SUPPORTED_CURRENCIES (~30 currencies; amount in CURRENCY_MINOR_UNITS decimals)",
+      "locale-aware Mollie-hosted checkout (const.SUPPORTED_LOCALES)",
+      "automatic provider setup/teardown via post_init_hook setup_provider / uninstall_hook reset_payment_provider"
     ],
-    "typical_fits": [],
-    "common_gaps": [],
+    "typical_fits": [
+      "online shop / portal checkout collecting payments in the Netherlands and wider Europe via Mollie (iDEAL, Bancontact, cards, SEPA, etc.)",
+      "send-a-payment-link or pay-an-invoice-online collection (with account_payment / sale downstream)",
+      "multi-currency European e-commerce where card data should stay on the PSP's hosted page (PCI scope offloaded to Mollie)"
+    ],
+    "common_gaps": [
+      "no tokenization / saved cards (README 'Not implemented'; no payment.token vaulting, no off-session/recurring charge path)",
+      "no manual capture / authorize-then-capture and no void operation (README 'Manual capture' not implemented; charge is immediate -- though _apply_updates can record an 'authorized' status if Mollie returns one)",
+      "no in-module refund operation (README 'Refunds' not implemented; no _send_refund_request override -- refunds done via the Mollie dashboard or a downstream module)",
+      "no merchant self-onboarding -- the API key is entered manually on the provider form (no Connect-style flow)",
+      "the public-URL/HTTPS requirement for the webhook means local/dev instances need a tunnel; with no webhook secret, authenticity rests entirely on the Bearer-authenticated re-fetch and a correct provider_reference",
+      "currency/locale support bounded to const.SUPPORTED_CURRENCIES / const.SUPPORTED_LOCALES; others are filtered/fallback-ed",
+      "bespoke reconciliation / settlement document chains live downstream (account_payment, sale), not here"
+    ],
     "drive_hints": [
-      "n/a"
+      "odoo shell: env['payment.provider'].search([('code','=','mollie')]).mapped(('name','state'))",
+      "odoo shell: p=env['payment.provider'].search([('code','=','mollie')],limit=1); print(p._get_supported_currencies().mapped('name'), p._get_default_payment_method_codes())",
+      "odoo shell: tx=env['payment.transaction'].search([('provider_code','=','mollie')],limit=1); print(tx.reference, tx.state, tx.provider_reference)",
+      "odoo shell: print([m for m in dir(env['payment.transaction']) if '_mollie' in m])",
+      "curl 'https://<host>/payment/mollie/webhook' -d 'ref=<unknown-ref>' (csrf=False, auth=public) -> _search_by_reference finds nothing -> no processing (the server would otherwise re-fetch GET /payments/<id> from Mollie before trusting any state)",
+      "Mollie testing: https://docs.mollie.com/overview/testing -- test card 4111111111111111, expiry 123, CVC 123 (README; HTTPS required)"
     ]
   },
   "reverse_eng_confidence": {
@@ -124,14 +253,20 @@
     "strategy": "human"
   },
   "open_questions": [
-    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+    "Exact Mollie Payments API v2 request/response payloads beyond the fields built in _mollie_prepare_payment_request_payload and consumed in _apply_updates (e.g. the full details/cardLabel object).",
+    "Real-world distribution of Mollie transaction states and method mix (card vs iDEAL/Bancontact/SEPA), and how often the 'authorized' interim state occurs (no runtime row counts captured).",
+    "How refunds/chargebacks are handled operationally given no in-module refund override (likely via the Mollie dashboard or a downstream module).",
+    "Whether instances reliably register the webhook (public HTTPS URL reachable) vs rely on the redirect-return route, given both ultimately re-fetch the same payment by id."
   ],
   "provenance": {
     "explorer_facts": "doc/revres/facts/payment_mollie.facts.json",
     "tools": [
-      "extract_module.py",
-      "extract_frontend.py",
-      "gen_thin.py"
+      "apqc_odoo_map.tsv",
+      "code-read (const.py, models/payment_provider.py, models/payment_transaction.py, controllers/main.py, __manifest__.py, README.md)",
+      "extract_frontend.py (frontend/payment_mollie.frontend.json)",
+      "extract_module.py (facts/payment_mollie.facts.json)",
+      "Grep",
+      "Read"
     ],
     "odoo_version": "19.0"
   }

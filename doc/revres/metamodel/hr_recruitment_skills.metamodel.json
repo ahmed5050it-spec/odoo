@@ -4,6 +4,10 @@
     "manifest": {
       "name": "Recruitment - Skills Management",
       "category": "Human Resources/Recruitment",
+      "summary": "Manage skills of your employees",
+      "version": "1.0",
+      "author": "Odoo S.A.",
+      "license": "LGPL-3",
       "depends": [
         "hr_skills",
         "hr_recruitment"
@@ -14,15 +18,43 @@
     "models": [
       {
         "_name": "hr.applicant.skill",
-        "_description": "Skill level for an applicant",
-        "fields": 1
+        "_description": "Skill level for an applicant (inherits hr.individual.skill.mixin)",
+        "fields": 1,
+        "relations": [
+          "applicant_id->hr.applicant (required, index, ondelete=cascade)",
+          "_inherit hr.individual.skill.mixin -> provides skill_id/skill_level_id/skill_type_id/level_progress/valid_from/valid_to + versioning",
+          "_rec_name='skill_id', _order='skill_type_id, skill_level_id desc'",
+          "_linked_field_name() returns 'applicant_id' (tells the mixin which parent owns the skill line)"
+        ]
+      },
+      {
+        "_name": "hr.applicant (inherit)",
+        "_description": "Adds applicant skill lines + the skill/degree job-matching engine (matching/missing skills, score) and applicant->employee + talent-pool skill propagation",
+        "fields": 6,
+        "relations": [
+          "applicant_skill_ids->hr.applicant.skill (One2many, copy=True)",
+          "current_applicant_skill_ids->hr.applicant.skill (One2many, compute, readonly=False; non-expired/active lines only)",
+          "skill_ids->hr.skill (Many2many, store=True, compute from applicant_skill_ids.skill_id)",
+          "matching_skill_ids/missing_skill_ids->hr.skill (Many2many, compute _compute_matching_skill_ids)",
+          "matching_score->Integer (compute, % vs the job's required skills + degree)"
+        ]
+      },
+      {
+        "_name": "hr.job (inherit)",
+        "_description": "Adds applicant_matching_score (per-applicant, context-driven) + action_search_matching_applicants",
+        "fields": 1,
+        "relations": [
+          "applicant_matching_score->Float (compute _compute_applicant_matching_score, @depends_context active_applicant_id, groups=hr_recruitment.group_hr_recruitment_interviewer)",
+          "reads job.job_skill_ids (hr.job.skill from hr_skills) + job.expected_degree"
+        ]
       }
     ],
     "routes": [],
     "security": {
       "access_rules": 2,
       "record_rules": 2,
-      "groups": 0
+      "groups": 0,
+      "note": "ir.model.access.csv: hr.applicant.skill is full CRUD for hr_recruitment.group_hr_recruitment_interviewer; it also grants hr_skills.model_hr_job_skill to hr_recruitment.group_hr_recruitment_user. hr_recruitment_skills_security.xml ir.rule: hr_applicant_skill_interviewer_rule limits interviewers to skills of applicants on jobs they interview (applicant_id.job_id.interviewer_ids in user.id OR applicant_id.interviewer_ids in user.id); hr_applicant_skill_officer_rule gives group_hr_recruitment_user the full (1=1) domain. No module-owned res.groups (reuses hr_recruitment groups)."
     },
     "views": {
       "form": 1,
@@ -33,7 +65,8 @@
       "pivot": 0,
       "graph": 0,
       "calendar": 0,
-      "activity": 0
+      "activity": 0,
+      "note": "xml_loc=341. hr_applicant_views.xml adds the skills one2many + matching widgets to the applicant form; hr_applicant_skill_views.xml the skill line form/list; hr_job_views.xml adds applicant_matching_score (progressbar) to the job list, a crm_case_tree_view_inherit_hr_recruitment_skills list used by the matching-applicants action, and the action_applicant_search_applicant server action (binding on hr.job form) calling action_search_matching_applicants."
     },
     "frontend": {
       "present": true,
@@ -64,64 +97,139 @@
     },
     "behavioral_notes": [
       {
-        "element": "frontend (OWL/JS)",
-        "observation": "2 JS files, 1 OWL components, 1 registry adds; bundles ['web.assets_backend'].",
-        "source": "static"
+        "element": "hr.applicant._get_employee_create_vals — applicant skills propagate to the hired employee (the key cross-model side-effect)",
+        "observation": "When a recruiter hires an applicant, hr_recruitment.hr.applicant._get_employee_create_vals() builds the dict used to create the hr.employee. This module overrides it to append employee_skill_ids = [(0,0,{skill_id, skill_level_id, skill_type_id}) for each applicant_skill in self.applicant_skill_ids]. So every skill captured on the applicant is copied onto the new employee's skill list at hire time — the bridge that lets recruitment skills become permanent employee competencies. Nothing in field/metadata reveals this hire-time copy; it only exists in the override and runs inside the standard 'Create Employee' flow of hr_recruitment.",
+        "source": "code-read"
       },
       {
-        "element": "thin module",
-        "observation": "1 models, 0 routes, 1447 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
-        "source": "ast"
+        "element": "hr.applicant._compute_matching_skill_ids + hr.job._compute_applicant_matching_score — the applicant<->job skill-match scoring",
+        "observation": "Two parallel scorers compute how well an applicant fits a job's required skills, and are pure Python over hr_skills data. hr.applicant._compute_matching_skill_ids (@depends_context('matching_job_id')) takes the job = context matching_job_id or applicant.job_id; if the job has no job_skill_ids and no expected_degree it blanks the three fields. Otherwise job_total = sum(job_skill_ids.level_progress) + expected_degree.score*100; for each of the applicant's current (non-expired) skills that the job requires it credits min(skill.level_progress, job_required_level_progress*2) (so over-qualification is capped at 2x the required level), adds the applicant's diploma score (type_id.score*100) when the job weights a degree, and sets matching_score = round(applicant_total/job_total*100). matching_skill_ids = the overlap, missing_skill_ids = required minus matched. hr.job._compute_applicant_matching_score (@depends_context('active_applicant_id')) is the mirror image keyed by the active applicant, used to rank jobs for one applicant (shown as a progressbar on the job list). This weighting/capping logic is entirely behavioral.",
+        "source": "code-read"
+      },
+      {
+        "element": "hr.job.action_search_matching_applicants + hr.applicant.action_add_to_job — the 'find candidates for this job' workflow",
+        "observation": "From a job form, the action_applicant_search_applicant server action calls action_search_matching_applicants(): it loads hr_recruitment.crm_case_categ0_act_job, injects matching_job_id=self.id into the context, swaps in the crm_case_tree_view_inherit_hr_recruitment_skills list view, and applies domain [('job_id','!=',self.id), ('skill_ids','in', self.job_skill_ids.skill_id.ids)] — i.e. show applicants on OTHER jobs whose skills overlap this job's required skills, with a custom no-content message. Because the list runs under matching_job_id context, every row's matching_score/matching_skill_ids/missing_skill_ids recompute against THIS job. The reverse action hr.applicant.action_add_to_job() then write()s the selected applicant onto job_id=matching_job_id and stage_id=hr_recruitment.stage_job0 (with context just_moved=True) and opens that job's applications. This cross-record talent-search loop is invisible to metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "hr.applicant.write/create + hr.applicant.skill versioning & talent-pool mirroring (_get_transformed_commands, _map_applicant_skill_ids_to_talent_skill_ids, _get_current_skills_by_applicant)",
+        "observation": "Skill edits are not plain o2m writes. hr.applicant.write() pops current_applicant_skill_ids + applicant_skill_ids, runs them through hr.applicant.skill._get_transformed_commands (the hr.individual.skill.mixin rule engine: one active skill per skill_id, updates ARCHIVE the old line and create a new one via valid_from/valid_to rather than in-place edit, certifications may coexist if date ranges differ) before super().write — so the o2m is rewritten to a version-history-preserving command list. create() likewise merges current_applicant_skill_ids into applicant_skill_ids so duplicating an applicant keeps its skills. current_applicant_skill_ids is computed by hr.applicant.skill._get_current_skills_by_applicant, which drops expired lines (valid_to < today) but, for certification skill types where all are expired, keeps the most recent. On top of this, when an applicant is linked to a talent pool (pool_applicant_id and not is_pool_applicant), write() also mirrors the skill changes onto the pool applicant: _map_applicant_skill_ids_to_talent_skill_ids re-keys each ORM command from the applicant's per-applicant skill-line ids to the pool applicant's own ids (matching by skill_id), translating UPDATE->update/create and DELETE->delete so the same skill change applies to the shared talent record. All of this versioning + pool synchronisation is behavioral and cannot be seen in metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "frontend (static) — SearchJobApplicant menu + skill_match_gauge_field gauge",
+        "observation": "2 JS files, 1 OWL component, 1 registry add (gap #3). static/src/components/search_job_applicant_menu/* defines the SearchJobApplicant component (a cog/search-menu entry that drives the 'search matching applicants' UX). static/src/fields/skill_match_gauge_field/* registers the 'skill_match_gauge_field' field widget that renders matching_score as a gauge on the applicant/job views. skills_one2many_recruitment.scss styles the skills o2m. Bundle: web.assets_backend (no unit-test bundle). This presentation of the match score and the search-menu entry is unreachable from Python metadata.",
+        "source": "static"
       }
     ]
   },
   "it_architecture": {
-    "application": "hr_recruitment_skills (Recruitment - Skills Management)",
+    "application": "hr_recruitment_skills (bridges hr_skills onto hr_recruitment: per-applicant skill lines, applicant<->job skill matching + scoring, and skill propagation to the hired employee / talent pool)",
     "software_services": [],
     "data_objects": [
-      "hr.applicant.skill"
+      "hr.applicant.skill",
+      "hr.applicant (inherit)",
+      "hr.job (inherit)"
     ],
     "logical_data_erm": [
-      "hr.applicant.skill -> hr.applicant"
+      "hr.applicant.skill -> hr.applicant (applicant_id, ondelete=cascade) and inherits hr.individual.skill.mixin (-> hr.skill, hr.skill.level, hr.skill.type, level_progress, valid_from/valid_to)",
+      "hr.applicant -> hr.applicant.skill (applicant_skill_ids o2m; current_applicant_skill_ids computed active subset) -> hr.skill (skill_ids/matching/missing m2m)",
+      "hr.job -> hr.job.skill (job_skill_ids, from hr_skills) + hr.applicant (matching via skill_ids overlap)",
+      "hire-time: hr.applicant.applicant_skill_ids -> hr.employee.employee_skill_ids (copied in _get_employee_create_vals)",
+      "talent pool: hr.applicant -> pool_applicant_id (hr.applicant) skill lines mirrored by _map_applicant_skill_ids_to_talent_skill_ids"
     ],
     "information_flows": [
-      "depends: hr_skills, hr_recruitment"
+      "depends: hr_skills (the individual-skill mixin + hr.skill/level/type + hr.job.skill) and hr_recruitment (hr.applicant, hr.job, hiring flow, recruitment groups)",
+      "match (applicant view): _compute_matching_skill_ids (matching_job_id ctx) -> matching/missing skills + matching_score capped at 2x required level + degree",
+      "match (job list): _compute_applicant_matching_score (active_applicant_id ctx) -> applicant_matching_score progressbar",
+      "search: hr.job.action_search_matching_applicants -> domain skill_ids in job.job_skill_ids.skill_id + matching_job_id ctx -> applicant list scored vs this job",
+      "promote: hr.applicant.action_add_to_job -> write job_id + stage_job0",
+      "hire: standard Create Employee -> _get_employee_create_vals -> employee_skill_ids seeded from applicant_skill_ids",
+      "edit: hr.applicant.write -> _get_transformed_commands (versioned: archive+create, valid_to) -> super; if pool_applicant_id -> mirror via _map_applicant_skill_ids_to_talent_skill_ids",
+      "frontend: skill_match_gauge_field renders matching_score; SearchJobApplicant search-menu entry"
     ],
     "frontend_components": [
-      "SearchJobApplicant"
+      "SearchJobApplicant (OWL search/cog-menu entry for matching-applicant search)",
+      "skill_match_gauge_field (field widget: matching_score gauge on applicant/job views)"
     ]
   },
   "business_architecture": {
     "capabilities": [
-      "Recruitment - Skills Management"
+      "Capture skills and certifications (with levels and validity dates) on a job applicant",
+      "Score how well an applicant matches a job's required skills + expected degree (matching score, matching/missing skills)",
+      "Rank jobs for one applicant and applicants for one job by skill fit",
+      "Search the applicant database for candidates whose skills match a given job",
+      "Carry applicant skills forward to the employee record on hire, and to the linked talent-pool applicant on edit",
+      "Version skill changes (archive-on-update, validity windows) rather than overwrite"
     ],
-    "value_streams": [],
+    "value_streams": [
+      "Skill-Match-to-Shortlist: recruiter defines a job's required skills (hr_skills) -> action_search_matching_applicants -> candidates scored by overlap -> action_add_to_job moves a fit candidate into the pipeline",
+      "Applicant-Skills-to-Employee: applicant skills captured -> applicant hired -> _get_employee_create_vals copies skills into employee_skill_ids -> they become tracked employee competencies"
+    ],
     "information_concepts": [
-      "hr.applicant.skill"
+      "hr.applicant.skill (an applicant's skill/certification line with level + validity)",
+      "Skill match (matching_skill_ids / missing_skill_ids / matching_score)",
+      "hr.skill / hr.job.skill (skill catalogue + job requirement, from hr_skills)",
+      "Talent-pool applicant (pool_applicant_id) sharing the same skill set"
     ],
-    "organization": [],
+    "organization": [
+      "(no module-owned res.groups; reuses hr_recruitment.group_hr_recruitment_interviewer and group_hr_recruitment_user for skill visibility/edit)"
+    ],
     "products": [],
     "policies": [
-      "2 record rules"
+      "Interviewers see only the skills of applicants on jobs they interview (ir.rule hr_applicant_skill_interviewer_rule); recruiters (group_hr_recruitment_user) see all",
+      "applicant_matching_score on the job is visible only to group_hr_recruitment_interviewer (field group)",
+      "One active skill per skill_id; updates archive the old line and create a new one (valid_from/valid_to) — certifications may coexist if dates differ (_get_transformed_commands)",
+      "Over-qualification is capped at 2x the job's required level when scoring (min(level_progress, required*2))",
+      "Skill edits on a pool-linked applicant are mirrored onto the talent-pool applicant"
     ],
-    "stakeholders": [],
+    "stakeholders": [
+      "Recruiter / HR officer (group_hr_recruitment_user: manages applicant skills, runs matching search, hires)",
+      "Interviewer (group_hr_recruitment_interviewer: sees match scores + scoped applicant skills)",
+      "Applicant (the person whose skills are scored against jobs)",
+      "Hired employee (inherits the applicant's skills)"
+    ],
     "strategy": null,
-    "metrics": []
+    "metrics": [
+      "matching_score (% applicant fit to a job, capped/weighted)",
+      "applicant_matching_score (% per-applicant fit, shown as a progressbar on the job list)",
+      "matching_skill_ids / missing_skill_ids counts (gap analysis for an applicant vs a job)"
+    ]
   },
   "classification": {
     "value_model": "support",
     "activity_class": "support",
     "apqc_category": "7.0 Develop and Manage Human Capital",
-    "rationale": "hr_recruitment_skills: thin support/support module (auto-architect baseline)."
+    "rationale": "hr_recruitment_skills is an HR add-on that bridges the skills catalogue (hr_skills) onto recruitment (hr_recruitment); it is not a business object of any value chain/shop/network. It owns one persistent model, hr.applicant.skill (1 own field + the hr.individual.skill.mixin), and otherwise extends hr.applicant and hr.job with computed matching fields and overrides (0 routes, 2 ACL + 2 ir.rule, ~268 py LOC of model code within a 1447-LOC tree that is mostly tests, auto_install=true, application=false, category Human Resources/Recruitment). By Stabell & Fjeldstad it is a SUPPORT activity (acquiring and developing the workforce; it produces no sellable product, runs no client-problem-solving shop, and brokers no network), and a Porter HR/firm-infrastructure support activity. APQC maps to 7.0 Develop and Manage Human Capital — within 7.0 it straddles 7.1 'Recruit, source and select employees' (skill-based candidate matching/search, hiring) and 7.2/7.3 competency management (capturing and carrying forward employee skills), so 7.0 is the correct umbrella with a recruitment-skills emphasis. 8.0 Manage IT was rejected (no IT plumbing/routes/external calls) and 3.0 Market & Sell was rejected (nothing is sold); the module's substance is matching people's competencies to jobs and seeding employee skills at hire — squarely human-capital (7.0)."
   },
   "fit_to_standard": {
     "standard_capabilities": [
-      "Recruitment - Skills Management"
+      "Skills/certifications on applicants with levels and validity dates (via hr_skills mixin)",
+      "Applicant<->job skill matching with a weighted, over-qualification-capped score (incl. expected degree)",
+      "Matching/missing-skill breakdown and a match gauge on applicant & job views",
+      "'Search Matching Applicants' action from a job (skill-overlap domain) + 'Add to Job' promotion",
+      "Skill propagation to the hired employee (employee_skill_ids) and to the talent-pool applicant",
+      "Versioned skill history (archive-on-update + validity windows) instead of destructive edits"
     ],
-    "typical_fits": [],
-    "common_gaps": [],
+    "typical_fits": [
+      "Skill-based candidate shortlisting and ranking against open positions",
+      "Sourcing existing applicants from other jobs whose skills fit a new role",
+      "Ensuring a hired candidate's skills are pre-populated on their employee profile",
+      "Maintaining a skills talent pool that stays in sync as candidates are re-assessed"
+    ],
+    "common_gaps": [
+      "Matching is a deterministic level/degree formula, not ML/semantic skill matching — synonyms or adjacent skills are not credited",
+      "Required-skill source is hr.job.skill; jobs without declared skills/expected_degree score nothing (engine blanks out)",
+      "Scoring is context-driven (matching_job_id / active_applicant_id) and non-stored, so it is recomputed per view, not aggregable historically",
+      "Talent-pool mirroring assumes the pool_applicant_id linkage from hr_recruitment; misconfigured pools can desync skills",
+      "No external assessment/test integration — skill levels are recruiter-entered"
+    ],
     "drive_hints": [
-      "odoo shell: env['hr.applicant.skill'].search([],limit=3)"
+      "odoo shell: a = env['hr.applicant'].search([('applicant_skill_ids','!=',False)], limit=1); a.with_context(matching_job_id=a.job_id.id)._compute_matching_skill_ids() or (a.matching_score, a.matching_skill_ids.mapped('name'), a.missing_skill_ids.mapped('name'))",
+      "odoo shell: j = env['hr.job'].search([('job_skill_ids','!=',False)], limit=1); j.action_search_matching_applicants()['domain']  # the skill-overlap candidate domain",
+      "odoo shell: j.with_context(active_applicant_id=a.id).applicant_matching_score  # per-applicant fit % (interviewer-only field)",
+      "odoo shell: a._get_employee_create_vals()['employee_skill_ids']  # the skill lines that would seed the employee on hire",
+      "odoo shell: env['hr.applicant.skill']._get_current_skills_by_applicant()  # active (non-expired) skills, keeping latest certification"
     ]
   },
   "reverse_eng_confidence": {
@@ -135,14 +243,18 @@
     "strategy": "human"
   },
   "open_questions": [
-    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+    "No runtime data captured (runtime.models_with_data=0): real distribution of applicant skills / match scores is unknown.",
+    "The matching formula's calibration (2x cap, degree weight job_degree>1 gate) is a product choice; whether deployments tune it is not in code.",
+    "Talent-pool mirroring depends on hr_recruitment's pool_applicant_id/is_pool_applicant semantics defined outside this module; exact pool lifecycle edge cases are not exercised here."
   ],
   "provenance": {
     "explorer_facts": "doc/revres/facts/hr_recruitment_skills.facts.json",
     "tools": [
-      "extract_module.py",
-      "extract_frontend.py",
-      "gen_thin.py"
+      "code-read (models/hr_applicant_skill.py, models/hr_applicant.py, models/hr_job.py, security/hr_recruitment_skills_security.xml, security/ir.model.access.csv, views/hr_job_views.xml, addons/hr_skills/models/hr_individual_skill_mixin.py, addons/hr_recruitment/models/hr_applicant.py, __manifest__.py)",
+      "extract_frontend.py (frontend/hr_recruitment_skills.frontend.json)",
+      "extract_module.py (facts/hr_recruitment_skills.facts.json)",
+      "Grep",
+      "Read"
     ],
     "odoo_version": "19.0"
   }

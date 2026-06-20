@@ -77,7 +77,7 @@ fleet	support	support	10.0 Acquire, Construct, and	7	0	1	0	meta+code+fe
 gamification	support	support	7.0 Develop and Manage Human	8	0	0	0	meta+code
 gamification_sale_crm	support	support	7.0 Develop and Manage Human	0	0	0	0	meta
 google_account	support	support	8.0 Manage Information Techn	1	1	0	0	meta+code+integ
-google_address_autocomplete	support	support	13.0 Develop and Manage Busi	0	2	2	0	meta+fe+integ
+google_address_autocomplete	support	support	13.0 Develop and Manage Busi	2	2	2	0	meta+code+fe+integ
 google_calendar	support	support	8.0 Manage Information Techn	5	2	3	0	meta+code+fe+integ
 google_gmail	support	support	8.0 Manage Information Techn	5	2	0	0	meta+code+integ
 google_recaptcha	support	support	13.0 Develop and Manage Busi	0	0	2	0	meta+fe+integ
@@ -90,15 +90,15 @@ hr_gamification	support	support	7.0 Develop and Manage Human	0	0	2	0	meta+fe
 hr_holidays	support	support	7.0 Develop and Manage Human	5	2	37	6	meta+code+fe
 hr_holidays_attendance	support	support	7.0 Develop and Manage Human	11	0	1	1	meta+code+fe
 hr_holidays_homeworking	support	support	7.0 Develop and Manage Human	0	0	1	0	meta+fe
-hr_homeworking	support	support	7.0 Develop and Manage Human	1	0	1	0	meta+fe
-hr_homeworking_calendar	support	support	7.0 Develop and Manage Human	1	0	5	0	meta+fe
+hr_homeworking	support	support	7.0 Develop and Manage Human	6	0	1	0	meta+code+fe
+hr_homeworking_calendar	support	support	7.0 Develop and Manage Human	3	0	5	0	meta+code+fe
 hr_hourly_cost	support	support	7.0 Develop and Manage Human	0	0	0	0	meta
 hr_livechat	support	support	7.0 Develop and Manage Human	0	0	0	0	meta
 hr_maintenance	support	support	7.0 Develop and Manage Human	0	0	0	0	meta
 hr_org_chart	support	support	7.0 Develop and Manage Human	2	3	5	2	meta+code+fe
 hr_presence	support	support	7.0 Develop and Manage Human	0	0	5	0	meta+fe
 hr_recruitment	support	support	7.0 Develop and Manage Human	5	0	16	1	meta+code+fe
-hr_recruitment_skills	support	support	7.0 Develop and Manage Human	1	0	2	1	meta+fe
+hr_recruitment_skills	support	support	7.0 Develop and Manage Human	3	0	2	1	meta+code+fe
 hr_recruitment_sms	support	support	7.0 Develop and Manage Human	0	0	0	0	meta
 hr_recruitment_survey	support	support	7.0 Develop and Manage Human	0	0	0	0	meta
 hr_skills	support	support	7.0 Develop and Manage Human	8	1	11	2	meta+code+fe
@@ -377,22 +377,22 @@ mrp_subcontracting_purchase	chain	primary	4.3 Produce/Manufacture/Deli	0	0	0	0	m
 mrp_subcontracting_repair	chain	primary	4.3 Produce/Manufacture/Deli	0	0	0	0	meta
 onboarding	support	support	13.0 Develop and Manage Busi	4	0	1	0	meta+code+fe
 partner_autocomplete	support	support	13.0 Develop and Manage Busi	5	0	5	1	meta+code+fe+integ
-partnership	chain	primary	3.0 Market and Sell Products	1	0	0	0	meta
+partnership	chain	primary	3.0 Market and Sell Products	7	0	0	0	meta+code
 payment	network	support	9.0 Manage Financial Resourc	6	5	5	0	meta+code+fe+integ
 payment_adyen	network	support	9.0 Manage Financial Resourc	4	5	1	0	meta+code+fe
-payment_aps	network	support	9.0 Manage Financial Resourc	0	2	0	0	meta
-payment_asiapay	network	support	9.0 Manage Financial Resourc	0	2	0	0	meta
+payment_aps	network	support	9.0 Manage Financial Resourc	2	2	0	0	meta+code
+payment_asiapay	network	support	9.0 Manage Financial Resourc	2	2	0	0	meta+code
 payment_authorize	network	support	9.0 Manage Financial Resourc	0	1	1	0	meta+fe+integ
-payment_buckaroo	network	support	9.0 Manage Financial Resourc	0	2	0	0	meta
+payment_buckaroo	network	support	9.0 Manage Financial Resourc	2	2	0	0	meta+code
 payment_custom	network	support	9.0 Manage Financial Resourc	0	1	1	0	meta+fe
 payment_demo	network	support	9.0 Manage Financial Resourc	0	1	3	0	meta+fe
 payment_dpo	network	support	9.0 Manage Financial Resourc	0	1	0	0	meta
-payment_ecpay	network	support	9.0 Manage Financial Resourc	0	2	0	0	meta
+payment_ecpay	network	support	9.0 Manage Financial Resourc	2	2	0	0	meta+code
 payment_flutterwave	network	support	9.0 Manage Financial Resourc	3	3	1	0	meta+code+fe
-payment_iyzico	network	support	9.0 Manage Financial Resourc	0	2	0	0	meta
+payment_iyzico	network	support	9.0 Manage Financial Resourc	2	2	0	0	meta+code
 payment_mercado_pago	network	support	9.0 Manage Financial Resourc	3	4	1	0	meta+code+fe
-payment_mollie	network	support	9.0 Manage Financial Resourc	0	2	0	0	meta
-payment_nuvei	network	support	9.0 Manage Financial Resourc	0	2	0	0	meta
+payment_mollie	network	support	9.0 Manage Financial Resourc	2	2	0	0	meta+code
+payment_nuvei	network	support	9.0 Manage Financial Resourc	2	2	0	0	meta+code
 payment_paymob	network	support	9.0 Manage Financial Resourc	0	2	0	0	meta
 payment_paypal	network	support	9.0 Manage Financial Resourc	0	2	2	0	meta+fe
 payment_razorpay	network	support	9.0 Manage Financial Resourc	3	3	1	0	meta+code+fe

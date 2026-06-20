@@ -4,6 +4,10 @@
     "manifest": {
       "name": "Remote Work",
       "category": "Human Resources/Remote Work",
+      "summary": null,
+      "version": "2.0",
+      "author": "Odoo S.A.",
+      "license": "LGPL-3",
       "depends": [
         "hr"
       ],
@@ -14,14 +18,69 @@
       {
         "_name": "hr.employee.location",
         "_description": "Employee Location",
-        "fields": 7
+        "fields": 7,
+        "relations": [
+          "work_location_id->hr.work.location (required, string 'Location')",
+          "work_location_name->Char related work_location_id.name",
+          "work_location_type->Selection related work_location_id.location_type",
+          "employee_id->hr.employee (required, ondelete=cascade, default=self.env.user.employee_id)",
+          "employee_name->Char related employee_id.name",
+          "date->Date (the day this exceptional location applies to)",
+          "day_week_string->Char compute _compute_day_week_string (EEEE weekday label of date)",
+          "_uniq_exceptional_per_day = Constraint unique(employee_id, date)"
+        ]
+      },
+      {
+        "_name": "hr.employee (inherit)",
+        "_description": "Adds 7 day-of-week default work-location m2o (monday_location_id..sunday_location_id) + exceptional_location_id compute + presence-icon decoration",
+        "fields": 10,
+        "relations": [
+          "monday_location_id..sunday_location_id -> hr.work.location (7 weekly default-location m2o)",
+          "exceptional_location_id->hr.work.location (compute _compute_exceptional_location_id, groups=hr.group_hr_user; today's hr.employee.location override)",
+          "hr_icon_display = Selection selection_add presence_home/presence_office/presence_other",
+          "today_location_name->Char (search-view groupby placeholder, swapped to the live day field in get_views)"
+        ]
+      },
+      {
+        "_name": "hr.employee.public (inherit)",
+        "_description": "Mirrors the 7 day-of-week location m2o + today_location_name onto the public employee model (no methods)",
+        "fields": 8,
+        "relations": [
+          "monday_location_id..sunday_location_id -> hr.work.location (7 fields)",
+          "today_location_name->Char"
+        ]
+      },
+      {
+        "_name": "hr.work.location (inherit)",
+        "_description": "Adds @api.ondelete guard _unlink_except_used_by_employee: blocks deleting a location referenced by a weekly default, cascade-unlinks hr.employee.location exceptions",
+        "fields": 0,
+        "relations": [
+          "ondelete guard reads hr.employee (DAYS fields) + hr.employee.location.work_location_id"
+        ]
+      },
+      {
+        "_name": "res.partner (inherit)",
+        "_description": "Decorates _compute_im_status: prefixes the IM status of linked users with today's location_type (e.g. home_online)",
+        "fields": 0,
+        "relations": [
+          "reads user_ids[dayfield].location_type to rewrite partner_id.im_status"
+        ]
+      },
+      {
+        "_name": "res.users (inherit)",
+        "_description": "Exposes the 7 day-of-week location m2o as readonly=False related to employee_id; adds them to SELF_READABLE_FIELDS/SELF_WRITEABLE_FIELDS and _get_employee_fields_to_sync; same im_status decoration",
+        "fields": 7,
+        "relations": [
+          "monday_location_id..sunday_location_id -> hr.work.location (related employee_id.<day>_location_id, readonly=False)"
+        ]
       }
     ],
     "routes": [],
     "security": {
       "access_rules": 2,
       "record_rules": 2,
-      "groups": 0
+      "groups": 0,
+      "note": "ir.model.access.csv: hr.employee.location is read/write/create/unlink for both hr.group_hr_user and base.group_user. security.xml ir.rule: homeworking_own_rule restricts base.group_user to ('employee_id','=',user.employee_id.id) (each user sees only their own location rows); homeworking_admin_rule gives hr.group_hr_user the full (1=1) domain. No module-owned res.groups; exceptional_location_id is further gated by groups='hr.group_hr_user' on the field."
     },
     "views": {
       "form": 0,
@@ -32,7 +91,8 @@
       "pivot": 0,
       "graph": 0,
       "calendar": 0,
-      "activity": 0
+      "activity": 0,
+      "note": "xml_loc=167 across views/hr_employee_views.xml and views/res_users.xml: form/list inheritance adding the 7 day-of-week location fields and the today_location_name groupby placeholder onto existing hr.employee / res.users views. No own model view is declared; hr.employee.location itself has no standalone form/list."
     },
     "frontend": {
       "present": true,
@@ -69,63 +129,138 @@
     },
     "behavioral_notes": [
       {
-        "element": "frontend (OWL/JS)",
-        "observation": "1 JS files, 0 OWL components, 0 registry adds; bundles ['web.assets_backend', 'web.assets_unit_tests'].",
-        "source": "static"
+        "element": "hr.employee._compute_exceptional_location_id + _get_current_day_location_field (how the displayed work location is resolved)",
+        "observation": "The module models a remote-work schedule as two layers metadata cannot show. The recurring layer is 7 plain Many2one fields on hr.employee (monday_location_id..sunday_location_id, the DAYS list in models/hr_homeworking.py); the override layer is the hr.employee.location table (one row per employee per date, enforced by the unique(employee_id,date) Constraint). _get_current_day_location_field() returns DAYS[fields.Date.today().weekday()] so 'today's location' is whichever day-of-week field matches the current weekday. _compute_exceptional_location_id searches hr.employee.location for rows with date == today and exposes them as exceptional_location_id (a non-stored compute, field-gated to hr.group_hr_user). Everywhere the effective location is read it is `exceptional_location_id or employee[dayfield]` (see _compute_presence_icon, _compute_work_location_name, _compute_work_location_type) — the dated exception always wins over the weekly default. None of this precedence is visible from field metadata; the fields look like 8 unrelated m2o.",
+        "source": "code-read"
       },
       {
-        "element": "thin module",
-        "observation": "1 models, 0 routes, 326 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
-        "source": "ast"
+        "element": "hr.employee.get_views — the 'today's location' groupby/list hack (override of get_views)",
+        "observation": "Because today's location lives in a different physical column every weekday, hr.employee overrides get_views(): after super(), it computes dayfield = _get_current_day_location_field() and string-replaces the placeholder field name 'today_location_name' with that real day field in the returned search-view arch, and replaces 'work_location_name' with it in the list-view arch, then injects the day field's definition into res['models'][self._name]['fields'] via fields_get([dayfield]). The XML views (views/hr_employee_views.xml) only ever reference the placeholder; the server rewrites the arch at fetch time so users can group/sort employees by 'where they work today'. This view-time arch rewrite is pure Python and invisible to static view/metadata extraction.",
+        "source": "code-read"
+      },
+      {
+        "element": "hr.employee._compute_presence_icon + res.users/res.partner._compute_im_status (cross-model presence decoration)",
+        "observation": "hr_homeworking re-paints the standard HR presence signal with the work-location type. hr.employee._compute_presence_icon extends @api.depends(*DAYS,'exceptional_location_id'), calls super(), then for the effective today location sets hr_icon_display = f'presence_{location_type}' (presence_home/presence_office/presence_other, the Selection values added via selection_add) and forces show_hr_icon_display=True. In parallel res.users._compute_im_status and res.partner._compute_im_status call super() and, when today's location has a location_type, rewrite the discuss IM status string to '<location_type>_<im_status>' (e.g. home_online, office_away) only for the online/away/busy/offline base states. So a single hr.employee.location row or weekday field silently changes both the kanban presence icon AND the chat presence badge of the linked partner — a multi-model side-effect no field/metadata layer reveals.",
+        "source": "code-read"
+      },
+      {
+        "element": "hr.work.location._unlink_except_used_by_employee + res.users sync (referential guards & employee<->user write-through)",
+        "observation": "Deleting a hr.work.location is guarded by @api.ondelete(at_uninstall=False): _unlink_except_used_by_employee search_counts hr.employee for any of the 7 DAYS fields pointing at the location and raises UserError('You cannot delete locations that are being used by your employees') if so, then unlinks every hr.employee.location exception referencing it (so dated exceptions are cleaned but recurring assignments block the delete). Separately res.users declares the 7 location fields as related='employee_id.<day>_location_id' readonly=False and adds DAYS to _get_employee_fields_to_sync() plus the SELF_READABLE_FIELDS/SELF_WRITEABLE_FIELDS property lists — so a user editing their own weekly schedule on the user form writes straight through to their hr.employee record, and the calendar add-on's 'weekly' wizard branch relies on writing user_id.<day>_location_id. These guard/sync semantics are entirely behavioral.",
+        "source": "code-read"
+      },
+      {
+        "element": "frontend (static) — hr presence-status OWL patches reflecting work location",
+        "observation": "1 JS file, 0 OWL components, 0 registry adds, 4 prototype patches (gap #3). static/src/components/hr_presence_status/hr_presence_status.js patches the hr module's HrPresenceStatus, HrPresenceStatusPill, HrPresenceStatusPrivate and HrPresenceStatusPrivatePill so that, when the record carries a work_location_type, the presence badge swaps its icon (home->fa-home, office->fa-building, other->fa-map-marker), recolors by hr_presence_state, and labels with work_location_name (else 'Unspecified'); it also appends work_location_type/work_location_name/hr_presence_state to each widget's fieldDependencies so the values are fetched. im_status_patch.xml and components/avatar_card_resource/avatar_card_resource_popover.xml extend the avatar card. Bundles: web.assets_backend, web.assets_unit_tests. None of this OWL behaviour is reachable from Python metadata.",
+        "source": "static"
       }
     ]
   },
   "it_architecture": {
-    "application": "hr_homeworking (Remote Work)",
+    "application": "hr_homeworking (Remote Work: per-employee work-location schedule = 7 weekly default locations on hr.employee + dated hr.employee.location exceptions, surfaced as a presence/IM signal)",
     "software_services": [],
     "data_objects": [
-      "hr.employee.location"
+      "hr.employee.location",
+      "hr.employee (inherit)",
+      "hr.employee.public (inherit)",
+      "hr.work.location (inherit)",
+      "res.partner (inherit)",
+      "res.users (inherit)"
     ],
     "logical_data_erm": [
-      "hr.employee.location -> hr.employee",
-      "hr.employee.location -> hr.work.location"
+      "hr.employee.location -> hr.employee (employee_id, ondelete=cascade) + hr.work.location (work_location_id); unique(employee_id, date)",
+      "hr.employee -> hr.work.location x7 (monday_location_id..sunday_location_id weekly defaults) + exceptional_location_id (computed from today's hr.employee.location)",
+      "res.users -> hr.employee (7 day fields related readonly=False to employee_id.<day>_location_id)",
+      "hr.employee.public -> hr.work.location x7 (read-only mirror for the public employee directory)"
     ],
     "information_flows": [
-      "depends: hr"
+      "depends: hr (-> hr work.location, employee, presence; transitively mail, resource)",
+      "resolve-today: _get_current_day_location_field -> DAYS[weekday]; effective = exceptional_location_id (today's hr.employee.location) or employee[dayfield]",
+      "presence side-effect: effective location -> hr.employee._compute_presence_icon -> hr_icon_display presence_home/office/other",
+      "im-status side-effect: today's location_type -> res.users/res.partner._compute_im_status -> im_status '<type>_<state>'",
+      "view-time: hr.employee.get_views rewrites today_location_name/work_location_name placeholders to the live day field for groupby/list",
+      "referential guard: hr.work.location.ondelete blocks delete if used by a weekly default, else unlinks hr.employee.location exceptions",
+      "user write-through: res.users 7 day fields (related readonly=False) + _get_employee_fields_to_sync -> hr.employee weekly schedule",
+      "frontend: hr_homeworking patches HrPresenceStatus(+Pill/Private/PrivatePill) to render fa-home/fa-building/fa-map-marker + work_location_name"
     ],
-    "frontend_components": []
+    "frontend_components": [
+      "HrPresenceStatus / HrPresenceStatusPill / HrPresenceStatusPrivate / HrPresenceStatusPrivatePill (patched: icon/color/label from work_location_type/name)",
+      "avatar_card_resource_popover.xml + im_status_patch.xml (avatar card / IM status decoration)"
+    ]
   },
   "business_architecture": {
     "capabilities": [
-      "Remote Work"
+      "Define a recurring weekly work-location schedule per employee (Monday..Sunday: home/office/other)",
+      "Record dated exceptions to that schedule (one work location per employee per day)",
+      "Resolve and display where an employee works today (exception overrides weekly default)",
+      "Surface work location as a presence icon and a Discuss IM-status badge",
+      "Let an employee self-manage their own weekly schedule from the user preferences (self-readable/writeable)",
+      "Protect work-location master data from deletion while it is in use"
     ],
-    "value_streams": [],
+    "value_streams": [
+      "Set-Schedule-to-Presence: employee/HR sets weekly day fields (or a dated hr.employee.location exception) -> _compute_exceptional_location_id -> _compute_presence_icon / _compute_im_status -> colleagues see today's location on the kanban + chat",
+      "Group-by-Today's-Location: HR opens the employee list/search -> get_views swaps in the live day field -> employees grouped/filtered by where they work today"
+    ],
     "information_concepts": [
-      "hr.employee.location"
+      "hr.employee.location (dated work-location exception)",
+      "Weekly default work location (7 day-of-week fields on hr.employee/res.users/hr.employee.public)",
+      "hr.work.location (the location master, with location_type home/office/other)",
+      "Employee presence / IM status (decorated by location)"
     ],
-    "organization": [],
+    "organization": [
+      "(no module-owned res.groups; reuses base.group_user for self-service and hr.group_hr_user for full access / exceptional_location_id visibility)"
+    ],
     "products": [],
     "policies": [
-      "2 record rules"
+      "One work location per employee per day (unique(employee_id, date) Constraint on hr.employee.location)",
+      "A dated exception always overrides the weekly default for that day (exceptional_location_id or employee[dayfield] everywhere)",
+      "ir.rule homeworking_own_rule: a regular user sees/edits only their own hr.employee.location rows; hr.group_hr_user sees all",
+      "A hr.work.location used by any employee's weekly schedule cannot be deleted (ondelete guard), but its dated exceptions are cascade-removed",
+      "exceptional_location_id is visible only to hr.group_hr_user (field-level group)"
     ],
-    "stakeholders": [],
+    "stakeholders": [
+      "Employee (self-manages weekly schedule + dated exceptions, sees colleagues' locations)",
+      "HR officer / manager (hr.group_hr_user: full access to all employees' locations and exceptions)",
+      "Colleagues / Discuss users (consume the location-decorated presence icon and IM status)"
+    ],
     "strategy": null,
-    "metrics": []
+    "metrics": [
+      "(no own reports/KPIs; today_location_name groupby is the only aggregation surface, exposed via the get_views arch rewrite)"
+    ]
   },
   "classification": {
     "value_model": "support",
     "activity_class": "support",
     "apqc_category": "7.0 Develop and Manage Human Capital",
-    "rationale": "hr_homeworking: thin support/support module (auto-architect baseline)."
+    "rationale": "hr_homeworking is an HR workforce-administration add-on, not a business object of any value chain/shop/network — it owns exactly one small transactional model, hr.employee.location (7 fields, unique(employee_id,date)), and otherwise decorates hr.employee/hr.employee.public/hr.work.location/res.users/res.partner (0 routes, 2 ACL + 2 ir.rule, ~326 py LOC, auto_install=true, category Human Resources/Remote Work, application=false). Per Stabell & Fjeldstad it is a SUPPORT activity (it administers the workforce; it neither transforms inputs into a product, nor solves client problems, nor brokers a network) and per Porter a support activity of HR/firm infrastructure. APQC maps to 7.0 Develop and Manage Human Capital — specifically the 7.x 'manage employee information / time, attendance and workforce' space: the module captures and publishes where each employee works (remote/office/other) on a weekly schedule plus dated exceptions, and turns that into a presence/availability signal. It does not recruit (7.1), train (7.3) or run payroll/benefits (7.4), so it sits in the employee-information / workforce-management nuance of 7.0. 8.0 Manage IT was rejected (it ships no IT-service plumbing — it has no routes or external calls), and 9.x/13.x were rejected (it manages people, not assets or generic capabilities)."
   },
   "fit_to_standard": {
     "standard_capabilities": [
-      "Remote Work"
+      "Weekly per-employee work-location schedule (7 day-of-week home/office/other fields on hr.employee and res.users)",
+      "Dated work-location exceptions via hr.employee.location (one per employee per day)",
+      "Today's-location resolution (exception overrides weekly default) used by presence + IM status",
+      "Presence-icon + Discuss IM-status decoration by work location (home/office/other)",
+      "Self-service: an employee edits their own weekly schedule from user preferences",
+      "Group/filter employees by where they work today (get_views placeholder swap)",
+      "Deletion guard on hr.work.location while it is referenced by a schedule"
     ],
-    "typical_fits": [],
-    "common_gaps": [],
+    "typical_fits": [
+      "Hybrid/remote teams publishing who is in the office vs at home each day",
+      "Showing colleague work location inline in Discuss/HR kanban presence",
+      "Employees self-managing their recurring remote days without HR intervention"
+    ],
+    "common_gaps": [
+      "Only a single location per employee per day (unique constraint) — no part-day / multi-location modelling",
+      "Weekly schedule is 7 fixed fields, not a date-ranged recurring rule — long-term plan changes need manual field edits or per-date exceptions",
+      "No approval workflow on remote days (a user can self-set their own schedule under base.group_user)",
+      "Calendar visualisation of the schedule requires the separate hr_homeworking_calendar add-on",
+      "No reporting/analytics on office occupancy beyond a today's-location groupby"
+    ],
     "drive_hints": [
-      "odoo shell: env['hr.employee.location'].search([],limit=3)"
+      "odoo shell: e = env['hr.employee'].search([], limit=1); e._get_current_day_location_field()  # which day field is 'today'",
+      "odoo shell: e.exceptional_location_id  # today's dated override (or empty) -- triggers _compute_exceptional_location_id",
+      "odoo shell: env['hr.employee.location'].create({'employee_id': e.id, 'date': fields.Date.today(), 'work_location_id': env['hr.work.location'].search([],limit=1).id})  # set today's exception, then re-read e.hr_icon_display",
+      "odoo shell: env['hr.work.location'].search([],limit=1).unlink()  # observe UserError if it is used by a weekly schedule",
+      "odoo shell: env['hr.employee'].get_views([(False,'search')])['views']['search']['arch']  # see today_location_name rewritten to the live day field"
     ]
   },
   "reverse_eng_confidence": {
@@ -139,14 +274,18 @@
     "strategy": "human"
   },
   "open_questions": [
-    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+    "No runtime row counts captured (runtime.models_with_data=0): real-world ratio of weekly-default vs dated-exception usage is unknown.",
+    "today_location_name is declared as a plain Char on hr.employee/hr.employee.public but is used as a search/list groupby placeholder swapped by get_views; whether it ever holds a stored value at runtime (vs being purely a placeholder) is not confirmable from code alone.",
+    "Interaction with other presence providers (e.g. attendance/login im_status) when several modules decorate _compute_im_status / _compute_presence_icon is order-dependent and not captured here."
   ],
   "provenance": {
     "explorer_facts": "doc/revres/facts/hr_homeworking.facts.json",
     "tools": [
-      "extract_module.py",
-      "extract_frontend.py",
-      "gen_thin.py"
+      "code-read (models/hr_homeworking.py, models/hr_employee.py, models/hr_employee_public.py, models/hr_work_location.py, models/res_users.py, models/res_partner.py, security/security.xml, security/ir.model.access.csv, static/src/components/hr_presence_status/hr_presence_status.js, __manifest__.py)",
+      "extract_frontend.py (frontend/hr_homeworking.frontend.json)",
+      "extract_module.py (facts/hr_homeworking.facts.json)",
+      "Grep",
+      "Read"
     ],
     "odoo_version": "19.0"
   }

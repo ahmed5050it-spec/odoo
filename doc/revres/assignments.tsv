@@ -77,6 +77,7 @@ auth_timeout	deep	done	support	8.0	5	4	14
 fleet	deep	done	support	10.0	7	0	14
 loyalty	deep	done	support	3.0	6	2	14
 microsoft_calendar	deep	done	support	8.0	6	2	14
+partnership	deep	done	chain	3.0	7	0	14
 pos_event	deep	done	chain	3.0	7	0	14
 sale_stock	deep	done	chain	4.0	6	2	14
 test_inherit	test	todo	support	13.0	7	0	14
@@ -99,6 +100,7 @@ google_gmail	deep	done	support	8.0	5	2	12
 hr	deep	done	support	7.0	6	0	12
 hr_expense	deep	done	support	7.0	6	0	12
 hr_holidays	deep	done	support	7.0	5	2	12
+hr_homeworking	deep	done	support	7.0	6	0	12
 maintenance	deep	done	support	10.0	6	0	12
 microsoft_outlook	deep	done	support	8.0	5	2	12
 phone_validation	deep	done	support	8.0	6	0	12
@@ -164,6 +166,9 @@ website_links	deep	done	network	3.0	1	5	7
 account_edi_proxy_client	deep	done	support	9.0	3	0	6
 base_address_extended	deep	done	support	8.0	3	0	6
 base_install_request	deep	done	support	8.0	3	0	6
+google_address_autocomplete	deep	done	support	13.0	2	2	6
+hr_homeworking_calendar	deep	done	support	7.0	3	0	6
+hr_recruitment_skills	deep	done	support	7.0	3	0	6
 iap	deep	done	support	8.0	3	0	6
 l10n_account_withholding_tax	baseline	todo	support	9.0	3	0	6
 l10n_eg_edi_eta	baseline	todo	support	9.0	3	0	6
@@ -172,6 +177,13 @@ l10n_latam_check	baseline	todo	support	9.0	3	0	6
 l10n_pe_pos	baseline	todo	support	9.0	3	0	6
 l10n_ro_edi	baseline	todo	support	9.0	2	2	6
 l10n_vn_edi_viettel	baseline	todo	support	9.0	3	0	6
+payment_aps	deep	done	network	9.0	2	2	6
+payment_asiapay	deep	done	network	9.0	2	2	6
+payment_buckaroo	deep	done	network	9.0	2	2	6
+payment_ecpay	deep	done	network	9.0	2	2	6
+payment_iyzico	deep	done	network	9.0	2	2	6
+payment_mollie	deep	done	network	9.0	2	2	6
+payment_nuvei	deep	done	network	9.0	2	2	6
 stock_landed_costs	deep	done	support	9.0	3	0	6
 test_converter	test	todo	support	13.0	3	0	6
 transifex	deep	done	support	13.0	3	0	6
@@ -208,10 +220,6 @@ account_debit_note	baseline	todo	support	9.0	1	0	2
 account_update_tax_tags	baseline	todo	support	9.0	1	0	2
 base_sparse_field	baseline	todo	support	8.0	1	0	2
 cloud_storage_migration	baseline	todo	support	13.0	1	0	2
-google_address_autocomplete	baseline	todo	support	13.0	0	2	2
-hr_homeworking	baseline	todo	support	7.0	1	0	2
-hr_homeworking_calendar	baseline	todo	support	7.0	1	0	2
-hr_recruitment_skills	baseline	todo	support	7.0	1	0	2
 iap_mail	deep	done	support	8.0	1	0	2
 l10n_anz_ubl_pint	baseline	todo	support	9.0	1	0	2
 l10n_ar	baseline	todo	support	9.0	1	0	2
@@ -243,14 +251,6 @@ l10n_rs_edi	baseline	todo	support	9.0	1	0	2
 l10n_sg	baseline	todo	support	9.0	1	0	2
 l10n_sg_ubl_pint	baseline	todo	support	9.0	1	0	2
 l10n_tr_nilvera_edispatch	baseline	todo	support	9.0	1	0	2
-partnership	baseline	todo	chain	3.0	1	0	2
-payment_aps	baseline	todo	network	9.0	0	2	2
-payment_asiapay	baseline	todo	network	9.0	0	2	2
-payment_buckaroo	baseline	todo	network	9.0	0	2	2
-payment_ecpay	baseline	todo	network	9.0	0	2	2
-payment_iyzico	baseline	todo	network	9.0	0	2	2
-payment_mollie	baseline	todo	network	9.0	0	2	2
-payment_nuvei	baseline	todo	network	9.0	0	2	2
 payment_paymob	baseline	todo	network	9.0	0	2	2
 payment_paypal	baseline	todo	network	9.0	0	2	2
 payment_redsys	baseline	todo	network	9.0	0	2	2

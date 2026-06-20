@@ -4,21 +4,48 @@
     "manifest": {
       "name": "Payment Provider: Iyzico",
       "category": "Accounting/Payment Providers",
+      "summary": "A payment provider covering Turkey.",
+      "version": null,
+      "author": "Odoo S.A.",
+      "license": "LGPL-3",
       "depends": [
         "payment"
       ],
       "auto_install": false,
       "application": false
     },
-    "models": [],
+    "models": [
+      {
+        "_name": "payment.provider (inherit)",
+        "_description": "Payment Provider (Iyzico credentials: api-key-id / secret-key)",
+        "fields": 3,
+        "relations": [
+          "code (Selection selection_add 'iyzico', ondelete set default)",
+          "iyzico_key_id (Char 'Iyzico API Key', required_if_provider=iyzico, copy=False) -- the public apiKey, sent in the IYZWSv2 Authorization header (not group-restricted)",
+          "iyzico_key_secret (Char 'Iyzico Secret Key', required_if_provider=iyzico, groups=base.group_system, copy=False) -- the HMAC-SHA256 signing secret"
+        ]
+      },
+      {
+        "_name": "payment.transaction (inherit)",
+        "_description": "Payment Transaction (Iyzico Checkout-Form (CF) initialize -> hosted-redirect; webhook/return re-fetch via CF-detail; no new fields)",
+        "fields": 0,
+        "relations": [
+          "no new fields; 4 methods overriding payment's rendering/notification hooks (_get_specific_rendering_values, _iyzico_prepare_cf_initialize_payload, _extract_amount_data, _apply_updates)"
+        ]
+      }
+    ],
     "routes": [
       {
-        "paths": [],
+        "paths": [
+          "/payment/iyzico/return"
+        ],
         "auth": "public",
         "type": "http"
       },
       {
-        "paths": [],
+        "paths": [
+          "/payment/iyzico/webhook"
+        ],
         "auth": "public",
         "type": "http"
       }
@@ -26,19 +53,45 @@
     "security": {
       "access_rules": 0,
       "record_rules": 0,
-      "groups": 0
+      "groups": 0,
+      "note": "No own ACL/rules; relies on payment's security and on a base.group_system field group guarding iyzico_key_secret (the HMAC-SHA256 signing secret). iyzico_key_id (the public apiKey) is NOT group-restricted because it is the public half of the IYZWSv2 credential pair."
     },
     "views": {
       "form": 1,
       "list": 0,
-      "tree": 0,
       "kanban": 0,
       "search": 0,
       "pivot": 0,
       "graph": 0,
-      "calendar": 0,
-      "activity": 0
+      "note": "xml_loc=48: payment.provider form inheritance (Iyzico API Key + Secret Key, password=True), a QWeb redirect-form template (payment_iyzico_templates.xml id=redirect_form -- a GET <form action=api_url> that re-emits the url_params decoded from Iyzico's paymentPageUrl as hidden inputs so the browser is redirected to the hosted checkout), plus payment_provider_data.xml wiring redirect_form_view_id. No own model views."
     },
+    "behavioral_notes": [
+      {
+        "element": "payment.transaction._get_specific_rendering_values -> outbound POST https://api.iyzipay.com/payment/iyzipos/checkoutform/initialize/auth/ecom (CF-initialize; sandbox-api.iyzipay.com in test) then redirect to the hosted paymentPageUrl",
+        "observation": "Iyzico is a hosted-redirect acquirer but, unlike ECPay, it FIRST makes a server-to-server CF-initialize call. For code=='iyzico', _get_specific_rendering_values builds the payload via _iyzico_prepare_cf_initialize_payload (basketItems with a dummy 'Odoo purchase' VIRTUAL item, billingAddress + buyer blocks from the partner -- name split by payment_utils.split_partner_name, identityNumber=str(partner_id).zfill(5), ip='0' -- callbackUrl=urljoin(base_url, const.PAYMENT_RETURN_ROUTE)+'?tx_ref=<reference>', conversationId=self.reference, currency=currency_id.name, locale='tr' if env.lang=='tr_TR' else 'en', paidPrice/price=self.amount, paymentSource='ODOO') and POSTs it through the parent engine via self._send_api_request('POST', 'payment/iyzipos/checkoutform/initialize/auth/ecom', json=payload). On ValidationError it _set_error(...) and returns {}. The response's paymentPageUrl is parsed (werkzeug url_parse/url_decode) into api_url + url_params and handed to the QWeb redirect_form, so the browser is redirected (GET) to Iyzico's hosted Checkout Form. The outbound endpoint, the CF payload, and the hosted-redirect handoff are invisible to Python field/model metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "payment.provider._build_request_headers / _iyzico_calculate_signature -> IYZWSv2 HMAC-SHA256 Authorization header (NOT a per-message webhook signature); _build_request_url selects api.iyzipay.com vs sandbox-api.iyzipay.com",
+        "observation": "Outbound auth is Iyzico's IYZWSv2 HMAC-SHA256 scheme, configured on payment.provider (the module imports base64/hmac/hashlib/json/random/string). _build_request_url returns https://api.iyzipay.com when state=='enabled' else https://sandbox-api.iyzipay.com, joined with the endpoint. _build_request_headers generates an 8-char random_string (random.SystemRandom over ascii_letters+digits), computes signature=_iyzico_calculate_signature(endpoint, payload, random_string), assembles authorization_params=['apiKey:<iyzico_key_id>','randomKey:<random_string>','signature:<signature>'], base64-encodes '&'.join(...) and returns {'Authorization': f'IYZWSv2 {hash_base64}', 'x-iyzi-rnd': random_string}. _iyzico_calculate_signature builds data_string = f'{random_string}/{endpoint}{json.dumps(payload)}' and returns hmac.new(iyzico_key_secret, data_string, sha256).hexdigest(). _parse_response_content rejects (ValidationError 'The payment provider rejected the request.') unless response.json()['status']=='success'; _parse_response_error reads response.json()['errorMessage']. The actual HTTP is delegated to payment.provider._send_api_request (requests.request) in the parent engine. The IYZWSv2 header construction, the HMAC over '{rnd}/{endpoint}{payload}', the sandbox/prod hosts, and the status=='success' gate are all invisible to metadata. NB: this signature authenticates Odoo's OUTBOUND requests; it is NOT used to verify inbound webhooks (see the controller note).",
+        "source": "code-read"
+      },
+      {
+        "element": "IyzicoController.iyzico_webhook (/payment/iyzico/webhook) & iyzico_return_from_payment (/payment/iyzico/return) -> NO local signature; authenticity by RE-FETCH via POST .../checkoutform/auth/ecom/detail; _apply_updates maps paymentStatus to pending/done/error",
+        "observation": "Iyzico does NOT verify a per-message signature on its callbacks. Both public, csrf=False routes extract a one-time 'token' and delegate to the staticmethod _verify_and_process(tx_ref, token): the return route (POST, save_session=False) reads tx_ref from the query string + 'token' from the form; the webhook (POST) reads request.get_json_data() and uses data['paymentConversationId'] as the tx_ref and data['token']. _verify_and_process locates the tx with payment.transaction._search_by_reference('iyzico', {'reference': tx_ref}) -- note Iyzico does NOT override _extract_reference, so the base hook reads payment_data['reference'], i.e. the tx_ref passed in -- and, if found, performs a SECOND server-to-server call tx_sudo._send_api_request('POST', 'payment/iyzipos/checkoutform/auth/ecom/detail', json={conversationId, locale, token}) to RETRIEVE the authoritative payment detail straight from Iyzico (the IYZWSv2-signed CF-detail/retrieve endpoint), then tx_sudo._process('iyzico', verified_payment_data). Authenticity therefore comes from re-fetching the result over the authenticated API using the opaque token -- the callback body itself is never trusted -- and a failed re-fetch (ValidationError) is logged and dropped. _apply_updates writes provider_reference=data['paymentId'], picks the brand payment.method (cardAssociation via const.PAYMENT_METHODS_MAPPING {amex->american_express, mastercard->master_card} when cardType set; payment.payment_method_bank_transfer when bankName set; else payment.payment_method_unknown), then maps const.PAYMENT_STATUS_MAPPING on data['paymentStatus']: INIT_THREEDS/CALLBACK_THREEDS/INIT_BANK_TRANSFER/INIT_CREDIT/PENDING_CREDIT -> _set_pending; SUCCESS -> _set_done; FAILURE -> _set_error(errorMessage); anything else -> _set_error('Unknown status code'). The re-fetch-for-authenticity pattern and the three-way state mapping are invisible to metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "external integration surface (gap #7) -- endpoints, IYZWSv2 keys, SDK",
+        "observation": "Static gap-#7 facts (extract_frontend.py): uses_api_keys=true; endpoints https://api.iyzipay.com (production) and https://sandbox-api.iyzipay.com (sandbox), selected by _build_request_url in models/payment_provider.py. Concrete endpoints reached (both via the parent payment.provider._send_api_request, requests.request): payment/iyzipos/checkoutform/initialize/auth/ecom (CF-initialize, outbound at checkout) and payment/iyzipos/checkoutform/auth/ecom/detail (CF-detail/retrieve, called from the controller to re-fetch and verify the result). Auth is the IYZWSv2 HMAC-SHA256 header (apiKey=iyzico_key_id public, signing secret=iyzico_key_secret base.group_system) plus x-iyzi-rnd. No 'requests' import here and no python iyzipay SDK: HTTP is delegated to the parent engine, which payment_iyzico configures via _build_request_url / _build_request_headers / _parse_response_content / _parse_response_error overrides. There is NO client-side SDK -- the browser is only redirected to Iyzico's hosted Checkout Form. This server-to-server REST link (with the re-fetch-as-verification idiom) is the canonical metadata gap #7: none of the endpoints, the IYZWSv2 auth, or the inbound trust model is reachable from model/field metadata.",
+        "source": "static"
+      },
+      {
+        "element": "frontend (static) -- no JS / no OWL; the redirect is a server-rendered QWeb form (gap #3)",
+        "observation": "frontend.present=false: 0 JS files, 0 OWL components, 0 registry adds, 0 patches, no asset bundles. Iyzico ships NO browser code. The only client artifact is the server-rendered QWeb redirect_form (payment_iyzico_templates.xml) that GETs to the api_url returned by CF-initialize, re-emitting the decoded url_params as hidden inputs so the browser lands on Iyzico's hosted Checkout Form; card data is entered on Iyzico's pages, never in Odoo. There is no gap-#3 JS behavior to capture beyond the QWeb redirect form itself.",
+        "source": "static"
+      }
+    ],
     "frontend": {
       "present": false,
       "js_files": 0,
@@ -64,52 +117,132 @@
     "runtime": {
       "models_with_data": 0,
       "top": []
-    },
-    "behavioral_notes": [
-      {
-        "element": "thin module",
-        "observation": "0 models, 2 routes, 663 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
-        "source": "ast"
-      }
-    ]
+    }
   },
   "it_architecture": {
-    "application": "payment_iyzico (Payment Provider: Iyzico)",
-    "software_services": [],
-    "data_objects": [],
-    "logical_data_erm": [],
-    "information_flows": [
-      "depends: payment"
+    "application": "payment_iyzico (Iyzico acquirer adapter for the payment engine; _inherit-only, no own models/views; CF-initialize -> hosted redirect, with webhook/return re-fetch verification)",
+    "software_services": [
+      "/payment/iyzico/return (http POST, csrf=False, save_session=False: browser callbackUrl return carrying tx_ref + token; re-fetches CF-detail then _process)",
+      "/payment/iyzico/webhook (http POST, csrf=False: async notification carrying paymentConversationId + token; re-fetches CF-detail then _process; acknowledges with empty JSON)"
     ],
-    "frontend_components": []
+    "data_objects": [
+      "payment.provider (+iyzico_key_id, iyzico_key_secret)",
+      "payment.transaction (Iyzico Checkout-Form initialize + hosted-redirect flow; no new fields, no direct/token flow)"
+    ],
+    "logical_data_erm": [
+      "payment.transaction -> payment.provider (provider_id; provider_code=='iyzico' gates every override)",
+      "payment.provider.code selection_add 'iyzico'",
+      "external: payment.transaction.reference == Iyzico conversationId / paymentConversationId / tx_ref (cross-system reference key; set in the CF payload, returned on the callback, looked up via the base _extract_reference which Iyzico does NOT override)",
+      "external: payment.transaction.provider_reference == Iyzico paymentId (data['paymentId'] written in _apply_updates)",
+      "external (transient): Iyzico CF 'token' -- a one-time handle the callback carries and the controller exchanges at .../checkoutform/auth/ecom/detail for the authoritative payment detail",
+      "(no payment.token relation -- tokenization is not supported by this module)"
+    ],
+    "information_flows": [
+      "depends: payment (inherits the provider/transaction engine + _send_api_request)",
+      "outbound (initialize): _get_specific_rendering_values -> POST https://api.iyzipay.com/payment/iyzipos/checkoutform/initialize/auth/ecom (IYZWSv2 HMAC-SHA256 auth) -> paymentPageUrl",
+      "client-side (redirect only): QWeb redirect_form GETs the browser to Iyzico's hosted Checkout Form (no SDK)",
+      "inbound (return): Iyzico -> POST /payment/iyzico/return?tx_ref=... (+token) -> _verify_and_process",
+      "inbound (webhook): Iyzico -> POST /payment/iyzico/webhook (paymentConversationId + token) -> _verify_and_process",
+      "verification (re-fetch): _verify_and_process -> POST https://api.iyzipay.com/payment/iyzipos/checkoutform/auth/ecom/detail (IYZWSv2) -> authoritative detail -> _process -> payment state machine",
+      "no client-side tokenization SDK channel (unlike card-tokenizing acquirers)"
+    ],
+    "frontend_components": [
+      "QWeb redirect_form (server-rendered GET form to Iyzico's hosted Checkout Form paymentPageUrl; no JS/OWL component; no client-side tokenization)"
+    ],
+    "external_integrations": {
+      "sdk": "none (no python iyzipay SDK and no browser SDK; HTTP via payment.provider._send_api_request)",
+      "uses_api_keys": true,
+      "endpoints": [
+        "https://api.iyzipay.com (production; sandbox https://sandbox-api.iyzipay.com) -- payment/iyzipos/checkoutform/initialize/auth/ecom (CF-initialize) and payment/iyzipos/checkoutform/auth/ecom/detail (CF-detail/retrieve)"
+      ],
+      "auth": "IYZWSv2 HMAC-SHA256 Authorization header -- apiKey=iyzico_key_id (public), HMAC-SHA256 of '{randomKey}/{endpoint}{json payload}' keyed by iyzico_key_secret (base.group_system), base64-wrapped, plus x-iyzi-rnd (_build_request_headers / _iyzico_calculate_signature)",
+      "files": [
+        "models/payment_provider.py",
+        "models/payment_transaction.py",
+        "controllers/main.py",
+        "const.py"
+      ],
+      "pattern": "Concrete realization of metadata gap #7: a real external acquirer integration. Outbound server-to-server REST to api.iyzipay.com (CF-initialize for the hosted-redirect flow) authenticated with the IYZWSv2 HMAC-SHA256 scheme; a browser redirect to Iyzico's hosted Checkout Form (no client SDK); and inbound settlement via a webhook + return that DO NOT verify a per-message signature but instead re-fetch the authoritative result through the authenticated CF-detail endpoint using the one-time token. The base 'payment' engine flags uses_api_keys but ships no live acquirer -- this module is the Iyzico (Turkey) override.",
+      "note": "Prime gap-#7 example: none of the Iyzico endpoints, the IYZWSv2 HMAC auth, or -- most notably -- the re-fetch-as-verification trust model (no local signature on callbacks) are derivable from Python model/field metadata; they were established only by reading payment_provider.py + payment_transaction.py + controllers/main.py + const.py."
+    }
   },
   "business_architecture": {
     "capabilities": [
-      "Payment Provider: Iyzico"
+      "Accept Turkish-market payments via Iyzico's hosted Checkout Form (CF)",
+      "Accept Card payments (Visa, Mastercard/master_card, Amex/american_express, Troy) and, per the response, bank-transfer via Iyzico",
+      "3DS handling deferred to Iyzico's hosted Checkout Form (INIT_THREEDS/CALLBACK_THREEDS surfaced as pending)",
+      "Multi-currency acceptance across CHF / EUR / GBP / IRR / NOK / RUB / TRY / USD",
+      "Asynchronous settlement via an Iyzico webhook plus a browser return, both verified by re-fetching CF-detail"
     ],
-    "value_streams": [],
-    "information_concepts": [],
-    "organization": [],
+    "value_streams": [
+      "Collect-Payment (hosted redirect): _get_specific_rendering_values -> POST CF-initialize (api.iyzipay.com, IYZWSv2) -> browser redirect to the hosted Checkout Form -> customer pays on Iyzico",
+      "Verify-and-Settle: Iyzico -> /payment/iyzico/return or /payment/iyzico/webhook (token) -> _verify_and_process re-fetches POST CF-detail -> _process -> _set_pending/_set_done/_set_error",
+      "Settle: paymentStatus SUCCESS -> _set_done -> downstream post-process settlement (account_payment / sale)"
+    ],
+    "information_concepts": [
+      "payment.provider (Iyzico credentials: API Key + Secret Key)",
+      "payment.transaction (mapped to an Iyzico Checkout-Form payment; keyed by conversationId==reference, provider_reference==paymentId; transient CF token exchanged for detail)"
+    ],
+    "organization": [
+      "(no module-owned res.groups; iyzico_key_secret is restricted to base.group_system; iyzico_key_id is unrestricted; everything else inherits payment's groups/record rules)"
+    ],
     "products": [],
-    "policies": [],
-    "stakeholders": [],
+    "policies": [
+      "Inbound authenticity by re-fetch: callbacks are NOT trusted on their face -- _verify_and_process exchanges the one-time CF token at .../checkoutform/auth/ecom/detail (IYZWSv2-authenticated) and only the re-fetched detail drives the state machine; a failed re-fetch is logged and dropped",
+      "Outbound authenticity: every request to Iyzico carries the IYZWSv2 HMAC-SHA256 Authorization header + x-iyzi-rnd computed from iyzico_key_secret",
+      "Response gate: a CF response is rejected (ValidationError) unless status=='success' (_parse_response_content)",
+      "State policy: INIT_THREEDS/CALLBACK_THREEDS/INIT_BANK_TRANSFER/INIT_CREDIT/PENDING_CREDIT -> pending; SUCCESS -> done; FAILURE/unknown -> error",
+      "Supported currencies bounded to const.SUPPORTED_CURRENCIES (CHF/EUR/GBP/IRR/NOK/RUB/TRY/USD); others filtered out",
+      "Secret signing key (iyzico_key_secret) gated by base.group_system field groups"
+    ],
+    "stakeholders": [
+      "Payer / Cardholder (res.partner)",
+      "Merchant / Company (res.company, holds the Iyzico API Key & Secret Key)",
+      "Iyzico (external acquirer / PSP for the Turkish market)",
+      "Accountant (consumes settled payments via account_payment downstream)"
+    ],
     "strategy": null,
-    "metrics": []
+    "metrics": [
+      "(no own reports; transaction volumes/amounts/state surfaced by the parent payment.transaction pivot/graph)"
+    ]
   },
   "classification": {
     "value_model": "network",
     "activity_class": "support",
-    "apqc_category": "9.0 Manage Financial Resources",
-    "rationale": "payment_iyzico: thin network/support module (auto-architect baseline)."
+    "apqc_category": "9.0 Manage Financial Resources (9.5 process payments / collect cash; manage external payment provider)",
+    "rationale": "payment_iyzico is a value-NETWORK (Stabell & Fjeldstad mediating-technology) component: a concrete acquirer adapter whose purpose is to interconnect two parties who would not otherwise transact directly -- the payer (cardholder) and the merchant -- by linking the merchant to Iyzico's Turkish-market card network. It exhibits the mediating-technology activities: network promotion & contract management (IYZWSv2 API Key + Secret Key management, payment-method and currency enablement), service provisioning (initializing the Iyzico Checkout Form per transaction and confirming it by re-fetching CF-detail), and infrastructure operation (the server-to-server api.iyzipay.com link, the hosted-redirect Checkout Form, and the token-re-fetch webhook/return settlement loop). It does not transform inputs into outputs (chain) nor solve a bespoke customer problem (shop). It inherits the parent 'payment' engine's value_model exactly: the engine is the generic mediator and this module is its Iyzico realization. activity_class is 'support' because, from the enterprise value-chain perspective, payment acceptance is an infrastructure/finance support function (category Accounting/Payment Providers, application=False, no end-user app) sitting under 9.0 Manage Financial Resources -- specifically 9.5 process payments / collect cash, with the side of 'manage an external payment provider'. So value_model=network (its own internal logic is mediation, an acquirer integration -- gap #7), activity_class=support (its place on the enterprise value chain). This mirrors the sibling payment_xendit / payment_stripe records (network/support) and the parent payment engine; Iyzico is distinctive in verifying callbacks by re-fetching the authoritative result rather than by checking a local signature."
   },
   "fit_to_standard": {
     "standard_capabilities": [
-      "Payment Provider: Iyzico"
+      "hosted-redirect acceptance via the Iyzico Checkout Form (CF-initialize -> paymentPageUrl)",
+      "card acceptance with brand mapping (Visa, Mastercard/master_card, Amex/american_express, Troy) and bank-transfer recognition from the response",
+      "3DS deferred to Iyzico's hosted Checkout Form (INIT_THREEDS/CALLBACK_THREEDS surfaced as pending)",
+      "asynchronous settlement via a webhook + browser-return, both verified by re-fetching CF-detail (no local signature trust)",
+      "multi-currency acceptance across CHF / EUR / GBP / IRR / NOK / RUB / TRY / USD"
     ],
-    "typical_fits": [],
-    "common_gaps": [],
+    "typical_fits": [
+      "online shop / portal checkout collecting payments in Turkey via Iyzico",
+      "card collection in TRY and major foreign currencies (EUR/USD/GBP/CHF/NOK/RUB/IRR)",
+      "send-a-payment-link or pay-an-invoice-online collection (with account_payment / sale downstream)",
+      "3DS-mandatory card flows handled on Iyzico's hosted Checkout Form"
+    ],
+    "common_gaps": [
+      "no tokenization / saved cards (no _compute_feature_support_fields override; payment.token never created; card data lives only on Iyzico's hosted page)",
+      "no in-module refund operation (no _send_refund_request override) -- refunds are handled out-of-band (Iyzico merchant panel / downstream)",
+      "no manual capture / authorize-then-capture and no void operation (the auth/ecom CF charge is immediate; states are pending/done/error)",
+      "the public-URL requirement for the webhook/return means local/dev instances need a tunnel; without iyzico_key_secret the IYZWSv2 signing (and hence the verifying re-fetch) cannot succeed",
+      "callbacks carry no independently-verifiable signature -- trust depends entirely on the CF-detail re-fetch succeeding; a missed/failed re-fetch is silently dropped (logged only)",
+      "currency support bounded to const.SUPPORTED_CURRENCIES; other currencies are filtered out",
+      "no merchant self-onboarding -- API Key and Secret Key are entered manually on the provider form",
+      "bespoke reconciliation / settlement document chains live downstream (account_payment, sale), not here"
+    ],
     "drive_hints": [
-      "n/a"
+      "odoo shell: env['payment.provider'].search([('code','=','iyzico')]).mapped(('name','state','iyzico_key_id'))",
+      "odoo shell: p=env['payment.provider'].search([('code','=','iyzico')],limit=1); print(p._get_supported_currencies().mapped('name'))  # CHF/EUR/GBP/IRR/NOK/RUB/TRY/USD",
+      "odoo shell: tx=env['payment.transaction'].search([('provider_code','=','iyzico')],limit=1); print(tx.reference, tx.state, tx.provider_reference)",
+      "odoo shell: print([m for m in dir(env['payment.provider']) if '_iyzico' in m] + [m for m in dir(env['payment.transaction']) if '_iyzico' in m])",
+      "curl -X POST https://<host>/payment/iyzico/webhook (csrf=False, auth=public) with a JSON body whose paymentConversationId matches no tx -> _verify_and_process returns without processing (acknowledged with empty JSON); a token that fails the CF-detail re-fetch is logged and dropped",
+      "Iyzico sandbox: https://sandbox-api.iyzipay.com (state='test'); production https://api.iyzipay.com (state='enabled'); webhook format https://docs.iyzico.com/en/advanced/webhook"
     ]
   },
   "reverse_eng_confidence": {
@@ -123,14 +256,20 @@
     "strategy": "human"
   },
   "open_questions": [
-    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+    "Exact Iyzico Checkout-Form initialize and CF-detail request/response payloads beyond the fields built in _iyzico_prepare_cf_initialize_payload and read in _apply_updates.",
+    "Real-world distribution of Iyzico transaction states and method mix (card brand vs bank transfer) and currency mix -- no runtime row counts captured.",
+    "How refunds/chargebacks are handled operationally given no in-module refund override (likely manual via the Iyzico merchant panel or a downstream module).",
+    "Operational robustness of the re-fetch-as-verification model when a webhook/return arrives but the CF-detail re-fetch fails or times out (the error is only logged, the tx is left unprocessed)."
   ],
   "provenance": {
     "explorer_facts": "doc/revres/facts/payment_iyzico.facts.json",
     "tools": [
-      "extract_module.py",
-      "extract_frontend.py",
-      "gen_thin.py"
+      "apqc_odoo_map.tsv",
+      "code-read (const.py, models/payment_provider.py, models/payment_transaction.py, controllers/main.py, __manifest__.py)",
+      "extract_frontend.py (frontend/payment_iyzico.frontend.json)",
+      "extract_module.py (facts/payment_iyzico.facts.json)",
+      "Grep",
+      "Read"
     ],
     "odoo_version": "19.0"
   }
