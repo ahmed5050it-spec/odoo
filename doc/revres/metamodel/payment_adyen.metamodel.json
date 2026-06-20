@@ -4,13 +4,55 @@
     "manifest": {
       "name": "Payment Provider: Adyen",
       "category": "Accounting/Payment Providers",
+      "summary": "A Dutch payment provider covering Europe and the US.",
+      "version": "2.0",
+      "author": "Odoo S.A.",
+      "license": "LGPL-3",
       "depends": [
         "payment"
       ],
       "auto_install": false,
       "application": false
     },
-    "models": [],
+    "models": [
+      {
+        "_name": "payment.provider (inherit)",
+        "_description": "Payment Provider (Adyen credentials: merchant account, API key, client key, HMAC key, API URL prefix)",
+        "fields": 6,
+        "relations": [
+          "code (Selection selection_add 'adyen')",
+          "adyen_merchant_account (Char, required_if_provider=adyen, groups=base.group_system)",
+          "adyen_api_key (Char, required_if_provider=adyen, groups=base.group_system)",
+          "adyen_client_key (Char, required_if_provider=adyen)",
+          "adyen_hmac_key (Char, required_if_provider=adyen, groups=base.group_system)",
+          "adyen_api_url_prefix (Char, required_if_provider=adyen)"
+        ]
+      },
+      {
+        "_name": "payment.transaction (inherit)",
+        "_description": "Payment Transaction (Adyen /payments + capture/void/refund + webhook notification flow)",
+        "fields": 0,
+        "relations": [
+          "no new fields; 10 methods overriding payment's request/notification/token hooks"
+        ]
+      },
+      {
+        "_name": "payment.token (inherit)",
+        "_description": "Payment Token (saved Adyen stored-payment-method / shopper reference)",
+        "fields": 1,
+        "relations": [
+          "adyen_shopper_reference (Char, Adyen shopperReference for recurring contracts)"
+        ]
+      },
+      {
+        "_name": "payment.capture.wizard (inherit)",
+        "_description": "Capture Wizard (flags Adyen txs to support the partial-capture UX)",
+        "fields": 1,
+        "relations": [
+          "has_adyen_tx (Boolean, computed)"
+        ]
+      }
+    ],
     "routes": [
       {
         "paths": [
@@ -41,27 +83,61 @@
         "type": "http"
       },
       {
-        "paths": [],
+        "paths": [
+          "/payment/adyen/notification"
+        ],
         "auth": "public",
-        "type": "http"
+        "type": "http",
+        "note": "POST-only webhook (controller _webhook_url), csrf=False; extract_module.py reports its paths[] empty because the route is bound via the _webhook_url attribute."
       }
     ],
     "security": {
       "access_rules": 0,
       "record_rules": 0,
-      "groups": 0
+      "groups": 0,
+      "note": "No own ACL/rules; relies on payment's security and on base.group_system field groups guarding adyen_merchant_account / adyen_api_key / adyen_hmac_key."
     },
     "views": {
       "form": 0,
       "list": 0,
-      "tree": 0,
       "kanban": 0,
       "search": 0,
       "pivot": 0,
       "graph": 0,
-      "calendar": 0,
-      "activity": 0
+      "note": "No own model views; xml_loc=97 is view inheritance (payment.provider form: Adyen credential fields), QWeb templates (inline drop-in form loading the Adyen Web Components/drop-in SDK on payment-form pages), plus payment_provider_data.xml. 5 data files declared in the manifest."
     },
+    "behavioral_notes": [
+      {
+        "element": "payment.transaction._send_payment_request / controllers.adyen_payments -> outbound POST to the Adyen Checkout API (/payments)",
+        "observation": "The outbound acquirer call (gap #7) is centralized through payment's payment.provider._send_api_request, which payment_adyen targets at the Adyen Checkout API via _build_request_url. _build_request_url assembles 'https://{prefix}.adyen.com/checkout/V{version}/{endpoint}' in test mode and 'https://{prefix}-checkout-live.adyenpayments.com/checkout/V{version}/{endpoint}' in live mode, the prefix coming from adyen_api_url_prefix and the version from const.API_ENDPOINT_VERSIONS[endpoint]. _build_request_headers authenticates every call with an 'X-API-Key: <adyen_api_key>' header (key restricted to base.group_system) plus an 'idempotency-key' header on retryable POSTs. The merchant-initiated token charge (payment.transaction._send_payment_request) POSTs /payments with merchantAccount, minor-unit amount, the token's storedPaymentMethodId, shopperReference, recurringProcessingModel='Subscription' and shopperInteraction='ContAuth' for off-session recurring; the shopper-initiated front-end flow (controllers.adyen_payments) POSTs /payments with the live paymentMethod, 3DS authenticationData/browserInfo, storePaymentMethod=tx.tokenize and a returnUrl back to /payment/adyen/return. Both then call _process('adyen', response). captureDelayHours=0 is forced when the provider does not capture manually. None of this server-to-server HTTP is visible in Python field/model metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "controllers /payment/adyen/payment_methods + /payment/adyen/payments + /payment/adyen/payments/details (public jsonrpc) -> Adyen drop-in lifecycle",
+        "observation": "Three public jsonrpc routes drive the Adyen Web drop-in. /payment/adyen/payment_methods POSTs /paymentMethods (sudo provider) to fetch the methods available for the amount/country/locale. /payment/adyen/payments first calls payment_utils.check_access_token to reject tampered amount/currency/partner data (else ValidationError), then POSTs /payments and _process()es the result. /payment/adyen/payments/details POSTs /payments/details to submit the result of an additional action (3DS challenge or redirect) and _process()es it. The HTTP /payment/adyen/return route (csrf=False, save_session=False) handles the redirect back from a 3DS1 page or redirect-only payment method: it _search_by_reference()es the tx by the merchantReference carried in the return URL, forces tx.operation='online_redirect', calls adyen_payment_details with the redirectResult, and redirects to /payment/status. This guarded check-token-then-charge sequencing and the cross-route 3DS handoff are invisible to metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "AdyenController.adyen_webhook (/payment/adyen/notification) -> HMAC signature verification + tx state update",
+        "observation": "The public, csrf=False, POST-only webhook at /payment/adyen/notification parses data['notificationItems'][*]['NotificationRequestItem'], locates each tx via payment.transaction._search_by_reference, and calls _verify_signature BEFORE acting. _verify_signature reads additionalData.hmacSignature, recomputes the expected signature with _compute_signature (flatten the payload, pick the canonical key list pspReference/originalReference/merchantAccountCode/merchantReference/amount.value/amount.currency/eventCode/success, escape ':' and '\\', join with ':', HMAC-SHA256 the signing string with the binary-decoded adyen_hmac_key, Base64-encode) and compares with hmac.compare_digest (constant-time), raising werkzeug Forbidden on mismatch or missing signature. On success it reshapes the notification (mapping eventCode AUTHORISATION/CANCELLATION/REFUND/CAPTURE/CAPTURE_FAILED + success flag into a resultCode) and calls tx_sudo._process('adyen', data), driving payment's guarded state machine via _apply_updates (_set_pending/_set_authorized/_set_done/_set_canceled/_set_error). The route always returns '[accepted]' to acknowledge. _search_by_reference also creates child transactions (_adyen_create_child_tx) for captures/voids/refunds initiated from the Adyen side. Signature trust, the constant-time compare, and the inbound state transition are all invisible to metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "tokenization & recurring (storePaymentMethod / _extract_token_values / _send_payment_request off-session)",
+        "observation": "When tx.tokenize is set, the shopper /payments request carries storePaymentMethod=True and recurringProcessingModel='CardOnFile'. After a successful authorisation, payment's engine calls _extract_token_values, which mines payment_data['additionalData']: it vaults a payment.token only if recurring.recurringDetailReference is present, storing provider_ref = the recurringDetailReference (Adyen stored-PM id), payment_details = additionalData.cardSummary (card last4), and adyen_shopper_reference = additionalData['recurring.shopperReference']. Subsequent merchant-initiated off-session charges (_send_payment_request) POST /payments with paymentMethod.storedPaymentMethodId=token.provider_ref, shopperReference=token.adyen_shopper_reference, recurringProcessingModel='Subscription', shopperInteraction='ContAuth'. _send_capture_request (POST /payments/{ref}/captures), _send_void_request (POST /payments/{ref}/cancels) and _send_refund_request (POST /payments/{ref}/refunds, negative amount) round out the authorize/capture/void/refund operations against the source provider_reference, each storing the new pspReference and re-using _process to fold the response into the state machine.",
+        "source": "code-read"
+      },
+      {
+        "element": "external integration surface (gap #7) -- endpoints, keys, SDK",
+        "observation": "Static gap-#7 facts (extract_frontend.py): uses_api_keys=true; the single outbound endpoint family is 'https://{prefix_}.com/checkout/V{version}/{endpoint}' (the Adyen Checkout API, X-API-Key auth) -- resolved at runtime to {prefix}.adyen.com (test) or {prefix}-checkout-live.adyenpayments.com (live) -- declared in models/payment_provider.py. No 'requests' import here: HTTP is delegated to payment.provider._send_api_request in the parent engine, which payment_adyen configures via the _build_request_url / _build_request_headers / _parse_response_error hook overrides. On the browser side the Adyen Web Components/drop-in SDK (client_key) is loaded on pages showing the payment form -- a second, client-side channel to Adyen. This dual server-to-server + client-side acquirer link is the canonical metadata gap #7: none of it is reachable from model/field metadata.",
+        "source": "static"
+      },
+      {
+        "element": "frontend (static) -- Adyen drop-in inline form patch",
+        "observation": "1 JS file, 0 OWL components, 0 registry adds (gap #3). The module patches the shared PaymentForm widget (PaymentForm.prototype) rather than registering a new component: it consumes the inline-form values JSON from payment.provider._adyen_get_inline_form_values (client_key, the mapped Adyen payment-method code, the Adyen-formatted minor-unit amount) to mount the Adyen Web drop-in/Components, then drives the /payment/adyen/payment_methods, /payments and /payments/details jsonrpc routes to complete the charge and any 3DS additional action client-side. Assets load into web.assets_frontend (1 bundle entry). These browser interactions and the Adyen SDK are invisible to Python metadata (gap #3).",
+        "source": "static"
+      }
+    ],
     "frontend": {
       "present": true,
       "js_files": 1,
@@ -90,62 +166,143 @@
     "runtime": {
       "models_with_data": 0,
       "top": []
-    },
-    "behavioral_notes": [
-      {
-        "element": "frontend (OWL/JS)",
-        "observation": "1 JS files, 0 OWL components, 0 registry adds; bundles ['web.assets_frontend'].",
-        "source": "static"
-      },
-      {
-        "element": "thin module",
-        "observation": "0 models, 5 routes, 1827 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
-        "source": "ast"
-      }
-    ]
+    }
   },
   "it_architecture": {
-    "application": "payment_adyen (Payment Provider: Adyen)",
+    "application": "payment_adyen (Adyen acquirer adapter for the payment engine; _inherit-only, no own models/views)",
     "software_services": [
-      "/payment/adyen/payment_methods",
-      "/payment/adyen/payments",
-      "/payment/adyen/payments/details",
-      "/payment/adyen/return"
+      "/payment/adyen/payment_methods (jsonrpc: POST /paymentMethods for the drop-in)",
+      "/payment/adyen/payments (jsonrpc: check access token, POST /payments, _process)",
+      "/payment/adyen/payments/details (jsonrpc: POST /payments/details for 3DS/redirect actions)",
+      "/payment/adyen/return (redirect-return from 3DS1 / redirect-only methods, csrf=False)",
+      "/payment/adyen/notification (signed async webhook, POST-only, csrf=False)"
     ],
-    "data_objects": [],
-    "logical_data_erm": [],
+    "data_objects": [
+      "payment.provider (+adyen_merchant_account, adyen_api_key, adyen_client_key, adyen_hmac_key, adyen_api_url_prefix)",
+      "payment.transaction (Adyen /payments + capture/void/refund + notification flow; no new fields)",
+      "payment.token (+adyen_shopper_reference)",
+      "payment.capture.wizard (+has_adyen_tx, partial-capture UX)"
+    ],
+    "logical_data_erm": [
+      "payment.transaction -> payment.provider (provider_id; provider_code=='adyen' gates every override)",
+      "payment.transaction -> payment.token (token_id; off-session charges read provider_ref / adyen_shopper_reference)",
+      "payment.transaction -> payment.transaction (source_transaction_id; capture/void/refund child txs via _adyen_create_child_tx)",
+      "payment.token -> payment.provider (provider_id)",
+      "payment.provider.code selection_add 'adyen'",
+      "external: payment.transaction.provider_reference == Adyen pspReference (cross-system key; capture/void/refund get distinct pspReferences)",
+      "external: payment.token.provider_ref == Adyen recurringDetailReference (stored-PM id); payment.token.adyen_shopper_reference == Adyen shopperReference"
+    ],
     "information_flows": [
-      "depends: payment"
+      "depends: payment (inherits the provider/transaction/token engine + _send_api_request)",
+      "outbound: _send_payment_request / adyen_payments / _send_{capture,void,refund}_request -> POST Adyen Checkout API (/payments, /payments/details, /paymentMethods, /payments/{ref}/captures|cancels|refunds) with X-API-Key auth + idempotency-key",
+      "client-side: Adyen Web Components/drop-in SDK (client_key) mounted on payment-form pages; collects PM details and runs 3DS in the browser",
+      "inbound (redirect): Adyen -> /payment/adyen/return -> _search_by_reference -> adyen_payment_details (POST /payments/details) -> _process -> /payment/status",
+      "inbound (webhook): Adyen -> /payment/adyen/notification -> _verify_signature (HMAC-SHA256 of canonical key list with adyen_hmac_key, constant-time) -> reshape eventCode->resultCode -> _process -> payment state machine",
+      "side-effect: successful authorisation + tx.tokenize + recurring.recurringDetailReference -> _extract_token_values -> payment.token vault (stored-PM id + shopperReference + cardSummary)",
+      "side-effect: Adyen-initiated capture/void/refund webhook -> _adyen_create_child_tx -> child payment.transaction -> _process"
     ],
-    "frontend_components": []
+    "frontend_components": [
+      "PaymentForm.prototype (patch; mounts the Adyen Web drop-in/Components from _adyen_get_inline_form_values, drives the payment_methods/payments/details jsonrpc routes and 3DS client-side)",
+      "Adyen Web Components / drop-in SDK (client_key, loaded on payment-form pages)"
+    ],
+    "external_integrations": {
+      "sdk": "Adyen Web Components / drop-in (browser, client_key); server side uses no python SDK -- HTTP via payment.provider._send_api_request",
+      "uses_api_keys": true,
+      "endpoints": [
+        "https://{prefix_}.com/checkout/V{version}/{endpoint}",
+        "(resolved) https://{prefix}.adyen.com/checkout/V{version}/... [test]",
+        "(resolved) https://{prefix}-checkout-live.adyenpayments.com/checkout/V{version}/... [live]"
+      ],
+      "auth": "X-API-Key: <adyen_api_key> (direct Checkout API); idempotency-key on retryable POSTs; webhook integrity via adyen_hmac_key HMAC",
+      "files": [
+        "models/payment_provider.py",
+        "models/payment_transaction.py",
+        "controllers/main.py",
+        "const.py"
+      ],
+      "pattern": "Concrete realization of metadata gap #7: a real external acquirer integration. Outbound server-to-server REST to the Adyen Checkout API (/paymentMethods, /payments, /payments/details, /payments/{ref}/captures|cancels|refunds) authenticated with an X-API-Key; a parallel client-side Adyen Web drop-in/Components channel keyed by client_key; and inbound settlement via an HMAC-signature-verified webhook plus a redirect-return route handling 3DS1. The base 'payment' engine flags uses_api_keys but ships no live acquirer -- this module is exactly that override.",
+      "note": "Prime gap-#7 example: none of the Adyen endpoints, the X-API-Key auth, the webhook HMAC trust, or the browser drop-in channel are derivable from Python model/field metadata; they were established only by reading models/payment_provider.py + payment_transaction.py + controllers/main.py."
+    }
   },
   "business_architecture": {
     "capabilities": [
-      "Payment Provider: Adyen"
+      "Accept Card / Online Payments via Adyen (direct drop-in /payments flow)",
+      "Strong Customer Authentication (3DS2 native / 3DS1 redirect) via the Adyen Web drop-in",
+      "Tokenization / Saved Cards (vault Adyen stored-payment-method + shopperReference) and off-session recurring (ContAuth Subscription)",
+      "Authorize / Manual Capture (incl. partial) / Void",
+      "Refunds (incl. partial)",
+      "Multi payment-method drop-in (methods queried per amount/country/locale)"
     ],
-    "value_streams": [],
-    "information_concepts": [],
-    "organization": [],
+    "value_streams": [
+      "Collect-Payment (Adyen): initiate tx -> drop-in queries /paymentMethods -> shopper /payments (3DS in browser) -> redirect /payment/adyen/return OR async /payment/adyen/notification (HMAC-signed) -> _process -> state machine done/error -> downstream post-process settlement",
+      "Tokenize-and-Recharge: successful authorisation + tokenize -> vault payment.token (stored-PM id + shopperReference) -> later off-session /payments (storedPaymentMethodId, ContAuth, Subscription) for card-not-present / recurring",
+      "Capture / Void / Refund: backend action -> POST /payments/{ref}/captures|cancels|refunds (or Adyen-initiated webhook) -> child payment.transaction -> _process",
+      "Redirect-3DS handoff: 3DS1 / redirect-only method -> Adyen-hosted page -> /payment/adyen/return -> /payments/details -> _process -> /payment/status"
+    ],
+    "information_concepts": [
+      "payment.provider (Adyen credentials: merchant account, API key, client key, HMAC key, API URL prefix)",
+      "payment.transaction (mapped to an Adyen /payments charge / capture / void / refund; pspReference)",
+      "payment.token (saved Adyen stored-PM: recurringDetailReference + shopperReference + card summary)",
+      "payment.capture.wizard (partial-capture UX, has_adyen_tx)"
+    ],
+    "organization": [
+      "(no module-owned res.groups; adyen_merchant_account, adyen_api_key and adyen_hmac_key are restricted to base.group_system; everything else inherits payment's groups/record rules)"
+    ],
     "products": [],
-    "policies": [],
-    "stakeholders": [],
+    "policies": [
+      "Webhook authenticity: notifications must pass _verify_signature (additionalData.hmacSignature == HMAC-SHA256 of the canonical signing string with adyen_hmac_key, constant-time compare) or are rejected with HTTP 403 Forbidden",
+      "Payment-request integrity: the public /payment/adyen/payments route rejects data failing check_access_token (amount/currency/partner tamper guard) with a ValidationError",
+      "Idempotency-key sent on retryable POSTs to make charge/details requests safe to retry",
+      "captureDelayHours=0 is forced when the provider does not capture manually (avoid mistaking delayed-capture authorisations for captures)",
+      "Adyen credentials (merchant account / API key / HMAC key) gated by base.group_system field groups",
+      "API URL prefix normalized on create/write (_adyen_extract_prefix_from_api_url)"
+    ],
+    "stakeholders": [
+      "Payer / Cardholder (res.partner)",
+      "Merchant / Company (res.company, holds the Adyen merchant account & keys)",
+      "Adyen (external acquirer / PSP)",
+      "Accountant (consumes settled payments via account_payment downstream)"
+    ],
     "strategy": null,
-    "metrics": []
+    "metrics": [
+      "(no own reports; transaction volumes/amounts/state surfaced by the parent payment.transaction pivot/graph)"
+    ]
   },
   "classification": {
     "value_model": "network",
     "activity_class": "support",
-    "apqc_category": "9.0 Manage Financial Resources",
-    "rationale": "payment_adyen: thin network/support module (auto-architect baseline)."
+    "apqc_category": "9.0 Manage Financial Resources (9.5 process payments / collect cash; manage external payment provider)",
+    "rationale": "payment_adyen is a value-NETWORK (Stabell & Fjeldstad mediating-technology) component: a concrete acquirer adapter whose purpose is to interconnect two parties who would not otherwise transact directly -- the cardholder/payer and the merchant -- by linking the merchant to Adyen's card network. It exhibits the mediating-technology activities: network promotion & contract management (merchant-account/API-key/HMAC-key configuration and the per-amount/country drop-in payment-method discovery), service provisioning (creating the /payments charge and confirming it, with 3DS, per transaction), and infrastructure operation (the server-to-server Adyen Checkout API link, the Adyen Web drop-in client channel, and the HMAC-signed-webhook settlement loop). It does not transform inputs into outputs (chain) nor solve a bespoke customer problem (shop). It inherits the parent 'payment' engine's value_model exactly: the engine is the generic mediator and this module is its Adyen realization. activity_class is 'support' because, from the enterprise value-chain perspective, payment acceptance is an infrastructure/finance support function (category Accounting/Payment Providers, application=False, no end-user app) sitting under 9.0 Manage Financial Resources -- specifically 9.5 process payments / collect cash, with the side of 'manage an external payment provider'. So value_model=network (its own internal logic is mediation, an acquirer integration -- gap #7), activity_class=support (its place on the enterprise value chain). This mirrors the sibling payment_stripe.metamodel.json (network/support) and contrasts with account_payment (support/support), whose own logic is ledger record-keeping rather than mediation."
   },
   "fit_to_standard": {
     "standard_capabilities": [
-      "Payment Provider: Adyen"
+      "direct card payment via the Adyen Web drop-in (/paymentMethods + /payments), with SCA/3DS2 native and 3DS1 redirect handled by Adyen",
+      "tokenization / saved cards (Adyen stored payment method + shopperReference), including off-session recurring (ContAuth, recurringProcessingModel Subscription)",
+      "manual capture including partial capture, void, and partial refunds (support_manual_capture='partial', support_refund='partial')",
+      "multi payment-method support (methods queried per amount/country/locale from Adyen)",
+      "asynchronous settlement via an HMAC-signature-verified webhook plus a redirect-return confirmation route"
     ],
-    "typical_fits": [],
-    "common_gaps": [],
+    "typical_fits": [
+      "online shop / portal checkout collecting card and local payments through Adyen across Europe and the US",
+      "save-card-for-later and tokenized recurring/subscription charges (off-session stored-PM /payments)",
+      "send-a-payment-link or pay-an-invoice-online collection (with account_payment / sale downstream)",
+      "merchants with an existing Adyen merchant account configuring credentials (merchant account, API key, client key, HMAC key, API URL prefix) directly",
+      "multi-currency acceptance (minor-unit handling via const.CURRENCY_DECIMALS)"
+    ],
+    "common_gaps": [
+      "no self-onboarding flow: the merchant must obtain an Adyen merchant account and manually enter the merchant account / API key / client key / HMAC key / API URL prefix",
+      "the webhook (/payment/adyen/notification) needs a public URL and a correctly configured HMAC key registered in the Adyen Customer Area; a missing/invalid signature is rejected (403)",
+      "API endpoint version is keyed per-endpoint in const.API_ENDPOINT_VERSIONS -- newer Adyen API features/payment methods may need code changes",
+      "the set of default payment-method codes (const.DEFAULT_PAYMENT_METHOD_CODES) and method mapping (const.PAYMENT_METHODS_MAPPING) bound what is offered out of the box",
+      "bespoke reconciliation / settlement document chains live downstream (account_payment, sale), not here"
+    ],
     "drive_hints": [
-      "n/a"
+      "odoo shell: env['payment.provider'].search([('code','=','adyen')]).mapped(('name','state','adyen_merchant_account'))",
+      "odoo shell: p=env['payment.provider'].search([('code','=','adyen')],limit=1); print(p.support_manual_capture, p.support_refund, p.support_tokenization)",
+      "odoo shell: tx=env['payment.transaction'].search([('provider_code','=','adyen')],limit=1); print(tx.reference, tx.state, tx.provider_reference)",
+      "odoo shell: print([m for m in dir(env['payment.transaction']) if 'adyen' in m.lower()])",
+      "curl -X POST https://<host>/payment/adyen/notification (csrf=False, auth=public) with a notificationItem whose additionalData.hmacSignature is missing/invalid -> expect HTTP 403 Forbidden from _verify_signature",
+      "Adyen test card 4111 1111 1111 1111, future expiry, any CVC (Adyen test instructions)"
     ]
   },
   "reverse_eng_confidence": {
@@ -159,14 +316,20 @@
     "strategy": "human"
   },
   "open_questions": [
-    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+    "Exact const.API_ENDPOINT_VERSIONS / PAYMENT_METHODS_MAPPING / DEFAULT_PAYMENT_METHOD_CODES values and the full set of supported local payment methods (const.py not fully read).",
+    "Real-world distribution of Adyen transaction states, tokenization usage, and refund/partial-capture rates (no runtime row counts captured).",
+    "Which downstream modules consume the settled Adyen transactions (account_payment, sale, subscription) and how partial captures/voids/refunds split across child transactions.",
+    "Whether instances reliably register and verify the webhook (adyen_hmac_key set in the Adyen Customer Area) vs rely solely on the redirect-return route."
   ],
   "provenance": {
     "explorer_facts": "doc/revres/facts/payment_adyen.facts.json",
     "tools": [
-      "extract_module.py",
-      "extract_frontend.py",
-      "gen_thin.py"
+      "apqc_odoo_map.tsv",
+      "code-read (models/payment_provider.py, models/payment_transaction.py, controllers/main.py)",
+      "extract_frontend.py (frontend/payment_adyen.frontend.json)",
+      "extract_module.py (facts/payment_adyen.facts.json)",
+      "Grep",
+      "Read"
     ],
     "odoo_version": "19.0"
   }

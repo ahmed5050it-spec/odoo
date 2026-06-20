@@ -4,6 +4,10 @@
     "manifest": {
       "name": "Passkeys",
       "category": "Hidden/Tools",
+      "version": "1.1",
+      "summary": "Log in with a Passkey",
+      "author": "Odoo S.A.",
+      "license": "LGPL-3",
       "depends": [
         "base_setup",
         "web"
@@ -15,12 +19,30 @@
       {
         "_name": "auth.passkey.key",
         "_description": "Passkey",
-        "fields": 5
+        "fields": 5,
+        "relations": [
+          "create_uid->res.users (the passkey's owner)"
+        ]
       },
       {
         "_name": "auth.passkey.key.create",
-        "_description": "Create a Passkey",
-        "fields": 1
+        "_description": "Create a Passkey (TransientModel — registration ceremony wizard)",
+        "fields": 1,
+        "relations": []
+      },
+      {
+        "_name": "res.users (extension)",
+        "_description": "Adds auth_passkey_key_ids One2many + webauthn _login/_check_credentials/_get_session_token hooks",
+        "fields": 1,
+        "relations": [
+          "auth_passkey_key_ids->auth.passkey.key"
+        ]
+      },
+      {
+        "_name": "res.users.identitycheck (extension)",
+        "_description": "Adds 'webauthn' (Passkey) auth_method to the identity-check wizard",
+        "fields": 1,
+        "relations": []
       }
     ],
     "routes": [
@@ -84,66 +106,139 @@
     },
     "behavioral_notes": [
       {
-        "element": "frontend (OWL/JS)",
-        "observation": "3 JS files, 0 OWL components, 3 registry adds; bundles ['web.assets_backend', 'web.assets_frontend', 'web.assets_tests'].",
-        "source": "static"
+        "element": "auth.passkey.key (credential record: credential_identifier / public_key / sign_count)",
+        "observation": "The persisted FIDO2/WebAuthn credential. Each row holds the authenticator-minted credential_identifier (base64url, UNIQUE constrained via _unique_identifier), the COSE public_key, and a monotonic sign_count — all groups='base.group_system' so only system admins can read them, while the user only ever sees the friendly 'name'. public_key is a peculiar pseudo-field: declared compute='_compute_public_key'/inverse='_inverse_public_key' but the value is actually stored in a raw 'public_key varchar' column added in init() with ALTER TABLE (the inverse is a no-op pass), and reads/writes go through hand-written SQL — so it is invisible to the ORM cache and to ordinary field metadata. The private key never touches the server: only the public key + credential id + sign counter are stored, which is the whole security premise of passkeys (no shared secret server-side, unlike auth_totp's totp_secret). create_uid (indexed Many2one to res.users) is the owner link; unlink() logs every deletion with login/id/REMOTE_ADDR for the audit trail.",
+        "source": "code-read"
       },
       {
-        "element": "thin module",
-        "observation": "2 models, 1 routes, 5375 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
-        "source": "ast"
+        "element": "auth.passkey.key._start_registration / _verify_registration_options + auth.passkey.key.create.make_key (enrolment ceremony)",
+        "observation": "Registration is a self-service, identity-checked WebAuthn ceremony. res.users.action_create_passkey (guarded by @check_identity) calls _start_registration(), which uses the vendored webauthn lib generate_registration_options(rp_id=<base_url host>, rp_name='Odoo', user_id=<uid>, user_name=<login>, resident_key=REQUIRED, user_verification=REQUIRED), stashes the server challenge in request.session['webauthn_challenge'], and passes the options into the auth.passkey.key.create wizard context. The browser (OWL FormController override, see frontend) runs navigator.credentials.create via simplewebauthn and posts the attestation back into make_key (also @check_identity). make_key -> _verify_registration_options() re-reads & pops the session challenge and calls verify_registration_response(credential, expected_challenge, expected_origin, expected_rp_id, require_user_verification=True); on success it returns the credential_id + credential_public_key, which are written through self.env.user.write({'auth_passkey_key_ids': [Command.create(...)]}) (routed via the One2many so the session-token cache is invalidated) plus a raw SQL UPDATE of public_key. It finishes by recomputing _compute_session_token(request.session.sid) so adding a credential does not log the user out.",
+        "source": "code-read"
+      },
+      {
+        "element": "res.users._login + res.users._check_credentials(type='webauthn') (login assertion verification)",
+        "observation": "The passwordless login gate. The /web/login form carries hidden type='webauthn' + webauthn_response inputs; on submit _login() detects credential['type']=='webauthn', parses the JSON assertion, and resolves the user by raw SQL lookup of auth_passkey_key on webauthn['id'] (credential_identifier) JOIN res_users — raising AccessDenied('Unknown passkey') if no row — then injects credential['login'] before delegating to super()._login. The actual cryptographic check is in _check_credentials(type='webauthn'): it sudo-searches the auth.passkey.key for (create_uid=user, credential_identifier=webauthn id), raises AccessDenied('Unknown passkey') if absent, then calls auth.passkey.key._verify_auth(webauthn, passkey.public_key, passkey.sign_count) which runs the vendored verify_authentication_response (expected_challenge from the popped session challenge, expected_origin/expected_rp_id from base_url, require_user_verification=True) and returns a new_sign_count. An InvalidAuthenticationResponse is re-raised as AccessDenied — i.e. login is denied until the assertion verifies. On success it advances passkey.sign_count (clone/replay detection) and returns {'uid', 'auth_method':'passkey', 'mfa':'skip'} — so a passkey login bypasses TOTP MFA (the passkey IS the strong factor). The same path is reused for re-auth: res.users.identitycheck adds a 'webauthn' auth_method whose _check_identity runs _check_credentials and surfaces a friendly 'Incorrect Passkey' UserError on failure.",
+        "source": "code-read"
+      },
+      {
+        "element": "_vendor/webauthn (vendored WebAuthn relying-party library) + one-shot session challenge protocol",
+        "observation": "There is NO external python dependency declared (external_dependencies={}); the entire FIDO2 relying-party stack is vendored under addons/auth_passkey/_vendor/webauthn (generate_registration_options, generate_authentication_options, verify_registration_response, verify_authentication_response, options_to_json, base64url helpers, structs like AuthenticatorSelectionCriteria/ResidentKeyRequirement/UserVerificationRequirement). The anti-replay challenge protocol is strictly one-shot: _start_auth/_start_registration write request.session['webauthn_challenge']; _get_session_challenge() does session.pop(...) (consuming it) and raises AccessDenied('Cannot find a challenge for this session') if missing — so every ceremony binds to exactly one freshly-issued challenge, and the public /auth/passkey/start-auth jsonrpc route is the only way to obtain one. rp_id and expected_origin are derived from get_base_url(), pinning credentials to the deployment host. This vendored crypto/protocol core is wholly invisible to ORM/AST metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "frontend (static assets — gap #3, navigator.credentials ceremony)",
+        "observation": "No OWL components proper; the client footprint is 3 JS files plus static/src/lib/simplewebauthn.js (the SimpleWebAuthn browser helper wrapping navigator.credentials). (1) static/src/interactions/passkey_login.js — a web Interaction bound to '.passkey_login_link' on the login page: onClick rpc('/auth/passkey/start-auth') -> passkeyLib.startAuthentication(options) (=navigator.credentials.get) -> writes the assertion JSON into the hidden webauthn_response input, sets type='webauthn', and submits oe_login_form. (2) static/src/views/auth_passkey_key_create_form_view.js — a FormController override whose beforeExecuteActionButton intercepts 'make_key', runs passkeyLib.startRegistration(context.registration) (=navigator.credentials.create), and passes the attestation as the make_key arg. (3) static/src/views/auth_passkey_identity_check_form_view.js — a FormController override that, for 'run_check' with auth_method=='webauthn', fetches a challenge and runs startAuthentication, feeding the assertion into the password field. Bundles: web.assets_frontend (login interaction), web.assets_backend (the two form views), web.assets_tests. The registration/assertion ceremony is therefore browser-side JS (gap #3) — the server only issues challenges and verifies responses.",
+        "source": "static"
       }
     ]
   },
   "it_architecture": {
-    "application": "auth_passkey (Passkeys)",
+    "application": "auth_passkey (WebAuthn/FIDO2 passwordless authentication: register platform/security-key passkeys and log in or re-authenticate with a public-key assertion, layered on the web login flow)",
     "software_services": [
-      "/auth/passkey/start-auth"
+      "/auth/passkey/start-auth (public jsonrpc: issues a one-shot WebAuthn authentication challenge for navigator.credentials.get)"
     ],
     "data_objects": [
       "auth.passkey.key",
       "auth.passkey.key.create"
     ],
     "logical_data_erm": [
-      "auth.passkey.key -> res.users"
+      "res.users -1::N-> auth.passkey.key (auth_passkey_key_ids via create_uid; a user's registered passkeys)",
+      "auth.passkey.key {credential_identifier UNIQUE, public_key (raw SQL column), sign_count} -system-only-> base.group_system",
+      "auth.passkey.key.create -transient-> auth.passkey.key (registration ceremony wizard that mints a key)",
+      "res.users.identitycheck -adds-> auth_method='webauthn' (re-auth via passkey)"
     ],
     "information_flows": [
-      "depends: base_setup, web"
+      "depends: base_setup, web (extends web's login controller + res.users auth hooks + res.users.identitycheck)",
+      "enrol: action_create_passkey -> _start_registration (generate_registration_options, session challenge) -> navigator.credentials.create (JS) -> make_key -> _verify_registration_options (verify_registration_response) -> auth.passkey.key.create + raw public_key UPDATE (+ session token refresh)",
+      "challenge/login: /auth/passkey/start-auth -> _start_auth (generate_authentication_options) -> navigator.credentials.get (JS) -> oe_login_form(type=webauthn) -> res.users._login (SQL resolve user by credential id) -> _check_credentials(type=webauthn) -> _verify_auth (verify_authentication_response) -> {uid, auth_method:passkey, mfa:skip} | AccessDenied",
+      "re-auth: res.users.identitycheck(auth_method=webauthn) -> _check_identity -> _check_credentials(webauthn) -> AccessDenied -> UserError('Incorrect Passkey')",
+      "replay-defense: each accepted assertion returns new_sign_count -> passkey.sign_count advanced (authenticator clone detection)",
+      "side-effect: adding/deleting a passkey routes through res.users.auth_passkey_key_ids to invalidate the session token, then _compute_session_token re-issues it so the user stays logged in",
+      "side-effect: a passkey login returns mfa:'skip' — the passkey assertion satisfies MFA, bypassing the auth_totp challenge"
     ],
-    "frontend_components": []
+    "frontend_components": [
+      "passkey_login.js (web Interaction on '.passkey_login_link': start-auth rpc -> navigator.credentials.get -> submit login form)",
+      "auth_passkey_key_create_form_view.js (FormController override: beforeExecuteActionButton make_key -> navigator.credentials.create)",
+      "auth_passkey_identity_check_form_view.js (FormController override: run_check + webauthn -> navigator.credentials.get for re-auth)",
+      "static/src/lib/simplewebauthn.js (SimpleWebAuthn browser helper wrapping navigator.credentials)"
+    ]
   },
   "business_architecture": {
     "capabilities": [
-      "Passkeys"
+      "Passwordless Authentication (WebAuthn/FIDO2 passkey login)",
+      "Passkey Registration & Provisioning (attestation ceremony, public-key enrolment)",
+      "Login Assertion Verification (challenge-response, public-key crypto)",
+      "Passkey-based Re-authentication / Identity Check (sensitive-action step-up)",
+      "Credential Lifecycle Management (rename, delete, per-user listing)",
+      "Authenticator Clone / Replay Detection (monotonic sign-count)"
     ],
-    "value_streams": [],
+    "value_streams": [
+      "Enrol-to-Passwordless: identity check -> issue registration challenge -> create credential in authenticator -> verify attestation -> passkey stored & account ready for passwordless login",
+      "Assert-to-Session: click passkey login -> issue authentication challenge -> sign with authenticator -> server verifies assertion -> finalized session (MFA skipped)"
+    ],
     "information_concepts": [
-      "auth.passkey.key",
-      "auth.passkey.key.create"
+      "auth.passkey.key (FIDO2 credential: credential id, COSE public key, sign count)",
+      "auth.passkey.key.create (transient registration ceremony)",
+      "res.users.auth_passkey_key_ids (a user's registered passkeys)",
+      "webauthn_challenge (one-shot session-bound ceremony challenge)"
     ],
     "organization": [],
-    "products": [],
     "policies": [
-      "3 record rules"
+      "3 record rules: users see/manage only their own passkeys (create_uid scoping); credential_identifier/public_key/sign_count are groups='base.group_system' so only system admins can read the raw credential material",
+      "User-verification policy: both registration and authentication require_user_verification=True and resident_key=REQUIRED (true passwordless discoverable credentials, biometric/PIN gesture mandatory)",
+      "Challenge policy: every ceremony binds to exactly one freshly-issued, session-stored challenge that is popped (consumed) on verify — AccessDenied if absent",
+      "Replay policy: sign_count must advance per assertion (authenticator clone detection)",
+      "Step-up policy: passkey creation/deletion and re-auth are guarded by @check_identity; deletion only permitted on one's own key, with audit logging"
     ],
-    "stakeholders": [],
+    "products": [],
+    "stakeholders": [
+      "End user / employee (registers passkeys and logs in passwordlessly with a platform authenticator or security key)",
+      "Security administrator (base.group_system reads raw credential material, audits passkey create/delete logs)",
+      "Module developer (consumes res.users._login/_check_credentials and res.users.identitycheck webauthn extension points)"
+    ],
     "strategy": null,
-    "metrics": []
+    "metrics": [
+      "count of users with at least one auth.passkey.key (passwordless adoption / coverage)",
+      "passkeys per user (auth_passkey_key_ids) and sign_count progression (usage / clone-anomaly signal)",
+      "_logger passkey audit events (create / delete / denied-delete with login/id/IP) for the security log trail"
+    ]
   },
   "classification": {
     "value_model": "support",
     "activity_class": "support",
     "apqc_category": "8.0 Manage Information Technology",
-    "rationale": "auth_passkey: thin support/support module (auto-architect baseline)."
+    "rationale": "auth_passkey is IT security / identity-and-access infrastructure (Porter support activity; Stabell & Fjeldstad 'support'). It owns no business object of its own: its only persistent model is a WebAuthn credential record (public key + credential id + sign count) plus a transient registration wizard — it exists solely to add a passwordless, phishing-resistant authentication factor to the web login that EVERY other module sits behind (auto_install=true, depends only on base_setup + web). It creates no document chain, holds no customer/order/product/ledger data, and produces no primary-activity output, so it is 'support' rather than chain/shop/network. APQC 8.0 'Manage Information Technology' is the precise fit: this is the 'develop and manage IT security, privacy and data protection' / identity-&-access-management capability realised as a concrete running access-control runtime (FIDO2/WebAuthn relying-party crypto vendored in-tree, a public challenge endpoint, an assertion-verifying login hook, and credential lifecycle management). 11.0 'Manage Enterprise Risk, Compliance, Remediation and Resiliency' was considered because passwordless/phishing-resistant auth mitigates account-takeover risk and supports compliance mandates, but rejected: 11.0 covers the governance layer (risk registers, control frameworks, audits, policy management), whereas auth_passkey is the technical *implementation* of an access control that IT builds and operates — the build/run of a security mechanism, which APQC places under 8.0 (Manage IT security). The classification mirrors the sibling auth_totp record and the web framework record (both 8.0/support); passkeys are the WebAuthn/hardware-token factor auth_totp explicitly defers to."
   },
   "fit_to_standard": {
     "standard_capabilities": [
-      "Passkeys"
+      "WebAuthn/FIDO2 passwordless login (resident/discoverable credentials, user-verification required) wired into the web login flow",
+      "Self-service passkey registration via an identity-checked attestation ceremony (navigator.credentials.create) with server-side verify_registration_response",
+      "Login assertion verification (navigator.credentials.get -> verify_authentication_response) that raises AccessDenied until verified and returns mfa:'skip'",
+      "Passkey-based step-up re-authentication through res.users.identitycheck (sensitive-action confirmation without a password)",
+      "Replay/clone detection via a monotonic sign_count per credential",
+      "Credential lifecycle: per-user list (kanban), rename, and audited self-delete; system-only access to raw credential material",
+      "In-tree vendored WebAuthn relying-party library (no external python dependency) + SimpleWebAuthn browser helper",
+      "One-shot, session-bound, host-pinned (rp_id/origin from base_url) challenge protocol"
     ],
-    "typical_fits": [],
-    "common_gaps": [],
+    "typical_fits": [
+      "Letting users log in with platform authenticators (Touch ID / Windows Hello / Android) or roaming security keys (YubiKey) out of the box",
+      "Offering phishing-resistant passwordless auth as a stronger alternative to TOTP (passkey login satisfies MFA)",
+      "Using passkeys for sensitive-action re-authentication (the identity-check dialog) instead of re-entering a password",
+      "Self-service credential management (register multiple passkeys per user, rename, revoke)"
+    ],
+    "common_gaps": [
+      "No org-wide enforcement / 'require a passkey for group X' policy toggle out of the box (needs config or an add-on)",
+      "No account-recovery / fallback flow specific to lost passkeys (password / TOTP remain the recovery path; admin reset)",
+      "No attestation-conveyance / attestation-policy controls (no authenticator allow/deny lists configured)",
+      "Single public jsonrpc challenge endpoint with no built-in rate-limiting on /auth/passkey/start-auth (unlike auth_totp's rate-limit ledger)",
+      "rp_id/origin pinned to base_url — multi-domain or reverse-proxied deployments need correct web.base.url configuration"
+    ],
     "drive_hints": [
-      "odoo shell: env['auth.passkey.key'].search([],limit=3)"
+      "odoo shell: env['res.users'].browse(2).auth_passkey_key_ids.mapped('name')  # list a user's registered passkeys",
+      "odoo shell: env['auth.passkey.key'].sudo().search_read([], ['name','credential_identifier','sign_count','create_uid'], limit=5)  # inspect stored credentials (system rights)",
+      "curl -s -X POST http://localhost:8069/auth/passkey/start-auth -H 'Content-Type: application/json' -d '{\"jsonrpc\":\"2.0\",\"method\":\"call\",\"params\":{}}'  # fetch a live WebAuthn authentication challenge",
+      "odoo shell: from odoo.addons.auth_passkey._vendor.webauthn import generate_authentication_options, options_to_json; options_to_json(generate_authentication_options(rp_id='localhost', user_verification='required'))  # generate raw options",
+      "grep -n 'mfa' addons/auth_passkey/models/res_users.py  # confirm passkey login returns mfa:'skip' (bypasses TOTP)"
     ]
   },
   "reverse_eng_confidence": {
@@ -157,14 +252,17 @@
     "strategy": "human"
   },
   "open_questions": [
-    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+    "Interplay with auth_totp: a passkey login returns mfa:'skip', so it satisfies/bypasses TOTP — the exact precedence when a user has both factors enrolled is asserted from code but not runtime-traced.",
+    "No runtime data captured (models empty at extraction): real passkey adoption, passkeys-per-user, and sign_count progression need extract_runtime.",
+    "The vendored _vendor/webauthn library version/provenance and its attestation-verification defaults are referenced but not fully audited.",
+    "Rate-limiting / abuse protection on the public /auth/passkey/start-auth challenge endpoint is not provided in-module — whether an upstream layer throttles it is unconfirmed."
   ],
   "provenance": {
     "explorer_facts": "doc/revres/facts/auth_passkey.facts.json",
     "tools": [
+      "code-read",
       "extract_module.py",
-      "extract_frontend.py",
-      "gen_thin.py"
+      "extract_frontend.py"
     ],
     "odoo_version": "19.0"
   }

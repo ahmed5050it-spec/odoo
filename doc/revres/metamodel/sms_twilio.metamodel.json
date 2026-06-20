@@ -4,6 +4,7 @@
     "manifest": {
       "name": "Twilio SMS",
       "category": "Hidden/Tools",
+      "summary": "Send SMS messages using Twilio",
       "depends": [
         "sms"
       ],
@@ -14,12 +15,77 @@
       {
         "_name": "sms.twilio.account.manage",
         "_description": "SMS Twilio Connection Wizard",
-        "fields": 6
+        "_inherit": null,
+        "fields": 6,
+        "methods": 4,
+        "relations": [
+          "company_id->res.company",
+          "sms_twilio_number_ids->company_id.sms_twilio_number_ids"
+        ]
       },
       {
         "_name": "sms.twilio.number",
         "_description": "Twilio Number",
-        "fields": 5
+        "_inherit": null,
+        "fields": 5,
+        "methods": 2,
+        "relations": [
+          "company_id->res.company",
+          "country_id->res.country"
+        ]
+      },
+      {
+        "_name": null,
+        "_description": "res.company (extension)",
+        "_inherit": "res.company",
+        "fields": 4,
+        "methods": 3,
+        "relations": [
+          "sms_twilio_number_ids->sms.twilio.number"
+        ]
+      },
+      {
+        "_name": null,
+        "_description": "sms.sms (extension)",
+        "_inherit": "sms.sms",
+        "fields": 3,
+        "methods": 6,
+        "relations": [
+          "record_company_id->res.company",
+          "sms_twilio_sid->sms_tracker_id.sms_twilio_sid (related)"
+        ]
+      },
+      {
+        "_name": null,
+        "_description": "sms.tracker (extension)",
+        "_inherit": "sms.tracker",
+        "fields": 1,
+        "methods": 1,
+        "relations": []
+      },
+      {
+        "_name": null,
+        "_description": "sms.composer (extension)",
+        "_inherit": "sms.composer",
+        "fields": 0,
+        "methods": 1,
+        "relations": []
+      },
+      {
+        "_name": null,
+        "_description": "mail.notification (extension)",
+        "_inherit": "mail.notification",
+        "fields": 1,
+        "methods": 1,
+        "relations": []
+      },
+      {
+        "_name": null,
+        "_description": "res.config.settings (extension)",
+        "_inherit": "res.config.settings",
+        "fields": 1,
+        "methods": 1,
+        "relations": []
       }
     ],
     "routes": [
@@ -34,19 +100,47 @@
     "security": {
       "access_rules": 2,
       "record_rules": 0,
-      "groups": 0
+      "groups": 0,
+      "note": "sms_twilio defines NO own res.groups; 2 ir.model.access entries scope the two technical models (sms.twilio.number, sms.twilio.account.manage). Credentials (sms_twilio_account_sid, sms_twilio_auth_token) are protected at the field level via groups='base.group_system' on res.company, not by a record rule."
     },
     "views": {
       "form": 0,
       "list": 0,
-      "tree": 0,
-      "kanban": 0,
       "search": 0,
-      "pivot": 0,
-      "graph": 0,
-      "calendar": 0,
-      "activity": 0
+      "note": "No standalone primary views; 3 data files inject Twilio config into res.config.settings, add a sid column to the sms.sms list, and define the sms.twilio.account.manage wizard form (92 XML LOC total)."
     },
+    "behavioral_notes": [
+      {
+        "element": "SmsApiTwilio._send_sms_batch / _sms_twilio_send_request (tools/sms_api.py)",
+        "observation": "SmsApiTwilio subclasses sms's SmsApiBase and replaces the IAP wire path. Instead of one batched IAP jsonrpc it opens a requests.Session and loops message-by-message, number-by-number, POSTing to the Twilio REST endpoint https://api.twilio.com/2010-04-01/Accounts/{account_sid}/Messages.json with form data {From, To, Body, StatusCallback}. Auth is HTTP Basic (auth=(account_sid, auth_token)) with a 5s timeout. The From number is chosen per destination country via get_twilio_from_number (matches sms.twilio.number.country_code to the to_number's country, else first number). On success it returns {state:'sent', sms_twilio_sid: response_json['sid']}; invisible to metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "SmsApiTwilio._twilio_error_code_to_odoo_state + PROVIDER_TO_SMS_FAILURE_TYPE (tools/sms_api.py)",
+        "observation": "Per-message Twilio numeric error codes are mapped to Odoo sms.sms states/failure_types: 21211/21614/21265 -> wrong_number_format, 21604 -> sms_number_missing, 21266 -> twilio_from_to, 21603 -> twilio_from_missing, 21608 -> twilio_acc_unverified, 21609 -> twilio_callback, else 'unknown'. PROVIDER_TO_SMS_FAILURE_TYPE extends the base dict (twilio_authentication->sms_credit, twilio_acc_unverified->sms_acc, ...). A RequestException (network/timeout) gives response=None -> state 'server_error'. Failure types twilio_authentication/twilio_callback/twilio_from_missing/twilio_from_to are added via selection_add on both sms.sms and mail.notification.",
+        "source": "code-read"
+      },
+      {
+        "element": "sms.sms._split_by_api / _get_sms_company / _handle_call_result_hook (models/sms_sms.py)",
+        "observation": "Provider choice is per-company: _split_by_api groups outgoing sms by _get_sms_company() (record_company_id or mail_message_id.record_company_id) and, for companies whose res.company.sms_provider=='twilio', yields company._get_sms_api_class()(env) (= SmsApiTwilio) bound via _set_company; the rest fall through to super() (IAP). _get_send_batch_size drops to ir.config_parameter sms_twilio.session.batch.size (default 10) since Twilio is sequential. Because the sms.sms row is GC'd after send, _handle_call_result_hook persists the returned Twilio SID onto the surviving sms.tracker.sms_twilio_sid.",
+        "source": "code-read"
+      },
+      {
+        "element": "Status-callback webhook /sms_twilio/status/<uuid> (controllers/controllers.py)",
+        "observation": "Public http POST route (csrf=False) receives Twilio's StatusCallback. It validates the uuid (32 hex), maps SmsStatus via TWILIO_TO_SMS_STATE (queued->outgoing, sending->process, sent->pending, delivered->sent, failed/undelivered->error, canceled->canceled), and verifies authenticity with _validate_twilio_signature: it recomputes HMAC-SHA1 over url+sorted-params keyed by the company's auth_token (generate_twilio_sms_callback_signature) and hmac.compare_digest's it against the X-Twilio-Signature header. On match it updates sms.tracker -> mail.notification (errors route to _action_update_from_twilio_error, mapping Twilio 30002-30008 codes to failure types), then marks the sms.sms to_delete=True.",
+        "source": "code-read"
+      },
+      {
+        "element": "Credential storage + sms.twilio.account.manage wizard (models/res_company.py, wizard/)",
+        "observation": "Twilio credentials live on res.company: sms_twilio_account_sid + sms_twilio_auth_token (both groups='base.group_system', admin-only at the ORM field level) and a One2many sms_twilio_number_ids of sender numbers. _assert_twilio_sid validates SID format (starts 'AC', 34 chars, alphanumeric). The transient sms.twilio.account.manage wizard (related fields onto the company) lets an admin set provider/SID/token; action_reload_numbers GETs https://api.twilio.com/.../IncomingPhoneNumbers.json to import sender numbers, and action_send_test composes a real test SMS via sms.composer. No IAP account / no Odoo credits are involved on the Twilio path.",
+        "source": "code-read"
+      },
+      {
+        "element": "external integrations (Twilio REST, gap #7)",
+        "observation": "1 http_call_site using the requests SDK directly (no Twilio python SDK): outbound POST to api.twilio.com/Messages.json (send) and GET to /IncomingPhoneNumbers.json (number import), plus the inbound /sms_twilio/status webhook. Customer-held credentials (account SID + auth token) are stored per res.company and used for HTTP Basic auth and for HMAC-signing the callback. This replaces sms's Odoo-IAP gateway (https://sms.api.odoo.com) with the customer's own Twilio account.",
+        "source": "static"
+      }
+    ],
     "frontend": {
       "present": false,
       "js_files": 0,
@@ -63,7 +157,10 @@
         "requests"
       ],
       "uses_api_keys": false,
-      "endpoints": [],
+      "endpoints": [
+        "https://api.twilio.com/2010-04-01/Accounts/{account_sid}/Messages.json",
+        "https://api.twilio.com/2010-04-01/Accounts/{account_sid}/IncomingPhoneNumbers.json"
+      ],
       "files": [
         "tools/sms_api.py",
         "wizard/sms_twilio_account_manage.py"
@@ -72,70 +169,132 @@
     "runtime": {
       "models_with_data": 0,
       "top": []
-    },
-    "behavioral_notes": [
-      {
-        "element": "external integrations",
-        "observation": "1 HTTP call sites; SDKs ['requests']; api_keys=False.",
-        "source": "static"
-      },
-      {
-        "element": "thin module",
-        "observation": "2 models, 1 routes, 1297 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
-        "source": "ast"
-      }
-    ]
+    }
   },
   "it_architecture": {
-    "application": "sms_twilio (Twilio SMS)",
+    "application": "sms_twilio (alternate SMS gateway driver - swaps the sms module's Odoo-IAP delivery backend for the customer's own Twilio REST account, selected per res.company)",
     "software_services": [
       "/sms_twilio/status/<string:uuid>"
     ],
     "data_objects": [
+      "sms.twilio.number",
       "sms.twilio.account.manage",
-      "sms.twilio.number"
+      "res.company (sms_provider, sms_twilio_account_sid, sms_twilio_auth_token, sms_twilio_number_ids)",
+      "sms.sms (sms_twilio_sid, record_company_id, +failure_type)",
+      "sms.tracker (sms_twilio_sid)",
+      "mail.notification (+failure_type)",
+      "res.config.settings (sms_provider)",
+      "sms.composer (override)"
     ],
     "logical_data_erm": [
-      "sms.twilio.account.manage -> company_id.sms_twilio_number_ids",
-      "sms.twilio.account.manage -> res.company",
-      "sms.twilio.number -> res.company",
-      "sms.twilio.number -> res.country"
+      "res.company -> sms.twilio.number (sms_twilio_number_ids, One2many sender numbers)",
+      "sms.twilio.number -> res.country (country_id, per-country From selection)",
+      "sms.sms -> res.company (record_company_id, determines provider)",
+      "sms.sms.sms_twilio_sid -> sms.tracker.sms_twilio_sid (related; SID survives sms GC)",
+      "sms.twilio.account.manage -> res.company (related credential wizard)",
+      "res.company (account_sid + auth_token) -> external Twilio REST account"
     ],
     "information_flows": [
-      "depends: sms"
+      "depends: sms (and transitively base, iap_mail, mail, phone_validation)",
+      "override: sms.sms._split_by_api routes per-company twilio sms to SmsApiTwilio, IAP sms to super()",
+      "side-effect: SmsApiTwilio._send_sms_batch -> POST https://api.twilio.com/.../Messages.json (Basic auth, per-message) -> {sent, sms_twilio_sid} or mapped failure_type",
+      "inbound: /sms_twilio/status/<uuid> webhook from Twilio (HMAC-SHA1 signature verified) -> sms.tracker -> mail.notification status -> sms.sms to_delete",
+      "side-effect: sms.twilio.account.manage.action_reload_numbers -> GET /IncomingPhoneNumbers.json -> create sms.twilio.number rows",
+      "credential flow: admin sets account SID + auth token on res.company (base.group_system) -> used for Basic auth + callback HMAC"
     ],
-    "frontend_components": []
+    "frontend_components": [],
+    "external_integrations": {
+      "http_call_sites": 1,
+      "sdk_imports": [
+        "requests"
+      ],
+      "endpoints": [
+        "https://api.twilio.com/2010-04-01/Accounts/{account_sid}/Messages.json",
+        "https://api.twilio.com/2010-04-01/Accounts/{account_sid}/IncomingPhoneNumbers.json"
+      ]
+    }
   },
   "business_architecture": {
     "capabilities": [
-      "Twilio SMS"
+      "Twilio SMS Gateway (send outbound SMS via the customer's own Twilio REST account)",
+      "Per-Company SMS Provider Selection (iap vs twilio on res.company)",
+      "Twilio Sender-Number Management (import & per-destination-country From selection)",
+      "Twilio Delivery Tracking (StatusCallback webhook -> sms.tracker/mail.notification)",
+      "Twilio Error / Failure-Type Mapping (Twilio codes -> Odoo sms.sms states)",
+      "Twilio Credential Configuration & Connection Test (account SID/auth token wizard)"
     ],
-    "value_streams": [],
+    "value_streams": [
+      "Configure-Twilio: admin sets provider=twilio + SID/token -> reload numbers (GET IncomingPhoneNumbers) -> send test SMS -> save",
+      "Send-via-Twilio: sms.sms._split_by_api routes twilio company -> SmsApiTwilio._send_sms_batch -> POST Messages.json -> state/sid back -> tracker keeps SID",
+      "Delivery-Report: Twilio StatusCallback -> /sms_twilio/status webhook (signature check) -> update tracker/notification -> GC sms.sms"
+    ],
     "information_concepts": [
-      "sms.twilio.account.manage",
-      "sms.twilio.number"
+      "sms.twilio.number (Twilio sender number per company/country)",
+      "sms.twilio.account.manage (connection/config wizard)",
+      "res.company.sms_provider (iap|twilio selector + Twilio credentials)",
+      "sms.sms.sms_twilio_sid (Twilio message SID)",
+      "sms.tracker.sms_twilio_sid (persisted SID for delivery correlation)",
+      "mail.notification (delivery status with Twilio failure types)"
     ],
-    "organization": [],
+    "organization": [
+      "base.group_system (admin - configures Twilio credentials, sender numbers, provider choice; field-level group on SID/token)",
+      "(sms_twilio defines no own groups - 2 access rules + base groups; reuses sms's groups for the messaging pipeline)"
+    ],
     "products": [],
-    "policies": [],
-    "stakeholders": [],
+    "policies": [
+      "Provider routing: per-company res.company.sms_provider == 'twilio' selects SmsApiTwilio, else IAP super()",
+      "Credential validation: _assert_twilio_sid enforces SID format (AC + 32 alphanumerics) before any call",
+      "Callback authenticity: inbound status webhook rejected unless X-Twilio-Signature matches recomputed HMAC-SHA1(auth_token)",
+      "Sequential batch sizing: ir.config_parameter sms_twilio.session.batch.size (default 10) because Twilio is called one message at a time",
+      "Credential confidentiality: account SID + auth token fields gated to base.group_system"
+    ],
+    "stakeholders": [
+      "System/admin (registers the Twilio account, manages credentials + sender numbers, picks provider)",
+      "Internal user / salesperson (sends SMS unchanged via sms.composer / chatter - provider is transparent)",
+      "Recipient contact (res.partner / phone number)",
+      "Twilio (external customer-owned SMS delivery provider)"
+    ],
     "strategy": null,
-    "metrics": []
+    "metrics": [
+      "sms.sms.state distribution on the Twilio path (sent/error/server_error/canceled)",
+      "Twilio failure_type breakdown (twilio_authentication, twilio_acc_unverified, twilio_from_missing, wrong_number_format, ...)",
+      "mail.notification SMS delivery status from StatusCallback (sent/bounce/exception)",
+      "Twilio sender-number coverage by country (sms.twilio.number per res.country)"
+    ]
   },
   "classification": {
     "value_model": "support",
     "activity_class": "support",
-    "apqc_category": "9.4 Manage internal communications",
-    "rationale": "sms_twilio: thin support/support module (auto-architect baseline)."
+    "apqc_category": "9.4 Manage internal communications (firm-wide messaging-infrastructure category that houses mail/sms); the Twilio backend is a gateway swap, so it inherits its parent sms's APQC anchor and only touches a 3.x Market-and-Sell leaf (e.g. 3.5.4.8 Handle sales order inquiries, apqc_odoo_map.tsv, support) derivatively when the SMS notifies on a sales record.",
+    "rationale": "sms_twilio is a cross-cutting SUPPORT subsystem (Stabell & Fjeldstad) and the direct sibling of the IAP-based sms backend: messaging-infrastructure with no business object of its own. It owns only technical configuration models (sms.twilio.number, sms.twilio.account.manage) and otherwise inherits sms.sms / sms.tracker / sms.composer / mail.notification to redirect the delivery wire from Odoo IAP (https://sms.api.odoo.com) to the customer's own Twilio REST account, selected per res.company via sms_provider. It carries no value stream of its own - it plugs transparently into the mail.thread notification pipeline that sms already established. APQC best fit is therefore the same as its parent: 9.4 Manage internal communications, the communication-infrastructure category; a 3.x selling code applies only derivatively when an SMS happens to notify on a sale.order (anchored by 3.5.4.8 in apqc_odoo_map.tsv). The defining trait (gap #7) is the external integration: direct requests-based HTTP to api.twilio.com with HTTP Basic auth (account SID + auth token) for the Messages endpoint, plus an inbound HMAC-SHA1-signed /sms_twilio/status StatusCallback webhook - customer-held credentials replacing IAP's account_token + database.uuid."
   },
   "fit_to_standard": {
     "standard_capabilities": [
-      "Twilio SMS"
+      "Drop-in alternate SMS provider: set res.company.sms_provider='twilio' to route that company's SMS through Twilio instead of Odoo IAP",
+      "Twilio account configuration wizard (SID/auth token) with SID-format validation and a live test-SMS button",
+      "Automatic Twilio sender-number import (IncomingPhoneNumbers) with per-destination-country From selection",
+      "Per-message send to Twilio Messages REST API over HTTP Basic auth, returning the Twilio SID",
+      "Signed StatusCallback webhook (HMAC-SHA1 verification) feeding the existing sms.tracker -> mail.notification delivery state machine",
+      "Twilio error-code -> Odoo failure_type mapping surfaced through the standard SMS failure UI (message_has_sms_error)"
     ],
-    "typical_fits": [],
-    "common_gaps": [],
+    "typical_fits": [
+      "Customer already has a Twilio account / regulated sender numbers and wants Odoo SMS without buying IAP credits",
+      "Multi-company setups needing a different SMS backend (or a different Twilio account) per company",
+      "All existing SMS flows (chatter SMS, sms.template, mass SMS) keep working unchanged - only the transport swaps"
+    ],
+    "common_gaps": [
+      "StatusCallback requires a publicly reachable base URL (web.base.url); localhost/ngrok needed for local testing",
+      "Sending is sequential (one HTTP request per recipient, 5s timeout, batch size default 10) - slower than IAP's batched call for large volumes",
+      "Grouping is by company only (code TODO: not yet by individual Twilio account/number pool)",
+      "Inbound/two-way SMS (replies) still not modeled - only outbound + delivery status",
+      "Requires the requests library and outbound HTTPS egress to api.twilio.com; credentials are company-stored secrets to safeguard"
+    ],
     "drive_hints": [
-      "odoo shell: env['sms.twilio.account.manage'].search([],limit=3)"
+      "odoo shell: env.company.write({'sms_provider':'twilio','sms_twilio_account_sid':'AC...','sms_twilio_auth_token':'...'}); env.company._assert_twilio_sid()",
+      "odoo shell: list(env['sms.sms']._fields['failure_type'].selection)  # see twilio_* failure types added via selection_add",
+      "odoo shell: from odoo.addons.sms_twilio.tools.sms_twilio import get_twilio_from_number; get_twilio_from_number(env.company, '+15551234567')  # per-country From pick",
+      "odoo shell: env['sms.twilio.account.manage'].create({}).action_reload_numbers()  # import sender numbers from Twilio",
+      "curl -X POST '<base_url>/sms_twilio/status/<32-hex-uuid>' -d 'SmsStatus=delivered' -H 'X-Twilio-Signature: <hmac>'  # simulate a StatusCallback (signature must validate)"
     ]
   },
   "reverse_eng_confidence": {
@@ -149,14 +308,19 @@
     "strategy": "human"
   },
   "open_questions": [
-    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+    "Exact Twilio Messages API contract beyond the fields used (From/To/Body/StatusCallback) and full error-code coverage - only a curated subset of Twilio codes is mapped; others fall to 'unknown'.",
+    "Same APQC ambiguity as parent sms: a cross-cutting comms gateway has no single clean PCF leaf (9.4 internal comms vs 12.x external relationships vs derivative 3.5.4.8).",
+    "Live Twilio-dependent behavior (real delivery, number provisioning, signature round-trip) cannot be observed without a configured Twilio account and a public callback URL.",
+    "Stated TODO/RIGR refactors (move record_company_id onto SmsSms, group by provider/account rather than by company) are not yet implemented in this stable version."
   ],
   "provenance": {
     "explorer_facts": "doc/revres/facts/sms_twilio.facts.json",
     "tools": [
-      "extract_module.py",
-      "extract_frontend.py",
-      "gen_thin.py"
+      "code-read (tools/sms_api.py, tools/sms_twilio.py, models/sms_sms.py, models/res_company.py, models/sms_tracker.py, models/mail_notification.py, models/sms_composer.py, controllers/controllers.py, wizard/sms_twilio_account_manage.py, __manifest__.py)",
+      "doc/revres/facts/sms_twilio.facts.json",
+      "doc/revres/frontend/sms_twilio.frontend.json (frontend_gap3 + integrations_gap7)",
+      "doc/revres/metamodel/sms.metamodel.json (parent shape)",
+      "doc/revres/apqc_odoo_map.tsv"
     ],
     "odoo_version": "19.0"
   }

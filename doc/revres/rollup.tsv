@@ -20,14 +20,14 @@ analytic	support	support	9.0 Manage Financial Resourc	7	0	8	1	meta+code+fe
 api_doc	support	support	13.0 Develop and Manage Busi	0	5	17	10	meta+fe
 attachment_indexation	support	support	13.0 Develop and Manage Busi	0	0	0	0	meta
 auth_ldap	support	support	8.0 Manage Information Techn	1	0	0	0	meta
-auth_oauth	support	support	8.0 Manage Information Techn	1	3	0	0	meta+integ
-auth_passkey	support	support	8.0 Manage Information Techn	2	1	3	0	meta+fe
+auth_oauth	support	support	8.0 Manage Information Techn	4	3	0	0	meta+code+integ
+auth_passkey	support	support	8.0 Manage Information Techn	4	1	3	0	meta+code+fe
 auth_passkey_portal	support	support	8.0 Manage Information Techn	0	0	2	0	meta+fe
 auth_password_policy	support	support	8.0 Manage Information Techn	0	0	3	2	meta+fe
 auth_password_policy_portal	support	support	8.0 Manage Information Techn	0	0	0	0	meta
 auth_password_policy_signup	support	support	8.0 Manage Information Techn	0	0	1	1	meta+fe
 auth_signup	support	support	8.0 Manage Information Techn	0	4	1	0	meta+fe
-auth_timeout	support	support	8.0 Manage Information Techn	0	5	1	2	meta+fe
+auth_timeout	support	support	8.0 Manage Information Techn	5	4	1	2	meta+code+fe
 auth_totp	support	support	8.0 Manage Information Techn	4	1	0	0	meta+code
 auth_totp_mail	support	support	8.0 Manage Information Techn	0	1	0	0	meta
 auth_totp_portal	support	support	8.0 Manage Information Techn	0	0	5	0	meta+fe
@@ -38,10 +38,10 @@ base_address_extended	support	support	8.0 Manage Information Techn	1	0	0	0	meta
 base_automation	support	support	8.0 Manage Information Techn	1	1	5	1	meta+fe
 base_geolocalize	support	support	8.0 Manage Information Techn	2	0	0	0	meta+integ
 base_iban	support	support	8.0 Manage Information Techn	0	0	4	0	meta+fe
-base_import	support	support	8.0 Manage Information Techn	2	1	10	8	meta+fe+integ
+base_import	support	support	8.0 Manage Information Techn	4	1	10	8	meta+code+fe+integ
 base_import_module	support	support	8.0 Manage Information Techn	1	1	2	0	meta+fe+integ
 base_install_request	support	support	8.0 Manage Information Techn	2	0	0	0	meta
-base_setup	support	support	8.0 Manage Information Techn	1	3	1	1	meta+fe
+base_setup	support	support	8.0 Manage Information Techn	4	3	1	1	meta+code+fe
 base_sparse_field	support	support	8.0 Manage Information Techn	1	0	0	0	meta
 base_vat	support	support	9.0 Manage Financial Resourc	4	1	0	0	meta+code+integ
 board	support	support	13.0 Develop and Manage Busi	1	1	4	3	meta+fe
@@ -379,7 +379,7 @@ onboarding	support	support	13.0 Develop and Manage Busi	4	0	1	0	meta+code+fe
 partner_autocomplete	support	support	13.0 Develop and Manage Busi	1	0	5	1	meta+fe+integ
 partnership	chain	primary	3.0 Market and Sell Products	1	0	0	0	meta
 payment	network	support	9.0 Manage Financial Resourc	6	5	5	0	meta+code+fe+integ
-payment_adyen	network	support	9.0 Manage Financial Resourc	0	5	1	0	meta+fe
+payment_adyen	network	support	9.0 Manage Financial Resourc	4	5	1	0	meta+code+fe
 payment_aps	network	support	9.0 Manage Financial Resourc	0	2	0	0	meta
 payment_asiapay	network	support	9.0 Manage Financial Resourc	0	2	0	0	meta
 payment_authorize	network	support	9.0 Manage Financial Resourc	0	1	1	0	meta+fe+integ
@@ -484,7 +484,7 @@ rating	support	support	6.0 Manage Customer Service	3	2	3	0	meta+code+fe
 repair	chain	support	4.0 Deliver Physical Product	8	0	2	0	meta+code+fe
 resource	support	support	7.0 Develop and Manage Human	5	0	5	0	meta+code+fe
 resource_mail	support	support	7.0 Develop and Manage Human	0	0	5	2	meta+fe
-rpc	support	support	13.0 Develop and Manage Busi	0	6	0	0	meta+integ
+rpc	support	support	8.0 Manage Information Techn	0	5	0	0	meta+code+integ
 sale	chain	primary	3.0 Market and Sell Products	5	2	37	10	meta+code+fe
 sale_crm	chain	primary	3.0 Market and Sell Products	1	0	0	0	meta
 sale_edi_ubl	chain	primary	3.0 Market and Sell Products	1	0	0	0	meta
@@ -498,7 +498,7 @@ sale_management	chain	primary	3.0 Market and Sell Products	5	1	4	0	meta+code+fe
 sale_margin	chain	primary	3.0 Market and Sell Products	0	0	0	0	meta
 sale_mrp	chain	primary	3.0 Market and Sell Products	0	0	0	0	meta
 sale_mrp_margin	chain	primary	3.0 Market and Sell Products	0	0	0	0	meta
-sale_pdf_quote_builder	chain	primary	3.0 Market and Sell Products	2	1	5	2	meta+fe
+sale_pdf_quote_builder	chain	primary	3.0 Market and Sell Products	7	1	5	2	meta+code+fe
 sale_product_matrix	chain	primary	3.0 Market and Sell Products	0	0	1	0	meta+fe
 sale_project	chain	primary	3.0 Market and Sell Products	0	0	5	2	meta+fe
 sale_project_stock	chain	primary	3.0 Market and Sell Products	0	0	0	0	meta
@@ -515,7 +515,7 @@ sale_timesheet	shop	primary	5.0 Deliver Services	8	1	1	1	meta+code+fe
 sale_timesheet_margin	chain	primary	3.0 Market and Sell Products	0	0	0	0	meta
 sales_team	support	support	3.0 Market and Sell Products	4	0	1	0	meta+code+fe
 sms	support	support	9.4 Manage internal communic	9	1	7	1	meta+code+fe
-sms_twilio	support	support	9.4 Manage internal communic	2	1	0	0	meta+integ
+sms_twilio	support	support	9.4 Manage internal communic	8	1	0	0	meta+code+integ
 snailmail	support	support	9.4 Manage internal controls	1	0	5	1	meta+fe
 snailmail_account	support	support	9.4 Manage internal communic	0	0	0	0	meta
 social_media	support	support	3.0 Market and Sell Products	0	0	0	0	meta
@@ -625,7 +625,7 @@ website_mail_group	network	primary	3.0 Market and Sell Products	0	1	3	0	meta+fe
 website_mass_mailing	network	primary	3.0 Market and Sell Products	0	2	13	0	meta+fe
 website_mass_mailing_sms	network	primary	3.0 Market and Sell Products	0	0	0	0	meta
 website_partner	network	primary	3.0 Market and Sell Products	1	1	0	0	meta
-website_payment	network	support	3.0 Market and Sell Products	0	5	8	0	meta+fe
+website_payment	network	primary	3.0 Market and Sell Products	4	5	8	0	meta+code+fe
 website_profile	network	primary	3.0 Market and Sell Products	3	8	5	1	meta+code+fe
 website_project	network	primary	3.0 Market and Sell Products	0	0	1	0	meta+fe
 website_sale	network	primary	3.0 Market and Sell Products	6	7	83	6	meta+code+fe

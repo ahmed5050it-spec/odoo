@@ -13,9 +13,31 @@
     },
     "models": [
       {
+        "_name": "res.config.settings (extension)",
+        "_description": "General Settings options (module_*/group_* installer toggles, company profile, report footer, multi-currency, KPI counters)",
+        "fields": 30,
+        "relations": [
+          "company_id->res.company",
+          "external_report_layout_id->company_id.external_report_layout_id"
+        ]
+      },
+      {
+        "_name": "res.users (extension)",
+        "_description": "Adds web_create_users(emails) onboarding/invite flow",
+        "fields": 0,
+        "relations": []
+      },
+      {
         "_name": "kpi.provider",
-        "_description": "KPI Provider",
-        "fields": 0
+        "_description": "KPI Provider (AbstractModel; get_kpi_summary hook overridden by other modules)",
+        "fields": 0,
+        "relations": []
+      },
+      {
+        "_name": "ir.http (extension)",
+        "_description": "session_info adds base_setup.show_effect flag for internal users",
+        "fields": 0,
+        "relations": []
       }
     ],
     "routes": [
@@ -84,64 +106,140 @@
     },
     "behavioral_notes": [
       {
-        "element": "frontend (OWL/JS)",
-        "observation": "1 JS files, 1 OWL components, 0 registry adds; bundles ['web.assets_backend'].",
-        "source": "static"
+        "element": "res.config.settings module_* fields (module_auth_oauth, module_auth_ldap, module_voip, module_sms, module_google_calendar, module_base_import, module_partner_autocomplete, ...)",
+        "observation": "base_setup declares ~16 module_* Boolean fields in res_config_settings.py. They store NO data: each is a deferred installer toggle. On save, res.config.settings.execute() (odoo/addons/base/models/res_config.py) classifies any module_<name> field via _get_classified_fields, then computes to_install = fields turned True whose ir.module.module.state != 'installed' and to_uninstall = fields turned False whose module is installed. to_install runs ir.module.module.button_immediate_install() at the END of the transaction (documented as MUST-be-last to avoid registry<->DB desync); to_uninstall opens the base.module.uninstall wizard. After install the env.transaction is reset and the web client reloads. This 'flip a Settings checkbox -> app installs' mechanism is invisible to ORM metadata.",
+        "source": "code-read"
       },
       {
-        "element": "thin module",
-        "observation": "1 models, 3 routes, 934 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
-        "source": "ast"
+        "element": "res.config.settings group_multi_currency + execute()/set_values()",
+        "observation": "group_multi_currency declares implied_group='base.group_multi_currency'. execute() -> set_values() classifies group_* fields and, when toggled True, calls groups._apply_group(implied_group) to add the implied group to base.group_user (all employees); when toggled False it calls groups._remove_group(implied_group). config_parameter fields persist instead: show_effect -> ir.config_parameter 'base_setup.show_effect', profiling_enabled_until -> 'base.profiling_enabled_until'. So a single save mutates security groups AND system parameters AND module install state at once, none of which is a stored field on this TransientModel.",
+        "source": "code-read"
+      },
+      {
+        "element": "res.users.web_create_users(emails) (invite-users flow)",
+        "observation": "The 'Invite users by email' onboarding action. It normalizes each email via tools.mail.parse_contact_from_email, requires the Discuss app (raises UserError if the email_normalized field is absent), REACTIVATES any matching deactivated users (active=True) before creating new ones, de-dupes against already-handled normalized emails, then create()s each new user under signup_valid context so signup tokens are issued. The reactivation + signup-token side-effect chain lives only in code.",
+        "source": "code-read"
+      },
+      {
+        "element": "res.config.settings company/profile setup actions + computed counters",
+        "observation": "open_company() returns an act_window onto the current res.company form; open_new_user_default_groups() lazily creates/refs base.default_user_group (a res.groups + ir.model.data pair) and opens it; edit_external_header() jumps to the company external report-layout QWeb view. company_count/active_user_count/language_count/company_informations are @api.depends('company_id') computes (must depend on a field because this is a TransientModel) running sudo search_count over res.company / non-share res.users / res.lang to drive the Settings dashboard tiles. report_footer and company_name are related writes back onto res.company.",
+        "source": "code-read"
+      },
+      {
+        "element": "controller /base_setup/data + ResetModuleStateCogMenu (static)",
+        "observation": "The Settings 'users' tile is fed by /base_setup/data, gated on base.group_erp_manager, which runs raw SQL over res_users/res_users_log to count active non-share users and 'pending' users (those with no res_users_log row, i.e. never logged in) and returns an _action_show() to chase them. Frontend: static/src/views/module_views.js registers ResetModuleStateCogMenu in the 'cogMenu' registry; on the ir.module.module list view it calls ir.module.module.button_reset_state and reloads -- a recovery tool for installs left in a transient state.",
+        "source": "static"
       }
     ]
   },
   "it_architecture": {
-    "application": "base_setup (Initial Setup Tools)",
+    "application": "base_setup (General Settings foundation: base res.config.settings option registry, apps/users onboarding, company setup) -- auto_install support add-on over base + web",
     "software_services": [
-      "/base_setup/data",
-      "/base_setup/demo_active",
-      "/kpi/summary"
+      "/base_setup/data (Settings dashboard users/pending-users tile, erp_manager-gated)",
+      "/base_setup/demo_active (detect demo-data databases)",
+      "/kpi/summary (KPI provider aggregation endpoint)"
     ],
     "data_objects": [
-      "kpi.provider"
+      "res.config.settings (extension)",
+      "res.users (extension)",
+      "kpi.provider",
+      "ir.http (extension)"
     ],
-    "logical_data_erm": [],
+    "logical_data_erm": [
+      "res.config.settings -> res.company (company_id)",
+      "res.config.settings -> company_id.external_report_layout_id (report layout)",
+      "res.config.settings.group_multi_currency -> base.group_multi_currency (implied_group)",
+      "res.config.settings.module_* -> ir.module.module (deferred install target)",
+      "res.config.settings.show_effect/profiling_enabled_until -> ir.config_parameter"
+    ],
     "information_flows": [
-      "depends: base, web"
+      "depends: base, web",
+      "save Settings: res.config.settings.execute() -> set_values() (groups via _apply_group/_remove_group, ir.default, ir.config_parameter) -> module_* install via ir.module.module.button_immediate_install() at end of txn -> env.transaction.reset() -> web client reload",
+      "uninstall toggle: module_* set False -> base.module.uninstall wizard",
+      "invite users: res.users.web_create_users(emails) -> reactivate deactivated + create(signup_valid) -> signup tokens",
+      "dashboard: /base_setup/data raw SQL over res_users/res_users_log -> active/pending counts; computed company_count/active_user_count/language_count over res.company/res.users/res.lang",
+      "kpi: kpi.provider.get_kpi_summary() overridden by downstream modules, surfaced via /kpi/summary"
     ],
     "frontend_components": [
-      "ResetModuleStateCogMenu"
+      "ResetModuleStateCogMenu (cogMenu registry entry on ir.module.module list view -> button_reset_state)"
     ]
   },
   "business_architecture": {
     "capabilities": [
-      "Initial Setup Tools"
+      "Configure the System via General Settings (option registry)",
+      "Enable/Disable Features by Installing/Uninstalling Apps (module_* toggles)",
+      "Toggle Security-Group Feature Flags (group_* implied groups, e.g. multi-currency)",
+      "Onboard & Invite Users by Email",
+      "Set Up the Company Profile, Report Layout & Footer",
+      "Surface Setup KPIs / Dashboard Counters (users, companies, languages, pending users)"
     ],
-    "value_streams": [],
+    "value_streams": [
+      "Configure-to-Activate: admin toggles a Settings option -> execute() -> module install / group apply / config param -> reloaded client with the feature live",
+      "Invite-to-Active-User: enter emails -> web_create_users -> reactivate/create + signup token -> onboarded user"
+    ],
     "information_concepts": [
-      "kpi.provider"
+      "res.config.settings (General Settings options)",
+      "kpi.provider (KPI summary contract)",
+      "company profile (res.company via company_id)",
+      "module install state (ir.module.module)",
+      "system parameter (ir.config_parameter: show_effect, profiling_enabled_until)"
     ],
     "organization": [],
     "products": [],
-    "policies": [],
-    "stakeholders": [],
+    "policies": [
+      "execute() restricted to admins (env.is_admin else AccessError)",
+      "/base_setup/data gated on base.group_erp_manager",
+      "group_* toggles mutate base.group_user implied groups (firm-wide feature entitlement)",
+      "module install/uninstall MUST run at end of transaction to avoid registry<->DB desync"
+    ],
+    "stakeholders": [
+      "System administrator / ERP manager (owns General Settings, app install, user invite)",
+      "End user (inherits feature flags and company defaults set here)",
+      "Module developer (extends res.config.settings with module_*/group_*/config_* fields and kpi.provider)"
+    ],
     "strategy": null,
-    "metrics": []
+    "metrics": [
+      "active_user_count, company_count, language_count (Settings dashboard tiles)",
+      "pending users count (invited but never logged in, via /base_setup/data)",
+      "kpi.provider.get_kpi_summary aggregates (surfaced to the databases list)"
+    ]
   },
   "classification": {
     "value_model": "support",
     "activity_class": "support",
     "apqc_category": "8.0 Manage Information Technology",
-    "rationale": "base_setup: thin support/support module (auto-architect baseline)."
+    "rationale": "base_setup is cross-cutting firm IT infrastructure (Porter support activity; Stabell & Fjeldstad 'support'), not a value-creating primary activity of any chain/shop/network. It is the foundation of Odoo's General Settings: the base res.config.settings option registry plus apps/users onboarding and company setup. auto_install=true makes it ubiquitous configuration plumbing every deployment relies on. Its substance is behavioral, not data: ~16 module_* installer toggles that drive ir.module.module.button_immediate_install on save, group_* feature flags that mutate security groups, config_parameter writes, the invite-users flow and dashboard counters -- the only declared model (abstract kpi.provider) bears no rows. APQC 8.0 'Manage Information Technology' fits because the work here is IT delivery/configuration management: provision and manage application capabilities (install apps), manage IT configuration (parameters, feature flags), administer user/company setup. 13.0 'Develop and Manage Business Capabilities' was considered (settings govern which capabilities are on) but rejected: base_setup is a concrete running configuration/installer mechanism, not a governance/portfolio capability -- its work is squarely IT delivery, i.e. 8.0."
   },
   "fit_to_standard": {
     "standard_capabilities": [
-      "Initial Setup Tools"
+      "General Settings page with grouped option toggles (the res.config.settings framework)",
+      "Install/uninstall apps by flipping a module_* checkbox (deferred immediate install at end of txn)",
+      "Feature flags via group_* implied-group toggles (e.g. multi-currency)",
+      "System parameters via config_parameter fields (show_effect, profiling window)",
+      "Company profile, report layout and report footer setup",
+      "Invite users by email with reactivation and signup tokens (web_create_users)",
+      "Setup dashboard counters (active users, companies, languages, pending users) and KPI provider hook",
+      "Reset-module-state recovery cog menu on the Apps list"
     ],
-    "typical_fits": [],
-    "common_gaps": [],
+    "typical_fits": [
+      "Turning on optional integrations (OAuth/LDAP/SMS/VoIP/Google Calendar) from Settings without manual app install",
+      "Enabling multi-currency or other group-based features firm-wide via a single toggle",
+      "Standing up a new company profile and branded report layout/footer",
+      "Bulk-inviting the initial user set during onboarding"
+    ],
+    "common_gaps": [
+      "Adding a new Settings option requires JS/Python dev (declare a module_*/group_*/config_* field + view) -- not configurable from UI",
+      "Module install/uninstall side-effects (data migration, dependency chains) are not previewed before save",
+      "No granular per-user feature flags here (group_* toggles apply to base.group_user firm-wide)",
+      "KPI provider returns [] until downstream modules override get_kpi_summary",
+      "No external integrations in base_setup itself (gap #7: zero outbound HTTP/SDK call sites)"
+    ],
     "drive_hints": [
-      "odoo shell: env['kpi.provider'].search([],limit=3)"
+      "odoo shell: env['res.config.settings']._get_classified_fields() to see module/group/config/default classification of the Settings fields",
+      "odoo shell: s = env['res.config.settings'].create({'module_voip': True}); s.execute() to watch a module_* toggle trigger button_immediate_install",
+      "odoo shell: env['res.users'].web_create_users(['demo.invite@example.com']) to exercise the invite-users flow",
+      "curl -X POST /base_setup/data (auth=user, group_erp_manager) to fetch the active/pending user counts the dashboard tile renders",
+      "odoo shell: env['kpi.provider'].get_kpi_summary() (returns [] in base; populated by downstream modules)"
     ]
   },
   "reverse_eng_confidence": {
@@ -155,11 +253,15 @@
     "strategy": "human"
   },
   "open_questions": [
-    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+    "Full inventory of downstream modules that add module_*/group_*/config_* fields to this same res.config.settings page (the option set is open-ended across all apps).",
+    "Which modules override kpi.provider.get_kpi_summary and what KPIs they contribute.",
+    "Exact dependency/migration side-effects of each module_* install beyond the immediate button_immediate_install call.",
+    "Interaction of company_id multi-company context with the per-company vs global (group/config) settings on this page."
   ],
   "provenance": {
     "explorer_facts": "doc/revres/facts/base_setup.facts.json",
     "tools": [
+      "code-read",
       "extract_module.py",
       "extract_frontend.py",
       "gen_thin.py"

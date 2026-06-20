@@ -14,21 +14,6 @@
     "routes": [
       {
         "paths": [
-          "/jsonrpc"
-        ],
-        "auth": "none",
-        "type": "jsonrpc"
-      },
-      {
-        "paths": [
-          "/web/version",
-          "/json/version"
-        ],
-        "auth": "none",
-        "type": "http"
-      },
-      {
-        "paths": [
           "/json/2",
           "/json/2/<path:subpath>"
         ],
@@ -44,17 +29,26 @@
       },
       {
         "paths": [
-          "/xmlrpc/<service>"
+          "/jsonrpc"
+        ],
+        "auth": "none",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/xmlrpc/<service>",
+          "/xmlrpc/2/<service>"
         ],
         "auth": "none",
         "type": null
       },
       {
         "paths": [
-          "/xmlrpc/2/<service>"
+          "/web/version",
+          "/json/version"
         ],
         "auth": "none",
-        "type": null
+        "type": "http"
       }
     ],
     "security": {
@@ -90,63 +84,128 @@
     },
     "behavioral_notes": [
       {
-        "element": "external integrations",
-        "observation": "0 HTTP call sites; SDKs ['xmlrpc']; api_keys=True.",
-        "source": "static"
+        "element": "WebJson2Controller.web_json_2_rpc (POST /json/2/<__model__>/<__method__>)",
+        "observation": "The modern external API surface. Path components map directly onto an ORM call: it resolves request.env[__model__].with_context(context) (NotFound if the model is absent), then get_public_method(Model, __method__) from odoo.service.model, which refuses any name starting with '_', any name in _UNSAFE_ATTRIBUTES, classmethods/staticmethods and methods decorated @api.private (raising AccessError/NotFound). It then Model.browse(ids), validates the call against inspect.signature(func).bind(records, **kwargs) (422 UnprocessableEntity on mismatch), rejects ids for @api.model methods (422), and calls func(records, **kwargs). A BaseModel recordset result is coerced to result.ids before serialization. There is no per-model/method allow-list: any public ORM method on any installed model is reachable - the security boundary is get_public_method plus normal ORM access rights, not the route.",
+        "source": "code-read"
       },
       {
-        "element": "thin module",
-        "observation": "0 models, 6 routes, 662 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
-        "source": "ast"
+        "element": "auth='bearer' (ir.http._auth_method_bearer, applied to /json/2/<model>/<method>)",
+        "observation": "Authentication is an API key, not a login session. The handler parses 'Authorization: Bearer <token>' (case-insensitive regex) and calls res.users.apikeys._check_credentials(scope='rpc', key=token); an invalid/absent key raises 401 Unauthorized with a WWWAuthenticate('bearer') challenge. The resolved uid drives request.update_env(user=uid) so the call runs with that user's rights. The endpoint is stateless: @route forces save_session=False for bearer routes and the handler sets request.session.can_save=False (no session cookie is written). With no bearer token it falls back to an existing session, but only when browser Sec-Fetch-* headers prove an interactive same-origin navigation (CSRF protection); otherwise it rejects. This auth-mode wiring is entirely invisible to ORM/model metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "Json2Dispatcher (odoo.http, type='json2' request/response envelope)",
+        "observation": "Defines the request/response contract for /json/2. The body must be application/json (or empty); it is parsed via request.get_json_data() and merged with the URL path args into request.params (BadRequest on malformed JSON). A successful controller return is wrapped with request.make_json_response(result) - a bare JSON value, NOT a JSON-RPC {jsonrpc,id,result} envelope. handle_error serializes exceptions as JSON via serialize_exception with a meaningful HTTP status: UserError/SessionExpiredException use exc.http_status, werkzeug HTTPExceptions keep their .code (e.g. 404/422), everything else is 500. This REST-style JSON-over-HTTP envelope is the deliberate replacement for the legacy JSON-RPC framing.",
+        "source": "code-read"
+      },
+      {
+        "element": "_web_json_2_rpc_readonly (dynamic readonly routing) + web_json_2_404",
+        "observation": "Read/write routing is computed per request: _web_json_2_rpc_readonly walks Model.mro() for a method-level _readonly flag on the target method and returns it (default False), so read-only ORM methods dispatch to a read-replica cursor while write methods use the primary. A missing model short-circuits to readonly=True (a 404 needs no write cursor). The landing route /json/2 (and /json/2/<subpath>) is a deliberate 404 returning the hint 'Did you mean POST /json/2/<model>/<method>?' - there is no schema/OpenAPI discovery endpoint; the contract is simply 'any public method on any model'.",
+        "source": "code-read"
+      },
+      {
+        "element": "XMLRPC / JSONRPC legacy controllers (/xmlrpc, /xmlrpc/2, /jsonrpc) + deprecation",
+        "observation": "The historical endpoints. /jsonrpc and /xmlrpc/<service> dispatch via odoo.http.dispatch_rpc(service, method, params) over the common/db/object services, auth='none' (credentials travel in the call payload, not headers). xmlrpc_1 returns fault codes as strings (non-compliant, kept for back-compat) and xmlrpc_2 as ints (RPC_FAULT_CODE_* mapped from odoo.exceptions by xmlrpc_handle_exception_*). A custom OdooMarshaller serializes Odoo types (frozendict, bytes->base64 str, datetime/date->ISO strings, lazy, Markup, Command) and strips XML control characters. All three legacy routes log RPC_DEPRECATION_NOTICE (deprecated in 19, removal scheduled for 22) and call _check_request(), which closes the cursor (request.env.cr.close) before dispatch.",
+        "source": "code-read"
+      },
+      {
+        "element": "frontend (none) + /web/version, /json/version discovery",
+        "observation": "extract_frontend.py reports present=false: 0 JS files, 0 XML/QWeb templates, 0 OWL components, 0 registry adds, 0 asset bundles. rpc ships no UI whatsoever - it is pure HTTP/RPC plumbing consumed by third-party clients and server-to-server callers, never rendered. The only 'discovery' surface is the unauthenticated GET /web/version (alias /json/version) returning {version_info, version} from odoo.release as a JSON response.",
+        "source": "static"
       }
     ]
   },
   "it_architecture": {
-    "application": "rpc (RPC endpoints)",
+    "application": "rpc (external programmatic API surface: JSON-2 REST-style API, legacy XML-RPC / JSON-RPC endpoints, version discovery)",
     "software_services": [
-      "/json/2",
-      "/json/2/<__model__>/<__method__>",
-      "/json/2/<path:subpath>",
-      "/json/version",
-      "/jsonrpc",
-      "/web/version",
-      "/xmlrpc/2/<service>",
-      "/xmlrpc/<service>"
+      "POST /json/2/<model>/<method> (bearer JSON-2 ORM call)",
+      "/json/2, /json/2/<path:subpath> (json2 landing -> 404 hint)",
+      "/jsonrpc (legacy JSON-RPC, deprecated)",
+      "/xmlrpc/<service>, /xmlrpc/2/<service> (legacy XML-RPC, deprecated)",
+      "/web/version, /json/version (version discovery)"
     ],
     "data_objects": [],
-    "logical_data_erm": [],
+    "logical_data_erm": [
+      "rpc owns no models; it dispatches to any installed model via request.env[model]",
+      "bearer auth depends on res.users.apikeys (base) to resolve a token to a uid"
+    ],
     "information_flows": [
-      "depends: base"
+      "depends: base",
+      "json2: third-party client -> POST /json/2/<model>/<method> (Bearer apikey) -> _auth_method_bearer -> get_public_method -> Model.browse(ids).<method>(**kwargs) -> JSON result",
+      "auth: Authorization: Bearer <token> -> res.users.apikeys._check_credentials(scope='rpc') -> request.update_env(user=uid)",
+      "legacy: client -> /jsonrpc | /xmlrpc[/2]/<service> -> dispatch_rpc(service, method, params) -> common/db/object services",
+      "envelope: Json2Dispatcher.dispatch -> ir.http._dispatch -> make_json_response; handle_error -> serialize_exception with HTTP status",
+      "discovery: GET /web/version|/json/version -> odoo.release.version_info"
     ],
     "frontend_components": []
   },
   "business_architecture": {
     "capabilities": [
-      "RPC endpoints"
+      "Expose ORM Methods as an External Programmatic API (JSON-2)",
+      "Authenticate API Clients via Bearer API Keys",
+      "Provide Backwards-Compatible Legacy RPC (XML-RPC / JSON-RPC)",
+      "Enforce the Public-Method / Access-Right Security Boundary on Remote Calls",
+      "Serialize Odoo/ORM Types to Wire Formats (JSON, XML-RPC)",
+      "Advertise Server Version for Client Capability Negotiation"
     ],
-    "value_streams": [],
-    "information_concepts": [],
+    "value_streams": [
+      "Integration request-to-result: external client authenticates with an API key -> invokes a model method -> receives a JSON result (the integration round-trip)"
+    ],
+    "information_concepts": [
+      "RPC request/response envelope (json2 / jsonrpc / xmlrpc)",
+      "API key credential (res.users.apikeys, scope 'rpc')",
+      "server version_info (odoo.release)"
+    ],
     "organization": [],
     "products": [],
-    "policies": [],
-    "stakeholders": [],
+    "policies": [
+      "get_public_method gate: only non-underscore, non-@api.private, non-classmethod public methods are remotely callable; everything else raises AccessError",
+      "bearer auth required for /json/2/<model>/<method>; stateless (save_session=False, can_save=False), no session cookie",
+      "Sec-Fetch-* CSRF check when falling back from a bearer token to an interactive session",
+      "legacy /xmlrpc, /xmlrpc/2, /jsonrpc deprecated in 19.0, scheduled removal in 22.0 (RPC_DEPRECATION_NOTICE)"
+    ],
+    "stakeholders": [
+      "Third-party / external integration developer (primary consumer of /json/2 and legacy RPC)",
+      "System integrator / server-to-server caller",
+      "System administrator (issues and scopes API keys via res.users.apikeys)"
+    ],
     "strategy": null,
     "metrics": []
   },
   "classification": {
     "value_model": "support",
     "activity_class": "support",
-    "apqc_category": "13.0 Develop and Manage Business Capabilities",
-    "rationale": "rpc: thin support/support module (auto-architect baseline)."
+    "apqc_category": "8.0 Manage Information Technology",
+    "rationale": "rpc is firm IT infrastructure (Porter support activity; Stabell & Fjeldstad 'support'), not a value-creating primary activity of any chain/shop/network. It owns no business object: model_count=0, 0 fields, 0 security rules, 0 views, 0 frontend assets - only 6 routes / ~662 LOC of controllers that expose OTHER modules' ORM methods to external callers. It creates no value of its own; its value is enabling integration with whatever business modules are installed - the definition of a support/infrastructure surface. APQC 8.0 'Manage Information Technology' fits because rpc is the IT-delivery capability for external application interfaces ('develop and manage IT services / external integration interfaces / APIs'), the programmatic-access plumbing the firm's IT operates. 13.0 'Develop and Manage Business Capabilities' was considered (an API is an enabling capability others build on) but rejected: rpc is a concrete running interface/runtime, not a governance/portfolio capability - its work is IT service delivery (operate the API gateway, manage credentials, maintain protocol compatibility), squarely APQC 8.0, mirroring the web framework module's classification."
   },
   "fit_to_standard": {
     "standard_capabilities": [
-      "RPC endpoints"
+      "JSON-2 REST-style external API: POST /json/2/<model>/<method> to any public ORM method",
+      "Bearer API-key authentication (res.users.apikeys, scope 'rpc'), stateless",
+      "Automatic ORM type serialization to JSON (json2) and XML-RPC (OdooMarshaller)",
+      "Backwards-compatible XML-RPC (/xmlrpc, /xmlrpc/2) and JSON-RPC (/jsonrpc) over common/db/object services",
+      "Dynamic read/write routing (read-replica for _readonly methods)",
+      "Structured JSON error envelopes with correct HTTP status (404/422/500)",
+      "Unauthenticated version discovery (/web/version, /json/version)"
     ],
-    "typical_fits": [],
-    "common_gaps": [],
+    "typical_fits": [
+      "External system reads/writes Odoo records via search_read / create / write over /json/2 with an API key",
+      "Legacy client kept working on /xmlrpc/2 until migration to /json/2",
+      "Server-to-server automation invoking action_* / business methods remotely"
+    ],
+    "common_gaps": [
+      "No schema/OpenAPI discovery endpoint - clients must know model/method names out of band",
+      "No per-route allow-list or rate limiting (any public method on any model is reachable; security is ORM access rights only)",
+      "API keys are global-scope ('rpc' scope maps to a NULL/global key) - no fine-grained per-endpoint scoping",
+      "Webhook / outbound push integration is not provided here - rpc is inbound/pull only",
+      "Legacy XML-RPC/JSON-RPC removal in 22.0 forces migration of older clients"
+    ],
     "drive_hints": [
-      "n/a"
+      "curl -X POST $URL/json/2/res.partner/search_read -H 'Authorization: Bearer <apikey>' -H 'Content-Type: application/json' -d '{\"kwargs\":{\"domain\":[],\"fields\":[\"name\"],\"limit\":3}}'",
+      "curl $URL/web/version  -> confirm {version_info, version} discovery payload",
+      "curl -X POST $URL/json/2/  -> confirm 404 hint 'Did you mean POST /json/2/<model>/<method>?'",
+      "curl -X POST $URL/json/2/res.partner/_invalid -H 'Authorization: Bearer <key>'  -> confirm AccessError for private/underscore method",
+      "odoo shell: env['res.users.apikeys']._generate('rpc', 'demo key', None) to mint a bearer key for testing"
     ]
   },
   "reverse_eng_confidence": {
@@ -160,14 +219,18 @@
     "strategy": "human"
   },
   "open_questions": [
-    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+    "Exact wire shape clients send to /json/2: how positional ids vs kwargs are split for non-@api.model methods (the controller binds signature(func).bind(records, **kwargs); only ids + kwargs are top-level params).",
+    "Whether any deployment fronts /json/2 with a route allow-list or gateway rate limiting (not in this module).",
+    "Real-world API-key scoping practice - the 'rpc' scope maps to a global NULL-scope key; how installations restrict that.",
+    "Adoption split between legacy /xmlrpc(/2) + /jsonrpc and the new /json/2 ahead of the 22.0 removal."
   ],
   "provenance": {
     "explorer_facts": "doc/revres/facts/rpc.facts.json",
     "tools": [
+      "code-read",
       "extract_module.py",
       "extract_frontend.py",
-      "gen_thin.py"
+      "extract_runtime.sh"
     ],
     "odoo_version": "19.0"
   }
