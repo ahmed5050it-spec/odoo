@@ -4,6 +4,7 @@
     "manifest": {
       "name": "Work Entries",
       "category": "Human Resources/Employees",
+      "summary": "Manage work entries",
       "depends": [
         "hr"
       ],
@@ -12,24 +13,43 @@
     },
     "models": [
       {
-        "_name": "hr.user.work.entry.employee",
-        "_description": "Work Entries Employees",
-        "fields": 4
-      },
-      {
         "_name": "hr.work.entry",
         "_description": "HR Work Entry",
-        "fields": 18
-      },
-      {
-        "_name": "hr.work.entry.regeneration.wizard",
-        "_description": "Regenerate Employee Work Entries",
-        "fields": 10
+        "fields": 18,
+        "relations": [
+          "employee_id->hr.employee",
+          "version_id->hr.version",
+          "work_entry_type_id->hr.work.entry.type",
+          "department_id->hr.department",
+          "company_id->res.company",
+          "country_id->res.country"
+        ]
       },
       {
         "_name": "hr.work.entry.type",
         "_description": "HR Work Entry Type",
-        "fields": 13
+        "fields": 13,
+        "relations": [
+          "country_id->res.country"
+        ]
+      },
+      {
+        "_name": "hr.work.entry.regeneration.wizard",
+        "_description": "Regenerate Employee Work Entries",
+        "fields": 10,
+        "relations": [
+          "employee_ids->hr.employee",
+          "validated_work_entry_employee_ids->hr.employee"
+        ]
+      },
+      {
+        "_name": "hr.user.work.entry.employee",
+        "_description": "Work Entries Employees",
+        "fields": 4,
+        "relations": [
+          "user_id->res.users",
+          "employee_id->hr.employee"
+        ]
       }
     ],
     "routes": [],
@@ -49,6 +69,33 @@
       "calendar": 1,
       "activity": 0
     },
+    "behavioral_notes": [
+      {
+        "element": "hr.version.generate_work_entries / _generate_work_entries / _get_version_work_entries_values (the generation engine)",
+        "observation": "Work entries are NOT entered by hand; they are generated per hr.version (the contract snapshot) from the resource.calendar working schedule. _get_version_work_entries_values calls resource.calendar._attendance_intervals_batch to get the weekly attendance intervals, fetches resource.calendar.leaves via _get_leave_domain (global resource_id=False company closures + resource-specific leaves), then computes real_attendances = attendances - leaves - worked_leaves and real_leaves = attendances & leaves. Each interval becomes a dict (date_start/date_stop in employee tz -> UTC) tagged with a work.entry.type, then _generate_work_entries_postprocess splits intervals across local-midnight boundaries, converts date_start/date_stop into a date + float duration, and merges same-day/same-type rows. Generation is bounded by version.date_generated_from/date_generated_to (a high-water mark per version) so a month is never regenerated blindly; contract_date_start gates the range. This whole control flow over resource intervals is invisible in field/relation metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "hr.work.entry.type (attendance / leave / overtime classification + payroll code & rate)",
+        "observation": "A work.entry.type carries a payroll 'code' (required, e.g. WORK100 Attendance, LEAVE120 Paid Time Off, OVERTIME Overtime Hours, LEAVE90 Unpaid), an 'amount_rate' (pay multiplier, default 1.0; 200% = double pay) and the booleans is_leave / is_work (mutually-inverse via _compute_is_work/_inverse_is_work) plus is_extra_hours ('Added to Monthly Pay'). resource.calendar.attendance and resource.calendar.leaves both gain a work_entry_type_id Many2one, so the schedule grid and each leave declare which type the generated entry inherits (default types are xml data records work_entry_type_attendance / work_entry_type_overtime / work_entry_type_leave, resolved by ormcache _get_default_work_entry_type_id). _check_code_unicity enforces code uniqueness per country and the attendance type's country cannot be changed once used. These rate/code semantics are exactly what downstream payroll consumes and are not derivable from metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "hr.work.entry._check_if_error / _mark_conflicting_work_entries / _mark_leaves_outside_schedule (conflict detection)",
+        "observation": "Every create/write/unlink runs conflict checking inside the _error_checking context manager. _mark_conflicting_work_entries runs a raw SQL aggregate that flags state='conflict' for any (employee, day) whose summed duration is <=0 or >24h; _mark_leaves_outside_schedule re-derives the calendar's _attendance_intervals_batch and flags leave entries falling entirely outside the theoretical schedule; _mark_already_validated_days flags entries colliding with an already-validated day; undefined-type entries are flagged too. action_validate refuses to move entries to state='validated' ('In Payslip') if any conflict exists, and validated entries cannot be deleted (_unlink_except_validated_work_entries) — this is the gate that protects payroll integrity. The stored 'conflict' field surfaces conflicting rows first in the UI. None of this validation logic appears in metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "regeneration on contract/leave/calendar change (hr.version.write + regeneration wizard + cron)",
+        "observation": "hr.version.write reacts to data changes: editing contract_date_start/contract_date_end/date_version calls _remove_work_entries (drops non-validated entries now outside the contract window and rewinds date_generated_from/to); changing resource_calendar_id or work_entry_source (_get_fields_that_recompute_we) triggers _recompute_work_entries, which spawns an hr.work.entry.regeneration.wizard and calls regenerate_work_entries(force=True) for the affected window. The wizard (manager-only) lets a user re-generate a date range for selected employees but EXCLUDES employees with validated entries in that range (validated_work_entry_employee_ids). A monthly cron _cron_generate_missing_work_entries batches (BATCH_SIZE=100, single-company per pass, self-retriggering) the current month's missing entries for all versions with open generated-date gaps. So a contract amendment or an approved leave silently rewrites the affected work entries — a key side-effect metadata cannot reveal.",
+        "source": "code-read"
+      },
+      {
+        "element": "frontend (OWL/JS)",
+        "observation": "12 JS files, 10 XML templates, 1 OWL component (WorkEntryType — the colored work-entry-type chip), 4 registry adds (fields:many2one_work_entry_type, fields:work_entry_source_field, fields:many2many_avatar_employee_class, and a dedicated views:work_entries_calendar calendar renderer), 0 patches. Services used: color, display_code, employee_id, resource_calendar_id. Asset bundles: web.assets_backend, web.assets_unit_tests. The UI is a thin colored calendar/list editor over generated entries (no external client app), consistent with work entries being a backend payroll-prep ledger.",
+        "source": "static"
+      }
+    ],
     "frontend": {
       "present": true,
       "js_files": 12,
@@ -84,43 +131,36 @@
     "runtime": {
       "models_with_data": 0,
       "top": []
-    },
-    "behavioral_notes": [
-      {
-        "element": "frontend (OWL/JS)",
-        "observation": "12 JS files, 1 OWL components, 4 registry adds; bundles ['web.assets_backend', 'web.assets_unit_tests'].",
-        "source": "static"
-      },
-      {
-        "element": "thin module",
-        "observation": "4 models, 0 routes, 2293 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
-        "source": "ast"
-      }
-    ]
+    }
   },
   "it_architecture": {
-    "application": "hr_work_entry (Work Entries)",
+    "application": "hr_work_entry (Work Entries application component — payroll/attendance time bridge)",
     "software_services": [],
     "data_objects": [
-      "hr.user.work.entry.employee",
       "hr.work.entry",
+      "hr.work.entry.type",
       "hr.work.entry.regeneration.wizard",
-      "hr.work.entry.type"
+      "hr.user.work.entry.employee"
     ],
     "logical_data_erm": [
-      "hr.user.work.entry.employee -> hr.employee",
-      "hr.user.work.entry.employee -> res.users",
-      "hr.work.entry -> hr.department",
-      "hr.work.entry -> hr.employee",
-      "hr.work.entry -> hr.version",
-      "hr.work.entry -> hr.work.entry.type",
-      "hr.work.entry -> res.company",
-      "hr.work.entry -> res.country",
-      "hr.work.entry.regeneration.wizard -> hr.employee",
-      "hr.work.entry.type -> res.country"
+      "hr.work.entry -> hr.employee (employee_id)",
+      "hr.work.entry -> hr.version (version_id: the contract snapshot the entry belongs to)",
+      "hr.work.entry -> hr.work.entry.type (work_entry_type_id: attendance/leave/overtime + payroll code)",
+      "hr.work.entry -> hr.department (department_id, related/stored)",
+      "hr.work.entry -> res.company (company_id)",
+      "resource.calendar.attendance -inherit-> hr.work.entry.type (work_entry_type_id: schedule grid declares the type)",
+      "resource.calendar.leaves -inherit-> hr.work.entry.type (work_entry_type_id: leave declares the type)",
+      "hr.version -inherit-> date_generated_from / date_generated_to / work_entry_source (generation watermark on the contract)"
     ],
     "information_flows": [
-      "depends: hr"
+      "depends: hr (and transitively resource)",
+      "inbound: resource.calendar._attendance_intervals_batch + resource.calendar.leaves feed hr.version._get_version_work_entries_values to produce work entries (working schedule MINUS time off)",
+      "side-effect: hr.version.write(contract_date_*/date_version) -> _remove_work_entries drops non-validated entries outside the contract window",
+      "side-effect: hr.version.write(resource_calendar_id/work_entry_source) -> _recompute_work_entries regenerates the affected range (force=True via the regeneration wizard)",
+      "side-effect: hr.work.entry.create/write/unlink -> _check_if_error marks (employee,day) conflicts (>24h, outside schedule, already-validated)",
+      "side-effect: action_validate -> state='validated' ('In Payslip'); validated entries cannot be deleted (payroll gate)",
+      "automation: _cron_generate_missing_work_entries batches the current month's missing entries for versions with open generated-date gaps",
+      "outbound (consumed): downstream payroll (hr_payroll / hr_work_entry_* bridges) reads validated work entries by type/code/rate to build payslips"
     ],
     "frontend_components": [
       "WorkEntryType"
@@ -128,38 +168,84 @@
   },
   "business_architecture": {
     "capabilities": [
-      "Work Entries"
+      "Generate Work Entries from Working Schedule",
+      "Classify Work Entry Types (attendance / leave / overtime, payroll code & rate)",
+      "Detect & Resolve Work Entry Conflicts",
+      "Validate Work Entries for Payroll ('In Payslip')",
+      "Regenerate Work Entries on Contract / Leave / Calendar Change",
+      "Bridge Resource Calendar & Time Off into Payable Time"
     ],
-    "value_streams": [],
+    "value_streams": [
+      "Schedule-to-Payable-Time: resource.calendar working schedule MINUS resource.calendar.leaves time off -> generate hr.work.entry per hr.version -> detect conflicts -> validate ('In Payslip') -> consumed by payroll"
+    ],
     "information_concepts": [
-      "hr.user.work.entry.employee",
       "hr.work.entry",
+      "hr.work.entry.type",
       "hr.work.entry.regeneration.wizard",
-      "hr.work.entry.type"
+      "hr.user.work.entry.employee",
+      "hr.version (generation watermark, linked)",
+      "resource.calendar.attendance (typed schedule grid, linked)",
+      "resource.calendar.leaves (typed time off, linked)"
     ],
-    "organization": [],
+    "organization": [
+      "hr.group_hr_user (Officer)",
+      "hr.group_hr_manager (Manager)"
+    ],
     "products": [],
     "policies": [
-      "3 record rules"
+      "6 access rules: officer reads/writes/creates work entries (no delete); base.group_system full CRUD; work.entry.type read for officer, full CRUD for manager; regeneration wizard manager-only",
+      "3 record rules scope work entries by company (multi-company visibility)",
+      "_check_duration: 0 < duration <= 24h; _check_code_unicity: work-entry-type code unique per country",
+      "validated entries are immutable (_unlink_except_validated_work_entries) — protects payroll",
+      "crons: _cron_generate_missing_work_entries (monthly, batched, self-retriggering)"
     ],
-    "stakeholders": [],
+    "stakeholders": [
+      "Employee (hr.employee whose time is recorded)",
+      "HR Officer (hr.group_hr_user — reviews/creates entries)",
+      "HR Manager (hr.group_hr_manager — work-entry types, regeneration)",
+      "Payroll Officer (downstream consumer of validated entries)"
+    ],
     "strategy": null,
-    "metrics": []
+    "metrics": [
+      "hr.work.entry.duration aggregated per type/day (hours, pivot view) (inferred)",
+      "hr.work.entry.amount_rate / work_entry_type.amount_rate (pay multiplier feeding payroll) (inferred)",
+      "conflict / state distribution (draft vs conflict vs validated 'In Payslip') (inferred)"
+    ]
   },
   "classification": {
     "value_model": "support",
     "activity_class": "support",
     "apqc_category": "7.0 Develop and Manage Human Capital",
-    "rationale": "hr_work_entry: thin support/support module (auto-architect baseline)."
+    "rationale": "hr_work_entry is a support activity of Porter's value chain (Stabell & Fjeldstad: a support value configuration, not a primary chain/shop/network flow): it is the payroll-prep time-tracking backbone that converts the resource.calendar working schedule and resource.calendar.leaves time off into a typed, conflict-checked, validatable ledger of payable time (hr.work.entry) per contract version. It builds directly on the 'resource' module (same value_model 'support', same APQC 7.0): it inherits resource.calendar / resource.calendar.attendance / resource.calendar.leaves to attach a work_entry_type_id and calls resource.calendar._attendance_intervals_batch as its generation substrate, then it bridges that working-time into payroll by tagging every interval with a payroll code and rate and gating it through a 'validated' ('In Payslip') state. It does not itself convert demand into a delivered product or run payroll; it sits between scheduling (resource) and payroll, which is exactly APQC PCF 7.0 Develop and Manage Human Capital (manage employee time, attendance and the inputs to compensation) — the same category as its hr parent and the resource module it extends. It is NOT 9.0 Manage Financial Resources (it prepares payroll inputs but performs no accounting) and NOT a primary value flow."
   },
   "fit_to_standard": {
     "standard_capabilities": [
-      "Work Entries"
+      "automatic work-entry generation per contract version from the resource.calendar working schedule (attendances minus time off)",
+      "work-entry types with payroll code, pay rate (amount_rate) and attendance/leave/overtime/extra-hours flags",
+      "conflict detection (>24h/day, leaves outside schedule, already-validated collisions) with a 'conflict' state surfaced first",
+      "validation lifecycle (draft -> conflict -> validated 'In Payslip' -> cancelled) with validated-entry immutability",
+      "regeneration wizard + automatic recompute on contract/calendar/source change, excluding validated periods",
+      "monthly cron that fills missing work entries for the current period in batches",
+      "calendar/list/pivot views over generated entries, colored by work-entry type"
     ],
-    "typical_fits": [],
-    "common_gaps": [],
+    "typical_fits": [
+      "salaried employees on a fixed working schedule (work_entry_source='calendar') generating standard attendance entries each month",
+      "public holidays (global resource.calendar.leaves) and approved time off automatically producing leave entries of the right type",
+      "country-specific payroll codes/rates mapped onto work-entry types feeding a localized payroll",
+      "two-tier HR security (officer reviews, manager owns types & regeneration) with multi-company scoping"
+    ],
+    "common_gaps": [
+      "attendance-clock-based or planning-based generation (work_entry_source 'attendances'/'planning') requires the hr_attendance / planning bridge apps",
+      "linking time-off requests to work entries and global-vs-personal leave precedence requires hr_work_entry_holidays",
+      "actual payslip computation / salary rules consume work entries but live in hr_payroll, not here",
+      "overtime rules, public-holiday premiums and worked-leave compensation beyond the generic type/rate need localization or custom config"
+    ],
     "drive_hints": [
-      "odoo shell: env['hr.user.work.entry.employee'].search([],limit=3)"
+      "odoo shell: emp = env['hr.employee'].search([], limit=1); emp.generate_work_entries('2026-06-01','2026-06-30'); env['hr.work.entry'].search_count([('employee_id','=',emp.id)])",
+      "odoo shell: env['hr.work.entry.type'].search([], limit=10).mapped(('name','code','amount_rate','is_leave','is_extra_hours'))",
+      "odoo shell: env['hr.work.entry'].search([], limit=5).mapped(('display_name','date','duration','state','work_entry_type_id.code'))",
+      "odoo shell: env['hr.work.entry'].search([('state','=','conflict')], limit=5).mapped(('employee_id.name','date','duration'))  # conflicting entries",
+      "odoo shell: env['hr.work.entry'].search([('state','=','draft')]).action_validate()  # try to push entries 'In Payslip'"
     ]
   },
   "reverse_eng_confidence": {
@@ -173,14 +259,18 @@
     "strategy": "human"
   },
   "open_questions": [
-    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+    "Exact set of work_entry_source overrides (attendances/planning) contributed by hr_attendance and planning bridges, and how they replace _get_attendance_intervals.",
+    "How hr_work_entry_holidays alters leave-type precedence (_get_interval_leave_work_entry_type) so global time off wins over home-working.",
+    "Precise contract used by downstream hr_payroll: which work-entry codes/rates map to which salary rules, and how worked-leave (is_work leave) and is_extra_hours are paid.",
+    "Behaviour of flexible-hours and fully-flexible calendars on leave interval synthesis versus statically-generated work entries."
   ],
   "provenance": {
     "explorer_facts": "doc/revres/facts/hr_work_entry.facts.json",
     "tools": [
+      "code-read",
       "extract_module.py",
       "extract_frontend.py",
-      "gen_thin.py"
+      "run-odoo (odoo shell)"
     ],
     "odoo_version": "19.0"
   }

@@ -18,7 +18,7 @@ Activity class: support=472, primary=177
 | APQC | Records |
 |------|--------:|
 | 10.0 | 2 |
-| 13.0 | 86 |
+| 13.0 | 85 |
 | 2.0 | 5 |
 | 3.0 | 157 |
 | 4.0 | 12 |
@@ -28,7 +28,7 @@ Activity class: support=472, primary=177
 | 5.0 | 20 |
 | 6.0 | 4 |
 | 7.0 | 33 |
-| 8.0 | 34 |
+| 8.0 | 35 |
 | 9.0 | 267 |
 | 9.4 | 8 |
 
@@ -37,7 +37,7 @@ Activity class: support=472, primary=177
 | Layer | Records with it |
 |-------|----------------:|
 | metadata (facts) | 649/649 |
-| code-read (behavior) | 63/649 |
+| code-read (behavior) | 71/649 |
 | frontend (OWL/JS) | 246/649 |
 | integrations (HTTP/SDK) | 70/649 |
 | runtime (live data) | 1/649 |
@@ -196,7 +196,7 @@ Activity class: support=472, primary=177
 | website_crm | network | primary | 3.0 Market and Sell Pr | 0 | 1 | meta+fe |
 | website_crm_iap_reveal | network | primary | 3.0 Market and Sell Pr | 2 | 0 | meta |
 | website_crm_livechat | network | primary | 3.0 Market and Sell Pr | 0 | 0 | meta |
-| website_crm_partner_assign | network | primary | 3.0 Market and Sell Pr | 5 | 4 | meta+fe |
+| website_crm_partner_assign | network | primary | 3.0 Market and Sell Pr | 8 | 4 | meta+code+fe |
 | website_crm_sms | network | primary | 3.0 Market and Sell Pr | 0 | 0 | meta |
 | website_customer | network | primary | 3.0 Market and Sell Pr | 1 | 2 | meta+fe |
 | website_event | network | primary | 3.0 Market and Sell Pr | 7 | 17 | meta+code+fe |
@@ -247,7 +247,7 @@ Activity class: support=472, primary=177
 | website_timesheet | network | primary | 3.0 Market and Sell Pr | 0 | 0 | meta |
 | crm | shop | primary | 3.0 Market and Sell Pr | 6 | 23 | meta+code+fe |
 | crm_iap_enrich | shop | primary | 3.0 Market and Sell Pr | 0 | 0 | meta |
-| crm_iap_mine | shop | primary | 3.0 Market and Sell Pr | 5 | 1 | meta+fe |
+| crm_iap_mine | shop | primary | 3.0 Market and Sell Pr | 6 | 1 | meta+code+fe |
 | crm_livechat | shop | primary | 3.0 Market and Sell Pr | 0 | 3 | meta+fe |
 | crm_mail_plugin | shop | primary | 3.0 Market and Sell Pr | 0 | 0 | meta |
 | crm_sms | shop | primary | 3.0 Market and Sell Pr | 0 | 0 | meta |
@@ -358,7 +358,7 @@ Activity class: support=472, primary=177
 | hr_skills_slides | support | support | 7.0 Develop and Manage | 0 | 0 | meta |
 | hr_skills_survey | support | support | 7.0 Develop and Manage | 0 | 0 | meta |
 | hr_timesheet_attendance | support | support | 7.0 Develop and Manage | 1 | 0 | meta |
-| hr_work_entry | support | support | 7.0 Develop and Manage | 4 | 12 | meta+fe |
+| hr_work_entry | support | support | 7.0 Develop and Manage | 4 | 12 | meta+code+fe |
 | hr_work_entry_holidays | support | support | 7.0 Develop and Manage | 0 | 0 | meta |
 | html_builder | support | support | 13.0 Develop and Manag | 0 | 148 | meta+fe |
 | html_editor | support | support | 8.0 Manage Information | 7 | 187 | meta+code+fe+integ |
@@ -591,14 +591,14 @@ Activity class: support=472, primary=177
 | l10n_zm_account | support | support | 9.0 Manage Financial R | 0 | 0 | meta |
 | link_tracker | support | support | 3.0 Market and Sell Pr | 3 | 0 | meta+code |
 | loyalty | support | support | 3.0 Market and Sell Pr | 6 | 5 | meta+code+fe |
-| lunch | support | support | 7.0 Develop and Manage | 9 | 7 | meta+fe |
+| lunch | support | support | 7.0 Develop and Manage | 9 | 7 | meta+code+fe |
 | mail | support | support | 9.4 Manage internal co | 14 | 383 | meta+code+fe+integ |
 | mail_bot | support | support | 9.4 Manage internal co | 1 | 0 | meta |
 | mail_bot_hr | support | support | 9.4 Manage internal co | 0 | 0 | meta |
 | mail_plugin | support | support | 8.0 Manage Information | 3 | 0 | meta+code+integ |
 | maintenance | support | support | 10.0 Acquire, Construc | 6 | 7 | meta+code+fe |
 | microsoft_account | support | support | 13.0 Develop and Manag | 1 | 0 | meta+integ |
-| microsoft_calendar | support | support | 13.0 Develop and Manag | 4 | 3 | meta+fe+integ |
+| microsoft_calendar | support | support | 8.0 Manage Information | 6 | 3 | meta+code+fe+integ |
 | microsoft_outlook | support | support | 13.0 Develop and Manag | 3 | 0 | meta+integ |
 | mrp_account | support | support | 9.0 Manage Financial R | 3 | 2 | meta+fe |
 | mrp_subcontracting_account | support | support | 9.0 Manage Financial R | 0 | 0 | meta |
@@ -615,11 +615,11 @@ Activity class: support=472, primary=177
 | purchase_mrp | support | support | 4.2 Procure Materials  | 0 | 1 | meta+fe |
 | purchase_product_matrix | support | support | 4.2 Procure Materials  | 0 | 1 | meta+fe |
 | purchase_repair | support | support | 4.2 Procure Materials  | 0 | 0 | meta |
-| purchase_requisition | support | support | 4.2 Procure Materials  | 5 | 3 | meta+fe |
+| purchase_requisition | support | support | 4.2 Procure Materials  | 10 | 3 | meta+code+fe |
 | purchase_requisition_sale | support | support | 4.2 Procure Materials  | 0 | 0 | meta |
 | purchase_requisition_stock | support | support | 4.2 Procure Materials  | 0 | 0 | meta |
 | purchase_stock | support | support | 4.2 Procure Materials  | 1 | 12 | meta+fe |
-| rating | support | support | 6.0 Manage Customer Se | 3 | 3 | meta+fe |
+| rating | support | support | 6.0 Manage Customer Se | 3 | 3 | meta+code+fe |
 | resource | support | support | 7.0 Develop and Manage | 5 | 5 | meta+code+fe |
 | resource_mail | support | support | 7.0 Develop and Manage | 0 | 5 | meta+fe |
 | rpc | support | support | 13.0 Develop and Manag | 0 | 0 | meta+integ |
@@ -632,7 +632,7 @@ Activity class: support=472, primary=177
 | social_media | support | support | 3.0 Market and Sell Pr | 0 | 0 | meta |
 | spreadsheet | support | support | 13.0 Develop and Manag | 1 | 100 | meta+fe |
 | spreadsheet_account | support | support | 13.0 Develop and Manag | 0 | 5 | meta+fe |
-| spreadsheet_dashboard | support | support | 13.0 Develop and Manag | 3 | 14 | meta+fe |
+| spreadsheet_dashboard | support | support | 13.0 Develop and Manag | 3 | 14 | meta+code+fe |
 | spreadsheet_dashboard_account | support | support | 13.0 Develop and Manag | 0 | 0 | meta |
 | spreadsheet_dashboard_event_sale | support | support | 13.0 Develop and Manag | 0 | 0 | meta |
 | spreadsheet_dashboard_hr_expense | support | support | 13.0 Develop and Manag | 0 | 0 | meta |

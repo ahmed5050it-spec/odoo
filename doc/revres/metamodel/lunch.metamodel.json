@@ -12,89 +12,101 @@
     },
     "models": [
       {
-        "_name": "lunch.alert",
-        "_description": "Lunch Alert",
-        "fields": 19
-      },
-      {
-        "_name": "lunch.cashmove",
-        "_description": "Lunch Cashmove",
-        "fields": 5
-      },
-      {
-        "_name": "lunch.cashmove.report",
-        "_description": "Cashmoves report",
-        "fields": 6
-      },
-      {
-        "_name": "lunch.location",
-        "_description": "Lunch Locations",
-        "fields": 3
-      },
-      {
         "_name": "lunch.order",
         "_description": "Lunch Order",
-        "fields": 36
+        "fields": 36,
+        "relations": [
+          "product_id->lunch.product",
+          "supplier_id->product_id.supplier_id",
+          "user_id->res.users",
+          "lunch_location_id->lunch.location",
+          "company_id->res.company"
+        ]
       },
       {
         "_name": "lunch.product",
         "_description": "Lunch Product",
-        "fields": 15
-      },
-      {
-        "_name": "lunch.product.category",
-        "_description": "Lunch Product Category",
-        "fields": 6
+        "fields": 15,
+        "relations": [
+          "category_id->lunch.product.category",
+          "supplier_id->lunch.supplier",
+          "favorite_user_ids->res.users",
+          "is_available_at->lunch.location"
+        ]
       },
       {
         "_name": "lunch.supplier",
         "_description": "Lunch Supplier",
-        "fields": 42
+        "fields": 42,
+        "relations": [
+          "partner_id->res.partner",
+          "responsible_id->res.users",
+          "cron_id->ir.cron",
+          "available_location_ids->lunch.location",
+          "topping_ids_1->lunch.topping"
+        ]
+      },
+      {
+        "_name": "lunch.cashmove",
+        "_description": "Lunch Cashmove",
+        "fields": 5,
+        "relations": [
+          "user_id->res.users",
+          "currency_id->res.currency"
+        ]
       },
       {
         "_name": "lunch.topping",
         "_description": "Lunch Extras",
-        "fields": 6
+        "fields": 6,
+        "relations": [
+          "supplier_id->lunch.supplier",
+          "company_id->res.company"
+        ]
+      },
+      {
+        "_name": "lunch.product.category",
+        "_description": "Lunch Product Category",
+        "fields": 6,
+        "relations": [
+          "company_id->res.company"
+        ]
+      },
+      {
+        "_name": "lunch.location",
+        "_description": "Lunch Locations",
+        "fields": 3,
+        "relations": [
+          "company_id->res.company"
+        ]
+      },
+      {
+        "_name": "lunch.alert",
+        "_description": "Lunch Alert",
+        "fields": 19,
+        "relations": [
+          "cron_id->ir.cron",
+          "location_ids->lunch.location"
+        ]
+      },
+      {
+        "_name": "lunch.cashmove.report",
+        "_description": "Cashmoves report",
+        "fields": 6,
+        "relations": [
+          "user_id->res.users",
+          "currency_id->res.currency"
+        ]
       }
     ],
     "routes": [
       {
         "paths": [
-          "/lunch/infos"
-        ],
-        "auth": "user",
-        "type": "jsonrpc"
-      },
-      {
-        "paths": [
-          "/lunch/trash"
-        ],
-        "auth": "user",
-        "type": "jsonrpc"
-      },
-      {
-        "paths": [
-          "/lunch/pay"
-        ],
-        "auth": "user",
-        "type": "jsonrpc"
-      },
-      {
-        "paths": [
-          "/lunch/payment_message"
-        ],
-        "auth": "user",
-        "type": "jsonrpc"
-      },
-      {
-        "paths": [
-          "/lunch/user_location_set"
-        ],
-        "auth": "user",
-        "type": "jsonrpc"
-      },
-      {
-        "paths": [
+          "/lunch/infos",
+          "/lunch/trash",
+          "/lunch/pay",
+          "/lunch/payment_message",
+          "/lunch/user_location_set",
           "/lunch/user_location_get"
         ],
         "auth": "user",
@@ -109,13 +121,10 @@
     "views": {
       "form": 7,
       "list": 10,
-      "tree": 0,
       "kanban": 8,
       "search": 7,
       "pivot": 1,
-      "graph": 1,
-      "calendar": 0,
-      "activity": 0
+      "graph": 1
     },
     "frontend": {
       "present": true,
@@ -156,101 +165,144 @@
     },
     "behavioral_notes": [
       {
-        "element": "frontend (OWL/JS)",
-        "observation": "7 JS files, 7 OWL components, 3 registry adds; bundles ['web.assets_backend', 'web.assets_tests', 'web.assets_unit_tests'].",
-        "source": "static"
+        "element": "lunch.order state machine (action_order/action_send/action_confirm)",
+        "observation": "state Selection is new(To Order)->ordered->sent(to supplier)->confirmed(Received), plus cancelled. action_order validates supplier availability + product active, writes state='ordered' and calls _check_wallet; action_send sets 'sent'; action_confirm sets 'confirmed'; action_cancel sets 'cancelled'. create()/write() merge a duplicate same user/product/date/note/toppings line by incrementing quantity instead of inserting a new row. Not visible in metadata.",
+        "source": "code-read"
       },
       {
-        "element": "thin module",
-        "observation": "9 models, 6 routes, 2021 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
-        "source": "ast"
+        "element": "lunch.cashmove employee wallet (get_wallet_balance / _check_wallet)",
+        "observation": "Wallet is not a stored field: get_wallet_balance sums lunch.cashmove.report amounts for the user (search_read) then adds company.lunch_minimum_threshold (an allowed overdraft credit). cashmoves are two-sided -- a payment (credit) topped up by a manager and an order (debit). _check_wallet flushes then raises ValidationError when balance < 0, blocking ordering. The /lunch/pay and /lunch/payment_message routes drive the top-up UX. Computed in Python, not metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "lunch.supplier order aggregation + auto-send cron (_send_auto_email / _sync_cron)",
+        "observation": "Each supplier owns a per-record ir.cron created in create() and kept in sync by _sync_cron (nextcall = automatic_email_time in supplier tz). When send_by='mail' the cron fires _send_auto_email which aggregates today's 'ordered' orders for that vendor, groups them per lunch.location, renders the lunch.lunch_order_mail_supplier template to the vendor, then calls orders.action_send() (state->sent). action_send_orders / action_confirm_orders are the manual dashboard buttons. supplier.write() also cascades active/company changes onto related lunch.product and lunch.order rows. Cross-model + scheduler side-effects invisible to metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "frontend OWL lunch dashboard",
+        "observation": "Backend OWL client (web.assets_backend) with 7 components -- LunchDashboard (static/src/components/lunch_dashboard.js) plus LunchOrderLine, LunchUser, LunchLocation, LunchCurrency, LunchAlert(s) -- a custom kanban/list (views/kanban.js, views/list.js, lunch_renderer_mixin.js) and a lunch_is_favorite_field widget; 7 JS files, 4 XML templates. This UX layer is not represented in Python model metadata.",
+        "source": "static"
       }
     ]
   },
   "it_architecture": {
-    "application": "lunch (Lunch)",
+    "application": "lunch (Lunch application component)",
     "software_services": [
       "/lunch/infos",
+      "/lunch/trash",
       "/lunch/pay",
       "/lunch/payment_message",
-      "/lunch/trash",
-      "/lunch/user_location_get",
-      "/lunch/user_location_set"
+      "/lunch/user_location_set",
+      "/lunch/user_location_get"
     ],
     "data_objects": [
-      "lunch.alert",
-      "lunch.cashmove",
-      "lunch.cashmove.report",
-      "lunch.location",
       "lunch.order",
       "lunch.product",
-      "lunch.product.category",
       "lunch.supplier",
-      "lunch.topping"
+      "lunch.cashmove",
+      "lunch.topping",
+      "lunch.product.category",
+      "lunch.location",
+      "lunch.alert"
     ],
     "logical_data_erm": [
-      "lunch.alert -> ir.cron",
-      "lunch.alert -> lunch.location",
-      "lunch.cashmove -> res.currency",
-      "lunch.cashmove -> res.users",
-      "lunch.cashmove.report -> res.currency",
-      "lunch.cashmove.report -> res.users",
-      "lunch.location -> res.company",
-      "lunch.order -> company_id.currency_id",
-      "lunch.order -> lunch.location",
       "lunch.order -> lunch.product",
-      "lunch.order -> lunch.topping",
-      "lunch.order -> product_id.category_id"
+      "lunch.order -> res.users",
+      "lunch.order -> lunch.location",
+      "lunch.product -> lunch.supplier",
+      "lunch.product -> lunch.product.category",
+      "lunch.topping -> lunch.supplier",
+      "lunch.cashmove -> res.users",
+      "lunch.supplier -> res.partner",
+      "lunch.supplier -> ir.cron"
     ],
     "information_flows": [
-      "depends: mail"
+      "depends: mail",
+      "side-effect: lunch.order.action_order -> state 'ordered' + lunch.cashmove wallet check (ValidationError if negative)",
+      "side-effect: lunch.supplier._send_auto_email (cron) -> aggregate today's orders + email vendor + orders.action_send (state 'sent')",
+      "side-effect: lunch.supplier.write(active/company) -> cascade onto lunch.product + lunch.order"
     ],
     "frontend_components": [
-      "LunchAlert",
-      "LunchAlerts",
-      "LunchCurrency",
       "LunchDashboard",
-      "LunchLocation",
       "LunchOrderLine",
-      "LunchUser"
+      "LunchUser",
+      "LunchLocation",
+      "LunchCurrency",
+      "LunchAlert",
+      "LunchAlerts"
     ]
   },
   "business_architecture": {
     "capabilities": [
-      "Lunch"
+      "Order Employee Lunch (catalog browse + cart)",
+      "Manage Lunch Suppliers & Products",
+      "Aggregate & Send Vendor Orders",
+      "Manage Employee Lunch Wallet (top-up / debit)",
+      "Lunch Spend Reporting"
     ],
-    "value_streams": [],
+    "value_streams": [
+      "Order-to-Meal: browse product -> place order (new) -> internal order (ordered) -> sent to vendor (sent) -> received (confirmed), wallet debited"
+    ],
     "information_concepts": [
-      "lunch.alert",
-      "lunch.cashmove",
-      "lunch.cashmove.report",
-      "lunch.location",
       "lunch.order",
-      "lunch.product"
+      "lunch.product",
+      "lunch.supplier (vendor)",
+      "lunch.cashmove (employee wallet)",
+      "lunch.topping",
+      "lunch.location"
     ],
-    "organization": [],
+    "organization": [
+      "group_lunch_user",
+      "group_lunch_manager"
+    ],
     "products": [],
     "policies": [
-      "10 record rules"
+      "10 record rules: own-orders / own-cashmoves visibility for users, manager-wide access; multi-company scoping on suppliers/products/locations",
+      "wallet minimum-threshold overdraft + negative-balance block on ordering",
+      "per-supplier ir.cron automatic vendor email at the configured deadline"
     ],
-    "stakeholders": [],
+    "stakeholders": [
+      "Employee (res.users / lunch user)",
+      "Lunch Manager (group_lunch_manager)",
+      "Vendor (lunch.supplier / res.partner)"
+    ],
     "strategy": null,
-    "metrics": []
+    "metrics": [
+      "lunch.cashmove.report (employee lunch spend / wallet balances)"
+    ]
   },
   "classification": {
     "value_model": "support",
     "activity_class": "support",
     "apqc_category": "7.0 Develop and Manage Human Capital",
-    "rationale": "lunch: thin support/support module (auto-architect baseline)."
+    "rationale": "lunch is an internal HR employee-services / perk: it lets staff order meals, tracks a per-employee wallet (lunch.cashmove) against a company minimum threshold, and brokers aggregated orders to caterers. It produces no externally sold output and creates no chain document flow (no stock/account postings) -- it is a cross-cutting support activity administering an employee benefit, hence value_model 'support' and APQC 7.0 (Develop and Manage Human Capital / employee well-being & services)."
   },
   "fit_to_standard": {
     "standard_capabilities": [
-      "Lunch"
+      "employee meal ordering with product catalog, categories and toppings/extras",
+      "order lifecycle new->ordered->sent->confirmed with duplicate-line merge",
+      "per-employee prepaid wallet via lunch.cashmove + configurable minimum threshold",
+      "supplier management with automatic daily order email (per-supplier cron) and manual send/confirm",
+      "lunch locations, favorites, new-until badges, and time-windowed availability alerts",
+      "lunch spend analysis (pivot/graph) via lunch.cashmove.report"
     ],
-    "typical_fits": [],
-    "common_gaps": [],
+    "typical_fits": [
+      "standard cafeteria/catering ordering for an office",
+      "manager tops up wallets; employees self-order from the OWL dashboard",
+      "phone vs email vendor ordering toggled per supplier"
+    ],
+    "common_gaps": [
+      "payroll deduction / accounting integration for wallet balances (no link to account or hr.payslip out of the box)",
+      "online vendor APIs or external food-ordering platforms (no HTTP/SDK integration)",
+      "approval workflow or per-employee subsidy/budget rules beyond the flat minimum threshold",
+      "multi-currency wallet handling across companies"
+    ],
     "drive_hints": [
-      "odoo shell: env['lunch.alert'].search([],limit=3)"
+      "odoo shell: env['lunch.order'].search([], limit=5).mapped(('name','state'))",
+      "odoo shell: env['lunch.cashmove'].get_wallet_balance(env.user)",
+      "odoo shell: env['lunch.supplier'].search([('send_by','=','mail')]).mapped('automatic_email_time')",
+      "curl jsonrpc /lunch/infos (auth=user) to load the dashboard payload"
     ]
   },
   "reverse_eng_confidence": {
@@ -264,14 +316,18 @@
     "strategy": "human"
   },
   "open_questions": [
-    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+    "Exact debit cashmove creation path -- where an order's price becomes a lunch.cashmove 'order' (debit) row vs. being derived live from lunch.cashmove.report.",
+    "How /lunch/pay and /lunch/payment_message map to wallet top-up and the lunch_notify_message.",
+    "Whether the per-supplier cron + _sync_cron timezone math handles DST and multi-location deadlines correctly."
   ],
   "provenance": {
     "explorer_facts": "doc/revres/facts/lunch.facts.json",
     "tools": [
-      "extract_module.py",
+      "code-read",
       "extract_frontend.py",
-      "gen_thin.py"
+      "extract_module.py",
+      "extract_runtime.sh",
+      "run-odoo (odoo shell)"
     ],
     "odoo_version": "19.0"
   }

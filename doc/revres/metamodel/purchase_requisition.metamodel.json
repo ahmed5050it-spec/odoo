@@ -4,6 +4,7 @@
     "manifest": {
       "name": "Purchase Agreements",
       "category": "Supply Chain/Purchase",
+      "summary": null,
       "depends": [
         "purchase"
       ],
@@ -12,29 +13,95 @@
     },
     "models": [
       {
-        "_name": "purchase.order.group",
-        "_description": "Technical model to group PO for call to tenders",
-        "fields": 1
-      },
-      {
         "_name": "purchase.requisition",
         "_description": "Purchase Requisition",
-        "fields": 16
-      },
-      {
-        "_name": "purchase.requisition.alternative.warning",
-        "_description": "Wizard in case PO still has open alternative requests for quotation",
-        "fields": 2
-      },
-      {
-        "_name": "purchase.requisition.create.alternative",
-        "_description": "Wizard to preset values for alternative PO",
-        "fields": 4
+        "fields": 16,
+        "relations": [
+          "vendor_id->res.partner",
+          "user_id->res.users",
+          "company_id->res.company",
+          "currency_id->res.currency",
+          "line_ids->purchase.requisition.line",
+          "purchase_ids->purchase.order",
+          "product_id->product.product"
+        ]
       },
       {
         "_name": "purchase.requisition.line",
         "_description": "Purchase Requisition Line",
-        "fields": 9
+        "fields": 9,
+        "relations": [
+          "requisition_id->purchase.requisition",
+          "product_id->product.product",
+          "product_uom_id->uom.uom",
+          "company_id->res.company",
+          "supplier_info_ids->product.supplierinfo"
+        ]
+      },
+      {
+        "_name": "purchase.order.group",
+        "_description": "Technical model to group PO for call to tenders",
+        "fields": 1,
+        "relations": [
+          "order_ids->purchase.order"
+        ]
+      },
+      {
+        "_name": "purchase.requisition.create.alternative",
+        "_description": "Wizard to preset values for alternative PO",
+        "fields": 4,
+        "relations": [
+          "origin_po_id->purchase.order",
+          "partner_ids->res.partner"
+        ]
+      },
+      {
+        "_name": "purchase.requisition.alternative.warning",
+        "_description": "Wizard in case PO still has open alternative requests for quotation",
+        "fields": 2,
+        "relations": [
+          "po_ids->purchase.order",
+          "alternative_po_ids->purchase.order"
+        ]
+      },
+      {
+        "_name": "purchase.order",
+        "_description": "(extension)",
+        "fields": 4,
+        "relations": [
+          "requisition_id->purchase.requisition",
+          "purchase_group_id->purchase.order.group",
+          "alternative_po_ids->purchase.order"
+        ]
+      },
+      {
+        "_name": "purchase.order.line",
+        "_description": "(extension)",
+        "fields": 2,
+        "relations": [
+          "company_currency_id->res.currency"
+        ]
+      },
+      {
+        "_name": "product.supplierinfo",
+        "_description": "(extension)",
+        "fields": 2,
+        "relations": [
+          "purchase_requisition_id->purchase.requisition",
+          "purchase_requisition_line_id->purchase.requisition.line"
+        ]
+      },
+      {
+        "_name": "product.product",
+        "_description": "(extension)",
+        "fields": 0,
+        "relations": []
+      },
+      {
+        "_name": "res.config.settings",
+        "_description": "(extension)",
+        "fields": 1,
+        "relations": []
       }
     ],
     "routes": [],
@@ -82,81 +149,147 @@
     },
     "behavioral_notes": [
       {
-        "element": "frontend (OWL/JS)",
-        "observation": "3 JS files, 0 OWL components, 2 registry adds; bundles ['web.assets_backend'].",
-        "source": "static"
+        "element": "purchase.requisition.action_confirm / action_done / action_cancel (state machine)",
+        "observation": "Agreement lifecycle is draft -> confirmed -> done(Closed) / cancel; the agreement itself has no RFQ/PO sub-states. action_confirm refuses an empty agreement, and for requisition_type='blanket_order' validates every line has price_unit>0 and product_qty>0, then calls line._create_supplier_info() to publish vendor prices before setting state='confirmed'. action_done ('Close') raises if any linked purchase.order is still draft/sent/'to approve' (you must cancel open RFQs first), then unlinks the published supplierinfo and sets state='done'. action_cancel cancels all linked POs (button_cancel) and removes the supplierinfo. Not visible in metadata.",
+        "source": "code-read"
       },
       {
-        "element": "thin module",
-        "observation": "5 models, 0 routes, 1730 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
-        "source": "ast"
+        "element": "purchase.requisition.requisition_type (blanket_order vs purchase_template)",
+        "observation": "requisition_type Selection drives behaviour and naming: 'blanket_order' is a negotiated price+quantity agreement that feeds product.supplierinfo and tracks qty_ordered against the agreed amount; 'purchase_template' is a reusable product list with no committed price/qty. create()/write() select the ir.sequence ('purchase.requisition.blanket.order' vs '...purchase.template') accordingly, and changing type/company on a non-draft agreement raises UserError. _compute_price_unit only auto-prices purchase_template lines (via product._select_seller); blanket lines keep their negotiated price. Encoded in Python, not metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "purchase.requisition.line._create_supplier_info (supplier price agreements feeding purchase)",
+        "observation": "For a confirmed blanket order, each line creates a product.supplierinfo (sudo) carrying the agreement vendor, product, UoM, negotiated price and currency, back-linked via purchase_requisition_line_id. Editing the line price propagates to that supplierinfo (write -> supplier_info_ids.write({'price':...})), and price<=0 on an active blanket order is rejected. product.product._prepare_sellers then filters sellers so a PO tied to a requisition only sees that requisition's supplierinfo (plus unscoped ones) -- this is the mechanism by which a blanket agreement automatically becomes the vendor price applied on generated purchase orders.",
+        "source": "code-read"
+      },
+      {
+        "element": "purchase.order._onchange_requisition_id (generating a purchase order from an agreement)",
+        "observation": "Selecting an Agreement on a draft purchase.order copies vendor, currency, company, fiscal position, payment term, note and date_order from the requisition, appends the agreement name to origin, and seeds order_line from the agreement's line_ids (mapping taxes through the fiscal position). Quantity defaults to the agreement line qty for purchase_template but to 0 for blanket_order (drawn down on demand). PO line price/date/name are later re-derived from the matched requisition line in _compute_price_unit_and_date_planned_and_name. This is the agreement -> purchase.order materialisation, absent from metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "purchase.order.group + alternative_po_ids (call for tenders / competing RFQs)",
+        "observation": "'Call for tender' is implemented not as an agreement state but through purchase.order.group: action_create_alternative spawns competing RFQs to other vendors (create_alternative wizard, optionally copying products) linked via a shared purchase.order.group that auto-creates and auto-implodes when <=1 PO remains. action_compare_alternative_lines + get_tender_best_lines compute the best price / best price-unit / earliest-date line per product, and action_choose/action_clear_quantities zero the losing lines. button_confirm intercepts confirmation while open alternatives exist, popping purchase.requisition.alternative.warning to keep or cancel the rival RFQs (skip_alternative_check bypass). Pure-Python orchestration over the PO model.",
+        "source": "code-read"
+      },
+      {
+        "element": "frontend (OWL/JS)",
+        "observation": "3 JS files, 0 OWL components, 2 registry adds (fields:many2many_alt_pos, views:purchase_order_line_compare), 0 patches; bundle ['web.assets_backend'] (4). The alternative-PO field widget + order-line compare list are the only client surfaces; no portal/public assets.",
+        "source": "static"
       }
     ]
   },
   "it_architecture": {
-    "application": "purchase_requisition (Purchase Agreements)",
+    "application": "purchase_requisition (Purchase Agreements extension of the Purchase application component)",
     "software_services": [],
     "data_objects": [
-      "purchase.order.group",
       "purchase.requisition",
-      "purchase.requisition.alternative.warning",
+      "purchase.requisition.line",
+      "purchase.order.group",
       "purchase.requisition.create.alternative",
-      "purchase.requisition.line"
+      "purchase.requisition.alternative.warning"
     ],
     "logical_data_erm": [
-      "purchase.order.group -> purchase.order",
-      "purchase.requisition -> product.product",
-      "purchase.requisition -> purchase.order",
-      "purchase.requisition -> purchase.requisition.line",
-      "purchase.requisition -> res.company",
-      "purchase.requisition -> res.currency",
-      "purchase.requisition -> res.partner",
-      "purchase.requisition -> res.users",
-      "purchase.requisition.alternative.warning -> purchase.order",
-      "purchase.requisition.create.alternative -> purchase.order",
-      "purchase.requisition.create.alternative -> res.partner",
-      "purchase.requisition.line -> product.product"
+      "purchase.requisition -> res.partner (vendor)",
+      "purchase.requisition -> purchase.requisition.line (line_ids)",
+      "purchase.requisition.line -> product.product",
+      "purchase.requisition.line -> product.supplierinfo (supplier_info_ids)",
+      "purchase.requisition -> purchase.order (purchase_ids, via requisition_id)",
+      "purchase.order -> purchase.order.group (purchase_group_id)",
+      "purchase.order.group -> purchase.order (order_ids / alternative_po_ids)"
     ],
     "information_flows": [
-      "depends: purchase"
+      "depends: purchase",
+      "side-effect: purchase.requisition.action_confirm (blanket) -> product.supplierinfo (vendor price agreement published)",
+      "side-effect: purchase.order._onchange_requisition_id -> purchase.order.line (PO seeded from agreement lines; taxes/price/dates from agreement)",
+      "side-effect: product.product._prepare_sellers -> agreement-scoped supplierinfo applied to requisition-linked POs",
+      "side-effect: purchase.order.action_create_alternative -> purchase.order.group (competing RFQs grouped for tender comparison)",
+      "side-effect: purchase.requisition.action_done -> blocks while linked POs are draft/sent/to-approve, then unlinks supplierinfo"
     ],
     "frontend_components": []
   },
   "business_architecture": {
     "capabilities": [
-      "Purchase Agreements"
+      "Manage Purchase Agreements (blanket orders & purchase templates)",
+      "Negotiate & Publish Vendor Price Agreements (supplierinfo)",
+      "Call for Tenders / Competing RFQ Management",
+      "Alternative-Quote Comparison & Best-Line Selection",
+      "Agreement-Driven Purchase Order Generation"
     ],
-    "value_streams": [],
+    "value_streams": [
+      "Source-to-Agreement: agreement draft -> confirm (blanket price published) -> draw-down POs -> close",
+      "Call-for-tender: origin RFQ -> alternative RFQs (group) -> compare best lines -> award one / cancel rivals"
+    ],
     "information_concepts": [
-      "purchase.order.group",
       "purchase.requisition",
-      "purchase.requisition.alternative.warning",
-      "purchase.requisition.create.alternative",
-      "purchase.requisition.line"
+      "purchase.requisition.line",
+      "purchase.order.group",
+      "purchase.order (agreement/tender extension)",
+      "product.supplierinfo (agreement price)",
+      "product.product (purchased item)"
     ],
-    "organization": [],
+    "organization": [
+      "group_purchase_alternatives",
+      "purchase.group_purchase_user (reused)",
+      "purchase.group_purchase_manager (reused)"
+    ],
     "products": [],
     "policies": [
-      "2 record rules"
+      "2 record rules: multi-company scoping on purchase.requisition + purchase.requisition.line",
+      "blanket-order integrity: lines require price>0 & qty>0 to confirm; price<=0 rejected on an active blanket order",
+      "no agreement-type/company change on a non-draft agreement; delete only draft/cancelled agreements",
+      "close (action_done) blocked while linked RFQs/POs remain open (draft/sent/to approve)",
+      "group_purchase_alternatives feature flag (res.config.settings.group_purchase_alternatives) gates the alternatives UI"
     ],
-    "stakeholders": [],
+    "stakeholders": [
+      "Vendor / Supplier (res.partner)",
+      "Buyer / Purchase User (res.users, group_purchase_user)",
+      "Purchase Manager / Sourcing approver (group_purchase_manager)",
+      "Strategic sourcing / category buyer (runs tenders & blanket negotiations)"
+    ],
     "strategy": null,
-    "metrics": []
+    "metrics": [
+      "purchase.requisition.line.qty_ordered (drawn-down vs agreed quantity per blanket line)",
+      "purchase.requisition.order_count (number of POs generated from an agreement)",
+      "tender best price / best price-unit / earliest date per product (get_tender_best_lines)"
+    ]
   },
   "classification": {
     "value_model": "support",
     "activity_class": "support",
     "apqc_category": "4.2 Procure Materials and Services",
-    "rationale": "purchase_requisition: thin support/support module (auto-architect baseline)."
+    "rationale": "purchase_requisition is a procurement support extension (strategic sourcing) layered on the purchase application: it depends only on purchase and adds no primary transform. It supports the value chain upstream by negotiating blanket-order price agreements (published as product.supplierinfo that downstream POs draw on) and by running call-for-tenders that compare competing RFQs to award the best vendor. Per Stabell & Fjeldstad it is a support activity (procurement/sourcing) provisioning inputs for the primary activities. Maps to APQC 4.2 Procure Materials and Services -- specifically 4.2.4 (manage tenders/agreements: alternative RFQ comparison + blanket orders) and the source-side 4.2.1.1 Develop procurement plan (per the APQC<->Odoo map, purchase.requisition is the requisition/agreement evidence)."
   },
   "fit_to_standard": {
     "standard_capabilities": [
-      "Purchase Agreements"
+      "blanket orders (negotiated price + quantity agreement with a vendor)",
+      "purchase templates (reusable product list for fast RFQ/PO creation)",
+      "agreement -> product.supplierinfo price publication feeding purchase orders",
+      "agreement-seeded purchase orders (vendor/terms/lines copied on selection)",
+      "call for tenders: competing alternative RFQs grouped via purchase.order.group",
+      "alternative-quote comparison with best price / unit / date selection and quantity clearing",
+      "blanket draw-down tracking (qty_ordered vs agreed qty)"
     ],
-    "typical_fits": [],
-    "common_gaps": [],
+    "typical_fits": [
+      "long-term blanket agreement with a single vendor at a fixed negotiated price",
+      "purchase template for recurring baskets of products",
+      "multi-vendor tender with best-line award and automatic loser cancellation",
+      "buyer ownership with multi-company scoping"
+    ],
+    "common_gaps": [
+      "no agreement-level approval/sign-off workflow (only blanket line validation + PO double-validation inherited from purchase)",
+      "tender scoring limited to price/unit/date heuristics (no weighted multi-criteria vendor scoring)",
+      "no portal/EDI surface for vendors to submit tender bids (backend-only; 0 routes)",
+      "no automatic blanket-quantity ceiling enforcement on draw-down POs",
+      "supplier contract terms / renewal management beyond date_start/date_end"
+    ],
     "drive_hints": [
-      "odoo shell: env['purchase.order.group'].search([],limit=3)"
+      "odoo shell: env['purchase.requisition'].search([], limit=5).mapped(('name','requisition_type','state'))",
+      "odoo shell: req = env['purchase.requisition'].create({'requisition_type':'blanket_order','vendor_id':p.id,'line_ids':[(0,0,{'product_id':prod.id,'product_qty':10,'price_unit':5})]}); req.action_confirm(); print(req.state, req.line_ids.supplier_info_ids.mapped('price'))",
+      "odoo shell: po = env['purchase.order'].new({'requisition_id': req.id}); po._onchange_requisition_id(); print(po.order_line.mapped(('product_id.display_name','price_unit')))",
+      "odoo shell: act = po.action_create_alternative()  # opens create-alternative wizard; inspect po.purchase_group_id.order_ids after adding competitors",
+      "odoo shell: best_price, best_date, best_unit = po.get_tender_best_lines(); print(best_price, best_unit)"
     ]
   },
   "reverse_eng_confidence": {
@@ -170,14 +303,16 @@
     "strategy": "human"
   },
   "open_questions": [
-    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+    "How blanket-order qty_ordered ceilings are surfaced/enforced in the UI when draw-down POs exceed the agreed quantity (a compute exists, but no hard block was found).",
+    "Whether a stock bridge changes the agreement->PO->receipt chain when stock is installed (core here depends only on purchase).",
+    "Exact UX of the many2many_alt_pos field widget and purchase_order_line_compare view in driving tender award decisions."
   ],
   "provenance": {
     "explorer_facts": "doc/revres/facts/purchase_requisition.facts.json",
     "tools": [
+      "code-read",
       "extract_module.py",
-      "extract_frontend.py",
-      "gen_thin.py"
+      "extract_frontend.py"
     ],
     "odoo_version": "19.0"
   }

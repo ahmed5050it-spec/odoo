@@ -56,7 +56,7 @@ cloud_storage_migration	support	support	13.0 Develop and Manage Busi	1	0	0	0	met
 contacts	support	support	13.0 Develop and Manage Busi	0	0	0	0	meta
 crm	shop	primary	3.0 Market and Sell Products	6	3	23	2	meta+code+fe
 crm_iap_enrich	shop	primary	3.0 Market and Sell Products	0	0	0	0	meta
-crm_iap_mine	shop	primary	3.0 Market and Sell Products	5	0	1	0	meta+fe
+crm_iap_mine	shop	primary	3.0 Market and Sell Products	6	0	1	0	meta+code+fe
 crm_livechat	shop	primary	3.0 Market and Sell Products	0	0	3	0	meta+fe
 crm_mail_plugin	shop	primary	3.0 Market and Sell Products	0	5	0	0	meta
 crm_sms	shop	primary	3.0 Market and Sell Products	0	0	0	0	meta
@@ -107,7 +107,7 @@ hr_skills_slides	support	support	7.0 Develop and Manage Human	0	0	0	0	meta
 hr_skills_survey	support	support	7.0 Develop and Manage Human	0	0	0	0	meta
 hr_timesheet	shop	primary	5.0 Deliver Services	5	1	16	2	meta+code+fe
 hr_timesheet_attendance	support	support	7.0 Develop and Manage Human	1	0	0	0	meta
-hr_work_entry	support	support	7.0 Develop and Manage Human	4	0	12	1	meta+fe
+hr_work_entry	support	support	7.0 Develop and Manage Human	4	0	12	1	meta+code+fe
 hr_work_entry_holidays	support	support	7.0 Develop and Manage Human	0	0	0	0	meta
 html_builder	support	support	13.0 Develop and Manage Busi	0	0	148	40	meta+fe
 html_editor	support	support	8.0 Manage Information Techn	7	15	187	40	meta+code+fe+integ
@@ -341,7 +341,7 @@ l10n_za	support	support	9.0 Manage Financial Resourc	0	0	0	0	meta
 l10n_zm_account	support	support	9.0 Manage Financial Resourc	0	0	0	0	meta
 link_tracker	support	support	3.0 Market and Sell Products	3	1	0	0	meta+code
 loyalty	support	support	3.0 Market and Sell Products	6	2	5	2	meta+code+fe
-lunch	support	support	7.0 Develop and Manage Human	9	6	7	7	meta+fe
+lunch	support	support	7.0 Develop and Manage Human	9	1	7	7	meta+code+fe
 mail	support	support	9.4 Manage internal controls	14	8	383	40	meta+code+fe+integ
 mail_bot	support	support	9.4 Manage internal communic	1	1	0	0	meta
 mail_bot_hr	support	support	9.4 Manage internal communic	0	0	0	0	meta
@@ -362,7 +362,7 @@ mass_mailing_slides	network	primary	3.0 Market and Sell Products	0	0	0	0	meta
 mass_mailing_sms	network	primary	3.0 Market and Sell Products	2	3	1	0	meta+fe
 mass_mailing_themes	network	primary	3.0 Market and Sell Products	0	0	0	0	meta
 microsoft_account	support	support	13.0 Develop and Manage Busi	1	1	0	0	meta+integ
-microsoft_calendar	support	support	13.0 Develop and Manage Busi	4	1	3	0	meta+fe+integ
+microsoft_calendar	support	support	8.0 Manage Information Techn	6	2	3	0	meta+code+fe+integ
 microsoft_outlook	support	support	13.0 Develop and Manage Busi	3	2	0	0	meta+integ
 mrp	chain	primary	4.3 Produce/Manufacture/Deli	9	0	26	15	meta+code+fe
 mrp_account	support	support	9.0 Manage Financial Resourc	3	0	2	0	meta+fe
@@ -476,11 +476,11 @@ purchase_edi_ubl_bis3	support	support	4.2 Procure Materials and Se	1	0	0	0	meta
 purchase_mrp	support	support	4.2 Procure Materials and Se	0	0	1	0	meta+fe
 purchase_product_matrix	support	support	4.2 Procure Materials and Se	0	0	1	0	meta+fe
 purchase_repair	support	support	4.2 Procure Materials and Se	0	0	0	0	meta
-purchase_requisition	support	support	4.2 Procure Materials and Se	5	0	3	0	meta+fe
+purchase_requisition	support	support	4.2 Procure Materials and Se	10	0	3	0	meta+code+fe
 purchase_requisition_sale	support	support	4.2 Procure Materials and Se	0	0	0	0	meta
 purchase_requisition_stock	support	support	4.2 Procure Materials and Se	0	0	0	0	meta
 purchase_stock	support	support	4.2 Procure Materials and Se	1	0	12	0	meta+fe
-rating	support	support	6.0 Manage Customer Service	3	2	3	0	meta+fe
+rating	support	support	6.0 Manage Customer Service	3	2	3	0	meta+code+fe
 repair	chain	support	4.0 Deliver Physical Product	3	0	2	0	meta+fe
 resource	support	support	7.0 Develop and Manage Human	5	0	5	0	meta+code+fe
 resource_mail	support	support	7.0 Develop and Manage Human	0	0	5	2	meta+fe
@@ -521,7 +521,7 @@ snailmail_account	support	support	9.4 Manage internal communic	0	0	0	0	meta
 social_media	support	support	3.0 Market and Sell Products	0	0	0	0	meta
 spreadsheet	support	support	13.0 Develop and Manage Busi	1	1	100	12	meta+fe
 spreadsheet_account	support	support	13.0 Develop and Manage Busi	0	0	5	0	meta+fe
-spreadsheet_dashboard	support	support	13.0 Develop and Manage Busi	3	4	14	6	meta+fe
+spreadsheet_dashboard	support	support	13.0 Develop and Manage Busi	3	4	14	6	meta+code+fe
 spreadsheet_dashboard_account	support	support	13.0 Develop and Manage Busi	0	0	0	0	meta
 spreadsheet_dashboard_event_sale	support	support	13.0 Develop and Manage Busi	0	0	0	0	meta
 spreadsheet_dashboard_hr_expense	support	support	13.0 Develop and Manage Busi	0	0	0	0	meta
@@ -599,7 +599,7 @@ website_cf_turnstile	network	primary	3.0 Market and Sell Products	0	0	4	0	meta+f
 website_crm	network	primary	3.0 Market and Sell Products	0	0	1	0	meta+fe
 website_crm_iap_reveal	network	primary	3.0 Market and Sell Products	2	0	0	0	meta
 website_crm_livechat	network	primary	3.0 Market and Sell Products	0	0	0	0	meta
-website_crm_partner_assign	network	primary	3.0 Market and Sell Products	5	6	4	0	meta+fe
+website_crm_partner_assign	network	primary	3.0 Market and Sell Products	8	6	4	0	meta+code+fe
 website_crm_sms	network	primary	3.0 Market and Sell Products	0	0	0	0	meta
 website_customer	network	primary	3.0 Market and Sell Products	1	2	2	0	meta+fe
 website_event	network	primary	3.0 Market and Sell Products	7	8	17	0	meta+code+fe

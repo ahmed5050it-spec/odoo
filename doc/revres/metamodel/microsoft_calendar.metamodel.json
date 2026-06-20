@@ -13,24 +13,47 @@
     },
     "models": [
       {
+        "_name": "microsoft.calendar.sync",
+        "_description": "Synchronize a record with Microsoft Calendar (AbstractModel mixin)",
+        "fields": 4,
+        "relations": []
+      },
+      {
         "_name": "calendar.event",
-        "_description": null,
-        "fields": 1
+        "_description": "(extension) inherits microsoft.calendar.sync",
+        "fields": 1,
+        "relations": [
+          "recurrence_id->calendar.recurrence",
+          "user_id->res.users (organizer)"
+        ]
       },
       {
         "_name": "calendar.recurrence",
-        "_description": null,
-        "fields": 1
+        "_description": "(extension) inherits microsoft.calendar.sync",
+        "fields": 1,
+        "relations": [
+          "calendar_event_ids->calendar.event"
+        ]
       },
       {
         "_name": "microsoft.calendar.account.reset",
-        "_description": "Microsoft Calendar Account Reset",
-        "fields": 3
+        "_description": "Microsoft Calendar Account Reset (TransientModel wizard)",
+        "fields": 3,
+        "relations": [
+          "user_id->res.users"
+        ]
       },
       {
-        "_name": "microsoft.calendar.sync",
-        "_description": "Synchronize a record with Microsoft Calendar",
-        "fields": 4
+        "_name": "res.users",
+        "_description": "(extension) stores OAuth tokens (rtoken/token/token_validity)",
+        "fields": 3,
+        "relations": []
+      },
+      {
+        "_name": "res.users.settings",
+        "_description": "(extension) stores sync state (nextSyncToken / stopped / last_sync_date)",
+        "fields": 3,
+        "relations": []
       }
     ],
     "routes": [
@@ -40,6 +63,13 @@
         ],
         "auth": "user",
         "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/microsoft_account/authentication"
+        ],
+        "auth": "public",
+        "type": "http"
       }
     ],
     "security": {
@@ -50,14 +80,36 @@
     "views": {
       "form": 0,
       "list": 0,
-      "tree": 0,
       "kanban": 0,
-      "search": 0,
-      "pivot": 0,
-      "graph": 0,
-      "calendar": 0,
-      "activity": 0
+      "search": 0
     },
+    "behavioral_notes": [
+      {
+        "element": "microsoft.service._get_microsoft_tokens / _refresh_microsoft_token + res.users._set_microsoft_auth_tokens / _get_microsoft_calendar_token (OAuth2 token flow)",
+        "observation": "OAuth2 authorization-code flow against the Microsoft identity platform. MicrosoftCalendarService._microsoft_authentication_url builds the consent URL via microsoft.service._get_authorize_uri for scope 'offline_access openid Calendars.ReadWrite' with access_type=offline against login.microsoftonline.com/common/oauth2/v2.0/authorize (so Microsoft returns a refresh_token). Microsoft redirects back to the /microsoft_account/authentication public controller (in microsoft_account), which POSTs the code to the v2.0/token endpoint via _get_microsoft_tokens to exchange it for access_token + refresh_token + expires_in; these are stored on res.users (microsoft_calendar_rtoken/token/token_validity, group base.group_system) by _set_microsoft_auth_tokens. _get_microsoft_calendar_token lazily refreshes an expired access token (validity < now+1min) by POSTing the refresh_token to the same token endpoint; on HTTP 400/401 (invalid grant / invalid client) it rolls back, wipes the stored tokens + res.users.settings.microsoft_calendar_sync_token, commits and raises a UserError. None of this token lifecycle is visible from field/model metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "res.users._sync_microsoft_calendar orchestrating _sync_microsoft2odoo + _sync_odoo2microsoft (two-way sync)",
+        "observation": "Bidirectional sync. _sync_microsoft_calendar pulls remote changes (MicrosoftCalendarService.get_events -> Graph /v1.0/me/calendarView/delta, then per seriesMaster /v1.0/me/events/{id}/instances), then (Microsoft->Odoo) calls calendar.event._sync_microsoft2odoo to create/update/cancel Odoo events and recurrences, and (Odoo->Microsoft) calls _get_microsoft_records_to_sync + _sync_odoo2microsoft on records owned by the user that are unsynced or flagged need_sync_m. Conflict resolution is last-modified-wins: _sync_microsoft2odoo parses each mevent.lastModifiedDateTime and only writes the Odoo record if it is >= the record's stored write_date (with an optional lower_bound_range guard via _check_old_event_update_required so a sub-second drift on an old event does not re-mail attendees). _sync_odoo2microsoft routes each record to _microsoft_insert (POST /v1.0/me/calendar/events), _microsoft_patch (PATCH) or _microsoft_delete (DELETE). Two distinct identifiers are tracked: microsoft_id (per-calendar event id, used as the API path) and ms_universal_event_id (iCalUId, common across calendars, used to match the same event between attendees/recurrences). This cross-system reconciliation is pure runtime behavior absent from metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "microsoft.calendar.sync._microsoft_insert/_microsoft_patch/_microsoft_delete decorated @after_commit",
+        "observation": "Odoo->Microsoft writes are deferred to post-commit. The @after_commit decorator registers the Graph API call on cr.postcommit so the outbound HTTP request fires only after the Odoo transaction commits (with a fresh cursor/registry), preventing an event from being created in Microsoft when the Odoo write later rolls back (avoids duplicates after a crash). The no_calendar_sync context key short-circuits sync entirely. On success _microsoft_insert writes back the returned id + iCalUId and clears need_sync_m; a failed patch/delete leaves need_sync_m set so it is retried next cycle. The Graph request timeout is configurable via the microsoft_calendar.graph_timeout system parameter (default 5s). The transactional-boundary coupling and the id/uid write-back are not metadata-derivable.",
+        "source": "code-read"
+      },
+      {
+        "element": "incremental delta sync ($deltatoken / nextSyncToken) + 410 fullSyncRequired full-sync fallback; Outlook recurrence-creation guard",
+        "observation": "Polling delta-sync, not a push webhook. MicrosoftCalendarService._get_events_delta sends the stored microsoft_calendar_sync_token as Graph's $deltatoken so only events changed since the last run are returned; the @odata.deltaLink in the final page yields the next $deltatoken, persisted on res.users.settings. When the token is absent (first run) a full sync is performed, windowed to +/- microsoft_calendar.sync.range_days (default 365) around now via startDateTime/endDateTime. If Graph returns HTTP 410 with code fullSyncRequired or SyncStateNotFound, InvalidSyncToken triggers a retry without the token (forced full sync). 'occurrence' items are filtered out of the delta and re-fetched per seriesMaster via /instances to obtain their iCalUId. There is NO Microsoft push/watch channel: syncs are driven by the cron ir_cron_sync_all_cals (res.users._sync_all_microsoft_calendar, every 12h, commits per user) and on-demand by /microsoft_calendar/sync_data. Distinctively, to respect an Outlook anti-spam limitation, calendar.event create/write/unlink raise UserError forbidding recurrence creation/update/deletion from Odoo while sync is active and direct the user to Outlook (_forbid_recurrence_creation / _forbid_recurrence_update). The token-windowing, full-resync fallback and recurrence guard are runtime-only.",
+        "source": "code-read"
+      },
+      {
+        "element": "external integration -> Microsoft Graph + identity platform (gap #7, static)",
+        "observation": "Outbound HTTPS integration via python-requests to Microsoft, host allow-listed by assertion in microsoft.service._do_request to login.microsoftonline.com (token endpoint) and graph.microsoft.com (Graph REST: calendarView/delta, events, events/{id}/instances, calendar/events insert/patch/delete/answer). Auth is per-user OAuth2 access_token sent as 'Authorization: Bearer <token>'. The admin supplies cal_microsoft_client_id (public, in clear; microsoft_calendar_client_id ICP) and cal_microsoft_client_secret (microsoft_calendar_client_secret ICP, never returned in clear). Videocall links are provisioned through Microsoft Teams (isOnlineMeeting + onlineMeetingProvider='teamsForBusiness'; joinUrl / teams.microsoft.com URLs mapped to videocall_location). No vendored SDK -- the REST client is hand-rolled in utils/microsoft_calendar.py + microsoft_account/models/microsoft_service.py. This external SaaS dependency is invisible to Python model/field metadata and is the defining trait of the module.",
+        "source": "static"
+      }
+    ],
     "frontend": {
       "present": true,
       "js_files": 3,
@@ -95,76 +147,116 @@
     "runtime": {
       "models_with_data": 0,
       "top": []
-    },
-    "behavioral_notes": [
-      {
-        "element": "frontend (OWL/JS)",
-        "observation": "3 JS files, 0 OWL components, 0 registry adds; bundles ['web.assets_backend', 'web.assets_unit_tests'].",
-        "source": "static"
-      },
-      {
-        "element": "external integrations",
-        "observation": "0 HTTP call sites; SDKs ['requests']; api_keys=True.",
-        "source": "static"
-      },
-      {
-        "element": "thin module",
-        "observation": "4 models, 1 routes, 7011 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
-        "source": "ast"
-      }
-    ]
+    }
   },
   "it_architecture": {
-    "application": "microsoft_calendar (Outlook Calendar)",
+    "application": "microsoft_calendar (Outlook / Microsoft 365 Calendar two-way sync connector component)",
     "software_services": [
-      "/microsoft_calendar/sync_data"
+      "/microsoft_calendar/sync_data (jsonrpc, user) - trigger sync / return auth status + url",
+      "/microsoft_account/authentication (http, public) - OAuth2 redirect callback (from microsoft_account)"
     ],
     "data_objects": [
+      "microsoft.calendar.sync",
       "calendar.event",
       "calendar.recurrence",
-      "microsoft.calendar.account.reset",
-      "microsoft.calendar.sync"
+      "microsoft.calendar.account.reset"
     ],
     "logical_data_erm": [
-      "microsoft.calendar.account.reset -> res.users"
+      "calendar.event -> microsoft.calendar.sync (mixin: microsoft_id, ms_universal_event_id, need_sync_m, active)",
+      "calendar.recurrence -> microsoft.calendar.sync (mixin)",
+      "calendar.event -> calendar.recurrence (recurrence_id)",
+      "res.users -> microsoft_calendar_rtoken/token/token_validity (OAuth tokens, group base.group_system)",
+      "res.users -> res.users.settings (microsoft_calendar_sync_token + stopped + last_sync_date, related fields)",
+      "microsoft.calendar.account.reset -> res.users (reset target)"
     ],
     "information_flows": [
-      "depends: microsoft_account, calendar"
+      "depends: microsoft_account (OAuth2 microsoft.service), calendar (events/attendees/recurrence)",
+      "outbound: Odoo -> graph.microsoft.com /v1.0/me/calendar/events insert/patch/delete/answer (after_commit)",
+      "inbound: graph.microsoft.com /v1.0/me/calendarView/delta ($deltatoken) + /events/{id}/instances -> Odoo records",
+      "side-effect: _sync_microsoft2odoo applies Microsoft updates last-modified-wins; cancel/archive on delete",
+      "side-effect: OAuth code -> login.microsoftonline.com token endpoint -> tokens on res.users",
+      "side-effect: cron ir_cron_sync_all_cals (12h) iterates connected users -> _sync_microsoft_calendar",
+      "side-effect: Teams videocall link (isOnlineMeeting / teamsForBusiness) <-> videocall_location"
     ],
     "frontend_components": []
   },
   "business_architecture": {
     "capabilities": [
-      "Outlook Calendar"
+      "Authenticate Microsoft 365 Account (OAuth2 consent + token refresh)",
+      "Two-way Calendar Synchronization (Odoo <-> Outlook events/recurrences)",
+      "Incremental Delta Sync ($deltatoken) with full-sync fallback",
+      "Microsoft Teams videocall link provisioning on synced events",
+      "Reset / Pause / Stop / Restart Calendar Synchronization per user"
     ],
-    "value_streams": [],
+    "value_streams": [
+      "Connect-to-Sync: configure client id/secret -> user grants OAuth consent -> initial full sync -> ongoing delta sync (cron + on-demand) keeps Odoo and Outlook calendars consistent"
+    ],
     "information_concepts": [
-      "calendar.event",
-      "calendar.recurrence",
-      "microsoft.calendar.account.reset",
-      "microsoft.calendar.sync"
+      "microsoft.calendar.sync (sync-state mixin: microsoft_id / ms_universal_event_id / need_sync_m)",
+      "calendar.event (synced meeting)",
+      "calendar.recurrence (synced recurrence)",
+      "res.users (OAuth refresh/access token store)",
+      "res.users.settings (sync token + stopped + last sync date)",
+      "microsoft.calendar.account.reset (reset wizard)"
     ],
     "organization": [],
     "products": [],
-    "policies": [],
-    "stakeholders": [],
+    "policies": [
+      "1 access rule: microsoft.calendar.account.reset wizard restricted to base.group_system",
+      "token/sync fields guarded by groups=base.group_system and blacklisted from session_info",
+      "ir.config_parameter microsoft_calendar_sync_paused / microsoft_calendar.sync.range_days / .lower_bound_range / .graph_timeout gate sync activity, window and request timeout",
+      "ir.config_parameter microsoft_calendar.sync.first_synchronization_date prevents re-mailing pre-existing Odoo events on first sync",
+      "cron ir_cron_sync_all_cals (every 12h) drives background synchronization",
+      "_can_authorize_microsoft / _has_setup_microsoft_credentials require base.group_erp_manager + configured client id/secret",
+      "Outlook anti-spam guard: recurrence create/update/delete forbidden from Odoo while sync active (must be done in Outlook)"
+    ],
+    "stakeholders": [
+      "Internal user (calendar owner granting consent)",
+      "ERP manager / system admin (configures Microsoft Azure app client id/secret)",
+      "Microsoft Graph / Outlook Calendar (external system of record)"
+    ],
     "strategy": null,
-    "metrics": []
+    "metrics": [
+      "microsoft synchronization status per user (sync_active / sync_paused / sync_stopped)",
+      "credentials/synchronization status surfaced by check_synchronization_status (missing_credentials / sync_active / ...)",
+      "pending-records-to-sync set (_get_microsoft_records_to_sync)"
+    ]
   },
   "classification": {
     "value_model": "support",
     "activity_class": "support",
-    "apqc_category": "13.0 Develop and Manage Business Capabilities",
-    "rationale": "microsoft_calendar: thin support/support module (auto-architect baseline)."
+    "apqc_category": "8.0 Manage Information Technology",
+    "rationale": "microsoft_calendar is calendar-sync integration infrastructure: it adds no business object of its own (only a sync-state mixin microsoft.calendar.sync, OAuth token fields on res.users, sync-state fields on res.users.settings and a reset wizard) and produces no sellable output. It is a connector that extends the calendar subsystem by wiring Odoo's calendar.event/recurrence to an external SaaS (Microsoft Graph / Outlook Calendar) over OAuth2 + REST. Per Stabell & Fjeldstad this is a support / firm-infrastructure function (activity_class=support). For APQC it maps to 8.0 Manage Information Technology -- specifically the 'manage IT integration / data interoperability' band: the module's whole reason to exist is external-system integration (gap #7, talks to graph.microsoft.com and login.microsoftonline.com), OAuth credential lifecycle management and cross-system data reconciliation, which are IT-management concerns rather than business-capability development. This mirrors its sibling google_calendar and is the deliberate point of departure from its parent calendar.metamodel.json (classified 13.0 Develop and Manage Business Capabilities, i.e. the collaboration/scheduling capability itself): the parent owns the scheduling capability; this child owns the IT plumbing that integrates that capability with a third-party service, which is exactly what 8.0 covers. 13.0 was considered (inherited from the parent/baseline) but rejected because nothing here develops a new business capability -- it operates an external interface; 9.0 'Acquire, Construct, and Manage Assets' was also rejected since no physical/IT asset is managed, only an API connection."
   },
   "fit_to_standard": {
     "standard_capabilities": [
-      "Outlook Calendar"
+      "OAuth2 connect to a Microsoft 365 account (offline access + refresh token, scope Calendars.ReadWrite)",
+      "two-way sync of events and recurrences between Odoo calendar and Outlook calendar",
+      "incremental delta sync via calendarView/delta $deltatoken with automatic full-resync on 410 fullSyncRequired",
+      "background sync cron (12h) plus on-demand sync from the calendar view",
+      "per-user pause / stop / restart and an account-reset wizard (delete in Microsoft/Odoo/both)",
+      "Microsoft Teams online-meeting (videocall) link propagation (isOnlineMeeting / teamsForBusiness)"
     ],
-    "typical_fits": [],
-    "common_gaps": [],
+    "typical_fits": [
+      "internal users mirroring their Odoo meetings to a personal/work Outlook calendar",
+      "self-registered Microsoft Azure app: admin sets client id/secret in Settings",
+      "last-modified-wins reconciliation for occasional concurrent edits"
+    ],
+    "common_gaps": [
+      "no Microsoft push/watch webhook -- latency bounded by the 12h cron unless the view triggers sync",
+      "recurrences cannot be created/updated/deleted from Odoo while synced (Outlook anti-spam limitation) -- must be done in Outlook",
+      "full-sync window hard-bounded to +/- range_days (default 365); older/farther events excluded",
+      "no field-level merge -- whole-event last-modified-wins can drop concurrent edits to other fields",
+      "syncs the user's default calendar only; shared/secondary Outlook calendars are not supported",
+      "Outlook ErrorOccurrenceCrossingBoundary restricts reordering occurrences within a recurrence"
+    ],
     "drive_hints": [
-      "odoo shell: env['calendar.event'].search([],limit=3)"
+      "odoo shell: env['res.users'].browse(uid)._get_microsoft_sync_status()  # sync_active|sync_paused|sync_stopped",
+      "odoo shell: env['res.users'].browse(uid).check_synchronization_status()  # {'microsoft_calendar': 'missing_credentials'|'sync_active'|...}",
+      "odoo shell: env['res.users']._sync_all_microsoft_calendar()  # run the 12h cron sync for all connected users",
+      "odoo shell: env['calendar.event']._get_microsoft_records_to_sync(full_sync=True)  # pending Odoo->Microsoft work",
+      "curl jsonrpc /microsoft_calendar/sync_data {model:'calendar.event'} (auth=user) -> status need_config_from_admin|need_auth|need_refresh|...",
+      "external endpoint hit by MicrosoftCalendarService: https://graph.microsoft.com/v1.0/me/calendarView/delta"
     ]
   },
   "reverse_eng_confidence": {
@@ -175,17 +267,22 @@
     "value_streams": "inferred",
     "policies": "inferred",
     "metrics": "inferred",
+    "stakeholders": "inferred",
     "strategy": "human"
   },
   "open_questions": [
-    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+    "Exact precedence/edge cases when the Outlook organizer is a non-syncing Odoo user vs a non-Odoo email (_check_organizer_validation + _recreate_event_different_organizer branch).",
+    "How _is_microsoft_insertion_blocked + _get_event_user_m interact to decide which user's token sends an event whose organizer differs from the editor (attendee must not insert on behalf of the owner).",
+    "Whether the per-attendee id vs iCalUId handling in _microsoft_attendee_answer / _sync_recurrence_microsoft2odoo fully prevents duplicate or mismatched Outlook events across every recurrence path."
   ],
   "provenance": {
     "explorer_facts": "doc/revres/facts/microsoft_calendar.facts.json",
     "tools": [
-      "extract_module.py",
+      "code-read",
       "extract_frontend.py",
-      "gen_thin.py"
+      "extract_module.py",
+      "extract_runtime.sh",
+      "run-odoo (odoo shell)"
     ],
     "odoo_version": "19.0"
   }
