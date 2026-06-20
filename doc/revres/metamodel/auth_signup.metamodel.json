@@ -10,15 +10,45 @@
         "web"
       ],
       "auto_install": true,
-      "application": false
+      "application": false,
+      "author": "Odoo S.A.",
+      "license": "LGPL-3"
     },
-    "models": [],
-    "routes": [
+    "models": [
       {
-        "paths": [],
-        "auth": null,
-        "type": null
+        "_name": "res.partner (extension)",
+        "_description": "Adds signup_type (Char, group_erp_manager) + the signup-token machinery: signup_prepare/signup_cancel, _generate_signup_token (signed payload), _get_partner_from_token / _signup_retrieve_partner / _signup_retrieve_info, _get_signup_url(_for_action), signup_get_auth_param",
+        "fields": 1,
+        "relations": [
+          "res.partner.user_ids->res.users (token resolves a partner to its user)"
+        ]
       },
+      {
+        "_name": "res.users (extension)",
+        "_description": "Adds computed state Selection [new=Invited, active=Confirmed] + the signup/reset lifecycle: signup(values, token), _signup_create_user / _create_user_from_template (copies template_portal_user), reset_password / action_reset_password / _action_reset_password (token email), _get_signup_invitation_scope, create()-override auto-invite, send_unregistered_user_reminder (cron), web_create_users",
+        "fields": 1,
+        "relations": [
+          "res.users.partner_id->res.partner (signup_cancel on archive/delete)",
+          "copies base.template_portal_user_id (ir.config_parameter) as the new-user template"
+        ]
+      },
+      {
+        "_name": "res.config.settings (extension)",
+        "_description": "Adds auth_signup_reset_password (Boolean), auth_signup_uninvited (Selection b2b/b2c invitation scope) and auth_signup_template_user_id (Many2one res.users) -> writes auth_signup.invitation_scope / base.template_portal_user_id ICPs",
+        "fields": 3,
+        "relations": [
+          "auth_signup_template_user_id->res.users",
+          "writes ir.config_parameter (auth_signup.invitation_scope, auth_signup.reset_password)"
+        ]
+      },
+      {
+        "_name": "ir.http (extension)",
+        "_description": "Inherits ir.http to inject signup/reset-password config into the session/login rendering context (1 method)",
+        "fields": 0,
+        "relations": []
+      }
+    ],
+    "routes": [
       {
         "paths": [
           "/web/signup"
@@ -34,9 +64,18 @@
         "type": "http"
       },
       {
-        "paths": [],
-        "auth": null,
-        "type": null
+        "paths": [
+          "/web/login (override)"
+        ],
+        "auth": "none",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/base_setup/data (override)"
+        ],
+        "auth": "user",
+        "type": "json"
       }
     ],
     "security": {
@@ -82,57 +121,151 @@
     },
     "behavioral_notes": [
       {
-        "element": "frontend (OWL/JS)",
-        "observation": "1 JS files, 0 OWL components, 1 registry adds; bundles ['web.assets_frontend'].",
-        "source": "static"
+        "element": "res.partner._generate_signup_token / _get_partner_from_token (signed, self-invalidating token)",
+        "observation": "auth_signup carries no DB token column: signup_type is the only stored field. A token is a *signed payload* produced by tools.hash_sign(env, 'signup', plist, expiration_hours=...) where plist = [partner.id, partner.user_ids.ids, partner._get_login_date(), partner.signup_type]; random_token() (120-bit) exists for legacy/url use but the live token is the HMAC-signed list. _get_partner_from_token reverses it with tools.verify_hash_signed and only returns the partner if id, user_ids, the partner's current login_date AND signup_type still match the payload. Two consequences metadata cannot show: (1) because the user's last login_date is baked in, the token is invalidated the moment the user logs in; (2) expiration is per-type — 'reset' tokens default to auth_signup.reset_password.validity.hours (4h), 'signup' tokens to auth_signup.signup.validity.hours (144h/6 days), read from ir.config_parameter. signup_prepare just writes signup_type ('signup'|'reset'); signup_cancel clears it (also fired when a user is archived or deleted via res.users.write/_ondelete).",
+        "source": "code-read"
       },
       {
-        "element": "thin module",
-        "observation": "0 models, 4 routes, 960 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
-        "source": "ast"
+        "element": "res.users.signup(values, token) -> _signup_create_user / _create_user_from_template (token-driven account creation/activation)",
+        "observation": "signup() is the single entry point with three modes keyed on the token: (a) token + no user on the partner => create a new res.users for that partner; (b) token + existing user => this is a password set/reset, it writes values onto the existing user (and _notify_inviter() bus-pings the inviter on first internal activation); (c) no token => create a fully external/uninvited user. Creation always goes through _create_user_from_template, which literal_eval's base.template_portal_user_id (ICP) and template_user.copy(values) with no_reset_password context inside a cr.savepoint — so a new signup user is a CLONE of the portal template user (its groups/company), not a blank user; a copy failure (e.g. login already taken) is re-raised as SignupError. The token is consumed (partner.signup_type set False) before user creation, and geolocation/lang values are dropped if the partner already has them.",
+        "source": "code-read"
+      },
+      {
+        "element": "res.users._get_signup_invitation_scope (the b2b/b2c gate on uninvited signup)",
+        "observation": "Whether a stranger may self-register is governed by the ir.config_parameter auth_signup.invitation_scope (default 'b2b'). _signup_create_user raises SignupError('Signup is not allowed for uninvited users') when there is no partner_id (i.e. no invitation token) AND scope != 'b2c'. The controller's get_auth_signup_config exposes signup_enabled = (scope == 'b2c') and reset_password_enabled = (ICP auth_signup.reset_password == 'True') to the login page, and /web/signup itself raises NotFound() when neither a token nor signup_enabled is present. So an invitation token bypasses the scope gate (you can always finish an invite), but open self-service signup only works when an admin has switched the scope to b2c via res.config.settings. signup_get_auth_param only hands out a fresh token for partners without a user when scope is b2c.",
+        "source": "code-read"
+      },
+      {
+        "element": "res.users._action_reset_password + create()-override (invitation/reset email with per-audience templates)",
+        "observation": "Sending the link is _action_reset_password: it signup_prepare()s the partner (signup vs reset type), then sends the signup URL by email — choosing per recipient internal vs portal: create-mode internal users get auth_signup.set_password_email, create-mode portal users get auth_signup.portal_set_password_email, and a plain reset uses the auth_signup.reset_password_email QWeb render into a mail.mail. Crucially, res.users.create() is overridden to AUTO-INVITE: any newly created user with an email (unless no_reset_password context) is immediately _action_reset_password(signup_type='signup'), so creating a user in the backend silently emails them an account-activation link; a MailDeliveryException rolls the invite back via signup_cancel. web_create_users batch-invites by email, and an ir.cron (send_unregistered_user_reminder, mail_template_data_unregistered_users) nags inviters 5 days later about invited users who never logged in (state still 'new').",
+        "source": "code-read"
+      },
+      {
+        "element": "controllers/main.py /web/signup + /web/reset_password (public token->session flow)",
+        "observation": "Both public routes share get_auth_signup_qcontext, which reads the token from request.params or the session (auth_signup_token) and calls res.partner._signup_retrieve_info to pre-fill name/login/email (or flags invalid_token). On POST /web/signup, do_signup -> _signup_with_values -> res.users.sudo().signup(values, token) creates/activates the user, request.env.cr.commit()s, then request.session.authenticate(...) logs them straight in (unless MFA, which drops them to the public user); an account-created confirmation mail (mail_template_user_signup_account_created) is sent and the request falls through to web_login. /web/reset_password with a token calls do_signup(do_login=False) to set the new password; without a token it calls res.users.reset_password(login) to email a link. Both responses set X-Frame-Options=SAMEORIGIN + a frame-ancestors CSP, and the routes carry captcha guards ('signup' / 'password_reset').",
+        "source": "code-read"
+      },
+      {
+        "element": "frontend (static)",
+        "observation": "No OWL components, services or patches. The whole client footprint is one public Interaction (static/src/interactions/signup.js) registered as public.interactions:auth_signup.signup, bound to .oe_signup_form, .oe_reset_password_form; on submit it just disables the submit button and adds a loading spinner (addLoadingEffect) to prevent double-submit. Loaded via web.assets_frontend (=1). The signup/reset/login forms themselves are server-rendered QWeb templates (auth_signup.signup, auth_signup.reset_password in views/auth_signup_login_templates.xml inheriting the web login layout) — there is no SPA/OWL widget for signup.",
+        "source": "static"
       }
     ]
   },
   "it_architecture": {
-    "application": "auth_signup (Signup)",
+    "application": "auth_signup (self-service signup, admin invitation, and password-reset: token-based res.users account creation/activation layered on the web login + mail)",
     "software_services": [
-      "/web/reset_password",
-      "/web/signup"
+      "/web/signup (public HTTP: token-or-open self-registration form -> create/activate res.users -> authenticate)",
+      "/web/reset_password (public HTTP: token sets a new password, or login emails a reset link)",
+      "/web/login (override: injects signup_enabled / reset_password_enabled config + post-signup redirect into the login page)",
+      "/base_setup/data (json override: adds resend_invitation to the base-setup onboarding payload)"
     ],
-    "data_objects": [],
-    "logical_data_erm": [],
+    "data_objects": [
+      "res.partner (signup_type + signed-token machinery)",
+      "res.users (state new/active, signup/reset lifecycle)",
+      "res.config.settings (invitation scope, reset toggle, template user)",
+      "ir.http (login/session config injection)"
+    ],
+    "logical_data_erm": [
+      "res.partner.user_ids -1::N-> res.users (a signup token resolves a partner to its user(s))",
+      "res.users.partner_id -N::1-> res.partner (signup_cancel cascades on archive/delete)",
+      "res.users <- base.template_portal_user_id (ir.config_parameter): new signup users are copies of the portal template user",
+      "res.config.settings -> ir.config_parameter (auth_signup.invitation_scope, auth_signup.reset_password, base.template_portal_user_id)"
+    ],
     "information_flows": [
-      "depends: base_setup, mail, web"
+      "depends: base_setup, mail, web (extends the web login controller, sends invitation/reset mail via mail templates, surfaces config in base_setup onboarding)",
+      "invite: res.users.create()/web_create_users -> _action_reset_password(signup) -> signup_prepare + mail.template send_mail (set_password / portal_set_password) -> account-activation link",
+      "token: res.partner._generate_signup_token -> tools.hash_sign([id, user_ids, login_date, signup_type]) -> URL; _get_partner_from_token verifies + self-invalidates on login",
+      "signup: /web/signup POST -> do_signup -> res.users.signup(values, token) -> _create_user_from_template (copy template_portal_user) -> cr.commit -> session.authenticate",
+      "reset: /web/reset_password -> (token) signup(do_login=False) set password | (login) reset_password -> reset_password_email",
+      "gate: _signup_create_user -> _get_signup_invitation_scope (ICP auth_signup.invitation_scope b2b/b2c) -> SignupError if uninvited and not b2c",
+      "reminder: ir.cron send_unregistered_user_reminder -> mail_template_data_unregistered_users -> inviter notified about users still in state 'new'"
     ],
-    "frontend_components": []
+    "frontend_components": [
+      "public.interactions:auth_signup.signup (Interaction on .oe_signup_form/.oe_reset_password_form: submit-button loading guard)"
+    ]
   },
   "business_architecture": {
     "capabilities": [
-      "Signup"
+      "Self-Service Account Signup (token or open b2c)",
+      "Admin Invitation / Account Provisioning by email",
+      "Password Reset & Set-Password by signed token",
+      "Signup-Token Lifecycle (issue, validate, expire, self-invalidate, cancel)",
+      "Invitation-Scope Governance (b2b vs b2c, template-user cloning)",
+      "Unregistered-User Reminder (cron nudge to inviters)"
     ],
-    "value_streams": [],
-    "information_concepts": [],
+    "value_streams": [
+      "Invite-to-Active: admin creates/invites a user -> activation email with signed token -> user opens /web/signup -> sets password (copy of template user) -> authenticated session (state new -> active)",
+      "Forgot-Password-to-Reset: user requests reset -> reset_password_email with token -> /web/reset_password -> new password set -> login",
+      "Open-Signup-to-Account: (b2c) visitor opens /web/signup -> fills form -> external res.users created from template -> authenticated session"
+    ],
+    "information_concepts": [
+      "res.partner.signup_type (signup vs reset token state)",
+      "signup token (signed payload: partner id, user_ids, login_date, type)",
+      "res.users.state (new=Invited / active=Confirmed, computed from login_date)",
+      "invitation scope (auth_signup.invitation_scope b2b/b2c ICP)",
+      "template portal user (base.template_portal_user_id cloned for new accounts)"
+    ],
     "organization": [],
+    "policies": [
+      "Uninvited-signup policy: open self-registration only when auth_signup.invitation_scope = b2c; otherwise an invitation token is required (SignupError on uninvited b2b)",
+      "Token-validity policy: tokens are HMAC-signed and self-invalidate on login (login_date in payload); reset tokens expire in 4h, signup tokens in 144h (ICP-configurable)",
+      "Template-user policy: every new signup/invited account is a copy of base.template_portal_user_id (inherits its groups/company), never a blank user",
+      "Auto-invite policy: creating a res.users with an email auto-sends a signup activation link unless no_reset_password; failed delivery cancels the pending signup",
+      "Route-exposure policy: /web/signup and /web/reset_password return NotFound unless a valid token or the respective feature flag (signup_enabled / reset_password_enabled) is set; responses are framed (SAMEORIGIN + frame-ancestors CSP) and captcha-guarded"
+    ],
     "products": [],
-    "policies": [],
-    "stakeholders": [],
+    "stakeholders": [
+      "Prospective / portal user (self-registers or completes an invitation, resets their password)",
+      "Internal employee user (receives a set-password invitation when their account is created)",
+      "Inviter / account creator (creates users, gets bus-notified on activation and cron-reminded about no-shows)",
+      "Security administrator (sets invitation scope b2b/b2c, reset-password toggle, the template user)",
+      "Module developer (auth_oauth and other auth add-ons call signup()/_generate_signup_values for just-in-time provisioning)"
+    ],
     "strategy": null,
-    "metrics": []
+    "metrics": [
+      "count of res.users in state 'new' (pending/never-activated invitations)",
+      "signup-token expiry settings (reset 4h vs signup 144h) and invitation_scope (b2b/b2c) as governance signals",
+      "unregistered-user reminders dispatched by the daily cron (activation follow-up volume)"
+    ]
   },
   "classification": {
     "value_model": "support",
     "activity_class": "support",
     "apqc_category": "8.0 Manage Information Technology",
-    "rationale": "auth_signup: thin support/support module (auto-architect baseline)."
+    "rationale": "auth_signup is IT identity-and-access infrastructure (Porter support activity; Stabell & Fjeldstad 'support'). It owns no business object of its own: facts report 0 new models — everything is an extension of res.partner (one Char signup_type plus the token methods), res.users (a computed state field plus the signup/reset lifecycle), res.config.settings and ir.http, and it carries no security groups, record rules or ACL rows. Its sole purpose is account provisioning and credential bootstrap: turning an emailed signed token into an activated res.users (a clone of the portal template user) and resetting passwords, beneath the web login that every other module relies on. It creates no document chain and holds no customer/order/product/ledger data, so it is 'support' rather than chain/shop/network. APQC 8.0 'Manage Information Technology' is the precise fit: this is the identity-and-access-management capability — account provisioning, invitation, and password-reset as a running runtime (public /web/signup and /web/reset_password controllers, HMAC-signed self-invalidating tokens, b2b/b2c scope gating, template-user cloning, invitation/reset mail templates). 11.0 'Manage Enterprise Risk, Compliance and Resiliency' was considered because credential/account-lifecycle touches security governance, but rejected: 11.0 is the governance layer (control frameworks, audits, policy management), whereas auth_signup is the technical access mechanism IT builds and operates — APQC places that under 8.0 (Develop and manage IT security / identity & access management). The classification mirrors its auth/IT siblings auth_oauth, auth_totp and web (all 8.0 / support)."
   },
   "fit_to_standard": {
     "standard_capabilities": [
-      "Signup"
+      "Public /web/signup and /web/reset_password flows wired into the standard web login page",
+      "HMAC-signed signup/reset tokens (tools.hash_sign over partner id + user_ids + login_date + type) that self-invalidate on login and expire per-type (reset 4h, signup 144h, ICP-tunable)",
+      "Three signup modes via res.users.signup(values, token): new invited user, password set/reset for an existing user, or open external user",
+      "b2b/b2c invitation-scope gate (auth_signup.invitation_scope) controlling whether uninvited visitors may self-register",
+      "Auto-invitation: creating a backend user emails a set-password activation link (per-audience internal vs portal mail templates)",
+      "New accounts cloned from the portal template user (base.template_portal_user_id) so they inherit a baseline of groups/company",
+      "res.users.state (Invited/Confirmed) + daily ir.cron reminder to inviters about users who never activated",
+      "Password reset by login/email with a reset-link template; account-created confirmation mail; captcha + framing/CSP hardening on the public forms"
     ],
-    "typical_fits": [],
-    "common_gaps": [],
+    "typical_fits": [
+      "Inviting employees/portal customers from the backend and letting them set their own password (no admin-set passwords)",
+      "Enabling open self-service signup for a customer portal by switching invitation scope to b2c",
+      "Standard 'forgot password?' self-service reset on the login page",
+      "Serving as the just-in-time provisioning backend for auth_oauth / other federation add-ons (signup() on first SSO login)"
+    ],
+    "common_gaps": [
+      "No domain-allowlist / email-verification policy beyond the b2b/b2c flag — open b2c signup admits any email unless customized",
+      "New users are a fixed clone of one template portal user; role/group mapping per signup channel needs customization",
+      "Token validity (4h/144h) and invitation scope are global ICPs, not per-campaign/per-partner policy",
+      "No built-in rate-limiting/anti-abuse beyond the captcha hook; reminder cadence (5 days) is fixed in code",
+      "No multi-step onboarding/approval workflow — signup is single-form, immediate activation (subject to MFA)"
+    ],
     "drive_hints": [
-      "n/a"
+      "odoo shell: env['ir.config_parameter'].sudo().set_param('auth_signup.invitation_scope', 'b2c')  # enable open self-service signup",
+      "odoo shell: env['ir.config_parameter'].sudo().get_param('auth_signup.signup.validity.hours')  # inspect signup-token TTL (default 144)",
+      "odoo shell: p = env['res.partner'].create({'name':'T','email':'t@x.io'}); p.signup_prepare(); p._generate_signup_token()  # mint a signed signup token",
+      "odoo shell: env['res.users'].search_count([('state','=','new')])  # count never-activated invited users",
+      "curl -i 'http://localhost:8069/web/signup'  # 404 unless a token or b2c signup_enabled; with b2c it renders the signup form",
+      "curl -i 'http://localhost:8069/web/reset_password'  # the self-service password-reset form when reset is enabled"
     ]
   },
   "reverse_eng_confidence": {
@@ -146,14 +279,16 @@
     "strategy": "human"
   },
   "open_questions": [
-    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+    "Live adoption (count of users in state 'new' vs 'active', real invitation_scope, token TTLs in use) needs runtime data — extract_runtime not run; models empty at capture.",
+    "Interplay with consumers (auth_oauth JIT provisioning, portal/website signup variants, mail-server availability for invitations) is referenced but lives in other modules — not fully traced here.",
+    "The captcha integration ('signup'/'password_reset' guards) and MFA drop-to-public-user path depend on web/auth_totp behavior not exhaustively mapped in this record."
   ],
   "provenance": {
     "explorer_facts": "doc/revres/facts/auth_signup.facts.json",
     "tools": [
+      "code-read",
       "extract_module.py",
-      "extract_frontend.py",
-      "gen_thin.py"
+      "extract_frontend.py"
     ],
     "odoo_version": "19.0"
   }

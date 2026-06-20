@@ -4,6 +4,7 @@
     "manifest": {
       "name": "Peppol Business Response",
       "category": "Accounting/Accounting",
+      "summary": "This module is used to send/receive responses to documents received/sent with PEPPOL",
       "depends": [
         "account_peppol"
       ],
@@ -12,19 +13,55 @@
     },
     "models": [
       {
+        "_name": "account.peppol.response",
+        "_description": "Business Level Responses for Peppol",
+        "fields": 5,
+        "relations": [
+          "move_id->account.move",
+          "company_id->res.company"
+        ]
+      },
+      {
         "_name": "account.peppol.clarification",
         "_description": "Peppol clarifications used for rejection",
-        "fields": 4
+        "fields": 4,
+        "relations": []
       },
       {
         "_name": "account.peppol.rejection.wizard",
         "_description": "Peppol Rejection wizard",
-        "fields": 3
+        "fields": 3,
+        "relations": [
+          "move_ids->account.move",
+          "reason_ids->account.peppol.clarification",
+          "action_ids->account.peppol.clarification"
+        ]
       },
       {
-        "_name": "account.peppol.response",
-        "_description": "Business Level Responses for Peppol",
-        "fields": 5
+        "_name": "account.move (inherited)",
+        "_description": "Adds peppol_move_state / peppol_response_ids / peppol_can_send_response",
+        "fields": 3,
+        "relations": [
+          "peppol_response_ids->account.peppol.response"
+        ]
+      },
+      {
+        "_name": "account_edi_proxy_client.user (inherited)",
+        "_description": "Send/receive Peppol business responses through the access-point proxy",
+        "fields": 0,
+        "relations": []
+      },
+      {
+        "_name": "res.partner (inherited)",
+        "_description": "Capability flag whether a participant supports the Invoice Response service",
+        "fields": 2,
+        "relations": []
+      },
+      {
+        "_name": "res.company (inherited)",
+        "_description": "Registers the Invoice Response document type with the Peppol proxy",
+        "fields": 0,
+        "relations": []
       }
     ],
     "routes": [],
@@ -36,12 +73,9 @@
     "views": {
       "form": 1,
       "list": 1,
-      "tree": 0,
-      "kanban": 0,
       "search": 0,
       "pivot": 0,
       "graph": 0,
-      "calendar": 0,
       "activity": 0
     },
     "frontend": {
@@ -61,68 +95,157 @@
       "endpoints": [],
       "files": []
     },
-    "runtime": {
-      "models_with_data": 0,
-      "top": []
-    },
     "behavioral_notes": [
       {
-        "element": "thin module",
-        "observation": "3 models, 0 routes, 700 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
-        "source": "ast"
+        "element": "account.move._post -> action_peppol_send_approval_response",
+        "observation": "Posting an incoming bill (in_invoice/in_refund) overrides account.move._post to automatically fire action_peppol_send_approval_response, which groups the can-send moves by company and calls company.account_peppol_edi_user._peppol_send_response(moves, 'AP'). Validating a received Peppol bill in Odoo therefore emits an 'Approval' Invoice-Response back to the document's sender. Gated by peppol_can_send_response (requires peppol_message_uuid, a vendor-bill type, the partner supporting the Invoice Response service, and no prior AP/RE/not_serviced response).",
+        "source": "code-read"
+      },
+      {
+        "element": "account_edi_proxy_client.user._peppol_send_response",
+        "observation": "Builds and transmits a UBL ApplicationResponse (Invoice Response trns:invoice_response:3) through the Peppol access point by calling _call_peppol_proxy on endpoint '1/send_response' with params reference_uuids (origin message UUIDs), status (AB/AP/RE), and clarifications. Asserts status in {AB,AP,RE}; for RE it raises ValidationError unless at least one OPStatusReason clarification is supplied. On success it creates account.peppol.response rows (peppol_state='processing') and logs a chatter message (received/accepted/rejected); on UserError it logs the failure batch instead of raising.",
+        "source": "code-read"
+      },
+      {
+        "element": "account.move._compute_peppol_move_state",
+        "observation": "Derives the invoice's peppol_move_state ('AB' Received / 'AP' Approved / 'RE' Rejected) from the response_code of related account.peppol.response records whose peppol_state == 'done'. Precedence is rejection-first: any 'RE' -> RE; else any 'AP' or 'PD' -> AP; else AB. This is the field that surfaces the cross-network accept/reject status of a document on the move.",
+        "source": "code-read"
+      },
+      {
+        "element": "account_edi_proxy_client.user._peppol_process_new_messages / _peppol_extract_response_info",
+        "observation": "On inbound polling, messages with document_type 'ApplicationResponse' are decoded and parsed with lxml: _peppol_extract_response_info reads DocumentResponse/Response/ResponseCode plus the Status/StatusReasonCode/StatusReason elements (listID OPStatusReason / OPStatusAction) to build a human-readable rejection/action message resolved against account.peppol.clarification. A new account.peppol.response is created against the origin move (matched by origin_message_uuid + company); when state=='done' a chatter log records that the receiver received / accepted / rejected the document.",
+        "source": "code-read"
+      },
+      {
+        "element": "account.peppol.response.response_code (reason / status codes) + rejection wizard",
+        "observation": "response_code is a UBL/Peppol BLR code Selection: AB Acknowledgement, IP In Process, UQ Under query, CA Conditionally accepted, RE Rejection, AP Approval, PD Paid (only AB/AP/RE are actively driven; the rest are stored). button_cancel on a received Peppol bill opens account.peppol.rejection.wizard, where the user picks reason_ids (OPStatusReason, default 'unr', at least one required) and optional action_ids (OPStatusAction); button_send maps them to clarifications and calls _peppol_send_response(..., 'RE', clarifications) per company.",
+        "source": "code-read"
+      },
+      {
+        "element": "account_edi_proxy_client.user status polling + service auto-registration",
+        "observation": "_peppol_get_documents_for_status appends 'processing' account.peppol.response rows to the proxy status batch; _peppol_process_messages_status maps proxy results back: error 702 ('request not ready') is skipped, 207 -> peppol_state='not_serviced', other errors -> 'error' with a chatter log, otherwise the returned state is stored. _cron_peppol_auto_register_services pushes supported Invoice Response document identifiers to the proxy ('/api/peppol/2/add_services') for every peppol receiver, re-triggering itself in 4h on failure.",
+        "source": "code-read"
+      },
+      {
+        "element": "frontend (OWL/JS)",
+        "observation": "No frontend: 0 JS files, 0 XML templates, 0 OWL components, 0 registry registrations, 0 patches, no asset bundles. UI is plain Odoo views (1 form, 1 list) plus the rejection wizard.",
+        "source": "static"
+      },
+      {
+        "element": "external integrations",
+        "observation": "0 direct outbound HTTP call sites and no SDK imports in this module's static scan; uses_api_keys=False. All network traffic to the Peppol access point is mediated by the inherited account_edi_proxy_client.user._call_peppol_proxy (Odoo IAP/proxy) reached via endpoints '1/send_response', '/api/peppol/2/add_services' and the inherited status polling (gap #7: external integration through the EDI proxy).",
+        "source": "static"
       }
     ]
   },
   "it_architecture": {
-    "application": "account_peppol_response (Peppol Business Response)",
+    "application": "account_peppol_response (Peppol Business Response extension of the e-invoicing stack; auto_install on account_peppol)",
     "software_services": [],
     "data_objects": [
+      "account.peppol.response",
       "account.peppol.clarification",
       "account.peppol.rejection.wizard",
-      "account.peppol.response"
+      "account.move (inherited)",
+      "account_edi_proxy_client.user (inherited)",
+      "res.partner (inherited)",
+      "res.company (inherited)"
     ],
     "logical_data_erm": [
-      "account.peppol.rejection.wizard -> account.move",
-      "account.peppol.rejection.wizard -> account.peppol.clarification",
       "account.peppol.response -> account.move",
-      "account.peppol.response -> move_id.company_id"
+      "account.peppol.response -> res.company",
+      "account.move -> account.peppol.response (peppol_response_ids)",
+      "account.peppol.rejection.wizard -> account.move",
+      "account.peppol.rejection.wizard -> account.peppol.clarification (reason_ids / action_ids)"
     ],
     "information_flows": [
-      "depends: account_peppol"
+      "depends: account_peppol (which itself depends on account_edi_ubl_cii + account_edi_proxy_client)",
+      "outbound: account.move._post -> _peppol_send_response('AP') -> IAP proxy '1/send_response' (UBL ApplicationResponse to the bill's sender)",
+      "outbound: button_cancel -> rejection wizard -> _peppol_send_response('RE', clarifications) with OPStatusReason/OPStatusAction codes",
+      "outbound: inbound bill auto-acknowledged via _peppol_post_process_new_messages -> _peppol_send_response('AB')",
+      "inbound: _peppol_process_new_messages parses ApplicationResponse -> creates account.peppol.response -> _compute_peppol_move_state sets peppol_move_state (AB/AP/RE) on the origin invoice",
+      "polling: _peppol_get_documents_for_status / _peppol_process_messages_status reconcile account.peppol.response.peppol_state against the proxy (702/207/error handling)"
     ],
-    "frontend_components": []
+    "frontend_components": [],
+    "external_integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "endpoints": [],
+      "note": "All Peppol network calls go through inherited account_edi_proxy_client.user._call_peppol_proxy (Odoo IAP/access-point proxy): '1/send_response', '/api/peppol/2/add_services', plus inherited status/receive endpoints."
+    }
   },
   "business_architecture": {
     "capabilities": [
-      "Peppol Business Response"
+      "Send Peppol Invoice/Message-Level Responses (acknowledge / accept / reject)",
+      "Auto-acknowledge and auto-approve received Peppol vendor bills",
+      "Reject received Peppol documents with reason & suggested-action codes",
+      "Receive and interpret inbound responses to documents we sent (accepted/rejected/in-process)",
+      "Track per-document Peppol response status on the invoice/bill",
+      "Discover trading-partner Invoice Response service support"
     ],
-    "value_streams": [],
+    "value_streams": [
+      "Inbound-bill response: receive Peppol bill -> auto-acknowledge (AB) -> on post auto-approve (AP) or on cancel reject (RE) -> response sent to sender via access point",
+      "Outbound-document feedback: invoice sent over Peppol -> counterparty's ApplicationResponse polled/received -> parsed into account.peppol.response -> peppol_move_state updated (AB/AP/RE)"
+    ],
     "information_concepts": [
-      "account.peppol.clarification",
-      "account.peppol.rejection.wizard",
-      "account.peppol.response"
+      "account.peppol.response (Business Level Response)",
+      "account.peppol.clarification (OPStatusReason / OPStatusAction code)",
+      "account.move (invoice/bill carrying peppol_move_state)",
+      "res.partner (trading participant + Invoice Response support flag)",
+      "account_edi_proxy_client.user (Peppol access-point identity)"
     ],
     "organization": [],
     "products": [],
-    "policies": [],
-    "stakeholders": [],
+    "policies": [
+      "Rejection requires at least one OPStatusReason clarification (ValidationError otherwise; wizard defaults to reason 'unr')",
+      "A response is only sendable when peppol_can_send_response holds: vendor-bill type, existing peppol_message_uuid, partner supports the Invoice Response service, and no prior AP/RE/not_serviced response",
+      "Status precedence on the move: any RE -> Rejected, else AP/PD -> Approved, else AB -> Received (only 'done' responses count)",
+      "Only AB/AP/RE are the mandatory BLR codes actively driven; IP/UQ/CA/PD are stored but not acted on"
+    ],
+    "stakeholders": [
+      "Accountant / AP clerk (approves or rejects received Peppol bills)",
+      "Trading partner / document sender (receives the business response)",
+      "Peppol Access Point / Odoo IAP proxy (transport)",
+      "Tax / e-invoicing compliance authority (Peppol BIS / OpenPeppol)"
+    ],
     "strategy": null,
-    "metrics": []
+    "metrics": [
+      "peppol_move_state distribution (Received / Approved / Rejected) across moves",
+      "account.peppol.response.peppol_state pipeline (processing / done / error / not_serviced)"
+    ]
   },
   "classification": {
     "value_model": "support",
     "activity_class": "support",
     "apqc_category": "9.0 Manage Financial Resources",
-    "rationale": "account_peppol_response: thin support/support module (auto-architect baseline)."
+    "rationale": "account_peppol_response is an e-invoicing compliance/interchange extension layered on accounting (auto_install on account_peppol). It creates no primary customer value; it records and exchanges the compliance status of AR/AP documents on the Peppol network, classified as a Porter/Stabell support activity. Per APQC 9.0 Manage Financial Resources it sits in AR/AP processing (9.2.x process accounts receivable / 9.5.x process accounts payable): it sends accept/reject/acknowledge Message-Level / Invoice Responses for received vendor bills and ingests counterparties' responses to issued customer invoices, updating each move's peppol_move_state. The mediated network transport (access point / IAP proxy) is an interchange of compliance signals, not a value-chain output."
   },
   "fit_to_standard": {
     "standard_capabilities": [
-      "Peppol Business Response"
+      "Auto-acknowledge (AB) inbound Peppol documents on reception",
+      "Auto-send Approval (AP) Invoice Response when a received bill is posted",
+      "Manual rejection (RE) with OPStatusReason + OPStatusAction codes via the rejection wizard on cancel",
+      "Parse inbound UBL ApplicationResponse and set peppol_move_state on the origin move",
+      "Reconcile response delivery status with the access point via the proxy status cron",
+      "Auto-register the Invoice Response document type/service with the Peppol proxy"
     ],
-    "typical_fits": [],
-    "common_gaps": [],
+    "typical_fits": [
+      "OpenPeppol BIS Invoice Response (trns:invoice_response:3) accept/reject/acknowledge flows",
+      "AP teams confirming or rejecting received e-invoices back to suppliers",
+      "AR teams seeing whether a customer accepted/rejected an issued e-invoice",
+      "Partner capability discovery via SMP lookup of supported document types"
+    ],
+    "common_gaps": [
+      "Only AB/AP/RE driven; IP/UQ/CA/PD codes are stored but not workflowed",
+      "No public route / OWL UI — purely backend views + wizard",
+      "Requires a configured Peppol access point (account_peppol) registered as a receiver",
+      "Country/profile-specific reason-code catalogs beyond the seeded OPStatusReason/OPStatusAction clarifications",
+      "Outbound-response triggers tied to _post / button_cancel; custom approval workflows need extension"
+    ],
     "drive_hints": [
-      "odoo shell: env['account.peppol.clarification'].search([],limit=3)"
+      "odoo shell: env['account.peppol.response'].fields_get(['response_code','peppol_state'])  # BLR code + state selections",
+      "odoo shell: env['account.move'].search([('peppol_move_state','in',['AB','AP','RE'])]).mapped(('name','peppol_move_state'))",
+      "odoo shell: m = env['account.move'].browse(<bill_id>); print(m.peppol_can_send_response, m.partner_id.peppol_response_support)",
+      "odoo shell: env['account.peppol.clarification'].search([('list_identifier','=','OPStatusReason')]).mapped(('code','name'))"
     ]
   },
   "reverse_eng_confidence": {
@@ -136,14 +259,18 @@
     "strategy": "human"
   },
   "open_questions": [
-    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+    "Exact UBL ApplicationResponse payload built by the IAP proxy for '1/send_response' (the module only passes reference_uuids/status/clarifications; serialization lives proxy-side).",
+    "Full lifecycle handling intended for the stored-but-inactive codes IP/UQ/CA/PD if a counterparty returns them.",
+    "How frequently the status/receive crons run and the retry semantics for not_serviced (207) responses.",
+    "Seed contents of account.peppol.clarification (the OPStatusReason/OPStatusAction code lists shipped in data files)."
   ],
   "provenance": {
     "explorer_facts": "doc/revres/facts/account_peppol_response.facts.json",
     "tools": [
+      "apqc_odoo_map.tsv",
+      "code-read (account_move.py, account_edi_proxy_user.py, account_peppol_response.py, peppol_rejection_wizard.py, res_partner.py, res_company.py, account_peppol_clarification.py)",
       "extract_module.py",
-      "extract_frontend.py",
-      "gen_thin.py"
+      "extract_frontend.py"
     ],
     "odoo_version": "19.0"
   }

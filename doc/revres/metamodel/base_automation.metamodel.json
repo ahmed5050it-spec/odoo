@@ -18,7 +18,34 @@
       {
         "_name": "base.automation",
         "_description": "Automation Rule",
-        "fields": 26
+        "_inherit": [
+          "mail.thread",
+          "mail.activity.mixin"
+        ],
+        "fields": 26,
+        "relations": [
+          "model_id->ir.model",
+          "action_server_ids->ir.actions.server",
+          "trg_selection_field_id->ir.model.fields.selection",
+          "trg_date_id->ir.model.fields",
+          "trg_date_calendar_id->resource.calendar",
+          "on_change_field_ids->ir.model.fields",
+          "trigger_field_ids->ir.model.fields"
+        ]
+      },
+      {
+        "_name": "ir.actions.server (extension)",
+        "_description": "Adds usage='base_automation' and base_automation_id link; the server action is the executable body of a rule",
+        "fields": 2,
+        "relations": [
+          "base_automation_id->base.automation"
+        ]
+      },
+      {
+        "_name": "ir.cron (extension)",
+        "_description": "action_open_automation delegation helper for the time-based scheduler cron",
+        "fields": 0,
+        "relations": []
       }
     ],
     "routes": [
@@ -85,68 +112,143 @@
     },
     "behavioral_notes": [
       {
-        "element": "frontend (OWL/JS)",
-        "observation": "5 JS files, 1 OWL components, 4 registry adds; bundles ['web.assets_backend', 'web.assets_unit_tests'].",
-        "source": "static"
+        "element": "BaseAutomation._register_hook (runtime monkey-patching of target models)",
+        "observation": "The engine's core trick, invisible to ORM metadata. _register_hook() searches all base.automation rules and, for each rule's model_name, monkey-patches the live class in env.registry: create (CREATE_TRIGGERS), write + _compute_field_value (WRITE_TRIGGERS), unlink (on_unlink), message_post (mail triggers), and injects per-rule methods into Model._onchange_methods (on_change). Each patched method stores method.origin = the previous implementation, calls it, then routes affected records into automation._process(). patch() guards against double-patching a model/method. _unregister_hook() deletes the patched attributes. _update_registry() (invoked from base.automation create/write/unlink when CRITICAL_FIELDS change) re-installs the patches and sets registry_invalidated = True so other workers reload. Net effect: creating one automation rule rewires the create/write/unlink of an UNRELATED model (e.g. sale.order, crm.lead) at runtime with no static dependency.",
+        "source": "code-read"
       },
       {
-        "element": "thin module",
-        "observation": "1 models, 1 routes, 1716 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
-        "source": "ast"
+        "element": "_filter_pre / _filter_post (pre- vs post-update domain conditions)",
+        "observation": "Rules carry two safe_eval domains. make_write() snapshots old_values for stored fields in vals, evaluates filter_pre_domain against records BEFORE the super() write (so a rule can require 'was unpaid before this edit'), runs the original write, then evaluates filter_domain (post) against the survivors; only matching records reach _process. on_create_or_write rules derive trigger_field_ids from the domain fields, and _check_trigger_fields() compares record[name] to old_vals to skip records whose watched fields did not actually change. filter_pre_domain is never checked on create. This pre/post split is pure code semantics, not derivable from field metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "_process -> ir.actions.server.run + loop guard (__action_done)",
+        "observation": "_process() is the single execution path: it subtracts records already handled (context '__action_done' dict keyed automation -> recordset) to stop recursive/duplicate firing when an action's own writes re-trigger the same rule, stamps date_automation_last when present, builds an active_model/active_id/active_ids context per record, then for every linked action_server_ids calls action.with_context(**ctx).run() under sudo. The actual side-effect (send mail, add follower, schedule activity, run Python, update fields) lives in the ir.actions.server record, so base_automation supplies trigger+condition wiring while ir.actions.server supplies the effect. Exceptions pass through _add_postmortem (attaches rule id/name for the error dialog) and re-raise.",
+        "source": "code-read"
+      },
+      {
+        "element": "_cron_process_time_based_actions + _update_cron (on_time scheduler)",
+        "observation": "Time triggers (on_time / on_time_created / on_time_updated) are NOT hooked into create/write; the cron 'base_automation.ir_cron_data_base_automation_check' scans them. _cron_process_time_based_actions() iterates active TIME_TRIGGERS rules, calls _search_time_based_automation_records(until=now) which computes a relative date window from last_run, trg_date_range, trg_date_range_mode (before/after) and trg_date_range_type, optionally honouring trg_date_calendar_id working days via calendar.plan_days, runs _process per matched record, flushes, writes last_run=now and _commit_progress() per rule (rollback + continue on error). _update_cron() auto-activates the cron and shrinks its interval to ~10% of the smallest rule delay (floor 1 minute, ceiling 4 hours) whenever rules change.",
+        "source": "code-read"
+      },
+      {
+        "element": "/web/hook webhook + on_change UI front-end (gap #3)",
+        "observation": "Two non-store entry points. (1) on_webhook rules expose a public /web/hook/<uuid> route; _execute_webhook() safe_evals record_getter against the JSON/query payload to resolve the target record, optionally logs to ir.logging, then calls _process. (2) on_change registers per-rule onchange methods so rules fire live in the form view; the frontend ships an ActionsOne2ManyField OWL component, base_automation_trigger_selection / base_automation_actions_one2many field widgets, a GroupConfigMenu patch + 'open_automations' group_config_items entry, and a base_automation error_dialog registry handler that renders the _add_postmortem rule context. None of this UI wiring or webhook record-resolution is visible in Python ORM metadata.",
+        "source": "static"
       }
     ]
   },
   "it_architecture": {
-    "application": "base_automation (Automation Rules)",
+    "application": "base_automation (Automation Rules engine — event-condition-action triggers that monkey-patch target models and fire ir.actions.server)",
     "software_services": [
-      "/web/hook/<string:rule_uuid>"
+      "/web/hook/<string:rule_uuid> (public inbound webhook -> _execute_webhook -> _process)"
     ],
     "data_objects": [
-      "base.automation"
+      "base.automation",
+      "ir.actions.server (extended: usage=base_automation, base_automation_id)",
+      "ir.cron (extended: action_open_automation)"
     ],
     "logical_data_erm": [
-      "base.automation -> ir.actions.server",
-      "base.automation -> ir.model",
-      "base.automation -> ir.model.fields",
-      "base.automation -> ir.model.fields.selection",
-      "base.automation -> resource.calendar"
+      "base.automation -> ir.model (model_id, the watched target model)",
+      "base.automation -> ir.actions.server (action_server_ids, the executable effect)",
+      "base.automation -> ir.model.fields (trg_date_id / trigger_field_ids / on_change_field_ids)",
+      "base.automation -> ir.model.fields.selection (trg_selection_field_id)",
+      "base.automation -> resource.calendar (trg_date_calendar_id, working-day delays)",
+      "ir.actions.server -> base.automation (base_automation_id back-reference)"
     ],
     "information_flows": [
-      "depends: base, digest, resource, mail, sms"
+      "depends: base, digest, resource, mail, sms",
+      "hook: base.automation.create/write/unlink -> _update_registry -> _register_hook patches target Model.create/write/unlink/_compute_field_value/message_post + Model._onchange_methods at runtime",
+      "trigger: target record create/write/unlink/onchange -> patched method -> _filter_pre/_filter_post (safe_eval domains) -> _process -> ir.actions.server.run (mail/followers/activity/code/field-update side-effects)",
+      "time: ir.cron base_automation_check -> _cron_process_time_based_actions -> _search_time_based_automation_records -> _process",
+      "webhook: external HTTP POST -> /web/hook/<uuid> -> _execute_webhook -> record_getter safe_eval -> _process",
+      "loop-guard: context __action_done dict de-duplicates records across re-entrant writes"
     ],
     "frontend_components": [
-      "ActionsOne2ManyField"
+      "ActionsOne2ManyField (OWL one2many widget editing the rule's server actions inline)",
+      "base_automation_actions_one2many (field registry widget)",
+      "base_automation_trigger_selection (trigger-selection field widget)",
+      "GroupConfigMenu (patched: 'open_automations' group_config_items entry)",
+      "base_automation error_dialog (renders _add_postmortem rule id/name on action failure)"
     ]
   },
   "business_architecture": {
     "capabilities": [
-      "Automation Rules"
+      "Define Event-Condition-Action Automation Rules (no-code triggers)",
+      "React to Record Lifecycle Events (create / write / unlink / archive / field-set)",
+      "Evaluate Pre- and Post-Update Conditions (filter domains)",
+      "Schedule Time-Based Automations (date-field / after-creation / after-update, calendar-aware)",
+      "Fire Live UI On-Change Automations (form-view reactivity)",
+      "Ingest Inbound Webhooks (public /web/hook endpoint with record resolution)",
+      "Execute Linked Server Actions (mail, followers, activities, Python code, field updates)"
     ],
-    "value_streams": [],
+    "value_streams": [
+      "Rule-to-Effect: configure rule -> _register_hook patches target model -> event fires -> condition filter -> server action runs",
+      "Time-to-Effect: configure timed rule -> cron scan window -> matched records -> server action runs",
+      "Webhook-to-Effect: external POST -> record_getter resolves record -> condition -> server action runs"
+    ],
     "information_concepts": [
-      "base.automation"
+      "base.automation (Automation Rule)",
+      "ir.actions.server (the executable action body, extended here)",
+      "ir.cron (the time-trigger scheduler)",
+      "trigger / filter_pre_domain / filter_domain (event-condition definition)"
     ],
-    "organization": [],
+    "organization": [
+      "base.group_system (Settings) — sole access group on base.automation config"
+    ],
     "products": [],
-    "policies": [],
-    "stakeholders": [],
+    "policies": [
+      "Rules ARE the policy layer: ECA triggers express 'when X happens and condition Y holds, do Z' across any model",
+      "_check_trigger / _check_trigger_state / _check_action_server_model constraints enforce valid trigger-action combinations (on_change requires code action; on_unlink forbids mail/activity actions; action model must match rule model)",
+      "__action_done loop-guard prevents recursive/duplicate firing",
+      "filter_pre_domain is not evaluated on create"
+    ],
+    "stakeholders": [
+      "Business administrator / functional consultant (authors automation rules, no code)",
+      "Developer (writes Python-code server actions and record_getter logic)",
+      "Integrator (configures inbound webhooks from third-party apps)",
+      "End user (indirectly affected as rules mutate the records they edit)"
+    ],
     "strategy": null,
-    "metrics": []
+    "metrics": [
+      "last_run per timed rule (scheduler watermark)",
+      "ir.logging webhook call log (log_webhook_calls) viewable via action_view_webhook_logs"
+    ]
   },
   "classification": {
     "value_model": "support",
     "activity_class": "support",
     "apqc_category": "8.0 Manage Information Technology",
-    "rationale": "base_automation: thin support/support module (auto-architect baseline)."
+    "rationale": "base_automation is a cross-cutting workflow-automation framework — firm IT infrastructure with no business object of its own (Porter support activity; Stabell & Fjeldstad 'support'). Its single real model, base.automation, holds rule definitions, not business documents; the actual work is _register_hook monkey-patching ANY target model's create/write/unlink at runtime and dispatching ir.actions.server. It does not itself create value in a chain/shop/network — it is the trigger plumbing other primary modules (sale, crm, project...) bolt onto, which is why category is 'Sales/Sales' yet application=false and auto_install=false. APQC 8.0 'Manage Information Technology' fits because base_automation is business-process-automation tooling — develop/deliver and operate application logic (ECA rules, scheduled jobs, webhook integration) as an IT capability. 13.0 'Develop and Manage Business Capabilities' was considered because automation rules arguably configure business behaviour; rejected because base_automation is a concrete running engine (a workflow runtime + scheduler + webhook endpoint), i.e. IT solution delivery/operation, not the governance/portfolio/change-management capability 13.0 covers. The work is building and running automation software, which is squarely 8.0."
   },
   "fit_to_standard": {
     "standard_capabilities": [
-      "Automation Rules"
+      "No-code event-condition-action rules on any model (create/write/unlink/archive/stage/tag/state/priority/user-set)",
+      "Pre-update and post-update domain conditions with old-value diffing",
+      "Time-based triggers (date field, after creation, after last update) with before/after delay and working-calendar support",
+      "Live on-change (UI) automations bound to specific fields",
+      "Inbound webhook trigger (/web/hook/<uuid>) with configurable record_getter and optional call logging",
+      "Mail triggers (on incoming / outgoing message) for mail-thread models",
+      "Delegation to ir.actions.server effects: send email, add followers, schedule activity, execute Python, update fields"
     ],
-    "typical_fits": [],
-    "common_gaps": [],
+    "typical_fits": [
+      "Auto-assign salesperson / set follower / send confirmation when a record reaches a stage",
+      "Reminder activity N days before/after a date field via the time scheduler",
+      "Webhook from a third-party app updating an Odoo record on external events",
+      "Field-derived defaults / validations via on_change code automations"
+    ],
+    "common_gaps": [
+      "Complex multi-step or branching workflows (beyond a flat list of server actions) need custom Python actions or a dedicated workflow module",
+      "Ordering/priority between competing rules on the same model is implicit",
+      "Heavy on_time rules can pressure the shared cron interval (auto-shrinks to as low as 1 minute)",
+      "Recursive automations need careful design despite the __action_done guard",
+      "Outbound integrations are not provided here (gap #7: 0 HTTP call sites) — only inbound webhook + ir.actions.server effects"
+    ],
     "drive_hints": [
-      "odoo shell: env['base.automation'].search([],limit=3)"
+      "odoo shell: env['base.automation'].create({'name':'demo','model_id':env.ref('base.model_res_partner').id,'trigger':'on_create'}) then confirm cron/registry updated via _register_hook",
+      "odoo shell: inspect env.registry['res.partner'].create.origin to confirm the create method was monkey-patched",
+      "curl -X POST <base_url>/web/hook/<webhook_uuid> with JSON {'_model':'res.partner','_id':1} to exercise _execute_webhook -> record_getter -> _process",
+      "odoo shell: env['base.automation']._cron_process_time_based_actions() to run the time-based scan manually"
     ]
   },
   "reverse_eng_confidence": {
@@ -160,14 +262,17 @@
     "strategy": "human"
   },
   "open_questions": [
-    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+    "Exact set of downstream modules that ship default base.automation rules vs. those authored by customers at runtime (registry patching is dynamic).",
+    "Performance envelope of broad write triggers (no trigger_field_ids) on high-volume models.",
+    "Interaction/ordering when multiple rules patch the same model method and one action's writes re-trigger another rule.",
+    "Real row counts unavailable (runtime extraction empty) — rule population is per-deployment."
   ],
   "provenance": {
     "explorer_facts": "doc/revres/facts/base_automation.facts.json",
     "tools": [
+      "code-read",
       "extract_module.py",
-      "extract_frontend.py",
-      "gen_thin.py"
+      "extract_frontend.py"
     ],
     "odoo_version": "19.0"
   }

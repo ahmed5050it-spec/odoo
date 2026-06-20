@@ -37,7 +37,7 @@ Activity class: support=469, primary=180
 | Layer | Records with it |
 |-------|----------------:|
 | metadata (facts) | 649/649 |
-| code-read (behavior) | 110/649 |
+| code-read (behavior) | 122/649 |
 | frontend (OWL/JS) | 246/649 |
 | integrations (HTTP/SDK) | 70/649 |
 | runtime (live data) | 1/649 |
@@ -89,7 +89,7 @@ Activity class: support=469, primary=180
 | pos_restaurant_loyalty | chain | primary | 3.0 Market and Sell Pr | 0 | 2 | meta+fe |
 | pos_restaurant_stripe | chain | primary | 3.0 Market and Sell Pr | 0 | 2 | meta+fe |
 | pos_safaricom | chain | primary | 3.0 Market and Sell Pr | 1 | 3 | meta+fe+integ |
-| pos_sale | chain | primary | 3.0 Market and Sell Pr | 2 | 7 | meta+fe |
+| pos_sale | chain | primary | 3.0 Market and Sell Pr | 14 | 7 | meta+code+fe |
 | pos_sale_loyalty | chain | primary | 3.0 Market and Sell Pr | 0 | 1 | meta+fe |
 | pos_sale_margin | chain | primary | 3.0 Market and Sell Pr | 0 | 0 | meta |
 | pos_self_order_adyen | chain | primary | 3.0 Market and Sell Pr | 0 | 0 | meta |
@@ -140,8 +140,8 @@ Activity class: support=469, primary=180
 | account_peppol | network | support | 9.0 Manage Financial R | 9 | 7 | meta+code+fe+integ |
 | event | network | primary | 3.0 Market and Sell Pr | 8 | 13 | meta+code+fe+integ |
 | event_booth | network | primary | 3.0 Market and Sell Pr | 5 | 0 | meta+code |
-| event_booth_sale | network | primary | 3.0 Market and Sell Pr | 2 | 2 | meta+fe |
-| event_crm | network | primary | 3.0 Market and Sell Pr | 2 | 0 | meta |
+| event_booth_sale | network | primary | 3.0 Market and Sell Pr | 10 | 2 | meta+code+fe |
+| event_crm | network | primary | 3.0 Market and Sell Pr | 6 | 0 | meta+code |
 | event_crm_sale | network | primary | 3.0 Market and Sell Pr | 0 | 0 | meta |
 | event_product | network | primary | 3.0 Market and Sell Pr | 0 | 0 | meta |
 | event_sale | network | primary | 3.0 Market and Sell Pr | 10 | 2 | meta+code+fe |
@@ -173,7 +173,7 @@ Activity class: support=469, primary=180
 | payment_ecpay | network | support | 9.0 Manage Financial R | 0 | 0 | meta |
 | payment_flutterwave | network | support | 9.0 Manage Financial R | 0 | 1 | meta+fe |
 | payment_iyzico | network | support | 9.0 Manage Financial R | 0 | 0 | meta |
-| payment_mercado_pago | network | support | 9.0 Manage Financial R | 0 | 1 | meta+fe |
+| payment_mercado_pago | network | support | 9.0 Manage Financial R | 3 | 1 | meta+code+fe |
 | payment_mollie | network | support | 9.0 Manage Financial R | 0 | 0 | meta |
 | payment_nuvei | network | support | 9.0 Manage Financial R | 0 | 0 | meta |
 | payment_paymob | network | support | 9.0 Manage Financial R | 0 | 0 | meta |
@@ -199,7 +199,7 @@ Activity class: support=469, primary=180
 | website_crm_sms | network | primary | 3.0 Market and Sell Pr | 0 | 0 | meta |
 | website_customer | network | primary | 3.0 Market and Sell Pr | 1 | 2 | meta+fe |
 | website_event | network | primary | 3.0 Market and Sell Pr | 7 | 17 | meta+code+fe |
-| website_event_booth | network | primary | 3.0 Market and Sell Pr | 0 | 1 | meta+fe |
+| website_event_booth | network | primary | 3.0 Market and Sell Pr | 3 | 1 | meta+code+fe |
 | website_event_booth_exhibitor | network | primary | 3.0 Market and Sell Pr | 0 | 1 | meta+fe |
 | website_event_booth_sale | network | primary | 3.0 Market and Sell Pr | 0 | 1 | meta+fe |
 | website_event_booth_sale_exhibitor | network | primary | 3.0 Market and Sell Pr | 0 | 0 | meta |
@@ -274,13 +274,13 @@ Activity class: support=469, primary=180
 | account_add_gln | support | support | 9.0 Manage Financial R | 0 | 0 | meta |
 | account_check_printing | support | support | 9.0 Manage Financial R | 5 | 0 | meta+code |
 | account_debit_note | support | support | 9.0 Manage Financial R | 1 | 0 | meta |
-| account_edi | support | support | 9.0 Manage Financial R | 2 | 0 | meta |
+| account_edi | support | support | 9.0 Manage Financial R | 7 | 0 | meta+code |
 | account_edi_proxy_client | support | support | 9.0 Manage Financial R | 1 | 0 | meta+integ |
 | account_edi_ubl_cii | support | support | 9.0 Manage Financial R | 9 | 0 | meta+code |
 | account_fleet | support | support | 9.0 Manage Financial R | 0 | 0 | meta |
 | account_payment | support | support | 9.0 Manage Financial R | 12 | 3 | meta+code+fe |
 | account_peppol_advanced_fields | support | support | 9.0 Manage Financial R | 0 | 0 | meta |
-| account_peppol_response | support | support | 9.0 Manage Financial R | 3 | 0 | meta |
+| account_peppol_response | support | support | 9.0 Manage Financial R | 7 | 0 | meta+code |
 | account_qr_code_emv | support | support | 9.0 Manage Financial R | 0 | 0 | meta |
 | account_qr_code_sepa | support | support | 9.0 Manage Financial R | 0 | 0 | meta |
 | account_tax_python | support | support | 9.0 Manage Financial R | 0 | 1 | meta+fe |
@@ -296,7 +296,7 @@ Activity class: support=469, primary=180
 | auth_password_policy | support | support | 8.0 Manage Information | 0 | 3 | meta+fe |
 | auth_password_policy_portal | support | support | 8.0 Manage Information | 0 | 0 | meta |
 | auth_password_policy_signup | support | support | 8.0 Manage Information | 0 | 1 | meta+fe |
-| auth_signup | support | support | 8.0 Manage Information | 0 | 1 | meta+fe |
+| auth_signup | support | support | 8.0 Manage Information | 4 | 1 | meta+code+fe |
 | auth_timeout | support | support | 8.0 Manage Information | 5 | 1 | meta+code+fe |
 | auth_totp | support | support | 8.0 Manage Information | 4 | 0 | meta+code |
 | auth_totp_mail | support | support | 8.0 Manage Information | 0 | 0 | meta |
@@ -304,8 +304,8 @@ Activity class: support=469, primary=180
 | barcodes | support | support | 8.0 Manage Information | 5 | 7 | meta+code+fe |
 | base | support | support | 8.0 Manage Information | 17 | 0 | meta+code+integ+run |
 | base_address_extended | support | support | 8.0 Manage Information | 1 | 0 | meta |
-| base_automation | support | support | 8.0 Manage Information | 1 | 5 | meta+fe |
-| base_geolocalize | support | support | 8.0 Manage Information | 2 | 0 | meta+integ |
+| base_automation | support | support | 8.0 Manage Information | 3 | 5 | meta+code+fe |
+| base_geolocalize | support | support | 8.0 Manage Information | 4 | 0 | meta+code+integ |
 | base_iban | support | support | 8.0 Manage Information | 0 | 4 | meta+fe |
 | base_import | support | support | 8.0 Manage Information | 4 | 10 | meta+code+fe+integ |
 | base_import_module | support | support | 8.0 Manage Information | 1 | 2 | meta+fe+integ |
@@ -323,7 +323,7 @@ Activity class: support=469, primary=180
 | cloud_storage_google | support | support | 13.0 Develop and Manag | 0 | 0 | meta+integ |
 | cloud_storage_migration | support | support | 13.0 Develop and Manag | 1 | 0 | meta+integ |
 | contacts | support | support | 13.0 Develop and Manag | 0 | 0 | meta |
-| data_recycle | support | support | 13.0 Develop and Manag | 2 | 2 | meta+fe |
+| data_recycle | support | support | 13.0 Develop and Manag | 2 | 2 | meta+code+fe |
 | digest | support | support | 13.0 Develop and Manag | 4 | 0 | meta+code |
 | fleet | support | support | 10.0 Acquire, Construc | 7 | 1 | meta+code+fe |
 | gamification | support | support | 7.0 Develop and Manage | 8 | 0 | meta+code |
@@ -693,7 +693,7 @@ Activity class: support=469, primary=180
 | utm | support | support | 3.0 Market and Sell Pr | 7 | 1 | meta+code+fe |
 | web | support | support | 8.0 Manage Information | 4 | 526 | meta+code+fe |
 | web_hierarchy | support | support | 8.0 Manage Information | 0 | 8 | meta+fe |
-| web_tour | support | support | 8.0 Manage Information | 2 | 16 | meta+fe |
+| web_tour | support | support | 8.0 Manage Information | 4 | 16 | meta+code+fe |
 | web_unsplash | support | support | 8.0 Manage Information | 0 | 6 | meta+fe+integ |
 
 ## 5. How to use (Fit-to-Standard)

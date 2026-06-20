@@ -14,12 +14,31 @@
       {
         "_name": "web_tour.tour",
         "_description": "Tours",
-        "fields": 8
+        "fields": 8,
+        "relations": [
+          "step_ids->web_tour.tour.step",
+          "user_consumed_ids->res.users"
+        ]
       },
       {
         "_name": "web_tour.tour.step",
         "_description": "Tour's step",
-        "fields": 6
+        "fields": 6,
+        "relations": [
+          "tour_id->web_tour.tour"
+        ]
+      },
+      {
+        "_name": "ir.http (extension)",
+        "_description": "Injects tour_enabled + current_tour into session_info()",
+        "fields": 0,
+        "relations": []
+      },
+      {
+        "_name": "res.users (extension)",
+        "_description": "Adds tour_enabled (Onboarding) computed flag + switch_tour_enabled",
+        "fields": 1,
+        "relations": []
       }
     ],
     "routes": [],
@@ -88,68 +107,140 @@
     },
     "behavioral_notes": [
       {
-        "element": "frontend (OWL/JS)",
-        "observation": "16 JS files, 3 OWL components, 3 registry adds; bundles ['web.assets_backend', 'web.assets_frontend', 'web.assets_unit_tests'].",
-        "source": "static"
+        "element": "web_tour.tour.consume / get_current_tour / user_consumed_ids (models/tour.py)",
+        "observation": "Tour completion is persisted as a per-user consumed-state, NOT a tour-level flag. consume(tourName) is an @api.model RPC that, only for internal users (env.user._is_internal()), links the calling user into user_consumed_ids (Many2many to res.users) via Command.link with sudo(). get_current_tour() then searches for tours where custom=False AND user_consumed_ids NOT IN the current user, gated on user.tour_enabled and _is_internal(), and returns the FIRST pending tour's JSON (sequence-ordered). This drives the automatic onboarding chain: each finished tour is recorded against the user and the next un-consumed tour is served. This consumed-membership semantics is invisible from field metadata alone.",
+        "source": "code-read"
       },
       {
-        "element": "thin module",
-        "observation": "2 models, 0 routes, 396 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
-        "source": "ast"
+        "element": "res.users.tour_enabled onboarding-toggle (models/res_users.py)",
+        "observation": "tour_enabled is a stored computed Boolean (label 'Onboarding') depending on create_date. _compute_tour_enabled defaults it TRUE only when the user _is_admin() AND there are zero installed demo modules (search_count on ir.module.module demo=True) AND not modules.module.current_test — so onboarding tours auto-run for a fresh admin on a non-demo, non-test DB and are suppressed otherwise. switch_tour_enabled(val) is an @api.model RPC that flips the flag with sudo() and returns it; the JS debug 'onboardingItem' menu calls it to toggle tours and reloads the page.",
+        "source": "code-read"
+      },
+      {
+        "element": "ir.http.session_info extension + tour registration (models/ir_http.py, models/tour.py)",
+        "observation": "ir.http.session_info() is overridden to push two keys into the bootstrap session payload: tour_enabled (the user flag) and current_tour (= get_current_tour(), the next pending onboarding tour JSON). The browser therefore learns at page-load which tour to auto-start without an extra RPC. Tours register TWO ways: (a) declaratively in the JS registry category 'web_tour.tours' (the normal path used by tests and product onboarding), and (b) as data rows in web_tour.tour/.step (custom/DB tours), exportable to a .js file via export_js_file() which serialises steps to a registry.category('web_tour.tours').add(...) attachment. _get_tour_json()/get_steps_json() camelCase server fields (tooltip_position -> tooltipPosition) into the JS step schema.",
+        "source": "code-read"
+      },
+      {
+        "element": "FRONTEND (static/src/js) — tour_service + dual macro engine (STRONGLY EMPHASIZED)",
+        "observation": "The BULK of web_tour is OWL/JS, not Python: ~16 JS files / 5 XML templates across four asset bundles (web_tour.common/interactive/automatic/recorder). The core is the 'tour_service' (services registry), which exposes odoo.startTour and persists run-state in localStorage via tour_state.js (current_tour, index, config) so a tour SURVIVES page reloads/redirects. It validates each step against a StepSchema (trigger/run/content/timeout/tooltipPosition) and a TourSchema, then lazily loadBundle()s one of two engines by mode: (1) INTERACTIVE (manual) — TourInteractive drives a TourPointer OWL overlay that points at the live DOM trigger, attaches real DOM consume-event listeners (click/input/keydown/pointerdown/pointerup/drop, with autocomplete/dropdown/drag-and-drop special cases), and a MacroMutationObserver re-resolves triggers on every DOM mutation, even stepping backward() if an anchor disappears; on completion it fires a rainbow_man effect and RPCs consume() to chain the next tour; (2) AUTOMATIC (auto) — TourAutomatic compiles steps into a @web/core/macro Macro and uses hoot-dom (setupEventActions/queryFirst) to synthesise events headlessly with per-step timeouts/undeterminism checks — this is the HEADLESS TOUR RUNNER that integration tests (HttpCase.start_tour) execute. A run-command mini-language (e.g. 'click', 'fill(text)', 'edit', 'drag_and_drop(sel)', chained with &&) is parsed in getSubActions into low-level actions. A TourRecorder OWL overlay records user interactions into replayable steps. OWL components: OnboardingItem, TourPointer, TourRecorder; registry adds: fields:tour_start_widget, services:tour_service, views:tour_list; patch: TourHelpers.prototype. None of this is reverse-engineerable from Python/ORM metadata (gap #3).",
+        "source": "static"
       }
     ]
   },
   "it_architecture": {
-    "application": "web_tour (Tours)",
-    "software_services": [],
+    "application": "web_tour (guided onboarding-tour framework + headless integration-test tour engine; OWL/JS subsystem on top of web)",
+    "software_services": [
+      "web_tour.tour.consume (RPC: record tour consumed for current user, return next tour)",
+      "web_tour.tour.get_current_tour (RPC: next pending onboarding tour JSON)",
+      "web_tour.tour.get_tour_json_by_name (RPC: fetch a tour by name)",
+      "web_tour.tour.export_js_file (export DB tour to a .js registry attachment)",
+      "res.users.switch_tour_enabled (RPC: toggle onboarding flag)",
+      "ir.http.session_info (extended: emits tour_enabled + current_tour)",
+      "(client) odoo.startTour / tour_service.startTour / startTourRecorder"
+    ],
     "data_objects": [
       "web_tour.tour",
       "web_tour.tour.step"
     ],
     "logical_data_erm": [
-      "web_tour.tour -> res.users",
-      "web_tour.tour -> web_tour.tour.step",
-      "web_tour.tour.step -> web_tour.tour"
+      "web_tour.tour 1--n web_tour.tour.step (step_ids / tour_id, ondelete=cascade)",
+      "web_tour.tour n--n res.users (user_consumed_ids: per-user consumed-state)",
+      "res.users +tour_enabled (onboarding toggle)"
     ],
     "information_flows": [
-      "depends: web"
+      "depends: web",
+      "bootstrap: ir.http.session_info -> {tour_enabled, current_tour} -> client tour_service auto-starts pending tour",
+      "completion: TourInteractive onTourEnd -> rainbow_man effect + RPC web_tour.tour.consume -> link user_consumed_ids -> next tour chained",
+      "registration: JS registry.category('web_tour.tours') (declarative) OR web_tour.tour DB rows -> export_js_file -> ir.attachment .js",
+      "test path: HttpCase.start_tour -> tour_service mode=auto -> TourAutomatic Macro + hoot-dom -> headless event synthesis",
+      "state: tour_state.js persists current_tour/index/config in localStorage to survive reloads/redirects"
     ],
     "frontend_components": [
-      "OnboardingItem",
-      "TourPointer",
-      "TourRecorder"
+      "tour_service (services registry; odoo.startTour entrypoint, schema validation, engine dispatch)",
+      "TourInteractive (manual macro engine, DOM listeners, MutationObserver re-trigger)",
+      "TourAutomatic (headless macro engine via @web/core/macro + hoot-dom — the test runner)",
+      "TourPointer (OWL overlay pointing at live DOM trigger)",
+      "TourRecorder (OWL overlay recording interactions into tour steps)",
+      "OnboardingItem (debug-menu onboarding toggle)",
+      "TourStep / TourStepAutomatic (step model + run-command parser)",
+      "tour_state (localStorage persistence wrapper)",
+      "tour_start_widget (field widget), tour_list (view)"
     ]
   },
   "business_architecture": {
     "capabilities": [
-      "Tours"
+      "Author & Store Guided Tours (web_tour.tour / .step)",
+      "Run Interactive Onboarding Walkthroughs (pointer overlay on live UI)",
+      "Track Per-User Tour Completion / Onboarding Progress",
+      "Run Tours Headlessly as Integration Tests (automatic engine)",
+      "Record User Interactions into Replayable Tours (TourRecorder)",
+      "Gate & Toggle Onboarding (tour_enabled, switch_tour_enabled)"
     ],
-    "value_streams": [],
+    "value_streams": [
+      "Onboard-a-User: session_info(current_tour) -> interactive pointer walkthrough -> consume() -> next tour chained -> user_consumed_ids updated",
+      "Author-to-Run: define tour (JS registry or DB rows) -> validate StepSchema -> dispatch interactive|automatic engine -> rainbow_man / test assertion"
+    ],
     "information_concepts": [
       "web_tour.tour",
-      "web_tour.tour.step"
+      "web_tour.tour.step",
+      "tour_enabled (onboarding flag on res.users)",
+      "user_consumed_ids (per-user consumed-state)"
     ],
-    "organization": [],
+    "organization": [
+      "base.group_system (full CRUD on tours/steps)",
+      "base.group_user (read-only on tours/steps)"
+    ],
     "products": [],
-    "policies": [],
-    "stakeholders": [],
+    "policies": [
+      "ir.model.access: admins (group_system) write tours; all internal users read-only",
+      "Onboarding auto-enabled only for admin on a non-demo, non-test DB (_compute_tour_enabled)",
+      "consume() / onboarding restricted to internal users (_is_internal); custom tours excluded from auto-run"
+    ],
+    "stakeholders": [
+      "New / end user (receives guided onboarding walkthroughs)",
+      "QA / module developer (writes tours as integration tests via HttpCase.start_tour)",
+      "System administrator (authors and toggles onboarding tours)"
+    ],
     "strategy": null,
-    "metrics": []
+    "metrics": [
+      "Per-user tour-completion (user_consumed_ids membership as onboarding-progress signal)",
+      "Tour test pass/fail + per-step timeout/undeterminism logs (automatic engine)"
+    ]
   },
   "classification": {
     "value_model": "support",
     "activity_class": "support",
     "apqc_category": "8.0 Manage Information Technology",
-    "rationale": "web_tour: thin support/support module (auto-architect baseline)."
+    "rationale": "web_tour is cross-cutting firm IT infrastructure with no business object of its own — its only models (web_tour.tour/.step) describe the UI-guidance tooling itself, not any customer/product/order. It is a Porter support activity / Stabell & Fjeldstad 'support' value model: it creates no value in any single value chain, shop, or network; it is the user-adoption + test-automation framework layered on web (auto_install=true, category Hidden, depends only web) that EVERY app reuses. Its substance is the FRONTEND (~16 JS files, the tour_service plus the dual interactive/automatic macro engines, TourPointer and TourRecorder), with a thin Python tail (~396 LOC, 2 real models). APQC 8.0 'Manage Information Technology' fits on two counts: (a) user-adoption / application onboarding tooling = deploy/operate IT solutions and support users, and (b) the headless tour runner is test automation = develop and test software / manage IT quality — both squarely 8.x application-delivery. 13.0 'Develop and Manage Business Capabilities' was considered (tours teach users how to operate business capabilities) but rejected: 13.0 is governance/portfolio/knowledge-management of capabilities, whereas web_tour is a concrete running IT runtime (onboarding overlay + test engine) — its work is application delivery and quality, i.e. IT execution, which is 8.0, not capability governance."
   },
   "fit_to_standard": {
     "standard_capabilities": [
-      "Tours"
+      "Declarative tours via JS registry category 'web_tour.tours' (run interactively or headlessly)",
+      "Interactive onboarding overlay (TourPointer) pointing at live DOM with mutation-aware re-triggering",
+      "Headless automatic engine (Macro + hoot-dom) used by HttpCase.start_tour for integration tests",
+      "Per-user consumed-state and automatic onboarding chaining via session_info(current_tour)",
+      "Onboarding enable/disable toggle (tour_enabled / switch_tour_enabled, debug-menu item)",
+      "DB-authored custom tours (web_tour.tour/.step) with export to a .js registry file",
+      "Tour recorder that captures interactions into replayable steps",
+      "Run-command mini-language (click/fill/edit/drag_and_drop, chained with &&)"
     ],
-    "typical_fits": [],
-    "common_gaps": [],
+    "typical_fits": [
+      "Adding a product onboarding tour by registering steps in the 'web_tour.tours' registry",
+      "Writing a Python integration test that drives the UI via self.start_tour(url, 'tour_name')",
+      "Authoring a simple custom tour as data rows without JS"
+    ],
+    "common_gaps": [
+      "Custom step run-commands / complex assertions beyond the built-in macro vocabulary (JS dev, gap #3)",
+      "Rich onboarding analytics / completion dashboards (only raw user_consumed_ids membership exists)",
+      "Branching or conditional tour flows beyond linear sequence + isActive filtering",
+      "Localized tour content management at scale (rainbow_man_message/content are translatable but hand-authored)"
+    ],
     "drive_hints": [
-      "odoo shell: env['web_tour.tour'].search([],limit=3)"
+      "odoo shell: env['web_tour.tour'].get_current_tour() to see the next pending onboarding tour JSON for the user",
+      "odoo shell: env['res.users'].switch_tour_enabled(True) then env['ir.http'].session_info()['current_tour'] to confirm bootstrap wiring",
+      "browser: GET /odoo?tour=<name> to launch a registered tour manually (tour_service reads the ?tour= param)",
+      "test: HttpCase.start_tour('/odoo', '<tour_name>', login='admin') to run a tour headlessly via the automatic engine"
     ]
   },
   "reverse_eng_confidence": {
@@ -163,14 +254,17 @@
     "strategy": "human"
   },
   "open_questions": [
-    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+    "Full inventory of run-command verbs and their hoot-dom event mappings (only the common ones were code-read).",
+    "How point_of_sale and other modules that load a subset of tour assets alter the resume/auto-start behavior.",
+    "Exact TourRecorder capture-to-step serialization fidelity vs hand-written tours.",
+    "Whether any downstream module persists richer onboarding analytics on top of user_consumed_ids."
   ],
   "provenance": {
     "explorer_facts": "doc/revres/facts/web_tour.facts.json",
     "tools": [
-      "extract_module.py",
+      "code-read",
       "extract_frontend.py",
-      "gen_thin.py"
+      "extract_module.py"
     ],
     "odoo_version": "19.0"
   }

@@ -3,14 +3,14 @@ account	support	support	9.0 Manage Financial Resourc	10	4	74	26	meta+code+fe+int
 account_add_gln	support	support	9.0 Manage Financial Resourc	0	0	0	0	meta
 account_check_printing	support	support	9.0 Manage Financial Resourc	5	0	0	0	meta+code
 account_debit_note	support	support	9.0 Manage Financial Resourc	1	0	0	0	meta
-account_edi	support	support	9.0 Manage Financial Resourc	2	0	0	0	meta
+account_edi	support	support	9.0 Manage Financial Resourc	7	0	0	0	meta+code
 account_edi_proxy_client	support	support	9.0 Manage Financial Resourc	1	0	0	0	meta+integ
 account_edi_ubl_cii	support	support	9.0 Manage Financial Resourc	9	0	0	0	meta+code
 account_fleet	support	support	9.0 Manage Financial Resourc	0	0	0	0	meta
 account_payment	support	support	9.0 Manage Financial Resourc	12	5	3	0	meta+code+fe
 account_peppol	network	support	9.0 Manage Financial Resourc	9	4	7	1	meta+code+fe+integ
 account_peppol_advanced_fields	support	support	9.0 Manage Financial Resourc	0	0	0	0	meta
-account_peppol_response	support	support	9.0 Manage Financial Resourc	3	0	0	0	meta
+account_peppol_response	support	support	9.0 Manage Financial Resourc	7	0	0	0	meta+code
 account_qr_code_emv	support	support	9.0 Manage Financial Resourc	0	0	0	0	meta
 account_qr_code_sepa	support	support	9.0 Manage Financial Resourc	0	0	0	0	meta
 account_tax_python	support	support	9.0 Manage Financial Resourc	0	0	1	0	meta+fe
@@ -26,7 +26,7 @@ auth_passkey_portal	support	support	8.0 Manage Information Techn	0	0	2	0	meta+fe
 auth_password_policy	support	support	8.0 Manage Information Techn	0	0	3	2	meta+fe
 auth_password_policy_portal	support	support	8.0 Manage Information Techn	0	0	0	0	meta
 auth_password_policy_signup	support	support	8.0 Manage Information Techn	0	0	1	1	meta+fe
-auth_signup	support	support	8.0 Manage Information Techn	0	4	1	0	meta+fe
+auth_signup	support	support	8.0 Manage Information Techn	4	4	1	0	meta+code+fe
 auth_timeout	support	support	8.0 Manage Information Techn	5	4	1	2	meta+code+fe
 auth_totp	support	support	8.0 Manage Information Techn	4	1	0	0	meta+code
 auth_totp_mail	support	support	8.0 Manage Information Techn	0	1	0	0	meta
@@ -35,8 +35,8 @@ barcodes	support	support	8.0 Manage Information Techn	5	0	7	3	meta+code+fe
 barcodes_gs1_nomenclature	chain	support	4.0 Deliver Physical Product	0	0	3	0	meta+fe
 base	support	support	8.0 Manage Information Techn	17	0	0	0	meta+code+integ+run
 base_address_extended	support	support	8.0 Manage Information Techn	1	0	0	0	meta
-base_automation	support	support	8.0 Manage Information Techn	1	1	5	1	meta+fe
-base_geolocalize	support	support	8.0 Manage Information Techn	2	0	0	0	meta+integ
+base_automation	support	support	8.0 Manage Information Techn	3	1	5	1	meta+code+fe
+base_geolocalize	support	support	8.0 Manage Information Techn	4	0	0	0	meta+code+integ
 base_iban	support	support	8.0 Manage Information Techn	0	0	4	0	meta+fe
 base_import	support	support	8.0 Manage Information Techn	4	1	10	8	meta+code+fe+integ
 base_import_module	support	support	8.0 Manage Information Techn	1	1	2	0	meta+fe+integ
@@ -60,15 +60,15 @@ crm_iap_mine	shop	primary	3.0 Market and Sell Products	6	0	1	0	meta+code+fe
 crm_livechat	shop	primary	3.0 Market and Sell Products	0	0	3	0	meta+fe
 crm_mail_plugin	shop	primary	3.0 Market and Sell Products	0	5	0	0	meta
 crm_sms	shop	primary	3.0 Market and Sell Products	0	0	0	0	meta
-data_recycle	support	support	13.0 Develop and Manage Busi	2	0	2	0	meta+fe
+data_recycle	support	support	13.0 Develop and Manage Busi	2	0	2	0	meta+code+fe
 delivery	chain	support	4.4 Operate outbound transpo	5	2	7	6	meta+code+fe
 delivery_mondialrelay	chain	support	4.4 Operate outbound transpo	0	0	1	1	meta+fe
 delivery_stock_picking_batch	chain	support	4.4 Operate outbound transpo	0	0	0	0	meta
 digest	support	support	13.0 Develop and Manage Busi	4	3	0	0	meta+code
 event	network	primary	3.0 Market and Sell Products	8	3	13	3	meta+code+fe+integ
 event_booth	network	primary	3.0 Market and Sell Products	5	0	0	0	meta+code
-event_booth_sale	network	primary	3.0 Market and Sell Products	2	0	2	0	meta+fe
-event_crm	network	primary	3.0 Market and Sell Products	2	0	0	0	meta
+event_booth_sale	network	primary	3.0 Market and Sell Products	10	0	2	0	meta+code+fe
+event_crm	network	primary	3.0 Market and Sell Products	6	0	0	0	meta+code
 event_crm_sale	network	primary	3.0 Market and Sell Products	0	0	0	0	meta
 event_product	network	primary	3.0 Market and Sell Products	0	0	0	0	meta
 event_sale	network	primary	3.0 Market and Sell Products	10	0	2	0	meta+code+fe
@@ -390,7 +390,7 @@ payment_dpo	network	support	9.0 Manage Financial Resourc	0	1	0	0	meta
 payment_ecpay	network	support	9.0 Manage Financial Resourc	0	2	0	0	meta
 payment_flutterwave	network	support	9.0 Manage Financial Resourc	0	3	1	0	meta+fe
 payment_iyzico	network	support	9.0 Manage Financial Resourc	0	2	0	0	meta
-payment_mercado_pago	network	support	9.0 Manage Financial Resourc	0	4	1	0	meta+fe
+payment_mercado_pago	network	support	9.0 Manage Financial Resourc	3	4	1	0	meta+code+fe
 payment_mollie	network	support	9.0 Manage Financial Resourc	0	2	0	0	meta
 payment_nuvei	network	support	9.0 Manage Financial Resourc	0	2	0	0	meta
 payment_paymob	network	support	9.0 Manage Financial Resourc	0	2	0	0	meta
@@ -433,7 +433,7 @@ pos_restaurant_adyen	chain	primary	3.0 Market and Sell Products	0	1	1	0	meta+fe+
 pos_restaurant_loyalty	chain	primary	3.0 Market and Sell Products	0	0	2	0	meta+fe
 pos_restaurant_stripe	chain	primary	3.0 Market and Sell Products	0	0	2	0	meta+fe
 pos_safaricom	chain	primary	3.0 Market and Sell Products	1	3	3	1	meta+fe+integ
-pos_sale	chain	primary	3.0 Market and Sell Products	2	0	7	0	meta+fe
+pos_sale	chain	primary	3.0 Market and Sell Products	14	0	7	0	meta+code+fe
 pos_sale_loyalty	chain	primary	3.0 Market and Sell Products	0	0	1	0	meta+fe
 pos_sale_margin	chain	primary	3.0 Market and Sell Products	0	0	0	0	meta
 pos_self_order	network	primary	3.0 Market and Sell Products	6	6	54	28	meta+code+fe
@@ -591,7 +591,7 @@ uom	support	support	2.0 Develop and Manage Produ	1	0	2	1	meta+fe
 utm	support	support	3.0 Market and Sell Products	7	0	1	0	meta+code+fe
 web	support	support	8.0 Manage Information Techn	4	12	526	32	meta+code+fe
 web_hierarchy	support	support	8.0 Manage Information Techn	0	0	8	3	meta+fe
-web_tour	support	support	8.0 Manage Information Techn	2	0	16	3	meta+fe
+web_tour	support	support	8.0 Manage Information Techn	4	0	16	3	meta+code+fe
 web_unsplash	support	support	8.0 Manage Information Techn	0	4	6	2	meta+fe+integ
 website	network	primary	3.0 Market and Sell Products	8	16	350	40	meta+code+fe+integ
 website_blog	network	primary	3.0 Market and Sell Products	4	4	15	0	meta+code+fe
@@ -603,7 +603,7 @@ website_crm_partner_assign	network	primary	3.0 Market and Sell Products	8	6	4	0	
 website_crm_sms	network	primary	3.0 Market and Sell Products	0	0	0	0	meta
 website_customer	network	primary	3.0 Market and Sell Products	1	2	2	0	meta+fe
 website_event	network	primary	3.0 Market and Sell Products	7	8	17	0	meta+code+fe
-website_event_booth	network	primary	3.0 Market and Sell Products	0	6	1	0	meta+fe
+website_event_booth	network	primary	3.0 Market and Sell Products	3	6	1	0	meta+code+fe
 website_event_booth_exhibitor	network	primary	3.0 Market and Sell Products	0	0	1	0	meta+fe
 website_event_booth_sale	network	primary	3.0 Market and Sell Products	0	1	1	0	meta+fe
 website_event_booth_sale_exhibitor	network	primary	3.0 Market and Sell Products	0	0	0	0	meta
