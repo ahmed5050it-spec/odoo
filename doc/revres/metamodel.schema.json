@@ -51,7 +51,7 @@
         "products": {"type": "array", "items": {"type": "string"}, "description": "auto if product-bearing"},
         "policies": {"type": "array", "items": {"type": "string"}, "description": "inferred (ir.rule/automation)"},
         "stakeholders": {"type": "array", "items": {"type": "string"}},
-        "strategy": {"type": "string", "description": "human — usually null"},
+        "strategy": {"type": ["string", "null"], "description": "human — usually null"},
         "metrics": {"type": "array", "items": {"type": "string"}, "description": "inferred (reports/KPIs)"}
       }
     },
