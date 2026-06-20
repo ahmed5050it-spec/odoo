@@ -8,7 +8,6 @@ test_http	test	todo	support	13.0	2	34	38
 mail	deep	done	support	9.4	14	8	36
 base	deep	done	support	8.0	17	0	34
 test_read_group	test	todo	support	13.0	17	0	34
-hr_holidays	baseline	todo	support	7.0	14	5	33
 website	deep	done	network	3.0	8	16	32
 html_editor	deep	done	support	8.0	7	15	29
 stock	deep	done	chain	4.0	14	1	29
@@ -53,7 +52,7 @@ product	deep	done	support	2.0	6	3	15
 analytic	deep	done	support	9.0	7	0	14
 fleet	deep	done	support	10.0	7	0	14
 loyalty	deep	done	support	3.0	6	2	14
-pos_event	baseline	todo	chain	3.0	7	0	14
+pos_event	deep	done	chain	3.0	7	0	14
 sale_stock	deep	done	chain	4.0	6	2	14
 test_inherit	test	todo	support	13.0	7	0	14
 test_mail_sms	test	todo	support	13.0	7	0	14
@@ -66,6 +65,7 @@ delivery	deep	done	chain	4.4	5	2	12
 google_calendar	deep	done	support	8.0	5	2	12
 hr	deep	done	support	7.0	6	0	12
 hr_expense	deep	done	support	7.0	6	0	12
+hr_holidays	deep	done	support	7.0	5	2	12
 maintenance	deep	done	support	10.0	6	0	12
 pos_restaurant	deep	done	chain	3.0	6	0	12
 product_expiry	deep	done	chain	4.0	6	0	12
@@ -83,7 +83,7 @@ hr_recruitment	deep	done	support	7.0	5	0	10
 l10n_hr_edi	baseline	todo	support	9.0	5	0	10
 l10n_my_edi	baseline	todo	support	9.0	5	0	10
 purchase_requisition	baseline	todo	support	4.2	5	0	10
-resource	baseline	todo	support	7.0	5	0	10
+resource	deep	done	support	7.0	5	0	10
 spreadsheet_dashboard	baseline	todo	support	13.0	3	4	10
 base_vat	deep	done	support	9.0	4	1	9
 microsoft_calendar	baseline	todo	support	13.0	4	1	9

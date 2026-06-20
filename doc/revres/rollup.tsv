@@ -87,7 +87,7 @@ hr_calendar	support	support	7.0 Develop and Manage Human	0	0	2	0	meta+fe
 hr_expense	support	support	7.0 Develop and Manage Human	6	0	11	3	meta+code+fe
 hr_fleet	support	support	7.0 Develop and Manage Human	0	0	2	0	meta+fe
 hr_gamification	support	support	7.0 Develop and Manage Human	0	0	2	0	meta+fe
-hr_holidays	support	support	7.0 Develop and Manage Human	14	5	37	6	meta+fe
+hr_holidays	support	support	7.0 Develop and Manage Human	5	2	37	6	meta+code+fe
 hr_holidays_attendance	support	support	7.0 Develop and Manage Human	3	0	1	1	meta+fe
 hr_holidays_homeworking	support	support	7.0 Develop and Manage Human	0	0	1	0	meta+fe
 hr_homeworking	support	support	7.0 Develop and Manage Human	1	0	1	0	meta+fe
@@ -412,7 +412,7 @@ pos_cashmatic	chain	primary	3.0 Market and Sell Products	0	0	3	0	meta+fe
 pos_discount	chain	primary	3.0 Market and Sell Products	0	0	5	0	meta+fe
 pos_dpopay	chain	primary	3.0 Market and Sell Products	0	0	2	0	meta+fe+integ
 pos_edi_ubl	chain	primary	3.0 Market and Sell Products	1	0	0	0	meta
-pos_event	chain	primary	3.0 Market and Sell Products	7	0	11	3	meta+fe
+pos_event	chain	primary	3.0 Market and Sell Products	7	0	11	3	meta+code+fe
 pos_event_sale	chain	primary	3.0 Market and Sell Products	1	0	0	0	meta
 pos_glory_cash	chain	primary	3.0 Market and Sell Products	0	0	8	2	meta+fe
 pos_hr	chain	primary	3.0 Market and Sell Products	3	0	14	1	meta+fe
@@ -482,7 +482,7 @@ purchase_requisition_stock	support	support	4.2 Procure Materials and Se	0	0	0	0	
 purchase_stock	support	support	4.2 Procure Materials and Se	1	0	12	0	meta+fe
 rating	support	support	6.0 Manage Customer Service	3	2	3	0	meta+fe
 repair	chain	support	4.0 Deliver Physical Product	3	0	2	0	meta+fe
-resource	support	support	7.0 Develop and Manage Human	5	0	5	0	meta+fe
+resource	support	support	7.0 Develop and Manage Human	5	0	5	0	meta+code+fe
 resource_mail	support	support	7.0 Develop and Manage Human	0	0	5	2	meta+fe
 rpc	support	support	13.0 Develop and Manage Busi	0	6	0	0	meta+integ
 sale	chain	primary	3.0 Market and Sell Products	5	2	37	10	meta+code+fe

@@ -37,7 +37,7 @@ Activity class: support=472, primary=177
 | Layer | Records with it |
 |-------|----------------:|
 | metadata (facts) | 649/649 |
-| code-read (behavior) | 60/649 |
+| code-read (behavior) | 63/649 |
 | frontend (OWL/JS) | 246/649 |
 | integrations (HTTP/SDK) | 70/649 |
 | runtime (live data) | 1/649 |
@@ -69,7 +69,7 @@ Activity class: support=472, primary=177
 | pos_discount | chain | primary | 3.0 Market and Sell Pr | 0 | 5 | meta+fe |
 | pos_dpopay | chain | primary | 3.0 Market and Sell Pr | 0 | 2 | meta+fe+integ |
 | pos_edi_ubl | chain | primary | 3.0 Market and Sell Pr | 1 | 0 | meta |
-| pos_event | chain | primary | 3.0 Market and Sell Pr | 7 | 11 | meta+fe |
+| pos_event | chain | primary | 3.0 Market and Sell Pr | 7 | 11 | meta+code+fe |
 | pos_event_sale | chain | primary | 3.0 Market and Sell Pr | 1 | 0 | meta |
 | pos_glory_cash | chain | primary | 3.0 Market and Sell Pr | 0 | 8 | meta+fe |
 | pos_hr | chain | primary | 3.0 Market and Sell Pr | 3 | 14 | meta+fe |
@@ -339,7 +339,7 @@ Activity class: support=472, primary=177
 | hr_expense | support | support | 7.0 Develop and Manage | 6 | 11 | meta+code+fe |
 | hr_fleet | support | support | 7.0 Develop and Manage | 0 | 2 | meta+fe |
 | hr_gamification | support | support | 7.0 Develop and Manage | 0 | 2 | meta+fe |
-| hr_holidays | support | support | 7.0 Develop and Manage | 14 | 37 | meta+fe |
+| hr_holidays | support | support | 7.0 Develop and Manage | 5 | 37 | meta+code+fe |
 | hr_holidays_attendance | support | support | 7.0 Develop and Manage | 3 | 1 | meta+fe |
 | hr_holidays_homeworking | support | support | 7.0 Develop and Manage | 0 | 1 | meta+fe |
 | hr_homeworking | support | support | 7.0 Develop and Manage | 1 | 1 | meta+fe |
@@ -620,7 +620,7 @@ Activity class: support=472, primary=177
 | purchase_requisition_stock | support | support | 4.2 Procure Materials  | 0 | 0 | meta |
 | purchase_stock | support | support | 4.2 Procure Materials  | 1 | 12 | meta+fe |
 | rating | support | support | 6.0 Manage Customer Se | 3 | 3 | meta+fe |
-| resource | support | support | 7.0 Develop and Manage | 5 | 5 | meta+fe |
+| resource | support | support | 7.0 Develop and Manage | 5 | 5 | meta+code+fe |
 | resource_mail | support | support | 7.0 Develop and Manage | 0 | 5 | meta+fe |
 | rpc | support | support | 13.0 Develop and Manag | 0 | 0 | meta+integ |
 | sale_expense | support | support | 9.0 Manage Financial R | 0 | 0 | meta |
