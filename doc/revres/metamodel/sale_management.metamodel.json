@@ -1,0 +1,181 @@
+{
+  "subsystem": "sale_management",
+  "evidence": {
+    "manifest": {
+      "name": "Sales",
+      "category": "Sales/Sales",
+      "depends": [
+        "sale",
+        "digest"
+      ],
+      "auto_install": false,
+      "application": true
+    },
+    "models": [
+      {
+        "_name": "sale.order.template",
+        "_description": "Quotation Template",
+        "fields": 12
+      },
+      {
+        "_name": "sale.order.template.line",
+        "_description": "Quotation Template Line",
+        "fields": 11
+      }
+    ],
+    "routes": [
+      {
+        "paths": [
+          "/my/orders/<int:order_id>/update_line_dict"
+        ],
+        "auth": "public",
+        "type": "jsonrpc"
+      }
+    ],
+    "security": {
+      "access_rules": 5,
+      "record_rules": 1,
+      "groups": 1
+    },
+    "views": {
+      "form": 2,
+      "list": 2,
+      "tree": 0,
+      "kanban": 0,
+      "search": 1,
+      "pivot": 0,
+      "graph": 0,
+      "calendar": 0,
+      "activity": 0
+    },
+    "frontend": {
+      "present": true,
+      "js_files": 4,
+      "xml_templates": 2,
+      "owl_components": [],
+      "registry_adds": [
+        "fields:so_template_line_o2m",
+        "public.interactions:sale_management.sale_update_line_button"
+      ],
+      "patches": [
+        "SaleOrderLineListRenderer.prototype",
+        "SaleOrderLineProductField.prototype"
+      ],
+      "services": [],
+      "asset_bundles": {
+        "web.assets_backend": 1,
+        "web.assets_frontend": 1,
+        "web.assets_tests": 1,
+        "web.assets_unit_tests": 1
+      }
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": true,
+      "endpoints": [
+        "https://www.odoo.com/app/sales"
+      ],
+      "files": [
+        "__manifest__.py"
+      ]
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    },
+    "behavioral_notes": [
+      {
+        "element": "frontend (OWL/JS)",
+        "observation": "4 JS files, 0 OWL components, 2 registry adds; bundles ['web.assets_backend', 'web.assets_frontend', 'web.assets_tests'].",
+        "source": "static"
+      },
+      {
+        "element": "thin module",
+        "observation": "2 models, 1 routes, 1570 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
+        "source": "ast"
+      }
+    ]
+  },
+  "it_architecture": {
+    "application": "sale_management (Sales)",
+    "software_services": [
+      "/my/orders/<int:order_id>/update_line_dict"
+    ],
+    "data_objects": [
+      "sale.order.template",
+      "sale.order.template.line"
+    ],
+    "logical_data_erm": [
+      "sale.order.template -> account.journal",
+      "sale.order.template -> mail.template",
+      "sale.order.template -> res.company",
+      "sale.order.template -> sale.order.template.line",
+      "sale.order.template.line -> product.product",
+      "sale.order.template.line -> sale.order.template",
+      "sale.order.template.line -> sale.order.template.line",
+      "sale.order.template.line -> sale_order_template_id.company_id",
+      "sale.order.template.line -> uom.uom"
+    ],
+    "information_flows": [
+      "depends: sale, digest"
+    ],
+    "frontend_components": []
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Sales"
+    ],
+    "value_streams": [],
+    "information_concepts": [
+      "sale.order.template",
+      "sale.order.template.line"
+    ],
+    "organization": [],
+    "products": [],
+    "policies": [
+      "1 record rules"
+    ],
+    "stakeholders": [],
+    "strategy": null,
+    "metrics": []
+  },
+  "classification": {
+    "value_model": "chain",
+    "activity_class": "primary",
+    "apqc_category": "3.0 Market and Sell Products and Services",
+    "rationale": "sale_management: thin chain/primary module (auto-architect baseline)."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "Sales"
+    ],
+    "typical_fits": [],
+    "common_gaps": [],
+    "drive_hints": [
+      "odoo shell: env['sale.order.template'].search([],limit=3)"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/sale_management.facts.json",
+    "tools": [
+      "extract_module.py",
+      "extract_frontend.py",
+      "gen_thin.py"
+    ],
+    "odoo_version": "19.0"
+  }
+}

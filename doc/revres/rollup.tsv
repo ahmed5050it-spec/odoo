@@ -1,0 +1,29 @@
+module	value_model	activity	apqc	models	routes	js	owl	layers
+account	support	support	9.0 Manage Financial Resourc	10	4	74	26	meta+code+fe+integ
+base	support	support	8.0 Manage Information Techn	17	0	0	0	meta+code+integ+run
+bus	support	support	8.0 Manage Information Techn	5	7	20	1	meta+code+fe
+calendar	support	support	13.0 Develop and Manage Busi	5	3	28	2	meta+code+fe
+crm	shop	primary	3.0 Market and Sell Products	6	3	23	2	meta+code+fe
+hr	support	support	7.0 Develop and Manage Human	6	0	36	6	meta+code+fe
+hr_timesheet	shop	primary	5.0 Deliver Services	5	1	16	2	meta+code+fe
+mail	support	support	9.4 Manage internal controls	14	8	383	40	meta+code+fe+integ
+mrp	chain	primary	4.3 Produce/Manufacture/Deli	9	0	26	15	meta+code+fe
+payment	network	support	9.0 Manage Financial Resourc	6	5	5	0	meta+code+fe+integ
+point_of_sale	chain	primary	3.0 Market and Sell Products	7	7	166	23	meta+code+fe
+portal	network	support	6.0 Manage Customer Service	4	7	27	2	meta+code+fe
+product	support	support	2.0 Develop and Manage Produ	6	3	15	4	meta+code+fe
+project	shop	primary	5.0 Deliver Services	8	6	119	14	meta+code+fe
+purchase	support	support	4.2 Procure Materials and Se	7	5	15	4	meta+code+fe
+resource	support	support	7.0 Develop and Manage Human	5	0	5	0	meta+fe
+sale	chain	primary	3.0 Market and Sell Products	5	2	37	10	meta+code+fe
+sale_management	chain	primary	3.0 Market and Sell Products	2	1	4	0	meta+fe
+sale_stock	chain	primary	4.0 Deliver Physical Product	6	2	4	2	meta+code+fe
+sale_timesheet	shop	primary	5.0 Deliver Services	8	1	1	1	meta+code+fe
+sales_team	support	support	3.0 Market and Sell Products	3	0	1	0	meta+fe
+stock	chain	primary	4.0 Deliver Physical Product	14	1	40	20	meta+code+fe
+stock_account	support	support	9.0 Manage Financial Resourc	6	0	8	4	meta+code+fe
+uom	support	support	2.0 Develop and Manage Produ	1	0	2	1	meta+fe
+utm	support	support	3.0 Market and Sell Products	7	0	1	0	meta+fe
+web	support	support	8.0 Manage Information Techn	4	12	526	32	meta+code+fe
+website	network	primary	3.0 Market and Sell Products	8	16	350	40	meta+code+fe+integ
+website_sale	network	primary	3.0 Market and Sell Products	6	7	83	6	meta+code+fe
