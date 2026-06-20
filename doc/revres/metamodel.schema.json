@@ -16,6 +16,9 @@
         "routes": {"type": "array", "description": "[{paths,auth,type}]"},
         "security": {"type": "object", "description": "{access_rules,record_rules,groups}"},
         "views": {"type": "object"},
+        "frontend": {"type": "object", "description": "gap #3: OWL/JS from extract_frontend.py (owl_components, registry_adds, patches, asset_bundles, js/xml counts)"},
+        "integrations": {"type": "object", "description": "gap #7: external HTTP/SDK/api-key usage from extract_frontend.py"},
+        "runtime": {"type": "object", "description": "gap #5/#6: live row counts + samples + queries-per-count from extract_runtime.sh"},
         "behavioral_notes": {
           "type": "array",
           "description": "What metadata CANNOT show (METADATA_LIMITS_AR): key method semantics, cross-model side-effects, automation effects, external calls. From reading code / running it.",

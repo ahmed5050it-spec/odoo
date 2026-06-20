@@ -2,83 +2,271 @@
   "subsystem": "sale",
   "evidence": {
     "manifest": {
-      "name": "Sales", "category": "Sales/Sales",
-      "depends": ["sales_team", "account_payment", "utm"],
-      "auto_install": false, "application": false
+      "name": "Sales",
+      "category": "Sales/Sales",
+      "depends": [
+        "sales_team",
+        "account_payment",
+        "utm"
+      ],
+      "auto_install": false,
+      "application": false
     },
     "models": [
-      {"_name": "sale.order", "_description": "Sales Order", "fields": 65,
-       "relations": ["partner_id->res.partner", "company_id->res.company", "pending_email_template_id->mail.template"]},
-      {"_name": "sale.order.line", "_description": "Sales Order Line", "fields": 67,
-       "relations": ["order_id->sale.order"]},
-      {"_name": "sale.report", "_description": "Sales Analysis Report", "fields": 39,
-       "relations": ["partner_id->res.partner", "pricelist_id->product.pricelist"]},
-      {"_name": "sale.advance.payment.inv", "_description": "Advance Payment Invoice", "fields": 12,
-       "relations": ["sale_order_ids->sale.order"]},
-      {"_name": "account.move", "_description": "(extension)", "fields": 6,
-       "relations": ["team_id->crm.team"]}
+      {
+        "_name": "sale.order",
+        "_description": "Sales Order",
+        "fields": 65,
+        "relations": [
+          "partner_id->res.partner",
+          "company_id->res.company",
+          "pending_email_template_id->mail.template"
+        ]
+      },
+      {
+        "_name": "sale.order.line",
+        "_description": "Sales Order Line",
+        "fields": 67,
+        "relations": [
+          "order_id->sale.order"
+        ]
+      },
+      {
+        "_name": "sale.report",
+        "_description": "Sales Analysis Report",
+        "fields": 39,
+        "relations": [
+          "partner_id->res.partner",
+          "pricelist_id->product.pricelist"
+        ]
+      },
+      {
+        "_name": "sale.advance.payment.inv",
+        "_description": "Advance Payment Invoice",
+        "fields": 12,
+        "relations": [
+          "sale_order_ids->sale.order"
+        ]
+      },
+      {
+        "_name": "account.move",
+        "_description": "(extension)",
+        "fields": 6,
+        "relations": [
+          "team_id->crm.team"
+        ]
+      }
     ],
     "routes": [
-      {"paths": ["/sale/product_configurator/get_values"], "auth": "user", "type": "jsonrpc"},
-      {"paths": ["/sale/combo_configurator/get_data"], "auth": "user", "type": "jsonrpc"}
+      {
+        "paths": [
+          "/sale/product_configurator/get_values"
+        ],
+        "auth": "user",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/sale/combo_configurator/get_data"
+        ],
+        "auth": "user",
+        "type": "jsonrpc"
+      }
     ],
-    "security": {"access_rules": 47, "record_rules": 27, "groups": 4},
-    "views": {"form": 5, "list": 9, "kanban": 5, "pivot": 1, "graph": 1, "calendar": 1, "activity": 1},
+    "security": {
+      "access_rules": 47,
+      "record_rules": 27,
+      "groups": 4
+    },
+    "views": {
+      "form": 5,
+      "list": 9,
+      "kanban": 5,
+      "pivot": 1,
+      "graph": 1,
+      "calendar": 1,
+      "activity": 1
+    },
     "behavioral_notes": [
-      {"element": "sale.order.action_confirm",
-       "observation": "Confirming an order transitions state to 'sale' and (via procurement rules) creates downstream stock.picking and, on invoicing, account.move. Not visible in metadata.",
-       "source": "code-read"},
-      {"element": "sale.order.line monetary fields",
-       "observation": "~57 monetary/float fields (price_subtotal, margin, taxes, totals) are computed via @api.depends; the formulas live in Python, not metadata.",
-       "source": "code-read"},
-      {"element": "sale.report",
-       "observation": "_auto = False SQL view model (read-only analytics), not a stored table.",
-       "source": "code-read"}
-    ]
+      {
+        "element": "sale.order.action_confirm",
+        "observation": "Confirming an order transitions state to 'sale' and (via procurement rules) creates downstream stock.picking and, on invoicing, account.move. Not visible in metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "sale.order.line monetary fields",
+        "observation": "~57 monetary/float fields (price_subtotal, margin, taxes, totals) are computed via @api.depends; the formulas live in Python, not metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "sale.report",
+        "observation": "_auto = False SQL view model (read-only analytics), not a stored table.",
+        "source": "code-read"
+      },
+      {
+        "element": "frontend (OWL/JS)",
+        "observation": "37 JS files, 10 OWL components, 12 registry registrations, 1 patches; asset bundles ['web.assets_backend', 'web.assets_frontend', 'web.assets_tests'].",
+        "source": "static"
+      }
+    ],
+    "frontend": {
+      "present": true,
+      "js_files": 37,
+      "xml_templates": 16,
+      "owl_components": [
+        "BadgeExtraPrice",
+        "ComboConfiguratorDialog",
+        "Product",
+        "ProductCard",
+        "ProductConfiguratorDialog",
+        "ProductList",
+        "ProductTemplateAttributeLine",
+        "QuantityButtons",
+        "SaleActionHelper",
+        "SaleActionHelperDialog"
+      ],
+      "registry_adds": [
+        "fields:list.sol_text",
+        "fields:sales_team_progressbar",
+        "fields:sol_o2m",
+        "fields:sol_product_many2one",
+        "fields:sol_text",
+        "public.interactions:sale.portal_prepayment",
+        "public.interactions:sale.sale_sidebar",
+        "views:sale_file_upload_kanban",
+        "views:sale_file_upload_list",
+        "views:sale_onboarding_kanban",
+        "views:sale_onboarding_list",
+        "web_tour.tours:sale_tour"
+      ],
+      "patches": [
+        "PortalHomeCounters.prototype"
+      ],
+      "services": [
+        "is_configurable_product",
+        "product_template_attribute_value_ids",
+        "product_type",
+        "service_tracking",
+        "translated_product_name"
+      ],
+      "asset_bundles": {
+        "web.assets_backend": 20,
+        "web.assets_frontend": 2,
+        "web.assets_tests": 4,
+        "web.assets_unit_tests": 3,
+        "web.report_assets_common": 1
+      }
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": true,
+      "endpoints": [],
+      "files": []
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    }
   },
-
   "it_architecture": {
     "application": "sale (Sales application component)",
-    "software_services": ["/sale/product_configurator/*", "/sale/combo_configurator/*"],
-    "data_objects": ["sale.order", "sale.order.line", "sale.report"],
-    "logical_data_erm": ["sale.order -> res.partner", "sale.order -> res.company",
-                          "sale.order.line -> sale.order", "sale.report -> product.pricelist"],
-    "information_flows": ["depends: sales_team, account_payment, utm",
-                           "side-effect: sale.order.action_confirm -> stock.picking + account.move"]
+    "software_services": [
+      "/sale/product_configurator/*",
+      "/sale/combo_configurator/*"
+    ],
+    "data_objects": [
+      "sale.order",
+      "sale.order.line",
+      "sale.report"
+    ],
+    "logical_data_erm": [
+      "sale.order -> res.partner",
+      "sale.order -> res.company",
+      "sale.order.line -> sale.order",
+      "sale.report -> product.pricelist"
+    ],
+    "information_flows": [
+      "depends: sales_team, account_payment, utm",
+      "side-effect: sale.order.action_confirm -> stock.picking + account.move"
+    ],
+    "frontend_components": [
+      "BadgeExtraPrice",
+      "ComboConfiguratorDialog",
+      "Product",
+      "ProductCard",
+      "ProductConfiguratorDialog",
+      "ProductList",
+      "ProductTemplateAttributeLine",
+      "QuantityButtons",
+      "SaleActionHelper",
+      "SaleActionHelperDialog"
+    ]
   },
-
   "business_architecture": {
-    "capabilities": ["Manage Quotations & Sales Orders", "Configure Products (configurator)", "Sales Analysis"],
-    "value_streams": ["Quote-to-Cash: quotation -> confirmed order -> delivery -> invoice"],
-    "information_concepts": ["sale.order", "sale.order.line", "res.partner (customer)", "product (sold item)"],
-    "organization": ["group_sale_salesman", "group_sale_salesman_all_leads", "group_sale_manager", "group_warning_sale"],
+    "capabilities": [
+      "Manage Quotations & Sales Orders",
+      "Configure Products (configurator)",
+      "Sales Analysis"
+    ],
+    "value_streams": [
+      "Quote-to-Cash: quotation -> confirmed order -> delivery -> invoice"
+    ],
+    "information_concepts": [
+      "sale.order",
+      "sale.order.line",
+      "res.partner (customer)",
+      "product (sold item)"
+    ],
+    "organization": [
+      "group_sale_salesman",
+      "group_sale_salesman_all_leads",
+      "group_sale_manager",
+      "group_warning_sale"
+    ],
     "products": [],
-    "policies": ["27 record rules: multi-company + own-documents visibility scoping"],
-    "stakeholders": ["Customer (res.partner)", "Salesperson (res.users)", "Sales Team (crm.team)"],
+    "policies": [
+      "27 record rules: multi-company + own-documents visibility scoping"
+    ],
+    "stakeholders": [
+      "Customer (res.partner)",
+      "Salesperson (res.users)",
+      "Sales Team (crm.team)"
+    ],
     "strategy": null,
-    "metrics": ["sale.report (Sales Analysis: amounts, margins, volumes)"]
+    "metrics": [
+      "sale.report (Sales Analysis: amounts, margins, volumes)"
+    ]
   },
-
   "classification": {
     "value_model": "chain",
     "activity_class": "primary",
     "apqc_category": "3.0 Market and Sell Products and Services",
     "rationale": "sale is the Marketing & Sales primary activity of the value chain; it converts demand into a confirmed order that flows downstream to stock (delivery) and account (invoice). account_payment dependency wires it to the cash end."
   },
-
   "fit_to_standard": {
-    "standard_capabilities": ["quotation/order lifecycle", "product & combo configurator",
-      "pricelists & discounts", "advance-payment invoicing", "sales analysis (pivot/graph)"],
-    "typical_fits": ["standard quote-to-order-to-invoice flow", "salesperson/team ownership",
-      "multi-company scoping via record rules"],
-    "common_gaps": ["custom approval thresholds on orders", "industry-specific order line fields",
-      "bespoke configurator logic beyond attributes/combos"],
+    "standard_capabilities": [
+      "quotation/order lifecycle",
+      "product & combo configurator",
+      "pricelists & discounts",
+      "advance-payment invoicing",
+      "sales analysis (pivot/graph)"
+    ],
+    "typical_fits": [
+      "standard quote-to-order-to-invoice flow",
+      "salesperson/team ownership",
+      "multi-company scoping via record rules"
+    ],
+    "common_gaps": [
+      "custom approval thresholds on orders",
+      "industry-specific order line fields",
+      "bespoke configurator logic beyond attributes/combos"
+    ],
     "drive_hints": [
       "odoo shell: env['sale.order'].search([], limit=5).mapped(('name','state'))",
       "curl jsonrpc /sale/product_configurator/get_values (auth=user)"
     ]
   },
-
   "reverse_eng_confidence": {
     "information_concepts": "auto",
     "organization": "auto",
@@ -89,16 +277,20 @@
     "metrics": "inferred",
     "strategy": "human"
   },
-
   "open_questions": [
     "Exact sale.order state machine and what action_confirm triggers downstream.",
     "Compute methods behind the ~57 monetary fields (margins/taxes/totals).",
     "How configurator routes map to sale.order.line creation."
   ],
-
   "provenance": {
     "explorer_facts": "doc/revres/facts/sale.facts.json",
-    "tools": ["extract_module.py", "code-read", "run-odoo (odoo shell)"],
+    "tools": [
+      "code-read",
+      "extract_frontend.py",
+      "extract_module.py",
+      "extract_runtime.sh",
+      "run-odoo (odoo shell)"
+    ],
     "odoo_version": "19.0"
   }
 }
