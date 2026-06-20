@@ -4,6 +4,7 @@
     "manifest": {
       "name": "Accounting Consistency Tests",
       "category": "Accounting/Accounting",
+      "summary": null,
       "depends": [
         "account"
       ],
@@ -14,12 +15,14 @@
       {
         "_name": "accounting.assert.test",
         "_description": "Accounting Assert Test",
-        "fields": 5
+        "fields": 5,
+        "relations": []
       },
       {
         "_name": "report.account_test.report_accounttest",
         "_description": "Account Test Report",
-        "fields": 0
+        "fields": 0,
+        "relations": []
       }
     ],
     "routes": [],
@@ -31,13 +34,7 @@
     "views": {
       "form": 1,
       "list": 1,
-      "tree": 0,
-      "kanban": 0,
-      "search": 1,
-      "pivot": 0,
-      "graph": 0,
-      "calendar": 0,
-      "activity": 0
+      "search": 1
     },
     "frontend": {
       "present": false,
@@ -56,61 +53,136 @@
       "endpoints": [],
       "files": []
     },
-    "runtime": {
-      "models_with_data": 0,
-      "top": []
-    },
     "behavioral_notes": [
       {
-        "element": "thin module",
-        "observation": "2 models, 0 routes, 143 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
-        "source": "ast"
+        "element": "accounting.assert.test (record schema)",
+        "observation": "Each test is a stored record carrying name (Char, translatable), desc (Text), and code_exec (Text, required) — a free-form Python snippet that may run raw SQL via cr.execute or pure Python. The model has no relations and 0 methods of its own: it is a pure data container for an assertion. The default code_exec template merely lists account_journal codes. The model is the configurable 'rule' half; the report model does the running. _order='sequence'.",
+        "source": "code-read"
+      },
+      {
+        "element": "report.account_test.report_accounttest._execute_code",
+        "observation": "The AbstractModel report executes each test's code_exec with safe_eval(mode='exec') inside a sandboxed context exposing cr (db cursor), uid, a reconciled_inv() helper, and an empty 'result' slot. The snippet is expected to assign 'result'; an empty/falsy result is rendered as 'The test was passed successfully' (PASS), while a non-empty list/tuple/set is formatted row-by-row as the FAILURE detail. An optional 'column_order' variable controls field display order when result rows are dicts. This is how pass/fail is derived — there is no boolean flag, the emptiness of result IS the verdict.",
+        "source": "code-read"
+      },
+      {
+        "element": "report.account_test.report_accounttest._get_report_values + QWeb template report_accounttest",
+        "observation": "The QWeb report (report_account_test_templates.xml) iterates docs (the selected accounting.assert.test records) and, per test, prints name + desc then t-foreach over execute_code(o.code_exec), rendering each returned line. So the report runs the assertion live against the current ledger at render time and prints the outcome inline; nothing is persisted. Report timestamp is datetime.now().",
+        "source": "code-read"
+      },
+      {
+        "element": "active / sequence ordering",
+        "observation": "accounting.assert.test has active (Boolean, default True) and sequence (Integer, default 10) with _order='sequence', so tests run/display in sequence order and archived (active=False) tests are excluded by the default ORM domain — letting an auditor curate which integrity checks run and in what order without deleting them.",
+        "source": "code-read"
+      },
+      {
+        "element": "bundled standard tests (data/accounting_assert_test_data.xml)",
+        "observation": "Ships ~6 active standard assertions as data records: Test 1 'General balance' (SUM(debit)-SUM(credit)=0 over account_move_line), Test 3 'Movement lines' (per-move balance + am.date=ml.date), Test 5.1/5.2 (reconciled invoices vs Payable/Receivable accounts), Test 6 'Invoices status' (paid/reconciled invoices not left in Open state), Test 7 'Closing balance on bank statements' (balance_start + sum(lines) = balance_end_real). Two more (Test 4 reconciliation, Test 8 account.period) are commented out as TODO since their underlying models changed. Several queries reference legacy tables (account_invoice, account_bank_statement) not present in the current account schema.",
+        "source": "code-read"
+      },
+      {
+        "element": "frontend (OWL/JS)",
+        "observation": "0 JS files, 0 OWL components, 0 registry registrations, 0 patches, no asset bundles. UI is entirely server-rendered: a list/form/search on accounting.assert.test plus a QWeb PDF report; menu under Accounting reporting, gated to base.group_no_one (developer/debug mode only).",
+        "source": "static"
+      },
+      {
+        "element": "external integrations",
+        "observation": "0 outbound HTTP call sites; no SDK imports; uses_api_keys=False; no endpoints. Fully self-contained — reads the local Odoo database only.",
+        "source": "static"
       }
     ]
   },
   "it_architecture": {
-    "application": "account_test (Accounting Consistency Tests)",
+    "application": "account_test (Accounting Consistency Tests utility component, extends account)",
     "software_services": [],
     "data_objects": [
       "accounting.assert.test",
       "report.account_test.report_accounttest"
     ],
-    "logical_data_erm": [],
-    "information_flows": [
-      "depends: account"
+    "logical_data_erm": [
+      "accounting.assert.test (standalone; no FK relations)",
+      "report.account_test.report_accounttest -> reads accounting.assert.test.code_exec + the live account ledger (account_move_line, account_bank_statement, account_invoice) at render time"
     ],
-    "frontend_components": []
+    "information_flows": [
+      "depends: account",
+      "side-effect: report_accounttest._execute_code runs each accounting.assert.test.code_exec via safe_eval(mode=exec) against the SQL cursor; empty result = PASS, non-empty = FAIL detail",
+      "side-effect: QWeb report report_accounttest renders pass/fail per test live (nothing persisted)",
+      "read-only consumer of the account double-entry ledger; produces an audit/consistency PDF, no writes"
+    ],
+    "frontend_components": [],
+    "external_integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "endpoints": []
+    }
   },
   "business_architecture": {
     "capabilities": [
-      "Accounting Consistency Tests"
+      "Define Accounting Integrity Assertions (configurable SQL/Python rules)",
+      "Audit Ledger Consistency (balanced entries, posted vs draft, reconciliation)",
+      "Run Consistency Test Report (pass/fail per assertion)",
+      "Curate / Sequence / Archive Standard Tests"
     ],
-    "value_streams": [],
+    "value_streams": [
+      "Define-Test-Audit: author/curate accounting.assert.test -> run report -> safe_eval code_exec against ledger -> pass/fail PDF for the accountant/auditor"
+    ],
     "information_concepts": [
-      "accounting.assert.test",
-      "report.account_test.report_accounttest"
+      "accounting.assert.test (consistency assertion / rule)",
+      "code_exec (the SQL/Python assertion expression)",
+      "report.account_test.report_accounttest (audit run / result rendering)"
     ],
-    "organization": [],
+    "organization": [
+      "base.group_system (full CRUD on tests)",
+      "account.group_account_manager (read tests)",
+      "base.group_no_one (menu visibility — debug mode)"
+    ],
     "products": [],
-    "policies": [],
-    "stakeholders": [],
+    "policies": [
+      "ir.model.access.csv: only base.group_system may create/unlink/edit tests; account.group_account_manager has read-only access",
+      "Menu gated to base.group_no_one (developer mode) — a power-user/auditor tool, not exposed to everyday accountants",
+      "active/sequence on accounting.assert.test govern which assertions run and in what order"
+    ],
+    "stakeholders": [
+      "Accounting Manager (account.group_account_manager — reads results)",
+      "Auditor / Controller (runs integrity checks on the books)",
+      "System Administrator (base.group_system — authors tests)"
+    ],
     "strategy": null,
-    "metrics": []
+    "metrics": [
+      "Per-test pass/fail outcome in the Account Test Report (empty result = passed)",
+      "Ledger imbalance amount, unbalanced moves, mis-stated invoice/bank-statement rows surfaced by the bundled tests"
+    ]
   },
   "classification": {
     "value_model": "support",
     "activity_class": "support",
     "apqc_category": "9.0 Manage Financial Resources",
-    "rationale": "account_test: thin support/support module (auto-architect baseline)."
+    "rationale": "account_test is a financial-controls / audit utility extending account with no business object of its own: accounting.assert.test is a pure rule container and report.account_test.report_accounttest is a read-only renderer that runs each rule's code_exec against the ledger. It creates no primary value and owns no document in any value chain — it is a support activity that safeguards the integrity of the system of record. APQC 9.0 Manage Financial Resources, specifically the internal-financial-controls / general-accounting-quality strand (9.x 'Manage internal controls' / record-to-report assurance): it audits the double-entry books produced by account (balanced entries, reconciliation, posted vs draft, bank-statement closing balances). It could be argued under 11.0 (Manage Enterprise Risk, Compliance & Resiliency) as an internal-control test harness, but its scope is strictly the financial ledger and it depends only on account, so 9.0 is the closer fit; 11.0 is the secondary reading."
   },
   "fit_to_standard": {
     "standard_capabilities": [
-      "Accounting Consistency Tests"
+      "user-definable accounting consistency tests as data records (name/desc/code_exec)",
+      "safe_eval sandbox exposing the db cursor + reconciled_inv() helper to assertions",
+      "pass/fail-by-emptiness convention with per-test result formatting and column_order",
+      "QWeb PDF Account Test Report that runs all selected tests live against the ledger",
+      "bundled standard tests: general balance, per-move balance, reconciled-invoice checks, invoice status, bank-statement closing balance",
+      "active/sequence curation of the test catalog, debug-mode-only menu"
     ],
-    "typical_fits": [],
-    "common_gaps": [],
+    "typical_fits": [
+      "periodic close / audit integrity sweep over the general ledger",
+      "controller adds bespoke SQL assertions for company-specific ledger invariants",
+      "archiving/reordering the shipped tests to match the live data model"
+    ],
+    "common_gaps": [
+      "several bundled tests query legacy tables (account_invoice, account_bank_statement, account.period) removed/changed in the modern account schema — need rewriting (see in-file TODOs and commented-out Test 4 / Test 8)",
+      "no scheduling/automation: tests run only when the report is invoked manually (no ir.cron, no stored history)",
+      "no severity/threshold model — any non-empty result is a flat 'fail'",
+      "writing code_exec requires raw-SQL + ORM knowledge and system-admin rights"
+    ],
     "drive_hints": [
-      "odoo shell: env['accounting.assert.test'].search([],limit=3)"
+      "odoo shell: env['accounting.assert.test'].search([]).mapped(('sequence','name','active'))  # the test catalog in order",
+      "odoo shell: env['report.account_test.report_accounttest']._execute_code(env.ref('account_test.account_test_01').code_exec)  # run 'General balance' -> ['The test was passed successfully'] if balanced",
+      "odoo shell: env.ref('account_test.account_test_01').read(['name','desc','code_exec'])  # inspect a bundled assertion",
+      "enable developer mode, then Accounting > Reporting > Accounting Tests (menu gated to base.group_no_one), select tests, Print the Account Test Report"
     ]
   },
   "reverse_eng_confidence": {
@@ -124,14 +196,18 @@
     "strategy": "human"
   },
   "open_questions": [
-    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+    "Which of the bundled tests still execute cleanly against the Odoo 19 account schema vs. error on removed tables (account_invoice, account_bank_statement, account.period).",
+    "Whether any localization or downstream module adds its own accounting.assert.test records.",
+    "Whether sites wire an ir.cron or external job to run the Account Test Report on a schedule, since the module ships none.",
+    "Exact safe_eval allow-list — which builtins/ORM access a code_exec snippet may use beyond cr/uid/reconciled_inv/_."
   ],
   "provenance": {
     "explorer_facts": "doc/revres/facts/account_test.facts.json",
     "tools": [
-      "extract_module.py",
+      "apqc_odoo_map.tsv",
+      "code-read (models/accounting_assert_test.py, report/report_account_test.py, report/report_account_test_templates.xml, data/accounting_assert_test_data.xml, security/ir.model.access.csv, views/accounting_assert_test_views.xml)",
       "extract_frontend.py",
-      "gen_thin.py"
+      "extract_module.py"
     ],
     "odoo_version": "19.0"
   }

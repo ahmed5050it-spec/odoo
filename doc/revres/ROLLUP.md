@@ -37,7 +37,7 @@ Activity class: support=468, primary=181
 | Layer | Records with it |
 |-------|----------------:|
 | metadata (facts) | 649/649 |
-| code-read (behavior) | 146/649 |
+| code-read (behavior) | 157/649 |
 | frontend (OWL/JS) | 246/649 |
 | integrations (HTTP/SDK) | 70/649 |
 | runtime (live data) | 1/649 |
@@ -88,7 +88,7 @@ Activity class: support=468, primary=181
 | pos_restaurant_adyen | chain | primary | 3.0 Market and Sell Pr | 0 | 1 | meta+fe+integ |
 | pos_restaurant_loyalty | chain | primary | 3.0 Market and Sell Pr | 0 | 2 | meta+fe |
 | pos_restaurant_stripe | chain | primary | 3.0 Market and Sell Pr | 0 | 2 | meta+fe |
-| pos_safaricom | chain | primary | 3.0 Market and Sell Pr | 1 | 3 | meta+fe+integ |
+| pos_safaricom | chain | primary | 3.0 Market and Sell Pr | 2 | 3 | meta+code+fe+integ |
 | pos_sale | chain | primary | 3.0 Market and Sell Pr | 14 | 7 | meta+code+fe |
 | pos_sale_loyalty | chain | primary | 3.0 Market and Sell Pr | 0 | 1 | meta+fe |
 | pos_sale_margin | chain | primary | 3.0 Market and Sell Pr | 0 | 0 | meta |
@@ -181,7 +181,7 @@ Activity class: support=468, primary=181
 | payment_razorpay | network | support | 9.0 Manage Financial R | 3 | 1 | meta+code+fe |
 | payment_redsys | network | support | 9.0 Manage Financial R | 0 | 0 | meta |
 | payment_stripe | network | support | 9.0 Manage Financial R | 3 | 3 | meta+code+fe |
-| payment_toss_payments | network | support | 9.0 Manage Financial R | 0 | 1 | meta+fe |
+| payment_toss_payments | network | support | 9.0 Manage Financial R | 2 | 1 | meta+code+fe |
 | payment_worldline | network | support | 9.0 Manage Financial R | 0 | 1 | meta+fe |
 | payment_xendit | network | support | 9.0 Manage Financial R | 2 | 3 | meta+code+fe |
 | portal | network | support | 6.0 Manage Customer Se | 4 | 27 | meta+code+fe |
@@ -275,7 +275,7 @@ Activity class: support=468, primary=181
 | account_check_printing | support | support | 9.0 Manage Financial R | 5 | 0 | meta+code |
 | account_debit_note | support | support | 9.0 Manage Financial R | 1 | 0 | meta |
 | account_edi | support | support | 9.0 Manage Financial R | 7 | 0 | meta+code |
-| account_edi_proxy_client | support | support | 9.0 Manage Financial R | 1 | 0 | meta+integ |
+| account_edi_proxy_client | support | support | 9.0 Manage Financial R | 3 | 0 | meta+code+integ |
 | account_edi_ubl_cii | support | support | 9.0 Manage Financial R | 9 | 0 | meta+code |
 | account_fleet | support | support | 9.0 Manage Financial R | 0 | 0 | meta |
 | account_payment | support | support | 9.0 Manage Financial R | 12 | 3 | meta+code+fe |
@@ -284,7 +284,7 @@ Activity class: support=468, primary=181
 | account_qr_code_emv | support | support | 9.0 Manage Financial R | 0 | 0 | meta |
 | account_qr_code_sepa | support | support | 9.0 Manage Financial R | 0 | 0 | meta |
 | account_tax_python | support | support | 9.0 Manage Financial R | 0 | 1 | meta+fe |
-| account_test | support | support | 9.0 Manage Financial R | 2 | 0 | meta |
+| account_test | support | support | 9.0 Manage Financial R | 2 | 0 | meta+code |
 | account_update_tax_tags | support | support | 9.0 Manage Financial R | 1 | 0 | meta |
 | analytic | support | support | 9.0 Manage Financial R | 7 | 8 | meta+code+fe |
 | api_doc | support | support | 13.0 Develop and Manag | 1 | 17 | meta+code+fe |
@@ -303,13 +303,13 @@ Activity class: support=468, primary=181
 | auth_totp_portal | support | support | 8.0 Manage Information | 0 | 5 | meta+fe |
 | barcodes | support | support | 8.0 Manage Information | 5 | 7 | meta+code+fe |
 | base | support | support | 8.0 Manage Information | 17 | 0 | meta+code+integ+run |
-| base_address_extended | support | support | 8.0 Manage Information | 1 | 0 | meta |
+| base_address_extended | support | support | 8.0 Manage Information | 3 | 0 | meta+code |
 | base_automation | support | support | 8.0 Manage Information | 3 | 5 | meta+code+fe |
 | base_geolocalize | support | support | 8.0 Manage Information | 4 | 0 | meta+code+integ |
 | base_iban | support | support | 8.0 Manage Information | 0 | 4 | meta+fe |
 | base_import | support | support | 8.0 Manage Information | 4 | 10 | meta+code+fe+integ |
-| base_import_module | support | support | 8.0 Manage Information | 1 | 2 | meta+fe+integ |
-| base_install_request | support | support | 8.0 Manage Information | 2 | 0 | meta |
+| base_import_module | support | support | 8.0 Manage Information | 5 | 2 | meta+code+fe+integ |
+| base_install_request | support | support | 8.0 Manage Information | 3 | 0 | meta+code |
 | base_setup | support | support | 8.0 Manage Information | 4 | 1 | meta+code+fe |
 | base_sparse_field | support | support | 8.0 Manage Information | 1 | 0 | meta |
 | base_vat | support | support | 9.0 Manage Financial R | 4 | 0 | meta+code+integ |
@@ -357,7 +357,7 @@ Activity class: support=468, primary=181
 | hr_skills_event | support | support | 7.0 Develop and Manage | 0 | 0 | meta |
 | hr_skills_slides | support | support | 7.0 Develop and Manage | 0 | 0 | meta |
 | hr_skills_survey | support | support | 7.0 Develop and Manage | 0 | 0 | meta |
-| hr_timesheet_attendance | support | support | 7.0 Develop and Manage | 1 | 0 | meta |
+| hr_timesheet_attendance | support | support | 7.0 Develop and Manage | 2 | 0 | meta+code |
 | hr_work_entry | support | support | 7.0 Develop and Manage | 4 | 12 | meta+code+fe |
 | hr_work_entry_holidays | support | support | 7.0 Develop and Manage | 0 | 0 | meta |
 | html_builder | support | support | 13.0 Develop and Manag | 0 | 148 | meta+fe |
@@ -365,7 +365,7 @@ Activity class: support=468, primary=181
 | http_routing | support | support | 8.0 Manage Information | 3 | 0 | meta+code |
 | iap | support | support | 8.0 Manage Information | 3 | 1 | meta+code+fe+integ |
 | iap_crm | support | support | 8.0 Manage Information | 0 | 0 | meta |
-| iap_mail | support | support | 8.0 Manage Information | 1 | 1 | meta+fe |
+| iap_mail | support | support | 8.0 Manage Information | 1 | 1 | meta+code+fe |
 | iot_base | support | support | 13.0 Develop and Manag | 0 | 3 | meta+fe |
 | iot_box_image | support | support | 13.0 Develop and Manag | 0 | 0 | meta |
 | iot_drivers | support | support | 13.0 Develop and Manag | 0 | 20 | meta+fe+integ |
@@ -603,7 +603,7 @@ Activity class: support=468, primary=181
 | mrp_account | support | support | 9.0 Manage Financial R | 11 | 2 | meta+code+fe |
 | mrp_subcontracting_account | support | support | 9.0 Manage Financial R | 0 | 0 | meta |
 | onboarding | support | support | 13.0 Develop and Manag | 4 | 1 | meta+code+fe |
-| partner_autocomplete | support | support | 13.0 Develop and Manag | 1 | 5 | meta+fe+integ |
+| partner_autocomplete | support | support | 13.0 Develop and Manag | 5 | 5 | meta+code+fe+integ |
 | phone_validation | support | support | 8.0 Manage Information | 6 | 0 | meta+code |
 | privacy_lookup | support | support | 13.0 Develop and Manag | 4 | 0 | meta+code |
 | product | support | support | 2.0 Develop and Manage | 6 | 15 | meta+code+fe |
@@ -688,7 +688,7 @@ Activity class: support=468, primary=181
 | test_website | support | support | 13.0 Develop and Manag | 5 | 1 | meta+fe |
 | test_website_modules | support | support | 13.0 Develop and Manag | 0 | 0 | meta |
 | test_website_slides_full | support | support | 13.0 Develop and Manag | 0 | 0 | meta |
-| transifex | support | support | 13.0 Develop and Manag | 2 | 1 | meta+fe |
+| transifex | support | support | 13.0 Develop and Manag | 3 | 1 | meta+code+fe |
 | uom | support | support | 2.0 Develop and Manage | 1 | 2 | meta+fe |
 | utm | support | support | 3.0 Market and Sell Pr | 7 | 1 | meta+code+fe |
 | web | support | support | 8.0 Manage Information | 4 | 526 | meta+code+fe |

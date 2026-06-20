@@ -51,3 +51,6 @@ package.json
 /man/
 /share/
 /src/
+
+# Claude Code local session settings
+.claude/settings.local.json

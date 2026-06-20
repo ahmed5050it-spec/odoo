@@ -3,81 +3,72 @@
   "evidence": {
     "manifest": {
       "name": "POS Safaricom",
+      "version": "1.0",
       "category": "Sales/Point of Sale",
-      "depends": [
-        "point_of_sale"
-      ],
+      "summary": "Integrate your POS with the Safaricom Payment Provider",
+      "author": "Odoo S.A.",
+      "license": "LGPL-3",
+      "depends": ["point_of_sale"],
       "auto_install": false,
       "application": false
     },
     "models": [
       {
+        "_name": "pos.payment.method",
+        "_inherit": "pos.payment.method",
+        "_description": "Point of Sale Payment Methods (extended for Safaricom M-Pesa)",
+        "fields": 6,
+        "relations": [
+          "config_ids->pos.config (inherited)",
+          "journal_id->account.journal (inherited)"
+        ],
+        "added_fields": [
+          "consumer_key (Char)",
+          "consumer_secret (Char)",
+          "business_short_code (Char, 'shortcode-tillnumber')",
+          "passkey (Char)",
+          "safaricom_test_mode (Boolean, sandbox)",
+          "safaricom_payment_type (Selection: mpesa_express | lipa_na_mpesa)"
+        ]
+      },
+      {
         "_name": "transaction.lipa.na.mpesa",
+        "_inherit": null,
         "_description": "Transaction Lipa na M-PESA",
-        "fields": 5
+        "fields": 5,
+        "relations": [],
+        "added_fields": [
+          "trans_id (Char)",
+          "name (Char)",
+          "amount (Integer)",
+          "number (Char)",
+          "received_at (Datetime)"
+        ]
       }
     ],
     "routes": [
-      {
-        "paths": [
-          "/pos_safaricom/callback"
-        ],
-        "auth": "public",
-        "type": "http"
-      },
-      {
-        "paths": [
-          "/c2b/validation/callback"
-        ],
-        "auth": "public",
-        "type": "http"
-      },
-      {
-        "paths": [
-          "/c2b/confirmation/callback"
-        ],
-        "auth": "public",
-        "type": "http"
-      }
+      {"paths": ["/pos_safaricom/callback"], "auth": "public", "type": "http"},
+      {"paths": ["/c2b/validation/callback"], "auth": "public", "type": "http"},
+      {"paths": ["/c2b/confirmation/callback"], "auth": "public", "type": "http"}
     ],
-    "security": {
-      "access_rules": 1,
-      "record_rules": 0,
-      "groups": 0
-    },
+    "security": {"access_rules": 1, "record_rules": 0, "groups": 0},
     "views": {
-      "form": 0,
-      "list": 0,
-      "tree": 0,
-      "kanban": 0,
-      "search": 0,
-      "pivot": 0,
-      "graph": 0,
-      "calendar": 0,
-      "activity": 0
+      "form": 0, "list": 0, "kanban": 0, "search": 0,
+      "note": "no standalone views; inherited pos_payment_method_views.xml adds Safaricom credential fields to the payment-method form"
     },
     "frontend": {
       "present": true,
       "js_files": 3,
       "xml_templates": 1,
-      "owl_components": [
-        "MpesaTransactionPopup"
-      ],
+      "owl_components": ["MpesaTransactionPopup"],
       "registry_adds": [],
-      "patches": [
-        "PosStore.prototype"
-      ],
+      "patches": ["PosStore.prototype"],
       "services": [],
-      "asset_bundles": {
-        "point_of_sale._assets_pos": 1,
-        "web.assets_tests": 1
-      }
+      "asset_bundles": {"point_of_sale._assets_pos": 1, "web.assets_tests": 1}
     },
     "integrations": {
       "http_call_sites": 4,
-      "sdk_imports": [
-        "requests"
-      ],
+      "sdk_imports": ["requests"],
       "uses_api_keys": true,
       "endpoints": [
         "https://api.safaricom.co.ke/mpesa/c2b/v2/registerurl",
@@ -89,79 +80,140 @@
         "https://sandbox.safaricom.co.ke/mpesa/stkpush/v1/processrequest",
         "https://sandbox.safaricom.co.ke/oauth/v1/generate?grant_type=client_credentials"
       ],
-      "files": [
-        "models/pos_payment_method.py"
-      ]
+      "files": ["models/pos_payment_method.py"]
     },
-    "runtime": {
-      "models_with_data": 0,
-      "top": []
-    },
+    "runtime": {"models_with_data": 0, "top": []},
     "behavioral_notes": [
       {
-        "element": "frontend (OWL/JS)",
-        "observation": "3 JS files, 1 OWL components, 0 registry adds; bundles ['point_of_sale._assets_pos', 'web.assets_tests'].",
+        "element": "pos.payment.method (Safaricom config) + _get_payment_terminal_selection / create / _check_business_short_code",
+        "observation": "The module makes a pos.payment.method a Safaricom/M-Pesa terminal: _get_payment_terminal_selection adds a ('safaricom','M-Pesa') terminal option, and the till configures Daraja credentials on the method itself -- consumer_key/consumer_secret (Daraja OAuth app), business_short_code (an api.constrains-validated 'shortcode-tillnumber' pair split by _get_business_shortcode/_get_till_number), passkey (used to build the STK password), safaricom_test_mode (sandbox vs api.safaricom.co.ke base-URL switch), and safaricom_payment_type ('mpesa_express' STK push vs 'lipa_na_mpesa' C2B). On create(), a lipa_na_mpesa method auto-calls lipa_na_mpesa_register_urls() to register its C2B validation/confirmation callback URLs with Safaricom. _load_pos_data_fields ships safaricom_test_mode/safaricom_payment_type/business_short_code down to the OWL client. None of this credential/terminal wiring is visible in metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "mpesa_express_send_payment_request -> _get_bearer_token + _get_password + Daraja STK Push (processrequest)",
+        "observation": "M-Pesa Express tender is a two-step outbound HTTP flow against the Daraja API. _get_bearer_token first does an HTTPBasicAuth GET to the OAuth endpoint (oauth/v1/generate) with the consumer key/secret to obtain a short-lived access_token. mpesa_express_send_payment_request then builds a base64 _get_password(timestamp) = b64(shortcode+passkey+timestamp), formats the customer phone to 254XXXXXXXXX (_format_phone_number), signs a hash_sign payload carrying payment_method_id (expiry 6h) into the CallBackURL, and POSTs the STK-push payload (BusinessShortCode, Password, Timestamp, TransactionType, Amount, PartyA/PartyB, PhoneNumber, CallBackURL, AccountReference) with a Bearer token to the stkpush/v1/processrequest endpoint. On ResponseCode '0' it deliberately returns success=False -- the till is NOT paid yet; it only captured CheckoutRequestID/MerchantRequestID and waits for the asynchronous customer confirmation on their phone. generate_qr_code does an analogous Bearer-token POST to qrcode/v1/generate for a scan-to-pay QR.",
+        "source": "code-read"
+      },
+      {
+        "element": "controllers/main.py callbacks (/pos_safaricom/callback, /c2b/*) -> _notify_stk_callback / _create_payment_transaction -> pos.config._notify",
+        "observation": "Payment confirmation arrives asynchronously from Safaricom on three public, csrf-disabled HTTP routes; each verifies the signed ?payload (verify_hash_signed) to recover the payment_method_id before acting. /pos_safaricom/callback (STK) calls _notify_stk_callback, which parses the stkCallback (ResultCode==0 => success), extracts MpesaReceiptNumber/PhoneNumber from CallbackMetadata, finds every OPEN pos.session whose config uses this method, and pushes a 'SAFARICOM_LATEST_RESPONSE' bus notification to each pos.config so the waiting OWL terminal can complete (or fail) the pos.payment. For Lipa na M-PESA, /c2b/validation/callback accepts the charge and /c2b/confirmation/callback calls _create_payment_transaction, which dedupes on trans_id, creates a transaction.lipa.na.mpesa row, and fires a 'NEW_LIPA_NA_MPESA_TRANSACTION' bus notification; mark_transaction_used later unlinks a matched transaction once the cashier applies it. This bus-driven, server-push completion of the tender is entirely behavioral.",
+        "source": "code-read"
+      },
+      {
+        "element": "frontend (OWL POS terminal tender flow) -- gap #3",
+        "observation": "The cashier-facing M-Pesa flow is OWL/JS, not Python: 3 JS files / 1 XML template add a MpesaTransactionPopup component (static/src/app/components/popups/mpesa_transaction_popup.*), a payment_safaricom.js payment-interface, and a patch of PosStore.prototype (static/src/app/services/pos_store.js) into the point_of_sale._assets_pos bundle, plus a test tour. The client triggers the STK push, then listens on the POS bus for the SAFARICOM_LATEST_RESPONSE / NEW_LIPA_NA_MPESA_TRANSACTION notifications emitted by the server callbacks to resolve the in-progress payment line. This screen/popup logic and bus handling is not reverse-engineerable from Python metadata.",
         "source": "static"
       },
       {
-        "element": "external integrations",
-        "observation": "4 HTTP call sites; SDKs ['requests']; api_keys=True.",
+        "element": "external integration: Safaricom Daraja API (gap #7)",
+        "observation": "The module is an outbound external-payment-provider integration: 4 requests call-sites in models/pos_payment_method.py talk to the Safaricom Daraja API over HTTPS using a consumer key/secret + passkey held on pos.payment.method. Endpoints (sandbox.safaricom.co.ke for test mode, api.safaricom.co.ke for live): oauth/v1/generate (token), mpesa/stkpush/v1/processrequest (STK push), mpesa/c2b/v2/registerurl (C2B URL registration), mpesa/qrcode/v1/generate (pay QR). Inbound, Safaricom POSTs back to three public Odoo callback routes secured only by a hash_sign-signed payload. This third-party network dependency and its credentials are invisible to ORM metadata.",
         "source": "static"
-      },
-      {
-        "element": "thin module",
-        "observation": "1 models, 3 routes, 673 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
-        "source": "ast"
       }
     ]
   },
   "it_architecture": {
-    "application": "pos_safaricom (POS Safaricom)",
+    "application": "pos_safaricom (Safaricom M-Pesa POS payment bridge: extends pos.payment.method into a Daraja/M-Pesa terminal + public callback controller + OWL tender popup)",
     "software_services": [
-      "/c2b/confirmation/callback",
-      "/c2b/validation/callback",
-      "/pos_safaricom/callback"
+      "/pos_safaricom/callback (public http; M-Pesa Express STK push result callback)",
+      "/c2b/validation/callback (public http; Lipa na M-PESA C2B pre-charge validation)",
+      "/c2b/confirmation/callback (public http; Lipa na M-PESA C2B payment confirmation)"
     ],
     "data_objects": [
+      "pos.payment.method (inherited; Safaricom credential fields)",
       "transaction.lipa.na.mpesa"
     ],
-    "logical_data_erm": [],
+    "logical_data_erm": [
+      "pos.payment.method -> pos.config (config_ids; which tills accept M-Pesa)",
+      "pos.payment.method -> pos.payment (tender realized as a POS payment line, base model)",
+      "transaction.lipa.na.mpesa (standalone C2B receipt buffer, matched to a tender by trans_id)"
+    ],
     "information_flows": [
-      "depends: point_of_sale"
+      "depends: point_of_sale",
+      "outbound: pos.payment.method._get_bearer_token -> Safaricom Daraja OAuth (oauth/v1/generate) -> access_token",
+      "outbound: mpesa_express_send_payment_request -> Daraja STK Push (stkpush/v1/processrequest) -> CheckoutRequestID (payment pending)",
+      "outbound: lipa_na_mpesa_register_urls -> Daraja C2B registerurl; generate_qr_code -> Daraja qrcode/v1/generate",
+      "inbound: Safaricom -> /pos_safaricom/callback -> _notify_stk_callback -> pos.config._notify('SAFARICOM_LATEST_RESPONSE') -> OWL terminal completes pos.payment",
+      "inbound: Safaricom -> /c2b/confirmation/callback -> _create_payment_transaction -> transaction.lipa.na.mpesa + pos.config._notify('NEW_LIPA_NA_MPESA_TRANSACTION')",
+      "offline note: tender completion is server-push (bus notifications) because M-Pesa confirmation is asynchronous from the customer's phone"
     ],
     "frontend_components": [
-      "MpesaTransactionPopup"
+      "MpesaTransactionPopup",
+      "PosStore.prototype (patch)",
+      "payment_safaricom.js (PaymentInterface)"
     ]
   },
   "business_architecture": {
     "capabilities": [
-      "POS Safaricom"
+      "Accept M-Pesa Mobile-Money Payment at POS (STK push to customer phone)",
+      "Accept Lipa na M-PESA / C2B Till Payment at POS",
+      "Generate Scan-to-Pay M-Pesa QR Code",
+      "Configure Safaricom Daraja Credentials per Payment Method (consumer key/secret, shortcode, passkey, sandbox)",
+      "Reconcile Asynchronous Mobile-Money Confirmations to the open till tender"
     ],
-    "value_streams": [],
+    "value_streams": [
+      "Collect-mobile-money-at-counter: cashier selects M-Pesa tender -> STK push sent to customer phone (Daraja) -> customer confirms on phone -> Safaricom callback -> bus notification completes pos.payment -> order paid"
+    ],
     "information_concepts": [
-      "transaction.lipa.na.mpesa"
+      "pos.payment.method (Safaricom M-Pesa terminal)",
+      "transaction.lipa.na.mpesa",
+      "pos.payment (base; tender line)",
+      "pos.config (base; tills enabling M-Pesa)"
     ],
     "organization": [],
     "products": [],
-    "policies": [],
-    "stakeholders": [],
+    "policies": [
+      "business_short_code must be 'shortcode-tillnumber' (api.constrains _check_business_short_code)",
+      "Lipa na M-PESA methods auto-register C2B callback URLs on create",
+      "all public callbacks require a hash_sign-signed, 6h-expiry payload (verify_hash_signed) to identify the payment method",
+      "STK push intentionally returns success=False until the asynchronous customer confirmation arrives",
+      "C2B transactions deduped by trans_id; consumed transactions unlinked via mark_transaction_used"
+    ],
+    "stakeholders": [
+      "Cashier / POS User (initiates M-Pesa tender)",
+      "Customer (confirms STK push / pays via till on their phone)",
+      "POS Manager (configures Daraja credentials on the payment method)",
+      "Safaricom Daraja API (external payment provider)",
+      "Accountant (M-Pesa journal entries via base pos.payment)"
+    ],
     "strategy": null,
-    "metrics": []
+    "metrics": [
+      "M-Pesa tender amounts roll up via base pos.payment / report.pos.order (no module-specific report)"
+    ]
   },
   "classification": {
     "value_model": "chain",
     "activity_class": "primary",
     "apqc_category": "3.0 Market and Sell Products and Services",
-    "rationale": "pos_safaricom: thin chain/primary module (auto-architect baseline)."
+    "rationale": "pos_safaricom is a thin payment-collection extension of point_of_sale, so it inherits the parent's value-chain primary classification: its act sits inside the retail Sell/Deliver checkout, capturing the customer's tender at the till and completing a pos.payment on the originating pos.order. Mapped to APQC 3.0 (Market and Sell Products and Services) because the operation it adds -- collecting payment for the in-store sale -- is part of selling/closing the counter transaction, mirroring its point_of_sale parent rather than belonging to treasury/AR (APQC 9.0), which is realized downstream by the base POS session closing entry. The module also carries a strong 'network' overtone: it is an outbound integration mediating between the buyer's phone and the Safaricom Daraja mobile-money infrastructure (OAuth + STK push + asynchronous bus-driven confirmation), but the value logic it participates in is the chain sell transaction, so it is classified chain."
   },
   "fit_to_standard": {
     "standard_capabilities": [
-      "POS Safaricom"
+      "register M-Pesa as a POS payment terminal (use_payment_terminal = 'safaricom')",
+      "M-Pesa Express STK push to the customer's phone from the payment screen",
+      "Lipa na M-PESA C2B till payments with auto-registered validation/confirmation callbacks",
+      "scan-to-pay M-Pesa QR generation",
+      "sandbox (test mode) vs live Daraja environment switch per method",
+      "asynchronous confirmation completed via signed public callbacks + POS bus notifications"
     ],
-    "typical_fits": [],
-    "common_gaps": [],
+    "typical_fits": [
+      "Kenyan retail / restaurant counters collecting M-Pesa at the till",
+      "single Daraja app (consumer key/secret + shortcode/till + passkey) per payment method",
+      "multi-till sharing one M-Pesa method via pos.config.payment_method_ids",
+      "mixing M-Pesa with cash/card on the same POS order (base pos.payment)"
+    ],
+    "common_gaps": [
+      "production hardening of the public csrf-disabled callback routes (replay/abuse beyond the signed payload)",
+      "no module-specific reconciliation/reporting of transaction.lipa.na.mpesa beyond manual cashier matching",
+      "B2B / paybill or reversal/refund flows not covered (STK push + C2B receive only)",
+      "dependence on a reachable https web.base.url for callbacks (errors if base url unset / http)",
+      "Daraja API/version or fee-structure changes require code edits (endpoints hard-coded)"
+    ],
     "drive_hints": [
-      "odoo shell: env['transaction.lipa.na.mpesa'].search([],limit=3)"
+      "odoo shell: env['pos.payment.method'].search([('use_payment_terminal','=','safaricom')]).mapped(('name','safaricom_payment_type','safaricom_test_mode','business_short_code'))",
+      "odoo shell: env['transaction.lipa.na.mpesa'].search([], limit=5).mapped(('trans_id','name','amount','received_at'))",
+      "odoo shell: m = env['pos.payment.method'].search([('use_payment_terminal','=','safaricom')], limit=1); m and m._get_oauth_endpoint()",
+      "curl -X POST <base_url>/pos_safaricom/callback (expect ResultCode 1 / ValueError without a valid signed ?payload)",
+      "open a POS with the M-Pesa method and trigger the MpesaTransactionPopup on the payment screen"
     ]
   },
   "reverse_eng_confidence": {
@@ -172,18 +224,19 @@
     "value_streams": "inferred",
     "policies": "inferred",
     "metrics": "inferred",
+    "stakeholders": "inferred",
     "strategy": "human"
   },
   "open_questions": [
-    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+    "Exact OWL handshake: how the payment screen correlates a CheckoutRequestID/MerchantRequestID with the SAFARICOM_LATEST_RESPONSE bus notification to mark the right pos.payment paid.",
+    "How a Lipa na M-PESA transaction.lipa.na.mpesa row is matched to an order line by the cashier (amount/number) before mark_transaction_used unlinks it.",
+    "Timeout/retry behavior when the customer never confirms the STK push (the tender stays success=False).",
+    "Whether/how the M-Pesa receipt number (MpesaReceiptNumber) is persisted on the resulting pos.payment for accounting traceability.",
+    "Security posture of the public csrf-disabled callbacks beyond the 6h hash_sign payload (no IP allow-list visible)."
   ],
   "provenance": {
     "explorer_facts": "doc/revres/facts/pos_safaricom.facts.json",
-    "tools": [
-      "extract_module.py",
-      "extract_frontend.py",
-      "gen_thin.py"
-    ],
+    "tools": ["code-read", "extract_frontend.py", "extract_module.py"],
     "odoo_version": "19.0"
   }
 }

@@ -4,23 +4,40 @@
     "manifest": {
       "name": "Transifex integration",
       "category": "Hidden/Tools",
-      "depends": [
-        "base",
-        "web"
-      ],
+      "summary": "Add a link to edit a translation in Transifex",
+      "depends": ["base", "web"],
       "auto_install": false,
-      "application": false
+      "application": false,
+      "version": "1.0",
+      "license": "LGPL-3",
+      "author": "Odoo S.A.",
+      "data_files": 3,
+      "demo_files": 0
     },
     "models": [
       {
         "_name": "transifex.code.translation",
         "_description": "Code Translation",
-        "fields": 5
+        "fields": 5,
+        "relations": [
+          "(no Many2one relations; flat denormalized term table: source, value, module, lang, transifex_url; _log_access=False)"
+        ]
       },
       {
         "_name": "transifex.translation",
         "_description": "Transifex Translation",
-        "fields": 0
+        "fields": 0,
+        "relations": [
+          "(AbstractModel; no persisted fields; service exposing _get_transifex_projects / _update_transifex_url)"
+        ]
+      },
+      {
+        "_name": "base (_inherit)",
+        "_description": "extension of base AbstractModel",
+        "fields": 0,
+        "relations": [
+          "_inherit: base -> overrides get_field_translations to inject transifex_url per term"
+        ]
       }
     ],
     "routes": [],
@@ -32,13 +49,7 @@
     "views": {
       "form": 0,
       "list": 1,
-      "tree": 0,
-      "kanban": 0,
-      "search": 1,
-      "pivot": 0,
-      "graph": 0,
-      "calendar": 0,
-      "activity": 0
+      "search": 1
     },
     "frontend": {
       "present": true,
@@ -65,49 +76,93 @@
         "models/transifex_translation.py"
       ]
     },
-    "runtime": {
-      "models_with_data": 0,
-      "top": []
-    },
     "behavioral_notes": [
       {
-        "element": "frontend (OWL/JS)",
-        "observation": "1 JS files, 0 OWL components, 1 registry adds; bundles ['web.assets_backend'].",
-        "source": "static"
+        "element": "transifex.translation._update_transifex_url (URL synthesis)",
+        "observation": "Builds the deep link from four slugs and never calls Transifex: the project base URL (ir.config_parameter 'transifex.project_url', e.g. https://app.transifex.com/odoo), the Transifex project slug per module (from .tx/config), the language ISO code (res.lang.iso_code, mapped from the Odoo lang code, skipping en_US), and the module name. The source term is truncated to 50 chars, newlines/quotes stripped, url_quote_plus-encoded, and a literal arbitrary resource id '42' is injected to satisfy Transifex's URL shape. Result e.g. https://app.transifex.com/odoo/odoo-16/translate/#fr_FR/sale/42?q=text%3A'Sale+Order'. Pure string assembly, no network I/O — invisible to field metadata.",
+        "source": "code-read"
       },
       {
-        "element": "thin module",
-        "observation": "2 models, 0 routes, 252 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
-        "source": "ast"
+        "element": "transifex.translation._get_transifex_projects (.tx/config parse)",
+        "observation": "Scans every odoo.addons.__path__ for .tx/config files, parses them with ConfigParser, and maps each module to its Transifex project. Handles both the legacy section format ('odoo-16.base') and the new colon format ('o:odoo:p:odoo-16:r:base'). Cached with @tools.ormcache so the filesystem walk runs once. Modules absent from any .tx/config (custom/non-published modules) yield no project and therefore no Transifex link — this is the documented limitation that only mainline Odoo modules are linkable.",
+        "source": "code-read"
+      },
+      {
+        "element": "base.get_field_translations override (models/models.py)",
+        "observation": "Transifex patches the base model's get_field_translations: after super() returns the per-language translation terms for a field, it resolves the record's external id to find the owning module, confirms the module is in pool._init_modules, stamps each term with 'module', and calls _update_transifex_url to add the transifex_url deep link. This is what feeds the per-term link to the web TranslationDialog without any new route or model.",
+        "source": "code-read"
+      },
+      {
+        "element": "transifex.code.translation._load_code_translations / reload (cron)",
+        "observation": "Code (.po) translations are not stored in ir.translation, so this module materializes them: it locks the table (EXCLUSIVE NOWAIT), reads installed modules and installed non-en_US langs, and for each (module, lang) not yet present pulls CodeTranslations._get_code_translations and bulk-creates rows. A 7-day ir.cron ('Transifex: Reload code translations') runs model.reload(), which DELETEs all rows then reloads. transifex_url is a non-stored compute (_compute_transifex_url) delegating to transifex.translation._update_transifex_url. Cadence and table-lock behaviour are not visible in static field metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "frontend OWL/JS deep-link widget (gap #3)",
+        "observation": "Two static/src surfaces, no OWL component class. (1) translation_dialog.xml extends web.TranslationDialog via t-inherit and injects an <a target='_blank'> globe icon (fa-globe, title 'Contribute') bound to term.transifex_url after each translation row — the actual 'translate on Transifex' deep link in the UI. (2) reload_code_translations_views.js subclasses ListController and registers a 'transifex_code_translation_tree' view in the registry with a Reload button that calls the reload() ORM method then reloads the browser. Asset bundle: web.assets_backend (3 entries). None of this is in Python metadata.",
+        "source": "static"
       }
     ]
   },
   "it_architecture": {
-    "application": "transifex (Transifex integration)",
-    "software_services": [],
+    "application": "transifex (translation-tooling add-on: links each translatable term/module to its Transifex web-editor deep link)",
+    "software_services": [
+      "(no HTTP routes; exposes ORM methods: transifex.translation._update_transifex_url / _get_transifex_projects (service helpers), transifex.code.translation.reload (called from the list-view Reload button), and the base.get_field_translations override consumed by the web TranslationDialog)"
+    ],
     "data_objects": [
       "transifex.code.translation",
       "transifex.translation"
     ],
-    "logical_data_erm": [],
-    "information_flows": [
-      "depends: base, web"
+    "logical_data_erm": [
+      "transifex.code.translation -> res.lang (lang Selection from res.lang.get_installed, no FK)",
+      "transifex.code.translation -> ir.module.module (module Char = module name, no FK)",
+      "transifex.translation (AbstractModel) -> ir.config_parameter ('transifex.project_url')",
+      "transifex.translation -> res.lang (code->iso_code map) + filesystem .tx/config (module->project slug)",
+      "base (_inherit) -> transifex.translation (get_field_translations calls _update_transifex_url)"
     ],
-    "frontend_components": []
+    "information_flows": [
+      "depends: base, web (extends base.get_field_translations and the web TranslationDialog)",
+      "side-effect: ir.config_parameter 'transifex.project_url' (seeded https://app.transifex.com/odoo) is the configurable base URL for every generated link",
+      "side-effect: 7-day ir.cron 'Transifex: Reload code translations' -> transifex.code.translation.reload() DELETEs+reloads the materialized code-term table",
+      "side-effect: reading any field's translations (TranslationDialog) -> each term enriched with a transifex_url deep link via the base override",
+      "outbound: links point at https://app.transifex.com/odoo/<project>/translate/... but the module itself makes NO HTTP call (http_call_sites=0); the user's browser follows the link"
+    ],
+    "frontend_components": [
+      "translation_dialog.xml (QWeb t-inherit of web.TranslationDialog; injects fa-globe 'Contribute' <a> deep link per term)",
+      "reload_code_translations_views.js (TransifexCodeTranslationListController extends ListController; registers view 'transifex_code_translation_tree' with a Reload button -> reload() ORM call)",
+      "reload_code_translations_views.xml (buttonTemplate transifex.CodeTranslationListView.Buttons)"
+    ]
   },
   "business_architecture": {
     "capabilities": [
-      "Transifex integration"
+      "Link Translatable Terms to External Translation Editor (Transifex deep link per term/module/language)",
+      "Synthesize Transifex Editor URLs (project + resource + language + source-term slugs)",
+      "Map Odoo Modules to Transifex Projects (.tx/config discovery)",
+      "Materialize & Browse Code (.po) Translations (transifex.code.translation list + 7-day reload cron)",
+      "Configure Translation-Tooling Endpoint (transifex.project_url system parameter)"
     ],
-    "value_streams": [],
+    "value_streams": [
+      "Term-to-Contribution: translator opens a field's TranslationDialog -> sees the Transifex globe link -> clicks through to the exact resource/language/string in the Transifex web editor to fix or contribute the translation",
+      "Code-Translation-Refresh: 7-day cron (or manual Reload button) -> reload() repopulates transifex.code.translation -> code terms become browsable with their own Transifex links"
+    ],
     "information_concepts": [
-      "transifex.code.translation",
-      "transifex.translation"
+      "transifex.code.translation (a materialized code-translation term: source, value, module, lang)",
+      "transifex.translation (the Transifex-link service / URL builder)"
     ],
-    "organization": [],
+    "organization": [
+      "base.group_system (Settings/Administration) — the only group granted read on transifex.code.translation"
+    ],
     "products": [],
-    "policies": [],
-    "stakeholders": [],
+    "policies": [
+      "ir.model.access: transifex.code.translation read-only and restricted to base.group_system (no write/create/unlink)",
+      "ir.cron 'Transifex: Reload code translations' every 7 days (automation policy refreshing the materialized table)",
+      "Only modules present in a .tx/config are linkable; en_US and unmapped languages are skipped (link-eligibility policy enforced in code)"
+    ],
+    "stakeholders": [
+      "Translators / localizers contributing to mainline Odoo translations",
+      "System administrators (base.group_system) browsing code translations",
+      "Odoo S.A. / the Transifex 'odoo' organization hosting the projects"
+    ],
     "strategy": null,
     "metrics": []
   },
@@ -115,16 +170,33 @@
     "value_model": "support",
     "activity_class": "support",
     "apqc_category": "13.0 Develop and Manage Business Capabilities",
-    "rationale": "transifex: thin support/support module (auto-architect baseline)."
+    "rationale": "transifex is a pure 'support' value model (Stabell & Fjeldstad: firm IT infrastructure / technology development). It owns no business object of its own — its two real models are a service AbstractModel (transifex.translation, a URL builder) and a materialized read-only term cache (transifex.code.translation); it adds no route, carries one read-only ACL for base.group_system, makes no outbound HTTP call, and simply enriches existing translation terms with a deep link into the Transifex web editor. It is localization/translation tooling that accelerates how the firm produces and maintains its software's translations — never a primary, customer-facing value activity, so activity_class='support' and there is no document chain. APQC 13.0 'Develop and Manage Business Capabilities' fits best because the module is internal tooling supporting the development and continuous improvement of an organizational capability (the multilingual product itself / knowledge and content management of translations); an argument for 8.0 'Manage Information Technology' exists since it is IT-infrastructure-flavoured, but 13.0 is preferred because the module's specific purpose is enabling/maintaining the translation capability rather than running IT operations. strategy is null (human)."
   },
   "fit_to_standard": {
     "standard_capabilities": [
-      "Transifex integration"
+      "Per-term 'translate on Transifex' deep link injected into the web TranslationDialog (globe icon)",
+      "Automatic module->Transifex-project mapping by scanning .tx/config (legacy and colon formats)",
+      "Transifex editor URL synthesis from project/resource/language ISO/source-term slugs",
+      "Configurable Transifex base URL via the transifex.project_url system parameter",
+      "Materialized, browsable code (.po) translations with a manual Reload button and a 7-day refresh cron"
     ],
-    "typical_fits": [],
-    "common_gaps": [],
+    "typical_fits": [
+      "Mainline Odoo modules published on the Transifex 'odoo' organization get working contribute links out of the box",
+      "Translators jump straight from an Odoo field to the exact Transifex string/language without searching",
+      "No configuration needed beyond the seeded transifex.project_url for the standard SaaS Transifex host"
+    ],
+    "common_gaps": [
+      "Custom / non-published modules have no .tx/config entry, so they produce no Transifex link (by design)",
+      "Self-hosted or alternate Transifex organizations require changing the transifex.project_url parameter and supplying matching .tx/config files",
+      "The arbitrary resource id '42' and 50-char source truncation are heuristics to fit the Transifex URL shape, not verified resource resolution",
+      "No live API integration / write-back: the module only deep-links; actual translation happens on the Transifex site"
+    ],
     "drive_hints": [
-      "odoo shell: env['transifex.code.translation'].search([],limit=3)"
+      "odoo shell: env['ir.config_parameter'].sudo().get_param('transifex.project_url')  # base URL",
+      "odoo shell: env['transifex.translation']._get_transifex_projects()  # module -> tx project map from .tx/config",
+      "odoo shell: t=[{'source':'Sale Order','module':'sale','lang':'fr_FR'}]; env['transifex.translation']._update_transifex_url(t); print(t)  # see a built deep link",
+      "odoo shell: env['transifex.code.translation'].reload()  # repopulate the materialized code-translation table",
+      "UI: open any translatable field's Translation dialog with the module installed -> click the globe icon to open Transifex"
     ]
   },
   "reverse_eng_confidence": {
@@ -138,14 +210,17 @@
     "strategy": "human"
   },
   "open_questions": [
-    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+    "Whether app.transifex.com (data file) vs www.transifex.com (code comment / facts endpoint) reflect a host migration; which is authoritative for live links.",
+    "How the literal resource id '42' behaves against the real Transifex editor — does Transifex resolve the q=text: query regardless of the id?",
+    "Exact trigger path from the web TranslationDialog to base.get_field_translations (which field-edit gesture populates term.transifex_url).",
+    "Whether the 7-day reload cron's full DELETE+reload causes lock contention on large multi-language deployments (the LockNotAvailable path)."
   ],
   "provenance": {
     "explorer_facts": "doc/revres/facts/transifex.facts.json",
     "tools": [
+      "code-read",
       "extract_module.py",
-      "extract_frontend.py",
-      "gen_thin.py"
+      "extract_frontend.py"
     ],
     "odoo_version": "19.0"
   }

@@ -8,13 +8,41 @@
         "web"
       ],
       "auto_install": true,
-      "application": false
+      "application": false,
+      "author": "Odoo S.A.",
+      "license": "LGPL-3"
     },
     "models": [
       {
         "_name": "base.import.module",
         "_description": "Import Module",
-        "fields": 6
+        "fields": 6,
+        "relations": [],
+        "note": "TransientModel (wizard) in models/base_import_module.py. Fields: module_file (Binary, attachment=False, required), state (Selection init/done), import_message (Text), force (Boolean 'Force init'), with_demo (Boolean), modules_dependencies (Text). 3 methods: import_module (base64-decode the .zip into a BytesIO and call ir.module.module._import_zipfile), get_dependencies_to_install_names, action_module_open. The form view button 'Install' -> import_module; then redirects to /odoo."
+      },
+      {
+        "_name": "ir.module.module (extension)",
+        "_description": "Core of the subsystem: _inherit='ir.module.module' in models/ir_module.py (~21 methods). Adds imported (Boolean) and module_type (Selection official/industries) fields. Hosts _import_module, _import_zipfile, module_uninstall override, button_upgrade override, and the Odoo Apps 'industries' data-module browse/download path (_get_modules_from_apps / _call_apps / button_immediate_install_app).",
+        "fields": 2,
+        "relations": []
+      },
+      {
+        "_name": "ir.http (extension)",
+        "_description": "_inherit='ir.http' in models/ir_http.py. Overrides _get_translations_for_webclient to source webclient translations of imported modules from stored .po ir.attachment rows instead of the on-disk catalog.",
+        "fields": 0,
+        "relations": []
+      },
+      {
+        "_name": "ir.ui.view (extension)",
+        "_description": "_inherit='ir.ui.view' in models/ir_ui_view.py (1 method). Adjusts view handling for imported modules.",
+        "fields": 0,
+        "relations": []
+      },
+      {
+        "_name": "base.module.uninstall (extension)",
+        "_description": "_inherit='base.module.uninstall' in wizard/base_module_uninstall.py (1 method). Lets the uninstall wizard account for imported modules (which are deleted, not just uninstalled).",
+        "fields": 0,
+        "relations": []
       }
     ],
     "routes": [
@@ -23,25 +51,57 @@
           "/base_import_module/login_upload"
         ],
         "auth": "none",
-        "type": "http"
+        "type": "http (POST, csrf=False, save_session=False)"
       }
     ],
     "security": {
       "access_rules": 1,
       "record_rules": 0,
-      "groups": 0
+      "groups": 0,
+      "note": "Single ir.model.access row grants base.group_system (Settings/admin) read/write/create (no unlink) on base.import.module. All install paths additionally gate on is_admin()."
     },
     "views": {
       "form": 1,
       "list": 1,
-      "tree": 0,
       "kanban": 0,
-      "search": 0,
       "pivot": 0,
       "graph": 0,
       "calendar": 0,
-      "activity": 0
+      "activity": 0,
+      "note": "form: base.import.module upload wizard (Install/Cancel, force field under base.group_no_one, with_demo). The 'list' is an ir.module.module tree override (ir_module_views.xml) for the Industries Apps browse. The 'force' flag and Import Module menu are debug-only (base.group_no_one)."
     },
+    "behavioral_notes": [
+      {
+        "element": "base.import.module.import_module + ir.module.module._import_zipfile (models/base_import_module.py, models/ir_module.py)",
+        "observation": "import_module() base64-decodes module_file into a BytesIO and calls IrModule._import_zipfile(fp, force, with_demo), then redirects the client to /odoo. _import_zipfile FIRST gates on self.env.is_admin() (raises AccessError 'Only administrators can install data modules'), rejects non-zip input (zipfile.is_zipfile) and any entry exceeding MAX_FILE_SIZE=100MB. It opens the archive into a file_open_temporary_directory, finds each top-level dir holding a MANIFEST_NAMES file, parses each manifest via Manifest._from_path, topological_sort's the modules by their 'depends', and extracts only the data/static/i18n files of each. It then calls self.sudo()._import_module(mod_name, path, force, with_demo) per module in dependency order, wrapping any failure in a UserError carrying the full traceback. None of this zip-unpacking / dependency-ordering / admin-gating is visible in metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "ir.module.module._import_module (the runtime module registration engine)",
+        "observation": "Registers a module into the live database WITHOUT it being on the addons-path at boot. It parses the manifest (Manifest._from_path), builds ir.module.module values via get_values_from_terp, then either writes an existing ir.module.module to state='installed' (mode='update', or 'init' if force) or CREATES a new record with imported=True, state='installed' (mode='init'). Unmet 'depends' are button_immediate_install'd first (raising UserError on truly unknown deps); web_studio-authored modules are refused unless Studio is installed (_is_studio_custom scans XML records for a studio context key). It refuses 'industries' data modules differently (module_type='industries' when context data_module). This bypasses the normal -i/-u CLI install flow, which metadata cannot reveal.",
+        "source": "code-read"
+      },
+      {
+        "element": "_import_module: loading data files via convert_file + static assets + i18n as ir.attachment",
+        "observation": "For each kind in ['data','init_xml'(+'demo' if with_demo)], for every manifest-declared filename ending in .xml/.csv/.sql it calls odoo.tools.convert_file(env, module, filename, idref, mode, noupdate, pathname) to load the records into the DB (csv under init_xml is forced noupdate). It then walks <module>/static and stores EVERY static file as a base64 ir.attachment with url '/<module>/...' and res_model='ir.ui.view' (public) so JS/CSS/images are served from the DB, not disk; .po files under i18n are stored as binary ir.attachment for webclient translation; manifest 'assets' bundles become ir.asset rows (glob wildcards rejected). Each gets an ir.model.data row for clean uninstall. This DB-as-filesystem behaviour for imported modules is pure code semantics.",
+        "source": "code-read"
+      },
+      {
+        "element": "/base_import_module/login_upload route (controllers/main.py) + import_mode/force",
+        "observation": "A type='http', auth='none', POST, csrf=False, save_session=False endpoint that authenticates inline from posted login/password (request.session.authenticate), and ONLY if request.env.uid is set (None under MFA) AND request.env.user._is_admin() does it call ir.module.module._import_zipfile(mod_file, force=force=='1') and return its message. Otherwise it raises AccessError; any exception is returned as an HTTP 500 with the error text. This is the scriptable/CI counterpart to the UI wizard (odoo-bin module-upload), letting an admin push a .zip module over HTTP. The force='1' query param maps to _import_module mode='init' (re-init noupdate records); without it mode='update'.",
+        "source": "code-read"
+      },
+      {
+        "element": "module_uninstall + button_upgrade overrides (imported modules are special-cased)",
+        "observation": "module_uninstall() captures imported modules BEFORE super() (the 'imported' column may vanish mid-uninstall) and unlink()s them entirely after uninstall - because an imported module cannot be reinstalled (its data files are gone from disk), so the record is deleted rather than left 'uninstalled'. button_upgrade() reverts any imported module pushed to 'to upgrade' back to 'installed', since imported modules cannot be upgraded through the standard flow. _get_modules_to_load_domain excludes imported modules from the regular boot load. These lifecycle divergences are invisible to metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "frontend: ImportModuleListView (static/src/base_import_list_view.js / base_import_list_renderer.js) (gap #3)",
+        "observation": "Two small JS files, no OWL component of its own and no QWeb template. base_import_list_view.js spreads @web/views/list/list_view, swaps in ImportModuleListRenderer, and registry.category('views').add('ir_module_module_tree_view', ...) so the Apps/Industries module list renders with a custom renderer (driving the 'more_info' action that opens a module form). Behaviour lives entirely in static assets, not Python views.",
+        "source": "static"
+      }
+    ],
     "frontend": {
       "present": true,
       "js_files": 2,
@@ -74,69 +134,123 @@
     },
     "runtime": {
       "models_with_data": 0,
-      "top": []
-    },
-    "behavioral_notes": [
-      {
-        "element": "frontend (OWL/JS)",
-        "observation": "2 JS files, 0 OWL components, 1 registry adds; bundles ['web.assets_backend'].",
-        "source": "static"
-      },
-      {
-        "element": "external integrations",
-        "observation": "3 HTTP call sites; SDKs ['requests']; api_keys=False.",
-        "source": "static"
-      },
-      {
-        "element": "thin module",
-        "observation": "1 models, 1 routes, 1740 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
-        "source": "ast"
-      }
-    ]
+      "top": [],
+      "note": "base.import.module is a transient (wizard) model (ephemeral rows). The persistent footprint is on ir.module.module (imported=True rows) which accrue only when an admin actually imports a module. Not run live in this pass."
+    }
   },
   "it_architecture": {
-    "application": "base_import_module (Base import module)",
+    "application": "base_import_module (runtime module-deployment tool: upload a .zip/folder Odoo module through the UI or an HTTP endpoint, unpack + dependency-order it, register it into the live DB as an 'imported' module, load its data/static/i18n into ir.attachment/ir.asset, and govern its uninstall/upgrade lifecycle)",
     "software_services": [
-      "/base_import_module/login_upload"
+      "/base_import_module/login_upload (HTTP POST: authenticate inline as admin and import a .zip module - the scriptable/CI upload path)",
+      "base.import.module.import_module (RPC: wizard action that decodes the uploaded .zip and triggers _import_zipfile)",
+      "ir.module.module._import_zipfile (admin-gated: validate zip, topo-sort modules, import each)",
+      "ir.module.module._import_module (register a module into the DB without it being on the addons-path; load data via convert_file)",
+      "ir.module.module.button_immediate_install_app / _get_modules_from_apps (browse + download 'industries' data modules from apps.odoo.com)"
     ],
     "data_objects": [
-      "base.import.module"
+      "base.import.module",
+      "ir.module.module (extended: imported, module_type)"
     ],
-    "logical_data_erm": [],
+    "logical_data_erm": [
+      "base.import.module.module_file (Binary .zip) -> ir.module.module : decoded + imported into an ir.module.module record (imported=True)",
+      "_import_module -> ir.attachment (static files + i18n .po stored with url '/<module>/...', res_model ir.ui.view / ir.module.module)",
+      "_import_module -> ir.asset (manifest 'assets' bundle commands) + ir.model.data (xmlid bookkeeping per imported record, for clean uninstall)",
+      "_import_module -> convert_file -> records in ANY model named by the imported module's data/csv/xml files"
+    ],
     "information_flows": [
-      "depends: web"
+      "depends: web (backend asset bundle, custom list view/renderer, orm/registry)",
+      "upload (UI): wizard form -> base.import.module.import_module -> _import_zipfile -> per-module _import_module",
+      "upload (HTTP/CI): POST /base_import_module/login_upload (login+password+mod_file) -> session.authenticate -> is_admin -> _import_zipfile",
+      "register: _import_module -> Manifest parse -> create/write ir.module.module(imported=True, state=installed) -> convert_file loads data -> static/i18n/assets -> ir.attachment / ir.asset / ir.model.data",
+      "outbound: _call_apps / button_immediate_install_app / _get_industry_categories_from_apps -> requests.post/get https://apps.odoo.com (list + download industries data modules)",
+      "lifecycle: module_uninstall unlinks imported modules; button_upgrade reverts imported 'to upgrade' -> 'installed'; _get_modules_to_load_domain excludes imported modules from boot load"
     ],
-    "frontend_components": []
+    "frontend_components": [
+      "ImportModuleListView (static/src/base_import_list_view.js: spreads web list_view, registered as views:ir_module_module_tree_view)",
+      "ImportModuleListRenderer (static/src/base_import_list_renderer.js: custom renderer for the Apps/Industries module list, drives the 'more_info' action)",
+      "base.import.module form wizard (Python QWeb view: Install/Cancel, force under base.group_no_one, with_demo)"
+    ]
   },
   "business_architecture": {
     "capabilities": [
-      "Base import module"
+      "Import a custom Odoo module from a zip/folder at runtime (no server restart, no addons-path change)",
+      "Validate, size-cap and dependency-order modules inside an uploaded archive before installing",
+      "Register an uploaded module into the live database as an 'imported' module (install/update/force-init)",
+      "Load an imported module's data/static/i18n/assets into the DB (ir.attachment / ir.asset / records)",
+      "Browse and download 'industries' data modules from the Odoo Apps store",
+      "Govern the special lifecycle of imported modules (delete on uninstall; block standard upgrade)",
+      "Push a module over an authenticated HTTP endpoint for scripted / CI deployment"
     ],
-    "value_streams": [],
+    "value_streams": [
+      "Zip-to-Installed-Module: upload .zip -> admin-gate + validate -> topo-sort by depends -> per-module register + convert_file load + store static/i18n/assets -> module state 'installed' -> redirect to /odoo",
+      "Industry-App: browse industries via apps.odoo.com -> download data_app .zip -> _get_missing_dependencies -> import as data module (with optional demo)",
+      "CI-Deploy: POST /base_import_module/login_upload (admin creds + mod_file) -> authenticate -> _import_zipfile -> message back to caller"
+    ],
     "information_concepts": [
-      "base.import.module"
+      "base.import.module (import wizard session: uploaded zip, force, with_demo, dependency message)",
+      "ir.module.module.imported (a module uploaded at runtime rather than read from disk)",
+      "ir.module.module.module_type (official vs industries data module)",
+      "imported-module attachments (static files + .po translations served from the DB)",
+      "import result message + missing-dependency description"
     ],
-    "organization": [],
+    "organization": [
+      "base.group_system (Settings/admin: the only group with access to base.import.module; all import paths additionally require is_admin())"
+    ],
     "products": [],
-    "policies": [],
-    "stakeholders": [],
+    "policies": [
+      "Admin-only gating: _import_zipfile and the upload route require is_admin()/_is_admin() (AccessError otherwise)",
+      "Only .zip archives accepted; each entry capped at MAX_FILE_SIZE=100MB",
+      "Studio-authored modules refused unless web_studio is installed (_is_studio_custom XML scan)",
+      "Imported modules are excluded from the normal boot load and cannot be standard-upgraded; deleted (unlink) on uninstall",
+      "Manifest 'assets' paths may not contain glob wildcards (UserError)",
+      "Upload endpoint blocks MFA users (request.env.uid is None) from importing"
+    ],
+    "stakeholders": [
+      "System administrator (the only role permitted to upload/import a module)",
+      "DevOps / CI pipeline (drives /base_import_module/login_upload for unattended deployment)",
+      "Functional consultant (imports Studio/industry data modules to configure a database)",
+      "Module / app developer (packages a module as a .zip for runtime install)"
+    ],
     "strategy": null,
-    "metrics": []
+    "metrics": [
+      "Count of imported ir.module.module rows (modules deployed at runtime vs on-disk)",
+      "Import success/failure (UserError with traceback per failed module in the zip)",
+      "Missing-dependency description surfaced before an industry import"
+    ]
   },
   "classification": {
     "value_model": "support",
     "activity_class": "support",
     "apqc_category": "8.0 Manage Information Technology",
-    "rationale": "base_import_module: thin support/support module (auto-architect baseline)."
+    "rationale": "base_import_module is runtime module-deployment tooling - firm IT infrastructure with no business object of its own. Its only persistent additions are bookkeeping on ir.module.module (imported, module_type); base.import.module is a transient upload wizard. It creates no value-stream output of any chain/shop/network; it acts ON the platform itself, registering uploaded code/data modules into the live database and managing their install/upgrade/uninstall lifecycle. This is a Porter support activity (Stabell & Fjeldstad 'support'): auto_install=true, depends only on web, and its substance is application deployment / change management - taking a packaged module and provisioning it into the running platform. APQC 8.0 'Manage Information Technology' fits squarely (deploy/maintain application solutions, manage change/release of application components). 13.0 'Develop and Manage Business Capabilities' was considered (runtime import underpins onboarding industry capabilities) but rejected: this is a concrete running deployment utility, not a governance/portfolio capability - its work is IT application deployment, i.e. 8.0. Mirrors the sibling base_import and web classifications (support / 8.0): framework plumbing whose substance is IT delivery, not a business activity."
   },
   "fit_to_standard": {
     "standard_capabilities": [
-      "Base import module"
+      "Upload a .zip module through the UI wizard and install it into the running database (no restart)",
+      "Import multiple modules in one archive, dependency-ordered, with auto-install of known unmet deps",
+      "Force-init mode to re-load noupdate records of an already-installed imported module",
+      "Store an imported module's static assets, translations and asset bundles in the DB (served like on-disk addons)",
+      "Browse + one-click install 'industries' data modules from the Odoo Apps store (apps.odoo.com)",
+      "Authenticated HTTP upload endpoint for scripted / CI module deployment",
+      "Automatic cleanup: imported modules are deleted (not left orphaned) on uninstall"
     ],
-    "typical_fits": [],
-    "common_gaps": [],
+    "typical_fits": [
+      "Deploying Studio/industry/data modules into a customer database without filesystem access (e.g. SaaS/Odoo.sh)",
+      "CI pushing a built module .zip to a target database via /base_import_module/login_upload",
+      "Loading an industry configuration pack (with optional demo data) to bootstrap a new database"
+    ],
+    "common_gaps": [
+      "Imported modules cannot be upgraded through the standard flow (button_upgrade reverts them)",
+      "Only .xml/.csv/.sql data and static/i18n files are loaded - modules carrying executable Python logic are not run from the DB",
+      "No version/state reconciliation if the same module later appears on the addons-path",
+      "100MB per-file cap and admin-only gating may not suit very large packs or delegated deployment",
+      "Studio-authored modules require web_studio to be installed"
+    ],
     "drive_hints": [
-      "odoo shell: env['base.import.module'].search([],limit=3)"
+      "odoo shell: env['ir.module.module']._import_zipfile(open('/path/mod.zip','rb'), force=False) - import a module zip and read the returned module names",
+      "odoo shell: env['ir.module.module'].search([('imported','=',True)]).mapped('name') - list modules deployed at runtime",
+      "curl -F login=admin -F password=admin -F mod_file=@mod.zip http://localhost:8069/base_import_module/login_upload - drive the HTTP/CI upload route",
+      "UI (debug mode): Settings -> Technical -> Import Module (base.group_no_one) -> upload a .zip and Install"
     ]
   },
   "reverse_eng_confidence": {
@@ -150,14 +264,17 @@
     "strategy": "human"
   },
   "open_questions": [
-    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+    "Live count of imported ir.module.module rows and how often the HTTP upload path vs the UI wizard is used (needs runtime).",
+    "Real-world behaviour when an imported module's name later collides with an on-disk addon (state/version reconciliation).",
+    "Full interaction surface of the 'industries' Apps download path (apps.odoo.com availability, enterprise-gated deps).",
+    "Whether large multi-module zips hit the 100MB per-entry cap or worker memory limits in this deployment."
   ],
   "provenance": {
     "explorer_facts": "doc/revres/facts/base_import_module.facts.json",
     "tools": [
+      "code-read",
       "extract_module.py",
-      "extract_frontend.py",
-      "gen_thin.py"
+      "extract_frontend.py"
     ],
     "odoo_version": "19.0"
   }

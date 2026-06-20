@@ -14,12 +14,27 @@
       {
         "_name": "base.module.install.request",
         "_description": "Module Activation Request",
-        "fields": 4
+        "fields": 4,
+        "relations": [
+          "module_id->ir.module.module",
+          "user_id->res.users",
+          "user_ids->res.users"
+        ]
       },
       {
         "_name": "base.module.install.review",
         "_description": "Module Activation Review",
-        "fields": 3
+        "fields": 3,
+        "relations": [
+          "module_id->ir.module.module",
+          "module_ids->ir.module.module"
+        ]
+      },
+      {
+        "_name": "ir.module.module (extension)",
+        "_description": "Adds action_open_install_request() opening the request wizard from the Apps kanban for non-admins",
+        "fields": 0,
+        "relations": []
       }
     ],
     "routes": [],
@@ -29,10 +44,10 @@
       "groups": 0
     },
     "views": {
-      "form": 0,
+      "form": 2,
       "list": 0,
       "tree": 0,
-      "kanban": 0,
+      "kanban": 1,
       "search": 0,
       "pivot": 0,
       "graph": 0,
@@ -62,42 +77,94 @@
     },
     "behavioral_notes": [
       {
-        "element": "thin module",
-        "observation": "2 models, 0 routes, 158 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
-        "source": "ast"
+        "element": "ir.module.module.action_open_install_request() + Apps kanban 'Request Access' button",
+        "observation": "The non-admin entry point. views/ir_module_module_views.xml inherits base.module_view_kanban and injects a 'Request Access' button AFTER button_immediate_install, shown only when state == 'uninstalled', groups='!base.group_system' (NON-system users) AND t-if=\"!record.to_buy.raw_value\" so it is suppressed for enterprise/buy-only apps. The button calls action_open_install_request() which returns an act_window (target='new') onto the base.module.install.request TransientModel with default_module_id set. A regular employee, who lacks rights to button_immediate_install, instead opens a request wizard. This gating is view/code, invisible to ORM metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "base.module.install.request.action_send_request() (user -> admin notification)",
+        "observation": "Notifies administrators by EMAIL, not by mail.activity. _compute_user_ids defaults user_ids to env.ref('base.group_system').all_user_ids (every System/admin user). action_send_request() loops those users and per recipient renders base_install_request.mail_template_base_install_request with render_ctx carrying partner=user.partner_id and menu_id=base.menu_apps, then calls send_mail(force_send=True, email_layout_xmlid='mail.mail_notification_light'). The email embeds the requester's free-text justification (body_html) and a 'Review Request' deep link /odoo/{module_id}/action-base_install_request.action_base_module_install_review. It returns a display_notification client action. No activity/log on a record -- the request is a transient wizard that exists only to fire the mail.",
+        "source": "code-read"
+      },
+      {
+        "element": "base.module.install.review.action_install_module() (admin approve -> immediate install)",
+        "observation": "The admin approval path. The 'Review Request' email link opens action_base_module_install_review (a separate TransientModel, create restricted to base.group_system in ir.model.access.csv). _compute_modules_description calls _get_depending_apps(module): raises UserError if no module or already installed, walks module.upstream_dependencies(), and collects the module plus all dependency apps (application=True) to preview 'The following apps will be installed' via the base_module_install_review_description QWeb template. action_install_module() calls self.module_id.button_immediate_install() and returns the 'home' client action to reload the web client. button_immediate_install runs at end-of-transaction (registry/DB-safe), turning the requested module to state='installed'.",
+        "source": "code-read"
+      },
+      {
+        "element": "to_buy / enterprise handling",
+        "observation": "Enterprise ('buy') apps are deliberately excluded from the self-service request flow: the kanban 'Request Access' button carries t-if=\"!record.to_buy.raw_value\", so for to_buy modules (linked to enterprise/upgrade purchase) no request button renders -- a user cannot request activation of an app requiring a subscription/purchase, which Odoo surfaces via its own upsell path instead.",
+        "source": "code-read"
+      },
+      {
+        "element": "post_init_hook _auto_install_apps (__init__.py) + base.menu_management group reset",
+        "observation": "manifest declares post_init_hook='_auto_install_apps': on install, IF tools.config['default_productivity_apps'] is set, it searches uninstalled modules in a fixed list (Community: hr, mass_mailing, project, survey; Enterprise: appointment, knowledge, planning, sign) and calls button_install() -- a deployment-time productivity-pack bootstrap, not part of the request workflow. Separately, views reset base.menu_management group_ids to empty (5,0,0). Both are setup side-effects invisible to metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "frontend (no OWL/JS; inherited kanban view only)",
+        "observation": "Despite gap #3 being about JS/OWL, extract_frontend reports present:false (0 JS, 0 XML/QWeb asset templates). The UI is entirely server-side: two TransientModel form views, an inherited Apps kanban button, and a QWeb email/description template. The 'Request Access' UX is delivered by inheriting base.module_view_kanban -- no OWL component or registry add. gap #3 is empty here.",
+        "source": "static"
       }
     ]
   },
   "it_architecture": {
-    "application": "base_install_request (Base - Module Install Request)",
+    "application": "base_install_request (self-service app-activation request workflow over the Apps registry -- auto_install support add-on over mail; no business object of its own, two TransientModel wizards + an ir.module.module action)",
     "software_services": [],
     "data_objects": [
       "base.module.install.request",
-      "base.module.install.review"
+      "base.module.install.review",
+      "ir.module.module (extension)"
     ],
     "logical_data_erm": [
-      "base.module.install.request -> ir.module.module",
-      "base.module.install.request -> res.users",
-      "base.module.install.review -> ir.module.module"
+      "base.module.install.request -> ir.module.module (module_id, target app)",
+      "base.module.install.request -> res.users (user_id requester, user_ids = base.group_system admins)",
+      "base.module.install.review -> ir.module.module (module_id + computed module_ids dependency apps)",
+      "ir.module.module.action_open_install_request -> base.module.install.request (wizard launch)"
     ],
     "information_flows": [
-      "depends: mail"
+      "depends: mail",
+      "request: employee on Apps kanban -> action_open_install_request -> base.module.install.request wizard -> action_send_request -> mail.template send_mail(force_send) to base.group_system admins",
+      "approve: admin email 'Review Request' link -> action_base_module_install_review -> base.module.install.review -> _get_depending_apps(upstream_dependencies) preview -> action_install_module -> ir.module.module.button_immediate_install -> state='installed' -> web client reload (home)",
+      "gating: 'Request Access' button shown only for groups='!base.group_system' AND state=='uninstalled' AND !to_buy (enterprise apps excluded)",
+      "setup: post_init_hook _auto_install_apps button_install productivity pack when config['default_productivity_apps']"
     ],
     "frontend_components": []
   },
   "business_architecture": {
     "capabilities": [
-      "Base - Module Install Request"
+      "Request Activation of an App (self-service, non-admin)",
+      "Notify Administrators of an Activation Request (email)",
+      "Review an Activation Request with Dependency Preview",
+      "Approve & Install the Requested App (immediate install)",
+      "Gate Requests by User Role and App Type (non-system users, exclude enterprise/to_buy apps)"
     ],
-    "value_streams": [],
+    "value_streams": [
+      "Request-to-Activation: employee opens request wizard -> justification email to admins -> admin reviews dependencies -> approve -> button_immediate_install -> app live and client reloaded",
+      "Productivity-pack bootstrap: install with default_productivity_apps -> _auto_install_apps button_install of the fixed app list"
+    ],
     "information_concepts": [
-      "base.module.install.request",
-      "base.module.install.review"
+      "base.module.install.request (activation request)",
+      "base.module.install.review (activation review / approval)",
+      "module install state (ir.module.module)",
+      "depending apps set (upstream_dependencies preview)"
     ],
-    "organization": [],
+    "organization": [
+      "base.group_user (employees may create a request)",
+      "base.group_system (administrators receive, review and approve/install)"
+    ],
     "products": [],
-    "policies": [],
-    "stakeholders": [],
+    "policies": [
+      "Request wizard create granted to base.group_user; Review wizard create restricted to base.group_system (ir.model.access.csv)",
+      "'Request Access' button only for non-system users (groups='!base.group_system'), only uninstalled, only non-to_buy apps",
+      "Admins are auto-resolved from base.group_system.all_user_ids as the notification audience",
+      "Install runs via button_immediate_install (end-of-transaction, registry/DB-safe)"
+    ],
+    "stakeholders": [
+      "Internal user / employee (requests an app they cannot self-install)",
+      "System administrator (reviews requests and installs the app)",
+      "Module developer (the Apps registry and immediate-install machinery this builds on)"
+    ],
     "strategy": null,
     "metrics": []
   },
@@ -105,16 +172,35 @@
     "value_model": "support",
     "activity_class": "support",
     "apqc_category": "8.0 Manage Information Technology",
-    "rationale": "base_install_request: thin support/support module (auto-architect baseline)."
+    "rationale": "base_install_request is firm IT infrastructure (Porter support activity; Stabell & Fjeldstad 'support'), not a value-creating primary activity of any chain/shop/network. It implements an internal IT service-request workflow: a non-admin asks for an application to be provisioned, an administrator reviews the dependency footprint and approves the install. It owns no business object -- only two TransientModel wizards and an ir.module.module action -- and bears no rows at runtime; its substance is behavioral (the request-email-to-admins and admin-approve->button_immediate_install flow). auto_install=true with a depends on mail makes it ubiquitous IT plumbing. APQC 8.0 'Manage Information Technology' fits because the work is IT service delivery / application provisioning: receive and triage an IT service request (the activation request), review and approve it, then deliver the application capability (install the app). 13.0 'Develop and Manage Business Capabilities' was considered (a request decides which capability is enabled) but rejected: this is a concrete running IT request/install mechanism, not a governance/portfolio capability -- the work is IT delivery, i.e. 8.0."
   },
   "fit_to_standard": {
     "standard_capabilities": [
-      "Base - Module Install Request"
+      "Self-service 'Request Access' button on the Apps kanban for non-admin users",
+      "Activation-request wizard with free-text justification and auto-resolved admin recipients",
+      "Email notification to all System administrators with a deep 'Review Request' link",
+      "Admin review wizard previewing the requested app plus its dependency apps",
+      "One-click approve that runs button_immediate_install and reloads the client",
+      "Role/app gating (non-system users only, uninstalled only, enterprise/to_buy apps excluded)",
+      "Optional productivity-pack auto-install at deployment via default_productivity_apps"
     ],
-    "typical_fits": [],
-    "common_gaps": [],
+    "typical_fits": [
+      "Locking down app installation to administrators while letting employees ask for apps in a governed way",
+      "Routing activation requests with business justification to the admin team by email",
+      "Previewing the full dependency footprint before an admin commits to installing an app"
+    ],
+    "common_gaps": [
+      "Notification is email-only (no mail.activity, no persisted request record / audit trail -- both wizards are transient)",
+      "No approval states, no rejection path, no request history or reporting (a single fire-and-forget email)",
+      "All System users are notified indiscriminately (no routing to a specific approver or IT queue)",
+      "Enterprise/to_buy apps have no request path here (handled by Odoo's separate upsell flow)",
+      "No external integrations (gap #7: zero outbound HTTP/SDK call sites); no OWL/JS frontend (gap #3: pure server-side wizards + inherited kanban view)"
+    ],
     "drive_hints": [
-      "odoo shell: env['base.module.install.request'].search([],limit=3)"
+      "odoo shell: m = env['ir.module.module'].search([('name','=','crm')]); m.action_open_install_request() to get the request wizard act_window",
+      "odoo shell: w = env['base.module.install.request'].create({'module_id': m.id, 'body_html': '<p>need it</p>'}); w.action_send_request() to fire the admin notification email",
+      "odoo shell: r = env['base.module.install.review'].create({'module_id': m.id}); r.module_ids -> dependency apps preview; r.action_install_module() to immediate-install",
+      "browser: log in as a non-admin, open Apps, confirm 'Request Access' shows on uninstalled non-enterprise apps and is absent on to_buy apps"
     ]
   },
   "reverse_eng_confidence": {
@@ -128,11 +214,15 @@
     "strategy": "human"
   },
   "open_questions": [
-    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+    "Whether downstream/enterprise modules replace the email notification with a mail.activity or a persisted request record + approval states.",
+    "How the 'Review Request' deep link behaves when the requested module's state changed (already installed -> _get_depending_apps raises UserError) between request and review.",
+    "Exact deployment contexts that set config['default_productivity_apps'] (which decides whether _auto_install_apps fires the productivity pack).",
+    "Whether multiple concurrent requests for the same app are de-duplicated (they are not -- each send is an independent transient email)."
   ],
   "provenance": {
     "explorer_facts": "doc/revres/facts/base_install_request.facts.json",
     "tools": [
+      "code-read",
       "extract_module.py",
       "extract_frontend.py",
       "gen_thin.py"

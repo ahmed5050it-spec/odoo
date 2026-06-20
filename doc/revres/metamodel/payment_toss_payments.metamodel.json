@@ -4,46 +4,119 @@
     "manifest": {
       "name": "Payment Provider: Toss Payments",
       "category": "Accounting/Payment Providers",
+      "summary": "A payment provider covering the South Korea market",
+      "version": null,
       "depends": [
         "payment"
       ],
       "auto_install": false,
-      "application": false
+      "application": false,
+      "author": "Odoo S.A.",
+      "license": "LGPL-3",
+      "hooks": "post_init_hook=setup_provider('toss_payments'); uninstall_hook=reset_payment_provider('toss_payments')"
     },
-    "models": [],
+    "models": [
+      {
+        "_name": "payment.provider (inherit)",
+        "_description": "Payment Provider (Toss Payments client/secret keys + computed webhook URL; KRW-only)",
+        "fields": 4,
+        "relations": [
+          "code (Selection selection_add 'toss_payments', ondelete set default)",
+          "toss_payments_client_key (Char, required_if_provider=toss_payments, copy=False)",
+          "toss_payments_secret_key (Char, required_if_provider=toss_payments, groups=base.group_system)",
+          "toss_payments_webhook_url (Char, computed read-only = base_url + WEBHOOK_ROUTE)"
+        ]
+      },
+      {
+        "_name": "payment.transaction (inherit)",
+        "_description": "Payment Transaction (Toss Payments confirm/payments redirect flow; KRW)",
+        "fields": 1,
+        "relations": [
+          "toss_payments_payment_secret (Char, groups=base.group_system; webhook signature secret)",
+          "5 methods overriding payment's reference/processing/notification hooks"
+        ]
+      }
+    ],
     "routes": [
       {
-        "paths": [],
+        "paths": [
+          "/payment/toss-payments/success"
+        ],
         "auth": "public",
-        "type": "http"
+        "type": "http",
+        "methods": [
+          "GET"
+        ]
       },
       {
-        "paths": [],
+        "paths": [
+          "/payment/toss-payments/failure"
+        ],
         "auth": "public",
-        "type": "http"
+        "type": "http",
+        "methods": [
+          "GET"
+        ]
       },
       {
-        "paths": [],
+        "paths": [
+          "/payment/toss-payments/webhook"
+        ],
         "auth": "public",
-        "type": "http"
+        "type": "http",
+        "methods": [
+          "POST"
+        ],
+        "csrf": false
       }
     ],
     "security": {
       "access_rules": 0,
       "record_rules": 0,
-      "groups": 0
+      "groups": 0,
+      "note": "No own ACL/rules; relies on payment's security and on base.group_system field groups guarding toss_payments_secret_key and toss_payments_payment_secret."
     },
     "views": {
       "form": 0,
       "list": 0,
-      "tree": 0,
       "kanban": 0,
       "search": 0,
       "pivot": 0,
       "graph": 0,
-      "calendar": 0,
-      "activity": 0
+      "note": "No own model views; xml_loc=55 is view inheritance (payment.provider form: Client Key / Secret Key (password) / Webhook URL (CopyClipboardChar) shown when code=='toss_payments') plus a QWeb inherit of payment.method_form injecting data-toss-payments-inline-form-values onto the payment radio via provider._toss_payments_get_inline_form_values, plus payment_provider_data.xml. No SDK <script> tag in XML: the Toss Payments v2 SDK is loaded at runtime by loadJS in payment_form.js."
     },
+    "behavioral_notes": [
+      {
+        "element": "payment.provider._build_request_url / _build_request_headers / _build_request_auth -> outbound POST to api.tosspayments.com (/v1/payments/confirm)",
+        "observation": "The outbound acquirer call (gap #7) is centralized through payment's payment.provider._send_api_request, which payment_toss_payments targets at https://api.tosspayments.com/ via the _build_request_url override (urljoin of host + endpoint), and authenticates with HTTP Basic auth via the _build_request_auth override returning (toss_payments_secret_key, '') -- the Toss 'secret_key:' Basic scheme (secret key as username, empty password). _build_request_headers adds an Idempotency-Key of '<orderId>:<paymentKey>' so the confirm POST is safe to retry. The one server-to-server call site is the success-return controller, which POSTs 'POST /v1/payments/confirm' with the redirect data (orderId, paymentKey, amount) to finalize the charge; _parse_response_error formats Toss's {message,code} body on failure. None of this server-to-server HTTP, the Basic secret-key scheme, or the idempotency key is visible in Python field/model metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "checkout / redirect flow: payment.transaction._get_specific_processing_values + payment_form.js (Toss v2 SDK requestPayment)",
+        "observation": "Toss uses a hosted-window 'direct' redirect flow, not an inline charge. _get_specific_processing_values (override) returns order_name (=tx.reference), partner name/email/phone, and success_url (/payment/toss-payments/success) + fail_url (/payment/toss-payments/failure?access_token=<generated>) built from the base URL. On the browser side PaymentForm.prototype is patched (static/src/interactions/payment_form.js): _prepareInlineForm forces flow='direct'; _processDirectFlow loadJS('https://js.tosspayments.com/v2/standard'), reads the JSON inline-form values (client_key + Toss pm code via const.PAYMENT_METHODS_MAPPING card->CARD / bank_transfer->TRANSFER / mobile->MOBILE_PHONE) off the checked radio's data attribute, then TossPayments(clientKey).payment({customerKey: ANONYMOUS}).requestPayment({method, amount{currency:'KRW',value}, orderId=reference, orderName, successUrl, failUrl, customer*}) to open the Toss-hosted payment modal. _compute_reference is overridden to force a 'tx'-singularized alphanumeric/-/_ prefix because Toss rejects references with characters like INV/2025/. A sanitizeKoreanPhoneNumber helper validates the KR phone before passing it. This redirect/SDK orchestration is invisible to Python metadata (gap #3).",
+        "source": "code-read"
+      },
+      {
+        "element": "TossPaymentsController return/confirm routes + webhook + _search_by_reference + _verify_signature (idempotency/signature)",
+        "observation": "Three public routes (controllers/main.py). /payment/toss-payments/success (GET) locates the tx via payment.transaction._search_by_reference('toss_payments', data) (_extract_reference reads data['orderId']), runs _validate_amount({'totalAmount': data['amount']}) to defeat client-side amount tampering BEFORE confirming, and only if state!='error' POSTs /v1/payments/confirm and _process('toss_payments', payment_data) into payment's guarded state machine; on ValidationError it _set_error. /payment/toss-payments/failure (GET) verifies the request via payment_utils.check_access_token(access_token, reference) (an access token is used because the failure URL carries no paymentKey to confirm against the API) then _set_error('<message> (<code>)'). /payment/toss-payments/webhook (POST, csrf=False) parses get_json_data(), and for eventType in const.HANDLED_WEBHOOK_EVENTS ({'PAYMENT_STATUS_CHANGED'}) finds the tx and calls _verify_signature BEFORE _process. _verify_signature is a secret-equality check (not HMAC): unless status is in const.VERIFICATION_EXEMPT_STATUSES ({'EXPIRED','ABORTED'}) it hmac.compare_digest(received payment_data['secret'], tx.toss_payments_payment_secret) constant-time and raises werkzeug Forbidden on mismatch/missing. The per-payment 'secret' is captured into toss_payments_payment_secret during _apply_updates. Inbound state transitions and signature trust are invisible to metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "status mapping: payment.transaction._apply_updates + _extract_amount_data (const.PAYMENT_STATUS_MAPPING)",
+        "observation": "_apply_updates (override) stores provider_reference = payment_data['paymentKey'] and toss_payments_payment_secret = payment_data['secret'] (the webhook secret), then maps Toss status -> Odoo state via const.PAYMENT_STATUS_MAPPING {done:'DONE', canceled:'EXPIRED', error:'ABORTED'}: 'DONE' -> _set_done; 'EXPIRED' -> _set_canceled; a 'CANCELED'/'PARTIAL_CANCELED' status while already done is a no-op (refunds are NOT implemented, but Toss still webhooks on manual dashboard cancellations); anything else -> _set_error. _extract_amount_data forces currency_code='KRW' (const.SUPPORTED_CURRENCY) and amount=float(totalAmount). The provider is KRW-only: _get_supported_currencies filters to KRW and an @api.constrains rejects available_currency_ids other than base.KRW. This status->state semantics and the KRW-only guard are not derivable from field metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "external integration surface (gap #7) -- endpoint, key, SDK",
+        "observation": "Static gap-#7 facts (extract_frontend.py): uses_api_keys=true; one outbound endpoint -- https://api.tosspayments.com/ (direct REST, HTTP Basic secret-key auth, '/v1/payments/confirm') -- declared in models/payment_provider.py. No 'requests' import here: HTTP is delegated to payment.provider._send_api_request in the parent engine, which payment_toss_payments configures via the _build_request_url / _build_request_headers / _build_request_auth / _parse_response_error hook overrides. On the browser side the Toss Payments v2 'standard' SDK is loaded at runtime by loadJS('https://js.tosspayments.com/v2/standard') in payment_form.js (not a static <script> tag) -- a second, client-side channel to Toss for the hosted payment window. This dual server-to-server + client-side acquirer link is the canonical metadata gap #7: none of it is reachable from model/field metadata.",
+        "source": "static"
+      },
+      {
+        "element": "frontend (static) -- Toss Payments inline form patch",
+        "observation": "1 JS file, 0 OWL components, 0 registry adds (gap #3). The module patches one shared payment widget rather than registering new components: PaymentForm.prototype (static/src/interactions/payment_form.js) forces the 'direct' flow and drives the Toss Payments v2 SDK hosted payment window from the inline-form values JSON produced by payment.provider._toss_payments_get_inline_form_values (client_key + mapped pm code), injected onto the checkout radio by a QWeb inherit of payment.method_form. Assets load into web.assets_frontend (manifest glob static/src/**/*). These browser interactions and the Toss SDK are invisible to Python metadata (gap #3).",
+        "source": "static"
+      }
+    ],
     "frontend": {
       "present": true,
       "js_files": 1,
@@ -72,57 +145,131 @@
     "runtime": {
       "models_with_data": 0,
       "top": []
-    },
-    "behavioral_notes": [
-      {
-        "element": "frontend (OWL/JS)",
-        "observation": "1 JS files, 0 OWL components, 0 registry adds; bundles ['web.assets_frontend'].",
-        "source": "static"
-      },
-      {
-        "element": "thin module",
-        "observation": "0 models, 3 routes, 613 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
-        "source": "ast"
-      }
-    ]
+    }
   },
   "it_architecture": {
-    "application": "payment_toss_payments (Payment Provider: Toss Payments)",
-    "software_services": [],
-    "data_objects": [],
-    "logical_data_erm": [],
-    "information_flows": [
-      "depends: payment"
+    "application": "payment_toss_payments (Toss Payments acquirer adapter for the payment engine; _inherit-only, no own models/views)",
+    "software_services": [
+      "/payment/toss-payments/success (GET redirect-return: validate amount, POST /v1/payments/confirm, _process)",
+      "/payment/toss-payments/failure (GET redirect-return: access-token verify, _set_error)",
+      "/payment/toss-payments/webhook (POST async PAYMENT_STATUS_CHANGED notifications, csrf=False)"
     ],
-    "frontend_components": []
+    "data_objects": [
+      "payment.provider (+toss_payments_client_key, toss_payments_secret_key, toss_payments_webhook_url)",
+      "payment.transaction (+toss_payments_payment_secret; Toss confirm/payments flow)"
+    ],
+    "logical_data_erm": [
+      "payment.transaction -> payment.provider (provider_id; provider_code=='toss_payments' gates every override)",
+      "payment.provider.code selection_add 'toss_payments'",
+      "external: payment.transaction.provider_reference == Toss paymentKey (cross-system key)",
+      "external: payment.transaction.reference == Toss orderId (echoed in redirect/webhook data)",
+      "external: payment.transaction.toss_payments_payment_secret == Toss per-payment webhook 'secret' (signature)"
+    ],
+    "information_flows": [
+      "depends: payment (inherits the provider/transaction engine + _send_api_request)",
+      "client-side: Toss Payments v2 SDK loaded via loadJS('https://js.tosspayments.com/v2/standard'); requestPayment opens the Toss-hosted modal (method/amount KRW/orderId/orderName/success+fail URLs)",
+      "outbound: success-return controller -> POST https://api.tosspayments.com/v1/payments/confirm (HTTP Basic secret-key auth, Idempotency-Key=orderId:paymentKey)",
+      "inbound (redirect success): Toss -> /payment/toss-payments/success -> _validate_amount -> confirm -> _process -> /payment/status",
+      "inbound (redirect failure): Toss -> /payment/toss-payments/failure?access_token -> check_access_token -> _set_error -> /payment/status",
+      "inbound (webhook): Toss -> /payment/toss-payments/webhook (PAYMENT_STATUS_CHANGED) -> _verify_signature (constant-time secret compare) -> _process -> payment state machine",
+      "side-effect: status mapping DONE->_set_done / EXPIRED->_set_canceled / ABORTED->_set_error; CANCELED/PARTIAL_CANCELED on a done tx is a no-op (refunds not implemented)"
+    ],
+    "frontend_components": [
+      "PaymentForm.prototype (patch; forces 'direct' flow and drives the Toss Payments v2 SDK hosted payment window from _toss_payments_get_inline_form_values)",
+      "Toss Payments v2 'standard' SDK (loaded at runtime via loadJS('https://js.tosspayments.com/v2/standard'))",
+      "payment.method_form QWeb inherit (injects data-toss-payments-inline-form-values onto the checkout radio)"
+    ],
+    "external_integrations": {
+      "sdk": "Toss Payments v2 'standard' JS SDK (browser hosted-window, loadJS at runtime); server side uses no python SDK -- HTTP via payment.provider._send_api_request",
+      "uses_api_keys": true,
+      "endpoints": [
+        "https://api.tosspayments.com/"
+      ],
+      "auth": "HTTP Basic with toss_payments_secret_key as username and empty password (Toss 'secret_key:' scheme), Idempotency-Key header",
+      "files": [
+        "models/payment_provider.py",
+        "models/payment_transaction.py",
+        "controllers/main.py",
+        "const.py",
+        "static/src/interactions/payment_form.js"
+      ],
+      "pattern": "Concrete realization of metadata gap #7: a real external acquirer integration covering the South Korea market. Outbound server-to-server REST to api.tosspayments.com (POST /v1/payments/confirm) authenticated with the secret key via HTTP Basic auth and an Idempotency-Key; a parallel client-side Toss v2 SDK channel that opens the hosted payment window (card / bank transfer / mobile, KRW only); and inbound settlement via a redirect success/failure pair plus a PAYMENT_STATUS_CHANGED webhook whose authenticity is a constant-time secret-equality compare against the per-payment secret. The base 'payment' engine flags uses_api_keys but ships no live acquirer -- this module is exactly that override.",
+      "note": "Prime gap-#7 example: none of the Toss endpoint, the Basic secret-key auth, the webhook secret trust, or the browser SDK channel are derivable from Python model/field metadata; they were established only by reading models/payment_provider.py + payment_transaction.py + controllers/main.py + const.py."
+    }
   },
   "business_architecture": {
     "capabilities": [
-      "Payment Provider: Toss Payments"
+      "Accept Online Payments via Toss Payments (hosted-window direct flow, South Korea)",
+      "Card / Bank Transfer / Mobile-phone payment methods (KRW only)",
+      "Amount-tamper-proof redirect confirmation (server-side _validate_amount before confirm)",
+      "Asynchronous settlement via secret-verified PAYMENT_STATUS_CHANGED webhook",
+      "Idempotent payment confirmation (Idempotency-Key on the confirm POST)"
     ],
-    "value_streams": [],
-    "information_concepts": [],
-    "organization": [],
+    "value_streams": [
+      "Collect-Payment (Toss): initiate tx -> Toss v2 SDK requestPayment hosted window -> redirect /payment/toss-payments/success -> _validate_amount -> POST /v1/payments/confirm (api.tosspayments.com) -> _process -> state machine done/error -> downstream post-process settlement; OR async /payment/toss-payments/webhook (PAYMENT_STATUS_CHANGED, secret-verified) -> _process",
+      "Fail-Path: Toss -> /payment/toss-payments/failure?access_token -> check_access_token -> _set_error -> /payment/status"
+    ],
+    "information_concepts": [
+      "payment.provider (Toss credentials: client key / secret key / computed webhook URL)",
+      "payment.transaction (mapped to a Toss payment: orderId=reference, paymentKey=provider_reference, per-payment secret)"
+    ],
+    "organization": [
+      "(no module-owned res.groups; toss_payments_secret_key and toss_payments_payment_secret are restricted to base.group_system; everything else inherits payment's groups/record rules)"
+    ],
     "products": [],
-    "policies": [],
-    "stakeholders": [],
+    "policies": [
+      "KRW only: _get_supported_currencies filters to KRW and an @api.constrains rejects available_currency_ids other than base.KRW (ValidationError)",
+      "Amount integrity: the success-return route runs _validate_amount on the redirected amount before confirming the payment, defeating client-side amount tampering",
+      "Webhook authenticity: PAYMENT_STATUS_CHANGED events must pass _verify_signature (constant-time compare of payment_data['secret'] vs tx.toss_payments_payment_secret) or are rejected with HTTP 403 Forbidden; EXPIRED/ABORTED statuses are verification-exempt",
+      "Failure-return authenticity: the failure URL carries a generated access_token verified via check_access_token (no paymentKey to confirm against the API)",
+      "Idempotency-Key (orderId:paymentKey) sent on the confirm POST so the charge is safe to retry",
+      "References forced to a 'tx'-singularized alphanumeric/-/_ prefix to satisfy Toss reference rules",
+      "Secret/webhook keys gated by base.group_system field groups"
+    ],
+    "stakeholders": [
+      "Payer / Customer (res.partner, South Korea)",
+      "Merchant / Company (res.company, holds the Toss account & keys)",
+      "Toss Payments (external acquirer / PSP, South Korea)",
+      "Accountant (consumes settled payments via account_payment downstream)"
+    ],
     "strategy": null,
-    "metrics": []
+    "metrics": [
+      "(no own reports; transaction volumes/amounts/state surfaced by the parent payment.transaction pivot/graph)"
+    ]
   },
   "classification": {
     "value_model": "network",
     "activity_class": "support",
-    "apqc_category": "9.0 Manage Financial Resources",
-    "rationale": "payment_toss_payments: thin network/support module (auto-architect baseline)."
+    "apqc_category": "9.0 Manage Financial Resources (9.5 process payments / collect cash; manage external payment provider)",
+    "rationale": "payment_toss_payments is a value-NETWORK (Stabell & Fjeldstad mediating-technology) component: a concrete acquirer adapter whose purpose is to interconnect two parties who would not otherwise transact directly -- the South-Korean payer and the merchant -- by linking the merchant to Toss Payments' card / bank-transfer / mobile network. It exhibits the mediating-technology activities: network promotion & contract management (provider credential/key management, webhook URL provisioning, KRW/reference constraints), service provisioning (opening the Toss hosted payment window and confirming the charge per transaction via /v1/payments/confirm), and infrastructure operation (the server-to-server api.tosspayments.com link, the Toss v2 SDK client channel, and the redirect + signed-webhook settlement loop). It does not transform inputs into outputs (chain) nor solve a bespoke customer problem (shop). It inherits the parent 'payment' engine's value_model exactly: the engine is the generic mediator and this module is its Toss realization. activity_class is 'support' because, from the enterprise value-chain perspective, payment acceptance is an infrastructure/finance support function (category Accounting/Payment Providers, application=False, no end-user app) sitting under 9.0 Manage Financial Resources -- specifically 9.5 process payments / collect cash, with the side of 'manage an external payment provider'. So value_model=network (its own internal logic is mediation, an acquirer integration -- gap #7), activity_class=support (its place on the enterprise value chain). This mirrors the parent payment.metamodel.json (network/support) and the payment_stripe sibling (network/support)."
   },
   "fit_to_standard": {
     "standard_capabilities": [
-      "Payment Provider: Toss Payments"
+      "direct hosted-window online payment via the Toss Payments v2 SDK (card / bank transfer / mobile)",
+      "server-side payment confirmation with amount validation against tampering (POST /v1/payments/confirm)",
+      "asynchronous settlement via a PAYMENT_STATUS_CHANGED webhook plus redirect success/failure routes",
+      "idempotent confirm requests (Idempotency-Key) and KRW-only currency enforcement",
+      "secret-key HTTP Basic authentication of all outbound calls"
     ],
-    "typical_fits": [],
-    "common_gaps": [],
+    "typical_fits": [
+      "South-Korea online shop / portal checkout collecting KRW card / bank-transfer / mobile payments through Toss",
+      "send-a-payment-link or pay-an-invoice-online collection (with account_payment / sale downstream)",
+      "single-currency (KRW) merchant acceptance with the Toss-hosted payment window"
+    ],
+    "common_gaps": [
+      "refunds are explicitly NOT implemented (CANCELED/PARTIAL_CANCELED webhooks on a done tx are no-ops; cancellation done on the Toss merchant dashboard)",
+      "tokenization / saved cards are not implemented (no payment.token override; customerKey is ANONYMOUS)",
+      "manual capture / authorize-then-capture / void are not implemented (hosted direct flow only)",
+      "single currency only: KRW is enforced by constraint, so multi-currency acceptance is impossible",
+      "the public-URL requirement for the webhook means local/dev instances need a tunnel for async status updates",
+      "bespoke reconciliation / settlement document chains live downstream (account_payment, sale), not here"
+    ],
     "drive_hints": [
-      "n/a"
+      "odoo shell: env['payment.provider'].search([('code','=','toss_payments')]).mapped(('name','state','toss_payments_client_key','toss_payments_webhook_url'))",
+      "odoo shell: p=env['payment.provider'].search([('code','=','toss_payments')],limit=1); print(p._get_supported_currencies().mapped('name'))",
+      "odoo shell: tx=env['payment.transaction'].search([('provider_code','=','toss_payments')],limit=1); print(tx.reference, tx.state, tx.provider_reference)",
+      "odoo shell: print([m for m in dir(env['payment.transaction']) if 'toss' in m.lower()])",
+      "curl -X POST https://<host>/payment/toss-payments/webhook (csrf=False, auth=public) with body {'eventType':'PAYMENT_STATUS_CHANGED','data':{...}} and a wrong/missing 'secret' -> expect HTTP 403 Forbidden from _verify_signature"
     ]
   },
   "reverse_eng_confidence": {
@@ -136,14 +283,20 @@
     "strategy": "human"
   },
   "open_questions": [
-    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+    "Full Toss Payments webhook event catalogue beyond PAYMENT_STATUS_CHANGED and whether future statuses (e.g. partial cancel) will ever be processed rather than no-op'd.",
+    "Real-world distribution of Toss transaction states and payment-method split (card vs bank transfer vs mobile); no runtime row counts captured.",
+    "Whether refund / cancellation will be added (currently dashboard-only) and how it would map to child payment.transaction records.",
+    "Which downstream modules consume the settled Toss transactions (account_payment, sale) and how KRW (zero-decimal currency) amounts flow."
   ],
   "provenance": {
     "explorer_facts": "doc/revres/facts/payment_toss_payments.facts.json",
     "tools": [
-      "extract_module.py",
-      "extract_frontend.py",
-      "gen_thin.py"
+      "apqc_odoo_map.tsv",
+      "code-read (models/payment_provider.py, models/payment_transaction.py, controllers/main.py, const.py, __init__.py, __manifest__.py, views/payment_provider_views.xml, views/payment_toss_payments_templates.xml, static/src/interactions/payment_form.js)",
+      "extract_frontend.py (frontend/payment_toss_payments.frontend.json)",
+      "extract_module.py (facts/payment_toss_payments.facts.json)",
+      "Grep",
+      "Read"
     ],
     "odoo_version": "19.0"
   }

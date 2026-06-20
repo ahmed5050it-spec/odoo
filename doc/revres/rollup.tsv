@@ -4,7 +4,7 @@ account_add_gln	support	support	9.0 Manage Financial Resourc	0	0	0	0	meta
 account_check_printing	support	support	9.0 Manage Financial Resourc	5	0	0	0	meta+code
 account_debit_note	support	support	9.0 Manage Financial Resourc	1	0	0	0	meta
 account_edi	support	support	9.0 Manage Financial Resourc	7	0	0	0	meta+code
-account_edi_proxy_client	support	support	9.0 Manage Financial Resourc	1	0	0	0	meta+integ
+account_edi_proxy_client	support	support	9.0 Manage Financial Resourc	3	0	0	0	meta+code+integ
 account_edi_ubl_cii	support	support	9.0 Manage Financial Resourc	9	0	0	0	meta+code
 account_fleet	support	support	9.0 Manage Financial Resourc	0	0	0	0	meta
 account_payment	support	support	9.0 Manage Financial Resourc	12	5	3	0	meta+code+fe
@@ -14,7 +14,7 @@ account_peppol_response	support	support	9.0 Manage Financial Resourc	7	0	0	0	met
 account_qr_code_emv	support	support	9.0 Manage Financial Resourc	0	0	0	0	meta
 account_qr_code_sepa	support	support	9.0 Manage Financial Resourc	0	0	0	0	meta
 account_tax_python	support	support	9.0 Manage Financial Resourc	0	0	1	0	meta+fe
-account_test	support	support	9.0 Manage Financial Resourc	2	0	0	0	meta
+account_test	support	support	9.0 Manage Financial Resourc	2	0	0	0	meta+code
 account_update_tax_tags	support	support	9.0 Manage Financial Resourc	1	0	0	0	meta
 analytic	support	support	9.0 Manage Financial Resourc	7	0	8	1	meta+code+fe
 api_doc	support	support	13.0 Develop and Manage Busi	1	5	17	10	meta+code+fe
@@ -34,13 +34,13 @@ auth_totp_portal	support	support	8.0 Manage Information Techn	0	0	5	0	meta+fe
 barcodes	support	support	8.0 Manage Information Techn	5	0	7	3	meta+code+fe
 barcodes_gs1_nomenclature	chain	support	4.0 Deliver Physical Product	0	0	3	0	meta+fe
 base	support	support	8.0 Manage Information Techn	17	0	0	0	meta+code+integ+run
-base_address_extended	support	support	8.0 Manage Information Techn	1	0	0	0	meta
+base_address_extended	support	support	8.0 Manage Information Techn	3	0	0	0	meta+code
 base_automation	support	support	8.0 Manage Information Techn	3	1	5	1	meta+code+fe
 base_geolocalize	support	support	8.0 Manage Information Techn	4	0	0	0	meta+code+integ
 base_iban	support	support	8.0 Manage Information Techn	0	0	4	0	meta+fe
 base_import	support	support	8.0 Manage Information Techn	4	1	10	8	meta+code+fe+integ
-base_import_module	support	support	8.0 Manage Information Techn	1	1	2	0	meta+fe+integ
-base_install_request	support	support	8.0 Manage Information Techn	2	0	0	0	meta
+base_import_module	support	support	8.0 Manage Information Techn	5	1	2	0	meta+code+fe+integ
+base_install_request	support	support	8.0 Manage Information Techn	3	0	0	0	meta+code
 base_setup	support	support	8.0 Manage Information Techn	4	3	1	1	meta+code+fe
 base_sparse_field	support	support	8.0 Manage Information Techn	1	0	0	0	meta
 base_vat	support	support	9.0 Manage Financial Resourc	4	1	0	0	meta+code+integ
@@ -106,7 +106,7 @@ hr_skills_event	support	support	7.0 Develop and Manage Human	0	0	0	0	meta
 hr_skills_slides	support	support	7.0 Develop and Manage Human	0	0	0	0	meta
 hr_skills_survey	support	support	7.0 Develop and Manage Human	0	0	0	0	meta
 hr_timesheet	shop	primary	5.0 Deliver Services	5	1	16	2	meta+code+fe
-hr_timesheet_attendance	support	support	7.0 Develop and Manage Human	1	0	0	0	meta
+hr_timesheet_attendance	support	support	7.0 Develop and Manage Human	2	0	0	0	meta+code
 hr_work_entry	support	support	7.0 Develop and Manage Human	4	0	12	1	meta+code+fe
 hr_work_entry_holidays	support	support	7.0 Develop and Manage Human	0	0	0	0	meta
 html_builder	support	support	13.0 Develop and Manage Busi	0	0	148	40	meta+fe
@@ -114,7 +114,7 @@ html_editor	support	support	8.0 Manage Information Techn	7	15	187	40	meta+code+f
 http_routing	support	support	8.0 Manage Information Techn	3	2	0	0	meta+code
 iap	support	support	8.0 Manage Information Techn	3	0	1	1	meta+code+fe+integ
 iap_crm	support	support	8.0 Manage Information Techn	0	0	0	0	meta
-iap_mail	support	support	8.0 Manage Information Techn	1	0	1	0	meta+fe
+iap_mail	support	support	8.0 Manage Information Techn	1	0	1	0	meta+code+fe
 im_livechat	network	primary	6.0 Manage Customer Service	8	5	102	11	meta+code+fe
 iot_base	support	support	13.0 Develop and Manage Busi	0	0	3	0	meta+fe
 iot_box_image	support	support	13.0 Develop and Manage Busi	0	0	0	0	meta
@@ -376,7 +376,7 @@ mrp_subcontracting_landed_costs	chain	primary	4.3 Produce/Manufacture/Deli	0	0	0
 mrp_subcontracting_purchase	chain	primary	4.3 Produce/Manufacture/Deli	0	0	0	0	meta
 mrp_subcontracting_repair	chain	primary	4.3 Produce/Manufacture/Deli	0	0	0	0	meta
 onboarding	support	support	13.0 Develop and Manage Busi	4	0	1	0	meta+code+fe
-partner_autocomplete	support	support	13.0 Develop and Manage Busi	1	0	5	1	meta+fe+integ
+partner_autocomplete	support	support	13.0 Develop and Manage Busi	5	0	5	1	meta+code+fe+integ
 partnership	chain	primary	3.0 Market and Sell Products	1	0	0	0	meta
 payment	network	support	9.0 Manage Financial Resourc	6	5	5	0	meta+code+fe+integ
 payment_adyen	network	support	9.0 Manage Financial Resourc	4	5	1	0	meta+code+fe
@@ -398,7 +398,7 @@ payment_paypal	network	support	9.0 Manage Financial Resourc	0	2	2	0	meta+fe
 payment_razorpay	network	support	9.0 Manage Financial Resourc	3	3	1	0	meta+code+fe
 payment_redsys	network	support	9.0 Manage Financial Resourc	0	2	0	0	meta
 payment_stripe	network	support	9.0 Manage Financial Resourc	3	5	3	0	meta+code+fe
-payment_toss_payments	network	support	9.0 Manage Financial Resourc	0	3	1	0	meta+fe
+payment_toss_payments	network	support	9.0 Manage Financial Resourc	2	3	1	0	meta+code+fe
 payment_worldline	network	support	9.0 Manage Financial Resourc	0	2	1	0	meta+fe
 payment_xendit	network	support	9.0 Manage Financial Resourc	2	3	3	1	meta+code+fe
 phone_validation	support	support	8.0 Manage Information Techn	6	0	0	0	meta+code
@@ -432,7 +432,7 @@ pos_restaurant	chain	primary	3.0 Market and Sell Products	6	0	31	7	meta+code+fe
 pos_restaurant_adyen	chain	primary	3.0 Market and Sell Products	0	1	1	0	meta+fe+integ
 pos_restaurant_loyalty	chain	primary	3.0 Market and Sell Products	0	0	2	0	meta+fe
 pos_restaurant_stripe	chain	primary	3.0 Market and Sell Products	0	0	2	0	meta+fe
-pos_safaricom	chain	primary	3.0 Market and Sell Products	1	3	3	1	meta+fe+integ
+pos_safaricom	chain	primary	3.0 Market and Sell Products	2	3	3	1	meta+code+fe+integ
 pos_sale	chain	primary	3.0 Market and Sell Products	14	0	7	0	meta+code+fe
 pos_sale_loyalty	chain	primary	3.0 Market and Sell Products	0	0	1	0	meta+fe
 pos_sale_margin	chain	primary	3.0 Market and Sell Products	0	0	0	0	meta
@@ -586,7 +586,7 @@ test_website	support	support	13.0 Develop and Manage Busi	5	37	1	0	meta+fe
 test_website_modules	support	support	13.0 Develop and Manage Busi	0	0	0	0	meta
 test_website_slides_full	support	support	13.0 Develop and Manage Busi	0	0	0	0	meta
 theme_default	network	primary	3.0 Market and Sell Products	0	0	0	0	meta
-transifex	support	support	13.0 Develop and Manage Busi	2	0	1	0	meta+fe
+transifex	support	support	13.0 Develop and Manage Busi	3	0	1	0	meta+code+fe
 uom	support	support	2.0 Develop and Manage Produ	1	0	2	1	meta+fe
 utm	support	support	3.0 Market and Sell Products	7	0	1	0	meta+code+fe
 web	support	support	8.0 Manage Information Techn	4	12	526	32	meta+code+fe

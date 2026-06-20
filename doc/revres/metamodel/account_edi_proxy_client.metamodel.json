@@ -4,6 +4,9 @@
     "manifest": {
       "name": "Proxy features for account_edi",
       "category": "Accounting/Accounting",
+      "summary": null,
+      "author": "Odoo S.A.",
+      "license": "LGPL-3",
       "depends": [
         "account",
         "certificate"
@@ -15,7 +18,25 @@
       {
         "_name": "account_edi_proxy_client.user",
         "_description": "Account EDI proxy user",
-        "fields": 10
+        "fields": 10,
+        "relations": [
+          "company_id->res.company",
+          "private_key_id->certificate.key"
+        ]
+      },
+      {
+        "_name": "certificate.key (inherit)",
+        "_description": "Certificate key — Fernet symmetric-key decryption helper for EDI payloads",
+        "fields": 0,
+        "relations": []
+      },
+      {
+        "_name": "res.company (inherit)",
+        "_description": "Company — owns the EDI proxy users",
+        "fields": 1,
+        "relations": [
+          "account_edi_proxy_client_ids->account_edi_proxy_client.user"
+        ]
       }
     ],
     "routes": [],
@@ -63,63 +84,145 @@
     },
     "behavioral_notes": [
       {
-        "element": "external integrations",
-        "observation": "1 HTTP call sites; SDKs ['requests']; api_keys=False.",
+        "element": "account_edi_proxy_client.user (record + _register_proxy_user)",
+        "observation": "The account_edi_proxy_client.user record is the per-company identity on a proxy/access-point service: it stores id_client (unique server-issued client id), edi_identification (the address the user is reachable at on the network, e.g. the VAT for Peppol), private_key_id (a certificate.key RSA private key, domain public=False), refresh_token (readable only by base.group_system), proxy_type (extensible Selection — e.g. peppol, l10n_it_edi, nemhandel) and edi_mode (prod/test/demo). _register_proxy_user() first generates an RSA keypair via certificate.key._generate_rsa_private_key, then POSTs {dbuuid, company_id, edi_identification, public_key(PEM), proxy_type} to '<server_url>/iap/account_edi/2/create_user' and persists the returned id_client + refresh_token as a new user. A UNIQUE index '(company_id, proxy_type, edi_mode) WHERE active' enforces one active enrolment per (company, network, mode); demo mode short-circuits to fake credentials with no network call. This enrolment/identity handshake is invisible in metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "account_edi_proxy_client.user._make_request (signed JSON-RPC transport + error handling)",
+        "observation": "_make_request(url, params, auth_type) wraps every proxy call: it builds a JSON-RPC 2.0 envelope {jsonrpc:'2.0', method:'call', params, id:uuid4}, hard-blocks any call while edi_mode=='demo' (raises AccountEdiProxyError 'block_demo_mode'), then requests.post()s with a 30s timeout (DEFAULT_TIMEOUT) and the OdooEdiProxyAuth signer attached as auth=. Network/HTTP/JSON errors (ConnectionError, MissingSchema, Timeout, HTTPError, ValueError) are collapsed into AccountEdiProxyError('connection_error'). It then inspects response['result']['proxy_error']: on 'refresh_token_expired' it calls _renew_token(), commits the cursor so the new token is not lost, and retries with hmac auth; on 'no_such_user' it deactivates the local user (active=False); on 'invalid_signature' it raises a database-duplication warning pointing at Odoo Access Point. This retry/renew/deactivate logic and the cursor commit are runtime semantics absent from metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "OdooEdiProxyAuth (cryptographic request signature, account_edi_proxy_auth.py)",
+        "observation": "Every authenticated request is signed by OdooEdiProxyAuth (a requests.auth.AuthBase). It crafts a canonical message 'timestamp|url-path|id_client|sorted-query-params|sorted-json-body', adds headers odoo-edi-client-id and odoo-edi-timestamp, then signs one of two ways: (hmac, default) HMAC-SHA256 over the message keyed by the base64-decoded refresh_token; or (asymmetric) an RSA signature via private_key._sign(message, formatting='base64') — used as a fallback to resync the token when databases desynchronise (restore-from-backup / un-neutralised copy). Signature + type go into odoo-edi-signature / odoo-edi-signature-type headers. This preserves message integrity, lets the server check access rights/account validity, and stops two databases sharing credentials (the 24h-expiring refresh_token). Cryptographic signing is invisible to ORM metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "account_edi_proxy_client.user._renew_token + _decrypt_data (token sync & payload encryption)",
+        "observation": "_renew_token() locks the user row (lock_for_update; silently returns on LockError to avoid contention), POSTs to '/iap/account_edi/1/renew_token' and stores the new refresh_token (sudo); refresh tokens expire after 24h precisely so two databases cannot keep querying with the same credentials. Inbound documents are encrypted by the proxy with the user's public key: _decrypt_data() RSA-decrypts the symmetric key via private_key_id._decrypt, then Fernet-decrypts the payload via certificate.key._account_edi_fernet_decrypt — i.e. envelope encryption (RSA-wrapped Fernet symmetric key). proxy_type's Selection is empty and _get_proxy_urls returns {} / _get_proxy_identification returns False (TO OVERRIDE), so concrete networks (Peppol, l10n_it_edi, nemhandel) are wired up by sibling localization modules, not here.",
+        "source": "code-read"
+      },
+      {
+        "element": "frontend (OWL/JS)",
+        "observation": "No frontend assets: 0 JS files, 0 XML templates, 0 OWL components, 0 registry registrations, 0 patches, no asset bundles. The only UI is a server-rendered form/list on account_edi_proxy_client.user; all behaviour is backend Python plumbing.",
         "source": "static"
       },
       {
-        "element": "thin module",
-        "observation": "1 models, 0 routes, 355 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
-        "source": "ast"
+        "element": "external integrations (gap #7)",
+        "observation": "1 outbound HTTP call site using the requests SDK (no vendored SDK, no stored api-key field). The single egress path is account_edi_proxy_client.user._make_request -> requests.post to '<server_url>/iap/account_edi/2/create_user', '/iap/account_edi/1/renew_token' and other proxy endpoints resolved from _get_proxy_urls() (the Odoo IAP / access-point host per proxy_type+edi_mode). Requests are signed with OdooEdiProxyAuth (HMAC-SHA256 over refresh_token, or RSA asymmetric fallback). No endpoints are hard-coded in this base module — URLs come from the extending localization. This is the access-point connectivity layer for e-invoicing networks (Peppol, etc.).",
+        "source": "static"
       }
     ]
   },
   "it_architecture": {
-    "application": "account_edi_proxy_client (Proxy features for account_edi)",
+    "application": "account_edi_proxy_client (EDI proxy / access-point client — application component extending account, talks to Odoo's IAP e-invoicing access-point service)",
     "software_services": [],
     "data_objects": [
-      "account_edi_proxy_client.user"
+      "account_edi_proxy_client.user",
+      "certificate.key",
+      "res.company"
     ],
     "logical_data_erm": [
-      "account_edi_proxy_client.user -> certificate.key",
-      "account_edi_proxy_client.user -> res.company"
+      "account_edi_proxy_client.user -> res.company (company_id)",
+      "account_edi_proxy_client.user -> certificate.key (private_key_id)",
+      "res.company -> account_edi_proxy_client.user (account_edi_proxy_client_ids)"
     ],
     "information_flows": [
-      "depends: account, certificate"
+      "depends: account, certificate",
+      "egress: account_edi_proxy_client.user._register_proxy_user -> POST <server_url>/iap/account_edi/2/create_user with {dbuuid, company_id, edi_identification, public_key(PEM), proxy_type} -> stores id_client + refresh_token",
+      "egress: account_edi_proxy_client.user._make_request -> signed JSON-RPC 2.0 POST to the proxy host (OdooEdiProxyAuth signs message timestamp|path|id_client|query|body)",
+      "egress: account_edi_proxy_client.user._renew_token -> POST /iap/account_edi/1/renew_token -> refreshes the 24h refresh_token",
+      "ingress: proxy returns RSA-wrapped Fernet-encrypted documents -> _decrypt_data RSA-decrypts symmetric key then Fernet-decrypts payload",
+      "control: proxy_error 'refresh_token_expired' -> _renew_token + commit + retry; 'no_such_user' -> deactivate user; 'invalid_signature' -> database-duplication error",
+      "extension point: _get_proxy_urls / _get_proxy_identification / proxy_type Selection extended by localization modules (Peppol, l10n_it_edi, nemhandel) to bind concrete networks"
     ],
-    "frontend_components": []
+    "frontend_components": [],
+    "external_integrations": {
+      "http_call_sites": 1,
+      "sdk_imports": [
+        "requests"
+      ],
+      "endpoints": [
+        "<proxy_host>/iap/account_edi/2/create_user",
+        "<proxy_host>/iap/account_edi/1/renew_token"
+      ]
+    }
   },
   "business_architecture": {
     "capabilities": [
-      "Proxy features for account_edi"
+      "Enrol Company as an E-Invoicing Network Identity (register proxy user)",
+      "Authenticate & Sign Requests to the EDI Access Point (HMAC / RSA)",
+      "Maintain Network Credentials (id_client, refresh token, RSA keypair)",
+      "Exchange E-Invoice Documents over an Access-Point Proxy (Peppol / IAP)",
+      "Decrypt Inbound Documents (RSA-wrapped Fernet envelope)",
+      "Provide a Pluggable Transport for Country/Network Localizations"
     ],
-    "value_streams": [],
+    "value_streams": [
+      "Network Onboarding: generate RSA keypair -> POST create_user with public key + edi_identification -> persist id_client + refresh_token -> active proxy user",
+      "Document Exchange: build signed JSON-RPC request -> POST to proxy host -> on token expiry renew + retry -> receive & decrypt response payload"
+    ],
     "information_concepts": [
-      "account_edi_proxy_client.user"
+      "account_edi_proxy_client.user (per-company network identity / credential record)",
+      "certificate.key (RSA private key used to sign and to unwrap encrypted payloads)",
+      "res.company (owner of the proxy enrolment)"
     ],
     "organization": [],
     "products": [],
     "policies": [
-      "1 record rules"
+      "UNIQUE(id_client): a server-issued client id maps to exactly one user",
+      "UNIQUE(company_id, proxy_type, edi_mode) WHERE active: one active enrolment per company per network per mode",
+      "refresh_token readable only by base.group_system; record managed only by base.group_system, read-only for account.group_account_invoice",
+      "demo edi_mode is hard-blocked from any real proxy call (block_demo_mode)",
+      "refresh_token expires after 24h to prevent two databases sharing credentials; row-locked renew with cursor commit",
+      "all authenticated requests must carry an HMAC-SHA256 (or RSA asymmetric fallback) signature over a canonical message"
     ],
-    "stakeholders": [],
+    "stakeholders": [
+      "Accountant / Billing user (consumes e-invoicing via localization built on this transport)",
+      "Company / Tax-registered entity (the enrolled network identity)",
+      "Odoo IAP / Access-Point service (the proxy host)",
+      "E-invoicing network operator (Peppol, etc.)",
+      "Localization developer (extends proxy_type and proxy URLs)"
+    ],
     "strategy": null,
-    "metrics": []
+    "metrics": [
+      "active proxy users per company / proxy_type / edi_mode",
+      "is_token_out_of_sync / token_sync_version (token desynchronisation tracking)",
+      "connection_error / invalid_signature occurrence rate (proxy call health)"
+    ]
   },
   "classification": {
     "value_model": "support",
     "activity_class": "support",
     "apqc_category": "9.0 Manage Financial Resources",
-    "rationale": "account_edi_proxy_client: thin support/support module (auto-architect baseline)."
+    "rationale": "account_edi_proxy_client is e-invoicing transport and identity infrastructure: it depends only on account + certificate and adds no accounting value of its own. It provides the signed, encrypted client that lets a company enrol on and exchange documents with an external EDI access point (Odoo's IAP service / networks like Peppol) — the network-and-identity plumbing beneath the structured invoices that primary activities (sale -> customer invoice) already produced. In Stabell & Fjeldstad terms the access point it connects to is itself a value network (mediating membership/identity and document interchange between parties over shared infrastructure), but at the enterprise activity level this module is a support function, not a primary one: it carries and authenticates accounting documents rather than creating them. It maps to APQC 9.0 Manage Financial Resources, specifically the AR/AP compliance facet (9.2.x Process accounts receivable / 9.5.x Process accounts payable) where the structured electronic delivery and legal acknowledgement of the account.move invoice occurs. proxy_type and the proxy URLs are deliberate extension stubs, confirming this is reusable transport plumbing subclassed by localizations, not a revenue- or production-bearing process."
   },
   "fit_to_standard": {
     "standard_capabilities": [
-      "Proxy features for account_edi"
+      "per-company proxy-user enrolment with server-issued id_client and an RSA keypair",
+      "signed JSON-RPC 2.0 transport to an EDI access point (HMAC-SHA256 over canonical message, RSA asymmetric fallback)",
+      "automatic 24h refresh-token renewal with retry, plus database-duplication / desync detection",
+      "envelope decryption of inbound documents (RSA-wrapped Fernet symmetric key)",
+      "prod / test / demo operating modes with demo hard-blocking real calls",
+      "pluggable proxy_type + proxy-URL hooks for localization networks (Peppol, l10n_it_edi, nemhandel)",
+      "credential security: refresh_token gated to base.group_system, manager-only write"
     ],
-    "typical_fits": [],
-    "common_gaps": [],
+    "typical_fits": [
+      "country/network e-invoicing modules (Peppol, Italian SdI, Danish Nemhandel) that extend proxy_type and _get_proxy_urls to bind a concrete access point",
+      "exchanging UBL/CII e-invoices over Peppol via the Odoo access point without managing certificates manually",
+      "running in test/demo mode for onboarding before going to prod"
+    ],
+    "common_gaps": [
+      "no concrete network ships here — base proxy_type Selection is empty and _get_proxy_urls returns {}; a localization is required to do anything",
+      "endpoints are not hard-coded — the IAP/proxy host is supplied by the extending module",
+      "no inbound dispatch/routing of decrypted documents to account.move (that lives in the consuming localization)",
+      "no dedicated frontend/dashboard — only an admin form/list on the proxy user"
+    ],
     "drive_hints": [
-      "odoo shell: env['account_edi_proxy_client.user'].search([],limit=3)"
+      "odoo shell: env['account_edi_proxy_client.user'].search([]).read(['company_id','proxy_type','edi_mode','edi_identification','active'])  # enrolled identities",
+      "odoo shell: env['account_edi_proxy_client.user']._fields['proxy_type'].selection  # which networks are installed (empty in base)",
+      "odoo shell: u = env['account_edi_proxy_client.user'].search([], limit=1); u and u._get_server_url()  # resolved proxy host (KeyError without a localization)",
+      "curl: signing is via OdooEdiProxyAuth headers odoo-edi-client-id / odoo-edi-timestamp / odoo-edi-signature — see models/account_edi_proxy_auth.py to reproduce the canonical message"
     ]
   },
   "reverse_eng_confidence": {
@@ -133,14 +236,18 @@
     "strategy": "human"
   },
   "open_questions": [
-    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+    "Which localization modules populate proxy_type and _get_proxy_urls, and the exact IAP/Peppol host URLs per mode (not in this base module).",
+    "Server-side proxy contract: the full set of /iap/account_edi/* endpoints and the proxy_error code catalogue beyond the three handled here.",
+    "How decrypted inbound documents are routed onto account.move / vendor bills by the consuming module.",
+    "Lifecycle of is_token_out_of_sync / token_sync_version — what sets them and how resync is driven."
   ],
   "provenance": {
     "explorer_facts": "doc/revres/facts/account_edi_proxy_client.facts.json",
     "tools": [
-      "extract_module.py",
+      "apqc_odoo_map.tsv",
+      "code-read (account_edi_proxy_user.py, account_edi_proxy_auth.py, key.py, res_company.py)",
       "extract_frontend.py",
-      "gen_thin.py"
+      "extract_module.py"
     ],
     "odoo_version": "19.0"
   }

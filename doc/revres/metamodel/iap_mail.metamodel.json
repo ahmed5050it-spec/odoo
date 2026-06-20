@@ -4,6 +4,7 @@
     "manifest": {
       "name": "IAP / Mail",
       "category": "Hidden/Tools",
+      "summary": "Bridge between IAP and mail",
       "depends": [
         "iap",
         "mail"
@@ -14,15 +15,25 @@
     "models": [
       {
         "_name": "iap.account",
-        "_description": null,
-        "fields": 3
+        "_description": "IAP Account (extended with mail.thread)",
+        "_inherit": [
+          "iap.account",
+          "mail.thread"
+        ],
+        "fields": 3,
+        "methods": 4,
+        "relations": [
+          "company_ids->res.company (tracking=True)",
+          "warning_user_ids->res.users (Email Alert Recipients, tracking=True)"
+        ]
       }
     ],
     "routes": [],
     "security": {
       "access_rules": 0,
       "record_rules": 0,
-      "groups": 0
+      "groups": 0,
+      "note": "No own security; reuses the access/record rules iap already declares on iap.account."
     },
     "views": {
       "form": 0,
@@ -33,7 +44,8 @@
       "pivot": 0,
       "graph": 0,
       "calendar": 0,
-      "activity": 0
+      "activity": 0,
+      "note": "1 inherited form (xpath adds <chatter/> to iap.iap_account_view_form); 2 QWeb data templates (enrich_company, enrich_company_by_dnb)."
     },
     "frontend": {
       "present": true,
@@ -44,7 +56,9 @@
         "services:iapNotification"
       ],
       "patches": [],
-      "services": [],
+      "services": [
+        "iapNotification"
+      ],
       "asset_bundles": {
         "web.assets_backend": 2,
         "web.dark_mode_assets_backend": 1
@@ -63,44 +77,99 @@
     },
     "behavioral_notes": [
       {
+        "element": "iap.account._send_status_notification / _send_success_notification / _send_error_notification (bus toast pipeline)",
+        "observation": "iap_mail re-opens iap.account (_inherit=['iap.account','mail.thread']) and adds the shared 'IAP toast' helpers that every paid feature uses to report an outcome to the live user. _send_status_notification(message, status, title) builds params {message, type:status[, title]} and calls self.env.user._bus_send('iap_notification', params); _send_success_notification wraps it with status 'success' and _send_error_notification with 'danger'. All are @api.model methods on iap.account, so a consumer calls them as self.env['iap.account']._send_success_notification(...) with no record needed. Real callers: sms/wizard/sms_account_code.py (account validated), snailmail/models/snailmail_letter.py (letter sent), crm_iap_enrich/models/crm_lead.py (success/error). The message is bus-pushed to the current user only and is not persisted.",
+        "source": "code-read"
+      },
+      {
+        "element": "iap.account._send_no_credit_notification (low-credit toast carrying a buy-credits deep-link)",
+        "observation": "_send_no_credit_notification(service_name, title) is the IAP-specific variant: it resolves self.env['iap.account'].get_credits_url(service_name) from the parent iap module (the SHA1-hashed buy-more deep-link into the Odoo IAP portal) and bus-pushes params {title, type:'no_credit', get_credits_url}. The iapNotification JS service special-cases type=='no_credit' to render a clickable 'Buy more credits' button instead of a plain message. This is the cross-cutting 'you ran out of credits -> here is how to top up' UX shared by crm_iap_enrich (InsufficientCreditError branch) and snailmail (no-credit branch), so each paid module does not re-implement the top-up prompt.",
+        "source": "code-read"
+      },
+      {
+        "element": "data/mail_templates.xml enrich_company / enrich_company_by_dnb (shared QWeb chatter cards)",
+        "observation": "Two reusable QWeb templates rendering an IAP enrichment result as a styled chatter card (o_partner_autocomplete_enrich_info): company name with social links (twitter/facebook/linkedin/crunchbase via /mail/font_to_img inline icon images), logo, company type, founded year, sectors/tags, employees, estimated revenue, phone, email, timezone, technologies, X bio. enrich_company is the Clearbit/reveal flavour (logo by URL, flavor_text header); enrich_company_by_dnb is the Dun & Bradstreet flavour (inline base64 logo via data:image/png;base64, plus VAT/address block). Consumers render+post them through mail.thread, e.g. crm_iap_enrich/crm_lead.py: lead.message_post_with_source('iap_mail.enrich_company', render_values=template_values, subtype_xmlid='mail.mt_note'); also crm_iap_mine, website_crm_iap_reveal, mail_plugin, partner_autocomplete (enrich_company_by_dnb). iap_mail owns the markup; the host model owns the data + the message_post call.",
+        "source": "code-read"
+      },
+      {
+        "element": "iapNotification JS service (bus subscriber rendering the toast)",
+        "observation": "static/src/js/services/iap_notification_service.js registers an 'iapNotification' service (deps bus_service + notification) that subscribes to the 'iap_notification' bus channel and starts the bus. On each message it dispatches: type=='no_credit' -> displayCreditErrorNotification (renders a markup`` anchor <a class='btn btn-link' href=get_credits_url target=_blank>Buy more credits</a> as a 'danger' notification), otherwise displayNotification (notification.add(message, {title, type})). This is the client half of the Python _send_*_notification helpers — the shared toast renderer for the whole IAP suite. _t() localises the button label; markup`` (OWL) marks the HTML safe so the link is not escaped.",
+        "source": "code-read"
+      },
+      {
+        "element": "iap.account + mail.thread chatter / field tracking",
+        "observation": "By inheriting mail.thread and adding tracking=True to company_ids, warning_threshold and warning_user_ids, iap_mail turns the otherwise plumbing-only iap.account into a followed, audited record: views/iap_views.xml xpaths a <chatter/> into iap.iap_account_view_form, so changes to the credit-alert configuration are logged in the chatter and notified to followers (mail.tracking.value). This is the only schema-level change the module makes — pure glue between iap (the wallet) and mail (the chatter/notification engine).",
+        "source": "code-read"
+      },
+      {
         "element": "frontend (OWL/JS)",
-        "observation": "1 JS files, 0 OWL components, 1 registry adds; bundles ['web.assets_backend', 'web.dark_mode_assets_backend'].",
+        "observation": "1 JS file, 0 OWL components, 1 registry add (services:iapNotification); bundles ['web.assets_backend','web.dark_mode_assets_backend']. No OWL component or view-widget of its own — only the bus-driven iapNotification service plus 2 SCSS files (iap_mail.scss: min-width:fit-content fix so enrich-card icons are not cropped; iap_mail.dark.scss dark-mode variant).",
         "source": "static"
       },
       {
-        "element": "thin module",
-        "observation": "1 models, 0 routes, 79 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
-        "source": "ast"
+        "element": "external integrations (gap #7)",
+        "observation": "0 HTTP call sites; SDKs []; api_keys=false; endpoints []. iap_mail makes no outbound calls of its own — all network egress stays in the parent iap module (iap_tools.iap_jsonrpc). This module only formats the result (QWeb card) and surfaces success/error/no-credit to the user (bus toast).",
+        "source": "static"
       }
     ]
   },
   "it_architecture": {
-    "application": "iap_mail (IAP / Mail)",
+    "application": "iap_mail (glue layer: shared IAP notification-template + bus-toast infrastructure bridging the iap credit framework and the mail chatter/notification engine)",
     "software_services": [],
     "data_objects": [
       "iap.account"
     ],
     "logical_data_erm": [
-      "iap.account -> res.company",
-      "iap.account -> res.users"
+      "iap.account -> mail.thread (chatter + field tracking on the credit account)",
+      "iap.account -> res.company (company_ids, tracking=True)",
+      "iap.account -> res.users (warning_user_ids, low-credit alert recipients, tracking=True)"
     ],
     "information_flows": [
-      "depends: iap, mail"
+      "depends: iap, mail",
+      "outbound-ux: iap.account._send_success/_error/_no_credit_notification -> res.users._bus_send('iap_notification') -> bus -> iapNotification JS service -> toast",
+      "top-up: _send_no_credit_notification -> iap.get_credits_url(service_name) -> hashed buy-credits deep-link rendered as a 'Buy more credits' button",
+      "render-and-post: host model -> message_post_with_source('iap_mail.enrich_company'|'enrich_company_by_dnb', render_values, subtype mail.mt_note) -> mail.message chatter card",
+      "config-audit: tracking=True on company_ids/warning_threshold/warning_user_ids + <chatter/> on iap.account form -> mail.tracking.value + follower notification",
+      "consumed-by (downstream): crm_iap_enrich, crm_iap_mine, website_crm_iap_reveal, mail_plugin, partner_autocomplete, snailmail, sms reuse these shared helpers/templates"
     ],
-    "frontend_components": []
+    "frontend_components": [
+      "iapNotification (bus-subscribed JS service: renders IAP success/error toasts and the 'Buy more credits' no-credit toast)"
+    ],
+    "external_integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "endpoints": []
+    }
   },
   "business_architecture": {
     "capabilities": [
-      "IAP / Mail"
+      "Provide shared IAP-branded result templates (enrich_company / enrich_company_by_dnb chatter cards) for paid features to reuse",
+      "Surface IAP call outcomes to the live user as bus-driven toast notifications (success / error)",
+      "Prompt top-up on insufficient credit with a one-click 'Buy more credits' deep-link toast",
+      "Render enrichment results into the record chatter via mail.thread (message_post_with_source)",
+      "Add chatter + field-change tracking to the IAP credit account (audit credit-alert configuration)"
     ],
-    "value_streams": [],
+    "value_streams": [
+      "Enrich-to-Chatter: host model enriches a record via IAP -> renders iap_mail.enrich_company -> posts a styled card to the record chatter",
+      "No-credit-to-Top-up: paid call returns InsufficientCreditError -> _send_no_credit_notification -> bus toast with hashed buy-credits link -> Odoo IAP portal"
+    ],
     "information_concepts": [
-      "iap.account"
+      "iap.account (credit account, here followed + tracked)",
+      "enrich_company / enrich_company_by_dnb (shared QWeb result templates)",
+      "iap_notification (bus channel / toast payload)"
     ],
     "organization": [],
     "products": [],
-    "policies": [],
-    "stakeholders": [],
+    "policies": [
+      "No own security/automation; reuses iap's record rule on iap.account and mail.thread follower-subtype notification logic",
+      "tracking=True on company_ids/warning_threshold/warning_user_ids -> credit-alert config changes are audited in the chatter"
+    ],
+    "stakeholders": [
+      "End user of a paid feature (sees the success/error/no-credit toast and the enrichment chatter card)",
+      "System administrator / IAP account manager (follows the iap.account chatter, configures warning_user_ids)",
+      "Dependent module developer (reuses _send_*_notification helpers + enrich_company templates instead of re-implementing)",
+      "Odoo S.A. IAP platform (external vendor whose results these templates present)"
+    ],
     "strategy": null,
     "metrics": []
   },
@@ -108,16 +177,33 @@
     "value_model": "support",
     "activity_class": "support",
     "apqc_category": "8.0 Manage Information Technology",
-    "rationale": "iap_mail: thin support/support module (auto-architect baseline)."
+    "rationale": "iap_mail is a thin auto_install glue module (1 model — iap.account re-opened with mail.thread — 0 routes, 0 own security, ~79 py + ~221 xml LOC) that owns no business object of its own value chain/shop/network. It is shared IAP notification-template infrastructure (Porter support activity; Stabell & Fjeldstad 'support'): it supplies the IAP suite with (a) reusable QWeb enrichment cards (enrich_company / enrich_company_by_dnb), (b) the _send_success/_error/_no_credit_notification bus-toast helpers plus their iapNotification JS renderer, and (c) chatter/tracking on the credit account. Every paid feature downstream (crm_iap_enrich, crm_iap_mine, website_crm_iap_reveal, partner_autocomplete, mail_plugin, snailmail, sms) reuses this layer rather than re-implementing the IAP-branded UX. The substance is IT/IAP enablement — presenting and notifying the outcomes of external paid IT services — which maps to APQC 8.0 'Manage Information Technology' (8.x manage IT services / external service-provider enablement), consistent with the parent iap module. 9.4 'internal communications' was considered because the work rides the mail/notification channel, but the content is purely technical IAP/IT enablement (credit status, vendor-enrichment results) addressed to the operator of a paid IT feature, not organisational internal comms — so 8.0 is the better fit and keeps iap_mail aligned with its parent iap (8.0)."
   },
   "fit_to_standard": {
     "standard_capabilities": [
-      "IAP / Mail"
+      "Shared IAP enrichment chatter templates (enrich_company Clearbit/reveal flavour; enrich_company_by_dnb D&B flavour with inline base64 logo)",
+      "Reusable @api.model toast helpers on iap.account: _send_success_notification / _send_error_notification / _send_no_credit_notification",
+      "Bus-driven iapNotification JS service rendering success/error toasts and a 'Buy more credits' no-credit toast",
+      "One-click top-up deep-link in the no-credit toast (reuses iap.get_credits_url hashed token)",
+      "Chatter + field tracking on the IAP credit account (audit credit-alert configuration)"
     ],
-    "typical_fits": [],
-    "common_gaps": [],
+    "typical_fits": [
+      "A new paid feature posts its IAP result by calling record.message_post_with_source('iap_mail.enrich_company', render_values=..., subtype_xmlid='mail.mt_note')",
+      "Reporting a paid-call outcome to the user via self.env['iap.account']._send_success_notification(msg, title) / _send_error_notification(...)",
+      "Prompting a top-up on InsufficientCreditError via self.env['iap.account']._send_no_credit_notification(service_name, title)"
+    ],
+    "common_gaps": [
+      "Templates are tuned to Clearbit/reveal + D&B field shapes; a new enrichment provider with different fields needs its own QWeb card",
+      "Toasts target only env.user (the live user); no fan-out to followers or persisted notification beyond the chatter card",
+      "No localisation/branding hook on the enrich card beyond the host-supplied render_values (markup is fixed in iap_mail)",
+      "Requires the bus (websocket) to be reachable for the toast to appear; otherwise only the chatter card lands"
+    ],
     "drive_hints": [
-      "odoo shell: env['iap.account'].search([],limit=3)"
+      "odoo shell: env['iap.account']._send_success_notification('Done', title='IAP')  # bus toast to current user",
+      "odoo shell: env['iap.account']._send_no_credit_notification('reveal', 'Out of credits')  # no-credit toast with buy link",
+      "odoo shell: env.ref('iap_mail.enrich_company')  # the shared enrichment QWeb template",
+      "odoo shell: env.ref('iap_mail.enrich_company_by_dnb')  # the D&B-flavour template (inline base64 logo)",
+      "odoo shell: rec.message_post_with_source('iap_mail.enrich_company', render_values={'name':'ACME','flavor_text':'demo'}, subtype_xmlid='mail.mt_note')  # post a styled enrich card to any mail.thread record"
     ]
   },
   "reverse_eng_confidence": {
@@ -131,14 +217,16 @@
     "strategy": "human"
   },
   "open_questions": [
-    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+    "Full catalogue of downstream consumers and which helper/template each uses is spread across the IAP suite (crm_iap_enrich, crm_iap_mine, website_crm_iap_reveal, partner_autocomplete, mail_plugin, snailmail, sms), not declared inside iap_mail.",
+    "Whether a non-Clearbit/non-D&B enrichment provider would extend these templates or ship its own card is not decidable from this module.",
+    "Server-side enrichment payload shape (which keys the templates expect) is set by the IAP server, not reverse-engineerable here (gap #7)."
   ],
   "provenance": {
     "explorer_facts": "doc/revres/facts/iap_mail.facts.json",
     "tools": [
       "extract_module.py",
       "extract_frontend.py",
-      "gen_thin.py"
+      "code-read (models/iap_account.py, data/mail_templates.xml, static/src/js/services/iap_notification_service.js, views/iap_views.xml)"
     ],
     "odoo_version": "19.0"
   }

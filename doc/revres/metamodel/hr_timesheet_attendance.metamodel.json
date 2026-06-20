@@ -9,13 +9,27 @@
         "hr_attendance"
       ],
       "auto_install": true,
-      "application": false
+      "application": false,
+      "version": "1.1",
+      "author": "Odoo S.A.",
+      "license": "LGPL-3"
     },
     "models": [
       {
         "_name": "hr.timesheet.attendance.report",
         "_description": "Timesheet Attendance Report",
-        "fields": 9
+        "_auto": false,
+        "fields": 9,
+        "relations": [
+          "employee_id->hr.employee",
+          "company_id->res.company"
+        ]
+      },
+      {
+        "_inherit": "ir.ui.menu",
+        "_description": "Menu blacklist override",
+        "fields": 0,
+        "relations": []
       }
     ],
     "routes": [],
@@ -24,7 +38,11 @@
       "record_rules": 4,
       "groups": 0
     },
-    "views": {},
+    "views": {
+      "search": 1,
+      "pivot": 1,
+      "graph": 1
+    },
     "frontend": {
       "present": false,
       "js_files": 0,
@@ -48,58 +66,131 @@
     },
     "behavioral_notes": [
       {
-        "element": "thin module",
-        "observation": "1 models, 0 routes, 177 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
-        "source": "ast"
+        "element": "hr.timesheet.attendance.report.init (SQL view, _auto=False)",
+        "observation": "The model is not a real table: init() drops and recreates a Postgres VIEW. The view UNION ALLs two row sources and aggregates them per employee/day: (1) attendance rows from hr_attendance (worked_hours -> attendance, id negated to avoid PK collision, check_in date-truncated in the employee's resource_calendar timezone) and (2) timesheet rows from account_analytic_line where project_id IS NOT NULL (unit_amount -> timesheet). The outer query GROUPs BY employee_id, date, company_id, emp_cost and sums each side, so one row reconciles hours-present vs hours-timesheeted for a given employee on a given day. No ORM table exists; all values are computed in SQL.",
+        "source": "code-read"
+      },
+      {
+        "element": "total_difference / total_attendance / total_timesheet columns",
+        "observation": "total_attendance = coalesce(sum(attendance),0); total_timesheet = coalesce(sum(timesheet),0); total_difference = total_attendance - total_timesheet. The difference is the headline KPI (the graph view plots only total_difference): it flags how much of an employee's recorded presence is NOT covered by logged timesheets (positive) or over-logged (negative). All three are Float hours, rendered with the timesheet_uom widget in the pivot/graph views.",
+        "source": "code-read"
+      },
+      {
+        "element": "cost columns (timesheets_cost / attendance_cost / cost_difference)",
+        "observation": "Each hours sum is multiplied by hr_employee.hourly_cost (emp_cost, carried through the subquery and the GROUP BY) to value the reconciliation in money: timesheets_cost = sum(timesheet)*emp_cost, attendance_cost = sum(attendance)*emp_cost, cost_difference = (attendance-timesheet)*emp_cost. NULLIF(...,0) blanks zero results so empty cells are hidden. This converts the hours gap into a labour-cost variance per employee/day.",
+        "source": "code-read"
+      },
+      {
+        "element": "formatted_read_group override",
+        "observation": "formatted_read_group is overridden so that when no explicit order is passed but a groupby exists, date groupings default to DESC (most recent first) while other groupby specs keep their natural order. This only affects pivot/graph sort presentation, not the underlying reconciliation data.",
+        "source": "code-read"
+      },
+      {
+        "element": "ir.ui.menu._load_menus_blacklist override",
+        "observation": "The module patches ir.ui.menu to hide the 'Timesheets / Attendance Analysis' report menu from any user who lacks hr_timesheet.group_hr_timesheet_user, by appending the menu id to the blacklist. Visibility of the analytics is thus gated on the timesheet-user group, on top of the four ir.rule record rules (multi-company scope, own-employee for users, all-rows for approvers and timesheet managers).",
+        "source": "code-read"
+      },
+      {
+        "element": "frontend (OWL/JS)",
+        "observation": "No JS/OWL assets ship with this module: extract_frontend reports 0 js files, 0 xml templates, no OWL components, registry adds, patches or asset bundles. The UI is purely declarative XML (search + pivot + graph views reusing the inherited timesheet_uom field widget); all reconciliation logic lives in the SQL view.",
+        "source": "static"
       }
     ]
   },
   "it_architecture": {
-    "application": "hr_timesheet_attendance (Timesheets/attendances reporting)",
+    "application": "hr_timesheet_attendance (Timesheets/Attendance reconciliation reporting component; auto-installed bridge between hr_timesheet and hr_attendance)",
     "software_services": [],
     "data_objects": [
-      "hr.timesheet.attendance.report"
+      "hr.timesheet.attendance.report",
+      "ir.ui.menu (inherited)"
     ],
     "logical_data_erm": [
-      "hr.timesheet.attendance.report -> hr.employee",
-      "hr.timesheet.attendance.report -> res.company"
+      "hr.timesheet.attendance.report -> hr.employee (employee_id)",
+      "hr.timesheet.attendance.report -> res.company (company_id)",
+      "view UNION source: hr_attendance (worked_hours, check_in)",
+      "view UNION source: account_analytic_line (unit_amount where project_id set)",
+      "view cost factor: hr_employee.hourly_cost",
+      "view tz lookup: resource_calendar via hr_version.resource_calendar_id"
     ],
     "information_flows": [
-      "depends: hr_timesheet, hr_attendance"
+      "depends: hr_timesheet, hr_attendance",
+      "read-flow: SQL view aggregates hr_attendance + account_analytic_line per employee/day (no writes back)",
+      "side-effect: ir.ui.menu._load_menus_blacklist hides report menu for non hr_timesheet users",
+      "consumes: hr_employee.hourly_cost to value hours into labour cost",
+      "consumes: resource_calendar.tz to date-bucket attendance in employee local time"
     ],
     "frontend_components": []
   },
   "business_architecture": {
     "capabilities": [
-      "Timesheets/attendances reporting"
+      "Reconcile Recorded Attendance against Logged Timesheets",
+      "Compute Time Difference (presence vs timesheeted hours) per Employee/Day",
+      "Value the Time Gap as Labour-Cost Variance",
+      "Analyze Timesheet/Attendance Variance (pivot & graph) by Employee, Department, Team and Period"
     ],
-    "value_streams": [],
+    "value_streams": [
+      "Time-reconciliation reporting: record attendance + log timesheets -> SQL view unions and aggregates per employee/day -> surface hours and cost difference in pivot/graph for review"
+    ],
     "information_concepts": [
-      "hr.timesheet.attendance.report"
+      "hr.timesheet.attendance.report",
+      "hr.employee (subject)",
+      "hr.attendance (presence source)",
+      "account.analytic.line (timesheet source)",
+      "res.company"
     ],
-    "organization": [],
+    "organization": [
+      "hr_timesheet.group_hr_timesheet_user",
+      "hr_timesheet.group_hr_timesheet_approver",
+      "hr_timesheet.group_timesheet_manager"
+    ],
     "products": [],
     "policies": [
-      "4 record rules"
+      "4 record rules: multi-company scope; user sees only own employee; approver and timesheet-manager see all rows",
+      "ir.ui.menu blacklist hides the analysis menu from users without hr_timesheet.group_hr_timesheet_user",
+      "timesheet source restricted to lines with project_id set; both sides limited to dates <= CURRENT_DATE"
     ],
-    "stakeholders": [],
+    "stakeholders": [
+      "Employee (own reconciliation row)",
+      "Timesheet Approver / Team Manager (employee_id.parent_id.user_id filter)",
+      "Timesheet Administrator (group_timesheet_manager)",
+      "Department Manager (My Department filter)"
+    ],
     "strategy": null,
-    "metrics": []
+    "metrics": [
+      "total_attendance (attendance hours)",
+      "total_timesheet (timesheeted hours)",
+      "total_difference (hours gap, headline KPI on graph)",
+      "attendance_cost / timesheets_cost / cost_difference (labour-cost variance)"
+    ]
   },
   "classification": {
     "value_model": "support",
     "activity_class": "support",
     "apqc_category": "7.0 Develop and Manage Human Capital",
-    "rationale": "hr_timesheet_attendance: thin support/support module (auto-architect baseline)."
+    "rationale": "hr_timesheet_attendance is a read-only HR analytics bridge with no business object of its own: its single model is an _auto=False SQL view that reconciles attendance (hr_attendance) against timesheets (account_analytic_line). It is a Stabell & Fjeldstad support value configuration (a firm-infrastructure/HR control activity), not a primary chain/shop/network flow, since it produces no delivered output and only measures and values labour-time variance. It maps to APQC PCF 7.0 Develop and Manage Human Capital -- specifically time & attendance management/analytics -- because it monitors workforce time recording and surfaces the present-vs-logged hours and cost gap for control and payroll/billing assurance."
   },
   "fit_to_standard": {
     "standard_capabilities": [
-      "Timesheets/attendances reporting"
+      "out-of-box SQL-view report unioning attendance worked_hours and project timesheet unit_amount per employee/day",
+      "hours difference (presence minus timesheeted) plus matching labour-cost difference using employee hourly_cost",
+      "pivot and graph analysis with timesheet UoM, grouped by employee/date with My Team and My Department filters",
+      "three-tier visibility (own user / approver / manager) via record rules and menu blacklisting"
     ],
-    "typical_fits": [],
-    "common_gaps": [],
+    "typical_fits": [
+      "verifying employees timesheet the hours they were present (compliance / billing assurance)",
+      "spotting under- or over-logging per employee or department before payroll or customer invoicing",
+      "valuing the attendance/timesheet gap as a cost variance for management review"
+    ],
+    "common_gaps": [
+      "no drill-down to the underlying attendance or timesheet records (aggregate view, disable_linking)",
+      "no approval/exception workflow on detected differences (report only, no actions)",
+      "no tolerance thresholds or alerting on excessive gaps",
+      "timesheets without a project (project_id NULL) are excluded, so non-project time is invisible"
+    ],
     "drive_hints": [
-      "odoo shell: env['hr.timesheet.attendance.report'].search([],limit=3)"
+      "odoo shell: env['hr.timesheet.attendance.report'].search([], limit=5).read(['employee_id','date','total_attendance','total_timesheet','total_difference'])",
+      "odoo shell: env['hr.timesheet.attendance.report'].formatted_read_group([], ['employee_id'], ['total_difference:sum','cost_difference:sum'])",
+      "psql: SELECT employee_id, date, total_attendance, total_timesheet, total_difference FROM hr_timesheet_attendance_report ORDER BY date DESC LIMIT 5;"
     ]
   },
   "reverse_eng_confidence": {
@@ -113,14 +204,16 @@
     "strategy": "human"
   },
   "open_questions": [
-    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+    "Whether downstream apps (payroll, invoicing) read total_difference/cost_difference or it is review-only.",
+    "How the resource_calendar timezone lookup behaves for employees with no current_version_id / resource_calendar.",
+    "Whether overnight attendances spanning midnight are mis-bucketed by the check_in-date truncation."
   ],
   "provenance": {
     "explorer_facts": "doc/revres/facts/hr_timesheet_attendance.facts.json",
     "tools": [
+      "code-read",
       "extract_module.py",
-      "extract_frontend.py",
-      "gen_thin.py"
+      "extract_frontend.py"
     ],
     "odoo_version": "19.0"
   }
