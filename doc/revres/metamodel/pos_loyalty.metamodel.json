@@ -4,6 +4,8 @@
     "manifest": {
       "name": "Point of Sale - Coupons & Loyalty",
       "category": "Sales/Point Of Sale",
+      "summary": "Use Coupons, Gift Cards and Loyalty programs in Point of Sale",
+      "version": "2.0",
       "depends": [
         "loyalty",
         "point_of_sale"
@@ -14,23 +16,100 @@
     "models": [
       {
         "_name": "loyalty.card",
-        "_description": null,
-        "fields": 2
+        "_description": "(extension) loyalty.card + pos.load.mixin",
+        "fields": 2,
+        "relations": [
+          "source_pos_order_id->pos.order",
+          "source_pos_order_partner_id->res.partner"
+        ]
       },
       {
         "_name": "loyalty.program",
-        "_description": null,
-        "fields": 4
+        "_description": "(extension) loyalty.program + pos.load.mixin",
+        "fields": 4,
+        "relations": [
+          "pos_config_ids->pos.config",
+          "pos_report_print_id->ir.actions.report"
+        ]
       },
       {
         "_name": "loyalty.reward",
-        "_description": null,
-        "fields": 0
+        "_description": "(extension) loyalty.reward + pos.load.mixin",
+        "fields": 0,
+        "relations": []
       },
       {
         "_name": "loyalty.rule",
-        "_description": null,
-        "fields": 3
+        "_description": "(extension) loyalty.rule + pos.load.mixin",
+        "fields": 3,
+        "relations": [
+          "valid_product_ids->product.product"
+        ]
+      },
+      {
+        "_name": "pos.order",
+        "_description": "(extension)",
+        "fields": 0,
+        "relations": []
+      },
+      {
+        "_name": "pos.order.line",
+        "_description": "(extension)",
+        "fields": 5,
+        "relations": [
+          "reward_id->loyalty.reward",
+          "coupon_id->loyalty.card"
+        ]
+      },
+      {
+        "_name": "pos.config",
+        "_description": "(extension)",
+        "fields": 0,
+        "relations": []
+      },
+      {
+        "_name": "pos.session",
+        "_description": "(extension)",
+        "fields": 0,
+        "relations": []
+      },
+      {
+        "_name": "res.partner",
+        "_description": "(extension)",
+        "fields": 1,
+        "relations": []
+      },
+      {
+        "_name": "loyalty.mail",
+        "_description": "(extension)",
+        "fields": 1,
+        "relations": [
+          "pos_report_print_id->ir.actions.report"
+        ]
+      },
+      {
+        "_name": "barcode.rule",
+        "_description": "(extension)",
+        "fields": 1,
+        "relations": []
+      },
+      {
+        "_name": "account.move.line",
+        "_description": "(extension)",
+        "fields": 0,
+        "relations": []
+      },
+      {
+        "_name": "product.product",
+        "_description": "(extension)",
+        "fields": 0,
+        "relations": []
+      },
+      {
+        "_name": "product.template",
+        "_description": "(extension)",
+        "fields": 0,
+        "relations": []
       }
     ],
     "routes": [],
@@ -42,7 +121,6 @@
     "views": {
       "form": 0,
       "list": 0,
-      "tree": 0,
       "kanban": 0,
       "search": 0,
       "pivot": 0,
@@ -101,72 +179,166 @@
     },
     "behavioral_notes": [
       {
-        "element": "frontend (OWL/JS)",
-        "observation": "13 JS files, 1 OWL components, 0 registry adds; bundles ['web.assets_frontend', 'point_of_sale._assets_pos', 'web.assets_tests'].",
-        "source": "static"
+        "element": "pos.session._load_pos_data_models + loyalty.{program,rule,reward,card}._load_pos_data_* (program/reward catalog pushed into the offline terminal)",
+        "observation": "pos.session._load_pos_data_models appends ['loyalty.program','loyalty.rule','loyalty.reward','loyalty.card'] to the data shipped into the OWL terminal at session start, so the whole promotions catalog is resolved server-side once and then evaluated client-side. Each model is _inherit=['<base>','pos.load.mixin'] and overrides _load_pos_data_domain to only the programs returned by pos.config._get_program_ids() -- which filters loyalty.program on pos_ok=True, the date window, this config (or no config => all configs), a matching pricelist and currency, and not over max_usage. loyalty.rule._compute_valid_product_ids precomputes valid_product_ids (intersected with available_in_pos=True) plus an any_product flag per rule so the JS never runs a product domain live; loyalty.reward._load_pos_data_read rewrites reward_product_domain replacing ilike with in (resolving display-name searches to id lists) because the POS client cannot run ilike. loyalty.card loads with domain False (no cards prefetched) -- cards are fetched on demand by partner/code. None of this load-shaping is visible in field metadata.",
+        "source": "code-read"
       },
       {
-        "element": "thin module",
-        "observation": "4 models, 0 routes, 5084 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
-        "source": "ast"
+        "element": "pos.order.confirm_coupon_programs (server write-back of points & coupons after the JS computes them)",
+        "observation": "After the paid order is created, the client calls pos.order.confirm_coupon_programs(coupon_data) with the per-coupon point deltas it computed offline. The server (sudo, since POS users lack create rights) CREATES the loyalty.card records the order awarded (code = supplied/barcode or _generate_code(), points 0, source_pos_order_id=self, expiration_date), maps the client's negative placeholder ids to the real db ids, then for pre-existing nominative cards does coupon.points += delta and links each reward order line to its coupon via reward_identifier_code. It fires new_coupons._send_creation_communication() (the at-creation loyalty.mail / e-receipt) and renders any gift-card pos_report_print_id PDF. It returns coupon_updates (new id+balance), program_updates (total_order_count) and new_coupon_info so the client can swap its placeholder ids and refresh balances. _check_existing_loyalty_cards collapses a customer's loyalty/ewallet change onto their already-issued card; _process_existing_gift_cards top-ups an existing gift card and assigns partner/source order; _remove_duplicate_coupon_data guards against double-posting history if the order is re-synced.",
+        "source": "code-read"
+      },
+      {
+        "element": "pos.order.validate_coupon_programs + pos.config.use_coupon_code (checkout-time coupon / gift-card validation & redemption)",
+        "observation": "Two server entry points guard redemption at the till. pos.config.use_coupon_code(code, ...) is the scan/enter-code path: it searches loyalty.card by code among this config's programs (allowing unowned gift cards), rejects on inactive program, expiry, program date window, max_usage, insufficient points for any reward, wrong pricelist, or a promo_code program, and on success returns program_id/coupon_id/points/has_source_order for the client to activate. pos.order.validate_coupon_programs(point_changes, new_codes) runs at order validation (OrderPaymentValidation): it re-reads every used loyalty.card, fails if any vanished/was deactivated (returning removed_coupons so the UI strips them), fails with the live balance if a card no longer has enough points (float_compare vs the negative spend), and fails if any new gift-card code already exists in the DB (perhaps already sold). loyalty.card.get_gift_card_status validates a fresh, unused, unowned, positive-balance gift card before sale. This server validation backstops the optimistic client math against concurrent use.",
+        "source": "code-read"
+      },
+      {
+        "element": "loyalty.card balance, loyalty.history ledger & loyalty.program.total_order_count over the POS lifecycle",
+        "observation": "loyalty.card here adds source_pos_order_id (the originating till order) and overrides _has_source_order/_get_default_template/_get_signature so a POS-issued coupon e-mails the pos_loyalty.mail_coupon_template signed by the cashier. Point movement is journaled into loyalty.history: pos.order.add_loyalty_history_lines writes issued(won)/used(spent) rows keyed by (order_model='pos.order', order_id) for every coupon the order won or spent, and _process_existing_gift_cards writes its own history rows on top-up / partner-assign / order-assign. loyalty.card._compute_use_count and loyalty.program._compute_pos_order_count/_compute_total_order_count are overridden to count pos.order.line usage via a raw SQL LATERAL join over pos_order/pos_order_line.reward_id, so a program's usage cap and reporting include POS redemptions, not just sale orders. Balances persist on loyalty.card.points; there is no session-close batch -- the debit/credit is committed per order at confirm_coupon_programs.",
+        "source": "code-read"
+      },
+      {
+        "element": "frontend (OWL/JS) -- the entire loyalty redemption ENGINE runs client-side in the offline POS terminal (gap #3, the headline)",
+        "observation": "Almost all of pos_loyalty's behavior is JS/OWL injected into point_of_sale._assets_pos (13 JS / 6 XML), NOT Python: the point-earning, reward-claiming, discount-math and gift-card/eWallet logic is a ~1450-line patch on PosOrder plus a ~880-line patch on PosStore. PosOrder.pointsForPrograms() computes points per program from order lines (reward_point_mode order/money/unit, minimum_qty/amount, per-rule split for 'future' programs, round-half-up on money unlike sale_loyalty); getClaimableRewards()/_applyReward()/_getRewardLineValues{Discount,Product}() build the actual reward pos.order.lines (is_reward_line, reward_id, coupon_id, points_cost, reward_identifier_code -- the local extraFields on PosOrderline) for percent/per_order/per_point and order/cheapest/specific discounts and free-product (buy-X-get-Y via computeFreeQuantity) rewards; couponPointChanges{} on uiState is the offline ledger of points each program grants. PosStore.updateRewards()/updatePrograms() (mutex-guarded) re-evaluate after every line/partner/pricelist change and auto-apply single-reward programs; activateCode() scans promo/coupon/gift-card codes (calling use_coupon_code), ManageGiftCardPopup + ControlButtons drive gift-card sale and eWallet pay/refund, and postProcessLoyalty() assembles couponData and calls confirm_coupon_programs after sync. Coupons are created with negative placeholder ids offline and remapped to real db ids post-sync (couponByLineUuidCache). This whole optimistic, offline-first redemption model is reverse-engineerable only from the static JS.",
+        "source": "static"
       }
     ]
   },
   "it_architecture": {
-    "application": "pos_loyalty (Point of Sale - Coupons & Loyalty)",
-    "software_services": [],
+    "application": "pos_loyalty (Coupons & Loyalty extension of the Point of Sale application component: pushes the loyalty program/reward catalog into the offline OWL terminal and writes earned/redeemed points back onto pos.order)",
+    "software_services": [
+      "(no own HTTP/JSON-RPC routes; exposes model RPC methods on the point_of_sale data layer: pos.config.use_coupon_code, pos.order.validate_coupon_programs, pos.order.confirm_coupon_programs, loyalty.card.get_gift_card_status / get_loyalty_card_partner_by_code)"
+    ],
     "data_objects": [
-      "loyalty.card",
-      "loyalty.program",
-      "loyalty.reward",
-      "loyalty.rule"
+      "loyalty.card (source_pos_order_id, source_pos_order_partner_id)",
+      "loyalty.program (pos_config_ids, pos_ok, pos_order_count, pos_report_print_id)",
+      "loyalty.reward (POS load shaping)",
+      "loyalty.rule (valid_product_ids, any_product, promo_barcode)",
+      "pos.order (validate/confirm coupon programs)",
+      "pos.order.line (is_reward_line, reward_id, coupon_id, reward_identifier_code, points_cost)",
+      "pos.config (_get_program_ids, _check_before_creating_new_session, use_coupon_code)",
+      "pos.session (_load_pos_data_models)",
+      "res.partner (loyalty_card_count)",
+      "loyalty.mail (pos_report_print_id)"
     ],
     "logical_data_erm": [
-      "loyalty.card -> pos.order",
-      "loyalty.card -> res.partner",
-      "loyalty.program -> ir.actions.report",
-      "loyalty.program -> pos.config",
-      "loyalty.rule -> product.product"
+      "loyalty.program -> pos.config (pos_config_ids, many2many; empty => all configs)",
+      "pos.order.line -> loyalty.reward (reward_id)",
+      "pos.order.line -> loyalty.card (coupon_id)",
+      "loyalty.card -> pos.order (source_pos_order_id)",
+      "loyalty.card -> loyalty.history (issued/used rows keyed by pos.order)",
+      "loyalty.rule -> product.product (valid_product_ids, precomputed & POS-filtered)",
+      "loyalty.program -> ir.actions.report (pos_report_print_id, gift-card PDF)"
     ],
     "information_flows": [
-      "depends: loyalty, point_of_sale"
+      "depends: loyalty, point_of_sale",
+      "load: pos.session._load_pos_data_models ships loyalty.program/rule/reward/card into the terminal, scoped by pos.config._get_program_ids() (pos_ok, dates, config, pricelist, currency, usage cap)",
+      "client compute: the OWL PosOrder/PosStore patches earn points & build reward order lines entirely offline (couponPointChanges ledger)",
+      "checkout validation: client -> pos.config.use_coupon_code / pos.order.validate_coupon_programs guard coupon validity & balances against concurrent use",
+      "write-back: client -> pos.order.confirm_coupon_programs creates/updates loyalty.card, debits/credits points, writes loyalty.history, fires creation e-mail + gift-card report",
+      "downstream (inherited from point_of_sale): the discount/free-product reward lines land on pos.order -> account.move at session close; reward backing products come from the loyalty module",
+      "session-open guard: pos.config._check_before_creating_new_session validates reward products available_in_pos and well-formed gift-card programs"
     ],
     "frontend_components": [
-      "ManageGiftCardPopup"
+      "ManageGiftCardPopup",
+      "PosOrder.prototype (point earning + reward line engine)",
+      "PosStore.prototype (updateRewards / updatePrograms / activateCode / postProcessLoyalty)",
+      "PosOrderline.prototype (reward & gift-card/eWallet line)",
+      "ControlButtons.prototype (rewards / promo code / eWallet buttons)",
+      "OrderPaymentValidation.prototype (validate_coupon_programs at checkout)",
+      "ProductScreen.prototype / OrderSummary.prototype / TicketScreen.prototype / PartnerList.prototype / PartnerLine.prototype"
     ]
   },
   "business_architecture": {
     "capabilities": [
-      "Point of Sale - Coupons & Loyalty"
+      "Apply Coupons & Promo Codes at the Till",
+      "Earn & Redeem Loyalty Points on POS Orders",
+      "Sell & Redeem Gift Cards in Point of Sale",
+      "Top-up & Pay with eWallets at the Till",
+      "Apply Automatic & Code Promotions (discounts, buy-X-get-Y, free products)",
+      "Issue Coupons / Cards from a POS Order (with e-receipt & printed gift card)",
+      "Offline-First Reward Computation with Server Validation at Checkout"
     ],
-    "value_streams": [],
+    "value_streams": [
+      "POS promotion-to-redemption: load applicable programs into the till -> scan/auto-apply coupon, promo code, gift card or eWallet -> earn/spend points & add reward lines offline -> validate balances at payment -> tender -> confirm order writes back card points + loyalty.history + e-mails/prints the issued coupon"
+    ],
     "information_concepts": [
-      "loyalty.card",
-      "loyalty.program",
-      "loyalty.reward",
-      "loyalty.rule"
+      "loyalty.program (POS-enabled program)",
+      "loyalty.rule (earning rule, POS-filtered products)",
+      "loyalty.reward (discount / free product)",
+      "loyalty.card (coupon / loyalty card / gift card / eWallet, POS-sourced)",
+      "loyalty.history (points ledger keyed by pos.order)",
+      "pos.order / pos.order.line (reward & payment lines)"
     ],
-    "organization": [],
-    "products": [],
-    "policies": [],
-    "stakeholders": [],
+    "organization": [
+      "point_of_sale.group_pos_user (cashier; operates redemption at the till)",
+      "point_of_sale.group_pos_manager (configures POS loyalty programs)"
+    ],
+    "products": [
+      "product.product (reward discount_line_product_id / free-product backing service product, created by the loyalty module)",
+      "gift card & eWallet trigger products (program.trigger_product_ids, sold as POS lines)"
+    ],
+    "policies": [
+      "no own ir.rule (0 record rules); 13 ir.model.access rows extend access for the POS-loaded loyalty models, reusing point_of_sale groups",
+      "gift-card programs must have exactly one rule (1 point/currency) and one reward (1 currency/point, per_point discount), plus mail template + print report, or a session cannot open (_check_before_creating_new_session)",
+      "reward products must be available_in_pos before a session opens",
+      "a coupon/gift card is rejected at the till if expired, out of its date window, over max_usage, wrong pricelist, lacking points, or its code already exists in the DB (use_coupon_code / validate_coupon_programs)",
+      "POS users create coupons via sudo (no direct create right); duplicate history is suppressed on re-sync"
+    ],
+    "stakeholders": [
+      "Customer (res.partner) earning/redeeming points, holding the gift card / eWallet",
+      "Cashier (point_of_sale.group_pos_user) applying rewards",
+      "POS / Marketing manager configuring programs and POS visibility",
+      "Accounting (reward discounts land on account.move at session close)"
+    ],
     "strategy": null,
-    "metrics": []
+    "metrics": [
+      "loyalty.program.pos_order_count / total_order_count (POS redemptions per program, via SQL over pos_order_line.reward_id)",
+      "loyalty.card.use_count (incl. pos.order.line usage)",
+      "res.partner.loyalty_card_count (cards held)",
+      "loyalty.history issued/used ledger per card keyed by pos.order"
+    ]
   },
   "classification": {
     "value_model": "chain",
-    "activity_class": "support",
+    "activity_class": "primary",
     "apqc_category": "3.0 Market and Sell Products and Services",
-    "rationale": "pos_loyalty: thin chain/support module (auto-architect baseline)."
+    "rationale": "pos_loyalty is the promotions/rewards layer of point_of_sale, which is itself a value-chain PRIMARY activity: the originating value-creating act is the retail sell/checkout that produces a paid pos.order and drives downstream deliver (stock.picking) and revenue/cash recognition (account.move at session close). Because this module's coupons, points, discounts and gift cards are applied inside that primary Sell/Deliver act -- they discount the cart, add reward lines to the live pos.order and move card balances at payment -- it inherits value_model 'chain' / activity_class 'primary', rather than the 'support' classification carried by the standalone loyalty engine (which alone confirms no transaction). It maps to APQC 3.0 Market and Sell Products and Services: the promotion/loyalty redemption is the retail manage-promotions / sell-to-customer flow (3.2 manage promotions realized at the 3.5 point-of-sale order), with deliver (4.0) and AR/cash (9.0) remaining triggered side-effects inherited from the POS, not this module's mission. Note the strong frontend/'network' character: virtually the entire redemption engine ships as OWL screens patched into the offline, IndexedDB-backed POS terminal, with no server HTTP routes of its own -- but the value logic is chain."
   },
   "fit_to_standard": {
     "standard_capabilities": [
-      "Point of Sale - Coupons & Loyalty"
+      "apply coupons, discount/promo codes, automatic promotions, buy-X-get-Y and free-product rewards at the POS",
+      "earn and redeem loyalty points on POS orders (per order / per money / per unit), with creation & milestone e-receipts",
+      "sell gift cards (printed PDF + e-mail) and redeem them as payment in the till",
+      "top-up and pay with eWallets, including refund-to-eWallet",
+      "scan a gift-card / promo barcode (dedicated barcode.rule + promo_barcode) to activate a program",
+      "offline-first reward computation in the terminal with server-side validation of balances/codes at checkout",
+      "per-config program scoping (pos_config_ids; empty => all POS), pricelist and currency gating",
+      "POS usage feeds the program usage cap and loyalty.history reporting"
     ],
-    "typical_fits": [],
-    "common_gaps": [],
+    "typical_fits": [
+      "retail promotions: % / fixed discounts, code campaigns, buy-X-get-Y, free gifts at the counter",
+      "store gift cards sold and redeemed at the till, printed and e-mailed",
+      "points-based loyalty for walk-in customers with a selected partner",
+      "prepaid eWallet balances spent in-store",
+      "a program limited to specific shops via pos_config_ids"
+    ],
+    "common_gaps": [
+      "bespoke earning/redemption math beyond the built-in point modes must be coded into the OWL PosOrder patch (the engine is client-side JS, not configuration)",
+      "tiered membership / status levels are not modeled natively",
+      "cross-channel real-time point sync with sale / website_sale relies on shared loyalty.card balances and is subject to the optimistic-offline race the server validation backstops",
+      "external loyalty-platform / CRM-points integration (no outbound HTTP/SDK here -- integrations gap #7 is empty)",
+      "gift-card program shape is tightly constrained (one rule / one reward, 1:1 point-currency) and rejected at session open otherwise",
+      "any new till reward interaction requires JS/OWL development, not back-office setup"
+    ],
     "drive_hints": [
-      "odoo shell: env['loyalty.card'].search([],limit=3)"
+      "odoo shell: cfg = env['pos.config'].search([], limit=1); cfg._get_program_ids().mapped(('name','program_type','pos_ok'))",
+      "odoo shell: env['loyalty.program'].search([('pos_ok','=',True)]).mapped(('name','program_type','pos_order_count','total_order_count'))",
+      "odoo shell: env['loyalty.card'].search([('source_pos_order_id','!=',False)], limit=5).mapped(('code','points','program_id'))",
+      "odoo shell: env['pos.order.line'].search([('is_reward_line','=',True)], limit=5).mapped(('order_id','reward_id','coupon_id','points_cost'))",
+      "odoo shell: env['pos.config'].browse(cfg.id).use_coupon_code(code, fields.Date.today(), partner_id, pricelist_id) to test a coupon",
+      "browse /pos/ui/<config_id>, add a product, open Rewards / Enter Code (ControlButtons) to apply a coupon or gift card live"
     ]
   },
   "reverse_eng_confidence": {
@@ -177,17 +349,23 @@
     "value_streams": "inferred",
     "policies": "inferred",
     "metrics": "inferred",
+    "stakeholders": "inferred",
     "strategy": "human"
   },
   "open_questions": [
-    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+    "Exact offline point-earning/reward algorithm (pointsForPrograms / getClaimableRewards / _computeUnclaimedFreeProductQty) lives entirely in static/src JS; the per-program split, round-half-up money mode and free-quantity correction are reverse-engineerable only from that code, not Python.",
+    "Concurrency: how the optimistic client-side balance is reconciled against the server (validate_coupon_programs / confirm_coupon_programs) when the same nominative card is used on two terminals or in sale/website_sale at the same time.",
+    "Negative-placeholder coupon id remapping (couponByLineUuidCache / rewardProductByLineUuidCache) on order sync -- edge cases on re-sync and the _remove_duplicate_coupon_data guard.",
+    "Lifecycle of POS-issued gift cards vs eWallet expiration (program.date_to applied on confirm; loyalty cards barred from expiration upstream)."
   ],
   "provenance": {
     "explorer_facts": "doc/revres/facts/pos_loyalty.facts.json",
     "tools": [
-      "extract_module.py",
+      "code-read",
       "extract_frontend.py",
-      "gen_thin.py"
+      "extract_module.py",
+      "extract_runtime.sh",
+      "run-odoo (odoo shell)"
     ],
     "odoo_version": "19.0"
   }

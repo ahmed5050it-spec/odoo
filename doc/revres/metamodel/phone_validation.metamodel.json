@@ -4,6 +4,7 @@
     "manifest": {
       "name": "Phone Numbers Validation",
       "category": "Hidden",
+      "summary": "Validate and format phone numbers",
       "depends": [
         "base",
         "mail"
@@ -14,23 +15,65 @@
     "models": [
       {
         "_name": "mail.thread.phone",
+        "_inherit": [
+          "mail.thread"
+        ],
         "_description": "Phone Blacklist Mixin",
-        "fields": 4
+        "fields": 4,
+        "relations": [
+          "phone_sanitized (computed/stored E164 from _phone_get_number_fields)",
+          "phone_sanitized_blacklisted<-phone.blacklist.number (search _search_phone_sanitized_blacklisted)"
+        ]
       },
       {
         "_name": "phone.blacklist",
+        "_inherit": [
+          "mail.thread"
+        ],
         "_description": "Phone Blacklist",
-        "fields": 2
+        "fields": 2,
+        "relations": [
+          "number (Char, unique constraint, E164-sanitized on create/write)"
+        ]
       },
       {
         "_name": "phone.blacklist.remove",
+        "_inherit": null,
         "_description": "Remove phone from blacklist",
-        "fields": 2
+        "fields": 2,
+        "relations": [
+          "(transient wizard; no relational fields)"
+        ]
       },
       {
         "_name": "res.partner",
-        "_description": null,
-        "fields": 0
+        "_inherit": [
+          "mail.thread.phone",
+          "res.partner"
+        ],
+        "_description": "(extension: consumes mixin + onchange phone formatting)",
+        "fields": 0,
+        "relations": [
+          "consumes mail.thread.phone mixin"
+        ]
+      },
+      {
+        "_name": null,
+        "_inherit": "base",
+        "_description": "(extension: phone-format helpers on every model)",
+        "fields": 0,
+        "relations": [
+          "_phone_format / _phone_get_number_fields / _phone_get_country (no fields)"
+        ]
+      },
+      {
+        "_name": null,
+        "_inherit": "res.users",
+        "_description": "(extension: blacklist phone on portal-user deletion)",
+        "fields": 0,
+        "relations": [
+          "phone.blacklist._add on _deactivate_portal_user"
+        ]
       }
     ],
     "routes": [],
@@ -42,7 +85,6 @@
     "views": {
       "form": 1,
       "list": 1,
-      "tree": 0,
       "kanban": 0,
       "search": 1,
       "pivot": 0,
@@ -50,6 +92,43 @@
       "calendar": 0,
       "activity": 0
     },
+    "behavioral_notes": [
+      {
+        "element": "BaseModel._phone_format / _phone_format_number / _phone_get_number_fields (models/models.py)",
+        "observation": "phone_validation extends the abstract 'base' model so EVERY Odoo model gains _phone_format(fname/number/country/force_format='E164'). With no explicit number it ensure_one()s, picks the first non-empty field from _phone_get_number_fields() (whichever of 'mobile','phone' exist on the model), infers a country via _phone_get_country() (record country_id field -> else customer-partner country via _mail_get_partner_fields -> else env.company.country_id), then delegates to the phone_validation.phone_format tool. raise_exception=False (default) swallows UserError and returns False, so callers get either a clean E164 string or False. None of this dispatch is visible in metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "tools/phone_validation.phone_format + phone_parse (the phonenumbers wrapper)",
+        "observation": "The pure-Python helper wraps the external `phonenumbers` library: phone_parse() calls phonenumbers.parse() twice (raw, then on the INTERNATIONAL-formatted result to apply metadata patches), then runs is_possible_number / is_possible_number_with_reason and is_valid_number, raising UserError for INVALID_COUNTRY_CODE / TOO_SHORT / invalid prefix and self-healing TOO_LONG inputs typed as '0033...' or '33...' by retrying with a '+' prefix. phone_format() renders to one of E164(0)/INTERNATIONAL(1)/NATIONAL(2)/RFC3966(3) — NATIONAL only when the parsed country_code matches the passed country_phone_code, otherwise it falls back to INTERNATIONAL. phone_get_region_data_for_number infers ISO code + national number + dial code from a bare number. All checksum/length/region rules live in the phonenumbers metadata, invisible to the ORM.",
+        "source": "code-read"
+      },
+      {
+        "element": "graceful fallback when `phonenumbers` is missing (tools/phone_validation.py except ImportError)",
+        "observation": "The entire helper module is wrapped in try: import phonenumbers / except ImportError. When the library is absent, phone_format() logs a one-time _logger.info ('contact numbers will not be verified') and returns the number UNCHANGED, phone_parse() returns False, and the region helpers return empty strings — so phone_validation degrades to a no-op pass-through instead of crashing dependent modules (crm/sms/event). The dependency is NOT declared in __manifest__ external_dependencies, making `phonenumbers` an optional/soft requirement.",
+        "source": "code-read"
+      },
+      {
+        "element": "mail.thread.phone._compute_phone_sanitized + _compute_blacklisted + init() indexes",
+        "observation": "The mixin stores a computed phone_sanitized (E164) recomputed via dynamic @api.depends(_phone_get_sanitize_triggers -> number fields + country field + partner fields) and computes phone_sanitized_blacklisted/phone_blacklisted by matching against phone.blacklist (sudo). init() programmatically CREATEs a btree + (if pg_trgm available) GIN trigram expression index on regexp-stripped phone/mobile columns to make _search_phone_mobile_search fast. These DB-level side-effects and the cross-model blacklist join exist only in Python/SQL.",
+        "source": "code-read"
+      },
+      {
+        "element": "phone.blacklist create/write/_add/_remove + res.users._deactivate_portal_user",
+        "observation": "phone.blacklist.create() re-sanitizes every incoming number through env.user._phone_format (raise_exception=True) and re-activates an existing inactive entry instead of duplicating (unique(number) constraint); _remove archives via action_archive (active=False) rather than deleting; both log chatter via mail.thread. res.users._deactivate_portal_user(request_blacklist=True) auto-adds the deleted portal user's phone numbers to the blacklist with an audit message — a GDPR-style opt-out side-effect not shown by metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "frontend (OWL/JS)",
+        "observation": "No frontend assets: present=false, 0 JS files, 0 XML templates, 0 OWL components, 0 registry registrations, 0 patches, no asset bundles. All behaviour is server-side (ORM compute/onchange/SQL search + phonenumbers wrapper). The only UI is the static QWeb form/list/search views for phone.blacklist plus the inherited res.partner form; live formatting surfaces through the res.partner @api.onchange('phone','country_id','company_id') hook, not through client JS.",
+        "source": "static"
+      },
+      {
+        "element": "external integrations",
+        "observation": "No outbound HTTP/network calls: http_call_sites=0, sdk_imports=[], uses_api_keys=false, endpoints=[]. The sole external dependency is the in-process pure-Python `phonenumbers` library (imported in tools/phone_validation.py and patched offline in lib/phonenumbers_patch for regions BR/CI/CO/IL/KE); validation is fully local with no third-party service.",
+        "source": "static"
+      }
+    ],
     "frontend": {
       "present": false,
       "js_files": 0,
@@ -70,62 +149,113 @@
     "runtime": {
       "models_with_data": 0,
       "top": []
-    },
-    "behavioral_notes": [
-      {
-        "element": "thin module",
-        "observation": "4 models, 0 routes, 1339 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
-        "source": "ast"
-      }
-    ]
+    }
   },
   "it_architecture": {
-    "application": "phone_validation (Phone Numbers Validation)",
+    "application": "phone_validation (Phone Numbers Validation utility/mixin component; owns phone.blacklist + mail.thread.phone mixin, and extends base/res.partner/res.users)",
     "software_services": [],
     "data_objects": [
-      "mail.thread.phone",
       "phone.blacklist",
-      "phone.blacklist.remove",
-      "res.partner"
+      "mail.thread.phone",
+      "phone.blacklist.remove"
     ],
-    "logical_data_erm": [],
+    "logical_data_erm": [
+      "mail.thread.phone -> phone_sanitized (computed E164 from mobile/phone fields)",
+      "mail.thread.phone.phone_sanitized_blacklisted <- phone.blacklist.number (active join)",
+      "phone.blacklist.number (unique, E164) <- env.user._phone_format",
+      "res.partner -> mail.thread.phone (mixin) + onchange phone formatting",
+      "base (abstract) -> _phone_format / _phone_get_number_fields available to all models"
+    ],
     "information_flows": [
-      "depends: base, mail"
+      "depends: base, mail",
+      "side-effect: write phone/mobile/country_id on a mail.thread.phone record -> _compute_phone_sanitized -> phone_validation.phone_format (E164) -> _compute_blacklisted against phone.blacklist",
+      "side-effect: res.partner onchange(phone,country_id,company_id) -> _phone_format(INTERNATIONAL) live-formats the typed number",
+      "side-effect: phone.blacklist.create/write -> env.user._phone_format(raise_exception=True) sanitizes/validates or raises UserError",
+      "side-effect: res.users._deactivate_portal_user(request_blacklist=True) -> phone.blacklist._add(user numbers) with audit log",
+      "uses external `phonenumbers` library (parse/is_possible/is_valid/format) wrapped in tools/phone_validation.py with graceful ImportError fallback; offline region patches in lib/phonenumbers_patch (BR/CI/CO/IL/KE)"
     ],
-    "frontend_components": []
+    "frontend_components": [],
+    "external_integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [
+        "phonenumbers (in-process pure-Python library, optional; not declared in manifest external_dependencies)"
+      ],
+      "endpoints": []
+    }
   },
   "business_architecture": {
     "capabilities": [
-      "Phone Numbers Validation"
+      "Validate Phone Numbers (parse + possible/valid checks per destination country)",
+      "Format / Normalize Phone Numbers (E164 / INTERNATIONAL / NATIONAL / RFC3966)",
+      "Country / Region Inference from a Number",
+      "Phone Blacklist Management (opt-out / do-not-contact)",
+      "Sanitized-number search & blacklist detection mixin for any model"
     ],
-    "value_streams": [],
+    "value_streams": [
+      "Contact-data quality: enter a partner/lead phone -> sanitize to E164 -> validate via phonenumbers (or pass-through if absent) -> store phone_sanitized -> check phone.blacklist -> trusted, dialable number reused by SMS/CRM/Event"
+    ],
     "information_concepts": [
-      "mail.thread.phone",
-      "phone.blacklist",
-      "phone.blacklist.remove",
-      "res.partner"
+      "phone.blacklist (do-not-contact phone number, E164)",
+      "mail.thread.phone (sanitization + blacklist mixin; owns no business entity)",
+      "phone.blacklist.remove (transient unblacklist wizard)",
+      "res.partner (phone_sanitized via mixin; entity owned by base)"
     ],
     "organization": [],
     "products": [],
-    "policies": [],
-    "stakeholders": [],
+    "policies": [
+      "Unique constraint on phone.blacklist.number; create re-activates an existing inactive entry rather than duplicating",
+      "Numbers are re-sanitized to E164 on every blacklist create/write (UserError on invalid input)",
+      "Blacklist removal archives (active=False) instead of deleting, preserving the chatter audit trail",
+      "Portal-user deletion with request_blacklist auto-blacklists that user's numbers (opt-out / GDPR-style) with audit message",
+      "Phone-number search requires >=3 characters (_phone_search_min_length)"
+    ],
+    "stakeholders": [
+      "Salesperson / data-entry user (immediate phone formatting feedback)",
+      "Contact / Lead (res.partner whose number is sanitized)",
+      "Marketing / SMS sender (relies on E164 + blacklist before mass messaging)",
+      "System administrator (base.group_system owns phone.blacklist)",
+      "Recipient who opted out (entry in phone.blacklist)"
+    ],
     "strategy": null,
-    "metrics": []
+    "metrics": [
+      "phone_sanitized_blacklisted / phone_blacklisted (computed boolean flags surfaced for filtering)"
+    ]
   },
   "classification": {
     "value_model": "support",
     "activity_class": "support",
     "apqc_category": "8.0 Manage Information Technology",
-    "rationale": "phone_validation: thin support/support module (auto-architect baseline)."
+    "rationale": "phone_validation is cross-cutting master-data-quality infrastructure, not a primary value-creating activity. It owns no business object of its own beyond an opt-out list (phone.blacklist) and a reusable mixin (mail.thread.phone); its real product is a firm-wide utility — _phone_format injected onto the abstract 'base' model plus the phonenumbers wrapper — consumed by many primary modules (crm, sms, event, mass-mailing). Stabell & Fjeldstad: 'support' (firm infrastructure, like accounting/IT services), reinforced by category 'Hidden', auto_install=true, and depends only on base+mail. APQC 8.0 Manage Information Technology is chosen because the module is a data-quality / master-data correctness service (8.x covers managing information/data and its quality) that standardizes and validates a shared data attribute (the phone number) across the whole system rather than executing any line-of-business process. 3.0 Market and Sell was rejected because phone_validation performs no selling — it merely guarantees the integrity of contact data that selling/marketing modules later use; the value here is the IT-managed data utility, so 8.0 is the better single fit."
   },
   "fit_to_standard": {
     "standard_capabilities": [
-      "Phone Numbers Validation"
+      "Parse + validate phone numbers against a destination country (phonenumbers is_possible/is_valid + self-healing for 0033../33.. inputs)",
+      "Format to E164 / INTERNATIONAL / NATIONAL / RFC3966 (NATIONAL only when country matches)",
+      "Infer ISO country code, national number and dial code from a bare number",
+      "_phone_format / _phone_get_number_fields available on every Odoo model via the 'base' extension",
+      "mail.thread.phone mixin: stored phone_sanitized + fast trigram phone search + blacklist flags",
+      "Phone blacklist with re-activation, archive-on-remove, chatter audit, and unblacklist wizard",
+      "Graceful no-op degradation when the phonenumbers library is not installed"
     ],
-    "typical_fits": [],
-    "common_gaps": [],
+    "typical_fits": [
+      "Auto-formatting partner/lead phone numbers to a consistent E164/international format on entry",
+      "Do-not-contact phone blacklist feeding SMS / mass-mailing campaigns",
+      "Reusing the mixin on any custom model that has a phone/mobile field to get sanitized search + blacklist",
+      "Offline phone validation with no external service / IAP dependency"
+    ],
+    "common_gaps": [
+      "New/changed national numbering rules before the bundled phonenumbers metadata catches up (module already ships lib/phonenumbers_patch for BR/CI/CO/IL/KE)",
+      "Line-type checks (mobile-vs-landline / carrier / HLR lookup) — not provided; would need an external service",
+      "Models whose phone field is not named 'phone'/'mobile' must override _phone_get_number_fields",
+      "Deployments that omit the phonenumbers library get silent pass-through (no validation) rather than an error",
+      "Per-country bulk re-validation / reporting on sanitization failures"
+    ],
     "drive_hints": [
-      "odoo shell: env['mail.thread.phone'].search([],limit=3)"
+      "odoo shell: env['res.partner']._phone_format(number='0470123456', country=env.ref('base.be'), force_format='E164')  # -> '+32470123456'",
+      "odoo shell: from odoo.addons.phone_validation.tools import phone_validation as pv; pv.phone_format('0470123456','BE',32,force_format='INTERNATIONAL')  # '+32 470 12 34 56'",
+      "odoo shell: pv.phone_get_region_data_for_number('+32470123456')  # {'code':'BE','national_number':'470123456','phone_code':'32'}",
+      "odoo shell: env['phone.blacklist'].add('+32470123456'); env['phone.blacklist'].search([]).mapped(('number','active'))",
+      "odoo shell: p = env['res.partner'].create({'name':'X','phone':'0470123456','country_id':env.ref('base.be').id}); p.phone_sanitized  # E164 via the mixin compute"
     ]
   },
   "reverse_eng_confidence": {
@@ -139,14 +269,18 @@
     "strategy": "human"
   },
   "open_questions": [
-    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+    "Exact list of country numbering quirks corrected by lib/phonenumbers_patch (BR/CI/CO/IL/KE) versus what upstream phonenumbers already handles.",
+    "How downstream modules (crm, sms, event, mass_mailing) call _phone_format and whether they pass a country or rely on the env.company fallback.",
+    "Behaviour and field-name assumptions of _phone_get_number_fields on models that have neither 'phone' nor 'mobile' (custom overrides).",
+    "The single-phone_sanitized limitation noted in _compute_blacklisted when a model has BOTH a phone and a mobile blacklisted differently."
   ],
   "provenance": {
     "explorer_facts": "doc/revres/facts/phone_validation.facts.json",
     "tools": [
-      "extract_module.py",
-      "extract_frontend.py",
-      "gen_thin.py"
+      "apqc_odoo_map.tsv",
+      "code-read (models/models.py, models/mail_thread_phone.py, models/phone_blacklist.py, models/res_users.py, models/res_partner.py, tools/phone_validation.py)",
+      "extract_frontend.py (frontend/phone_validation.frontend.json)",
+      "extract_module.py"
     ],
     "odoo_version": "19.0"
   }

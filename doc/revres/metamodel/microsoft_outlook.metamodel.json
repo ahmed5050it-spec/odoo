@@ -12,19 +12,34 @@
     },
     "models": [
       {
-        "_name": "fetchmail.server",
-        "_description": null,
-        "fields": 1
+        "_name": "microsoft.outlook.mixin",
+        "_description": "Microsoft Outlook Mixin (AbstractModel)",
+        "fields": 5,
+        "relations": []
       },
       {
         "_name": "ir.mail_server",
-        "_description": null,
-        "fields": 1
+        "_description": "(extension) inherits microsoft.outlook.mixin; adds smtp_authentication='outlook' (XOAUTH2 SMTP)",
+        "fields": 1,
+        "relations": []
       },
       {
-        "_name": "microsoft.outlook.mixin",
-        "_description": "Microsoft Outlook Mixin",
-        "fields": 5
+        "_name": "fetchmail.server",
+        "_description": "(extension) inherits microsoft.outlook.mixin; adds server_type='outlook' (XOAUTH2 IMAP)",
+        "fields": 1,
+        "relations": []
+      },
+      {
+        "_name": "res.config.settings",
+        "_description": "(extension) microsoft_outlook_client_id / microsoft_outlook_client_secret config parameters",
+        "fields": 2,
+        "relations": []
+      },
+      {
+        "_name": "res.users",
+        "_description": "(extension) outgoing_mail_server_type adds 'outlook'; personal-server setup helpers",
+        "fields": 1,
+        "relations": []
       }
     ],
     "routes": [
@@ -93,65 +108,144 @@
     },
     "behavioral_notes": [
       {
-        "element": "external integrations",
-        "observation": "3 HTTP call sites; SDKs ['requests']; api_keys=True.",
-        "source": "static"
+        "element": "microsoft.outlook.mixin._fetch_outlook_refresh_token / _fetch_outlook_access_token / _fetch_outlook_token (OAuth2 token fetch + refresh)",
+        "observation": "OAuth2 authorization-code flow against the Microsoft identity platform, with the whole token lifecycle hosted on an AbstractModel mixin (microsoft.outlook.mixin) rather than on a business object. _compute_outlook_uri builds the consent URL via _get_microsoft_endpoint() (ir.config_parameter microsoft_outlook.endpoint, default https://login.microsoftonline.com/common/oauth2/v2.0/) + 'authorize?...' with response_type=code, redirect_uri=/microsoft_outlook/confirm and scope 'openid email offline_access https://outlook.office.com/User.read {_OUTLOOK_SCOPE}' (offline_access is what makes Microsoft return a refresh_token); state carries model/id + an hmac CSRF token. _fetch_outlook_refresh_token POSTs grant_type=authorization_code to the same endpoint's 'token' path and returns (refresh_token, access_token, expiration=now+expires_in); _fetch_outlook_access_token POSTs grant_type=refresh_token to get a rotated (refresh_token, access_token, id_token, expiration). Tokens are persisted as microsoft_outlook_refresh_token / _access_token / _access_token_expiration on the mail-server record itself (all groups='base.group_system', copy=False). On a non-OK HTTP response the JSON error_description is surfaced as a UserError. None of this token machinery is visible from field/model metadata.",
+        "source": "code-read"
       },
       {
-        "element": "thin module",
-        "observation": "3 models, 2 routes, 708 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
-        "source": "ast"
+        "element": "microsoft.outlook.mixin._generate_outlook_oauth2_string (lazy refresh + XOAUTH2 SASL string)",
+        "observation": "The single authentication primitive shared by SMTP and IMAP. _generate_outlook_oauth2_string(login) checks microsoft_outlook_access_token_expiration against now + OUTLOOK_TOKEN_VALIDITY_THRESHOLD (OUTLOOK_TOKEN_REQUEST_TIMEOUT 5s + 5 = 10s); if the access token is missing/expired it calls _fetch_outlook_access_token(refresh_token) to mint a fresh one (writing back the rotated refresh_token + access_token + expiration on the record), otherwise it reuses the cached token. With no refresh_token at all it raises 'Please connect with your Outlook account before using it.' It returns the SASL XOAUTH2 argument exactly as 'user=%s\\x01auth=Bearer %s\\x01\\x01'. This just-in-time refresh-on-send and the SASL framing are runtime behavior absent from metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "ir.mail_server._smtp_login__ (XOAUTH2 over SMTP) and fetchmail.server._imap_login__ (XOAUTH2 over IMAP)",
+        "observation": "Both transports replace password auth with bearer-token auth by overriding the base login hooks. ir.mail_server (_OUTLOOK_SCOPE = https://outlook.office.com/SMTP.Send) overrides _smtp_login__: when smtp_authentication=='outlook' it base64-encodes _generate_outlook_oauth2_string(smtp_user) and issues connection.ehlo() then connection.docmd('AUTH', f'XOAUTH2 {oauth_param}') instead of the inherited login; @api.constrains forbids a non-empty smtp_pass, forces smtp_encryption='starttls' and requires smtp_user, and onchange pins smtp_host=smtp.outlook.com / port 587 / from_filter=smtp_user. Outlook also gets a lower personal send-rate cap (mail.server.personal.limit.minutes_outlook, default 10) because Outlook flags bursts as spam. fetchmail.server (_OUTLOOK_SCOPE = https://outlook.office.com/IMAP.AccessAsUser.All) overrides _imap_login__: for server_type=='outlook' it calls connection.authenticate('XOAUTH2', lambda x: auth_string) then selects INBOX, pins server=imap.outlook.com / SSL / port 993 and forces _get_connection_type()->'imap'. The substitution of XOAUTH2 for the inherited password path at the protocol layer is pure code behavior.",
+        "source": "code-read"
+      },
+      {
+        "element": "OAuth redirect/authorize config flow: /microsoft_outlook/confirm + IAP fallback /microsoft_outlook/iap_confirm + CSRF + email-match verification",
+        "observation": "open_microsoft_outlook_uri (admin-only, requires a valid normalized _email_field address) returns an act_url to Microsoft's authorize endpoint. After consent Microsoft redirects to the /microsoft_outlook/confirm controller (auth=user), which json-decodes state, re-derives and consteq-checks the hmac CSRF token (_get_outlook_csrf_token, scope 'microsoft_outlook_oauth'), then calls _fetch_outlook_refresh_token(code) and writes active + the three token fields onto the record. For ir.mail_server it additionally re-fetches a token to read the id_token's 'email' claim and refuses the link if it does not match the server's email (prevents authorizing send-as for a different account). When the admin has NOT configured client_id/secret, on Odoo Enterprise (release.version_info[-1]=='e') it falls back to IAP: a GET to outlook.api.odoo.com /api/mail_oauth/1/outlook returns a Microsoft login URL, and the token comes back via /microsoft_outlook/iap_confirm; refresh likewise routes through _fetch_outlook_access_token_iap (/api/mail_oauth/1/outlook_access_token) so the client_secret never leaves Odoo's IAP proxy. On Community without credentials it raises 'Please configure your Outlook credentials.' This redirect/CSRF/IAP orchestration lives in the controller and is not metadata-derivable.",
+        "source": "code-read"
+      },
+      {
+        "element": "external integration -> Microsoft identity platform + Office 365 mail (gap #7, static)",
+        "observation": "Outbound HTTPS integration via python-requests (3 call sites, no vendored SDK). It talks to login.microsoftonline.com (OAuth2 authorize + token; overridable via the microsoft_outlook.endpoint config parameter) for the credential lifecycle, and authenticates to Office 365 mail endpoints smtp.outlook.com:587/STARTTLS (scope https://outlook.office.com/SMTP.Send) and imap.outlook.com:993/SSL (scope https://outlook.office.com/IMAP.AccessAsUser.All) via XOAUTH2 bearer tokens. The admin supplies microsoft_outlook_client_id (public) + microsoft_outlook_client_secret (ir.config_parameter); on Enterprise an Odoo-hosted IAP proxy at outlook.api.odoo.com brokers OAuth so a self-registered Azure app is optional. This external SaaS dependency (Microsoft Entra ID + Office 365) is the defining trait of the module and is invisible to Python model/field metadata.",
+        "source": "static"
       }
     ]
   },
   "it_architecture": {
-    "application": "microsoft_outlook (Microsoft Outlook)",
+    "application": "microsoft_outlook (Outlook / Microsoft 365 OAuth2 XOAUTH2 connector for outgoing SMTP + incoming IMAP mail servers)",
     "software_services": [
-      "/microsoft_outlook/confirm",
-      "/microsoft_outlook/iap_confirm"
+      "/microsoft_outlook/confirm (http, user) - OAuth2 redirect callback: exchange authorization code for refresh/access tokens, verify email, store on the mail-server record",
+      "/microsoft_outlook/iap_confirm (http, user) - IAP callback (Odoo Enterprise): receive refresh/access tokens brokered by outlook.api.odoo.com"
     ],
     "data_objects": [
-      "fetchmail.server",
+      "microsoft.outlook.mixin",
       "ir.mail_server",
-      "microsoft.outlook.mixin"
+      "fetchmail.server",
+      "res.config.settings",
+      "res.users"
     ],
-    "logical_data_erm": [],
+    "logical_data_erm": [
+      "ir.mail_server -> microsoft.outlook.mixin (mixin: microsoft_outlook_refresh_token/access_token/access_token_expiration/uri + active; smtp_authentication='outlook', _OUTLOOK_SCOPE=SMTP.Send)",
+      "fetchmail.server -> microsoft.outlook.mixin (mixin; server_type='outlook', _OUTLOOK_SCOPE=IMAP.AccessAsUser.All)",
+      "res.config.settings -> ir.config_parameter (microsoft_outlook_client_id / microsoft_outlook_client_secret)",
+      "res.users -> outgoing_mail_server_type='outlook' (personal outgoing server wired to smtp_authentication='outlook')",
+      "OAuth token fields stored per mail-server record, group base.group_system, copy=False"
+    ],
     "information_flows": [
-      "depends: mail"
+      "depends: mail (ir.mail_server SMTP send path + fetchmail.server IMAP/POP fetch path)",
+      "outbound: Odoo -> login.microsoftonline.com /common/oauth2/v2.0/{authorize,token} (authorization_code + refresh_token grants)",
+      "outbound: Odoo -> smtp.outlook.com:587 STARTTLS, AUTH XOAUTH2 (Bearer access token) for outgoing mail",
+      "outbound: Odoo -> imap.outlook.com:993 SSL, AUTHENTICATE XOAUTH2 (Bearer access token) for incoming mail",
+      "outbound (Enterprise fallback): Odoo -> outlook.api.odoo.com /api/mail_oauth/1/outlook[/ _access_token] IAP proxy (keeps client_secret off-DB)",
+      "inbound: Microsoft -> /microsoft_outlook/confirm (authorization code) | /microsoft_outlook/iap_confirm (tokens via IAP)",
+      "side-effect: _generate_outlook_oauth2_string lazily refreshes an expired access token at send/fetch time and writes the rotated tokens back onto the record",
+      "side-effect: id_token 'email' claim checked against the server email before linking (anti send-as-spoof)"
     ],
     "frontend_components": []
   },
   "business_architecture": {
     "capabilities": [
-      "Microsoft Outlook"
+      "Authenticate an Outlook / Microsoft 365 mailbox via OAuth2 (consent + refresh-token lifecycle)",
+      "Send outgoing mail through Office 365 SMTP using XOAUTH2 instead of a password",
+      "Fetch incoming mail from Office 365 IMAP using XOAUTH2 instead of a password",
+      "Just-in-time access-token refresh at send/fetch time",
+      "Optional Odoo-IAP OAuth brokering so a self-registered Azure app is not required (Enterprise)"
     ],
-    "value_streams": [],
+    "value_streams": [
+      "Connect-mailbox-to-send/receive: admin sets Azure client id/secret (or uses IAP) -> user grants OAuth consent at login.microsoftonline.com -> tokens stored on the mail server -> SMTP/IMAP authenticate via XOAUTH2 with auto-refresh on each use"
+    ],
     "information_concepts": [
-      "fetchmail.server",
-      "ir.mail_server",
-      "microsoft.outlook.mixin"
+      "microsoft.outlook.mixin (OAuth token-state mixin: refresh_token / access_token / access_token_expiration / authentication uri)",
+      "ir.mail_server (outgoing SMTP server with Outlook OAuth authentication)",
+      "fetchmail.server (incoming IMAP server with Outlook OAuth authentication)",
+      "res.config.settings (Outlook client id / client secret configuration)",
+      "res.users (personal outgoing Outlook mail server type)"
     ],
     "organization": [],
     "products": [],
-    "policies": [],
-    "stakeholders": [],
+    "policies": [
+      "OAuth token fields (refresh_token/access_token/expiration/uri) restricted to groups=base.group_system, copy=False",
+      "Only the administrator (env.is_admin) can link an Outlook mail server (open_microsoft_outlook_uri raises AccessError otherwise)",
+      "@api.constrains on ir.mail_server: Outlook servers must have empty smtp_pass, smtp_encryption='starttls', and a smtp_user",
+      "@api.constrains on fetchmail.server: Outlook servers require SSL (is_ssl)",
+      "hmac CSRF token (scope microsoft_outlook_oauth) verified with consteq in the OAuth callback to prevent malicious mail-server disconnection",
+      "id_token email-claim must match the server email before a send-as authorization is accepted",
+      "lower outgoing rate cap for Outlook servers (mail.server.personal.limit.minutes_outlook, default 10) to avoid spam flagging",
+      "ir.config_parameter microsoft_outlook_client_id / microsoft_outlook_client_secret (secret never returned in clear) and microsoft_outlook.endpoint gate the integration"
+    ],
+    "stakeholders": [
+      "System administrator (configures the Azure app client id/secret and links the shared mail servers)",
+      "Internal user (grants OAuth consent for a personal outgoing Outlook server)",
+      "Microsoft Entra ID / Office 365 (external identity provider + mail system)",
+      "Odoo IAP (outlook.api.odoo.com OAuth broker, Enterprise only)"
+    ],
     "strategy": null,
-    "metrics": []
+    "metrics": [
+      "access-token validity window (microsoft_outlook_access_token_expiration vs now) deciding reuse-vs-refresh",
+      "per-server outgoing send-rate limit (mail.server.personal.limit.minutes_outlook)",
+      "configuration status (client id/secret present -> direct OAuth, else IAP on Enterprise, else UserError on Community)"
+    ]
   },
   "classification": {
     "value_model": "support",
     "activity_class": "support",
-    "apqc_category": "13.0 Develop and Manage Business Capabilities",
-    "rationale": "microsoft_outlook: thin support/support module (auto-architect baseline)."
+    "apqc_category": "8.0 Manage Information Technology",
+    "rationale": "microsoft_outlook is mail-infrastructure integration plumbing: it adds no business object of its own. It contributes one AbstractModel mixin (microsoft.outlook.mixin) carrying OAuth token state, two Selection options ('outlook') and protocol-login overrides on the inherited ir.mail_server (SMTP) and fetchmail.server (IMAP), plus two ir.config_parameter credentials on res.config.settings -- and it produces no sellable output. Its whole reason to exist is to authenticate Odoo's existing mail transport to an external SaaS (Microsoft Entra ID + Office 365) via OAuth2 and XOAUTH2 in place of a password. Per Stabell & Fjeldstad this is a support / firm-infrastructure function (value_model=support, activity_class=support); it is the direct sibling of google_gmail (the Gmail XOAUTH2 equivalent it even imports get_iap_error_message from) and of microsoft_calendar (the same OAuth-connector shape). For APQC it maps to 8.0 Manage Information Technology, specifically the external-system integration / credential-lifecycle band: the module manages an OAuth2 authorization-code + refresh-token lifecycle (login.microsoftonline.com), brokers credentials (client_id/secret, optionally via the outlook.api.odoo.com IAP proxy), and adapts mail authentication to a third party (gap #7) -- IT-management concerns, not business-capability development. The auto-architect baseline inherited 13.0 Develop and Manage Business Capabilities from the mail parent; 13.0 is rejected here because nothing in this module develops a new business capability -- it operates an external authentication interface for an existing capability (sending/receiving email), which is exactly what 8.0 covers. 9.4 'Manage IT-related risk / manage IT security' (a sub-band of 8/9) was the closest alternative given the CSRF guard, group_system-scoped secrets and id_token email-match anti-spoof checks, but it was rejected as too narrow: those security controls are protective details of the integration, not the module's purpose, which is operating the integration itself -- 8.0 (manage IT integration / interoperability) is the better top-level fit. This mirrors microsoft_calendar's deliberate departure from its parent's 13.0 to 8.0."
   },
   "fit_to_standard": {
     "standard_capabilities": [
-      "Microsoft Outlook"
+      "OAuth2 connect of an Outlook / Microsoft 365 mailbox (offline_access -> refresh token; scopes SMTP.Send and IMAP.AccessAsUser.All)",
+      "Outgoing mail via Office 365 SMTP (smtp.outlook.com:587 STARTTLS) authenticated with XOAUTH2",
+      "Incoming mail via Office 365 IMAP (imap.outlook.com:993 SSL) authenticated with XOAUTH2",
+      "Automatic just-in-time access-token refresh from the stored refresh token at each send/fetch",
+      "Admin-configured Azure app (client id/secret in Settings) or zero-config OAuth via Odoo IAP on Enterprise",
+      "CSRF-protected OAuth callback and email-match verification to prevent send-as spoofing"
     ],
-    "typical_fits": [],
-    "common_gaps": [],
+    "typical_fits": [
+      "tenant that disabled basic/password SMTP-IMAP auth and mandates Modern Authentication (OAuth2) for mail",
+      "single shared outgoing + incoming company mailbox linked by an administrator",
+      "individual users wiring a personal outgoing Outlook server (res.users outgoing_mail_server_type='outlook')",
+      "Odoo Enterprise customers using the built-in IAP broker instead of registering their own Azure app"
+    ],
+    "common_gaps": [
+      "Community edition without an Azure app cannot use IAP -- admin must register client id/secret (UserError otherwise)",
+      "only the mailbox owner's own address can send (from_filter pinned to smtp_user) unless a mail.default.from system parameter is set",
+      "Outlook flags bursts as spam -- outgoing rate is capped low (default 10/min); high-volume sending needs a dedicated relay",
+      "scopes fixed to SMTP.Send / IMAP.AccessAsUser.All -- no shared-mailbox / send-on-behalf delegation handling",
+      "Azure app consent / admin-consent and redirect-URI registration is an external Microsoft-side setup step not done from Odoo",
+      "no POP path for Outlook (incoming is forced to IMAP); token refresh failures surface only as UserError at send/fetch time"
+    ],
     "drive_hints": [
-      "odoo shell: env['fetchmail.server'].search([],limit=3)"
+      "odoo shell: env['ir.mail_server'].search([('smtp_authentication','=','outlook')])  # linked outgoing Outlook servers",
+      "odoo shell: env['fetchmail.server'].search([('server_type','=','outlook')])  # linked incoming Outlook servers",
+      "odoo shell: srv = env['ir.mail_server'].search([('smtp_authentication','=','outlook')], limit=1); srv._generate_outlook_oauth2_string(srv.smtp_user)  # mint/refresh XOAUTH2 SASL string",
+      "odoo shell: env['ir.config_parameter'].sudo().get_param('microsoft_outlook_client_id')  # is the Azure app configured?",
+      "odoo shell: env['ir.config_parameter'].sudo().get_param('microsoft_outlook.endpoint')  # OAuth base (default login.microsoftonline.com/common/oauth2/v2.0/)",
+      "curl http (auth=user) /microsoft_outlook/confirm?code=...&state=... -> OAuth callback that stores refresh/access tokens on the mail-server record",
+      "external endpoints exercised: https://login.microsoftonline.com/common/oauth2/v2.0/token ; smtp.outlook.com:587 ; imap.outlook.com:993"
     ]
   },
   "reverse_eng_confidence": {
@@ -162,17 +256,20 @@
     "value_streams": "inferred",
     "policies": "inferred",
     "metrics": "inferred",
+    "stakeholders": "inferred",
     "strategy": "human"
   },
   "open_questions": [
-    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+    "Exact behavior when a refresh_token is revoked Microsoft-side (e.g. password change / admin consent withdrawal): the user-visible failure path beyond the UserError raised at next send/fetch.",
+    "Whether the IAP broker (outlook.api.odoo.com) rotates/persists the refresh_token symmetrically with the direct-credential path, and how _fetch_outlook_access_token_iap behaves when its response omits id_token (used by the email-match check).",
+    "How send-as for a shared mailbox or an alias is intended to be configured given from_filter is pinned to smtp_user and the id_token email-match guard rejects mismatched addresses."
   ],
   "provenance": {
     "explorer_facts": "doc/revres/facts/microsoft_outlook.facts.json",
     "tools": [
+      "code-read",
       "extract_module.py",
-      "extract_frontend.py",
-      "gen_thin.py"
+      "extract_frontend.py"
     ],
     "odoo_version": "19.0"
   }

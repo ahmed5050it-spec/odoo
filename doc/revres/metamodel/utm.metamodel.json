@@ -15,37 +15,54 @@
       {
         "_name": "utm.campaign",
         "_description": "UTM Campaign",
-        "fields": 8
-      },
-      {
-        "_name": "utm.medium",
-        "_description": "UTM Medium",
-        "fields": 2
+        "fields": 8,
+        "relations": [
+          "user_id->res.users",
+          "stage_id->utm.stage",
+          "tag_ids->utm.tag"
+        ]
       },
       {
         "_name": "utm.mixin",
         "_description": "UTM Mixin",
-        "fields": 3
+        "fields": 3,
+        "relations": [
+          "campaign_id->utm.campaign",
+          "source_id->utm.source",
+          "medium_id->utm.medium"
+        ]
       },
       {
         "_name": "utm.source",
         "_description": "UTM Source",
-        "fields": 1
+        "fields": 1,
+        "relations": []
       },
       {
         "_name": "utm.source.mixin",
         "_description": "UTM Source Mixin",
-        "fields": 2
+        "fields": 2,
+        "relations": [
+          "source_id->utm.source"
+        ]
+      },
+      {
+        "_name": "utm.medium",
+        "_description": "UTM Medium",
+        "fields": 2,
+        "relations": []
       },
       {
         "_name": "utm.stage",
         "_description": "Campaign Stage",
-        "fields": 2
+        "fields": 2,
+        "relations": []
       },
       {
         "_name": "utm.tag",
         "_description": "UTM Tag",
-        "fields": 2
+        "fields": 2,
+        "relations": []
       }
     ],
     "routes": [],
@@ -57,7 +74,6 @@
     "views": {
       "form": 5,
       "list": 5,
-      "tree": 0,
       "kanban": 1,
       "search": 3,
       "pivot": 0,
@@ -65,6 +81,33 @@
       "calendar": 0,
       "activity": 0
     },
+    "behavioral_notes": [
+      {
+        "element": "utm.mixin.default_get + ir.http._set_utm (cookie/query-param attribution)",
+        "observation": "utm.mixin is an AbstractModel inherited by downstream records (crm.lead, mailing.mailing, link.tracker, etc.). On any web request ir.http._post_dispatch -> _set_utm reads the utm_campaign/utm_source/utm_medium GET params and writes them into long-lived (31-day) optional cookies (odoo_utm_campaign/source/medium) keyed on the request host. When a record that inherits utm.mixin is created, default_get iterates tracking_fields() and back-fills campaign_id/source_id/medium_id from those cookies, resolving string values to records via _find_or_create_record. UTM defaulting is deliberately skipped for internal salespeople (group_sale_salesman) unless run as superuser. This attribution wiring is invisible to metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "utm.mixin.find_or_create_record / _find_or_create_record",
+        "observation": "find_or_create_record is the frontend-facing wrapper (used in website_links) returning {'id','name'} rather than a recordset because call_kw's create magic is bypassed. For models in _tracking_models() (the utm.* comodels of the tracking fields) it delegates to _find_or_create_record, which does a case-insensitive ('name','=ilike') search with active_test=False and creates the record only if missing, flagging is_auto_campaign=True for utm.campaign. Non-UTM inherited models fall through to a plain create on _rec_name, so the helper stays ACL-safe.",
+        "source": "code-read"
+      },
+      {
+        "element": "utm.mixin._get_unique_names + utm.campaign/source/medium uniqueness",
+        "observation": "utm.campaign, utm.source and utm.medium each carry a SQL UNIQUE(name) constraint and route create() through utm.mixin._get_unique_names, which appends a bracketed counter ('test' -> 'test [2]') so duplicate/concurrent inserts never collide. utm.campaign also computes its name from the translatable title via _get_unique_names with utm_check_skip_record_ids=self.ids so a record never bumps its own counter. The dedup/counter logic (regex _split_name_and_count + Domain.OR search_read) lives entirely in Python and is invisible to schema metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "utm.campaign Kanban stages + utm.source.mixin name generation + delete guards",
+        "observation": "utm.campaign uses utm.stage (Many2one, ondelete='restrict', default=first stage) with _group_expand_stage_ids so the Kanban renders every pipeline stage even when empty - stages are the campaign workflow columns. utm.source.mixin is the consumer pattern (mailing/social post): create() auto-creates a utm.source per record and derives its name from the host record's _rec_name content via utm.source._generate_name, keeping source naming consistent across downstream models. utm.medium guards six load-bearing reference mediums (Email/Direct/Website/X/Facebook/LinkedIn) and utm.source guards the 'Referral' source against deletion via @api.ondelete.",
+        "source": "code-read"
+      },
+      {
+        "element": "frontend (OWL/JS)",
+        "observation": "1 JS file (utm_campaign_kanban_examples.js), 0 XML templates, 0 OWL components, 1 registry registration (kanban_examples:utm_campaign), 0 patches; single asset bundle ['web.assets_backend']. The JS only seeds Kanban 'examples' (starter stage layouts) for the campaign board; no client components or services.",
+        "source": "static"
+      }
+    ],
     "frontend": {
       "present": true,
       "js_files": 1,
@@ -89,80 +132,102 @@
     "runtime": {
       "models_with_data": 0,
       "top": []
-    },
-    "behavioral_notes": [
-      {
-        "element": "frontend (OWL/JS)",
-        "observation": "1 JS files, 0 OWL components, 1 registry adds; bundles ['web.assets_backend'].",
-        "source": "static"
-      },
-      {
-        "element": "thin module",
-        "observation": "7 models, 0 routes, 900 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
-        "source": "ast"
-      }
-    ]
+    }
   },
   "it_architecture": {
-    "application": "utm (UTM Trackers)",
+    "application": "utm (UTM Trackers application component)",
     "software_services": [],
     "data_objects": [
       "utm.campaign",
-      "utm.medium",
-      "utm.mixin",
       "utm.source",
-      "utm.source.mixin",
+      "utm.medium",
+      "utm.tag",
       "utm.stage",
-      "utm.tag"
+      "utm.mixin",
+      "utm.source.mixin"
     ],
     "logical_data_erm": [
-      "utm.campaign -> res.users",
+      "utm.mixin -> utm.campaign",
+      "utm.mixin -> utm.source",
+      "utm.mixin -> utm.medium",
       "utm.campaign -> utm.stage",
       "utm.campaign -> utm.tag",
-      "utm.mixin -> utm.campaign",
-      "utm.mixin -> utm.medium",
-      "utm.mixin -> utm.source",
+      "utm.campaign -> res.users",
       "utm.source.mixin -> utm.source"
     ],
     "information_flows": [
-      "depends: base, web"
+      "depends: base, web",
+      "side-effect: ir.http._post_dispatch -> _set_utm writes utm_* GET params into odoo_utm_* cookies (31-day, host-scoped)",
+      "side-effect: utm.mixin.default_get reads odoo_utm_* cookies -> back-fills campaign_id/source_id/medium_id on inheriting records (crm.lead, mailing.mailing, link.tracker)",
+      "side-effect: create() on campaign/source/medium -> utm.mixin._get_unique_names dedups names with a bracketed counter"
     ],
     "frontend_components": []
   },
   "business_architecture": {
     "capabilities": [
-      "UTM Trackers"
+      "Manage Marketing Campaigns (stages, tags, responsible)",
+      "Maintain UTM Reference Data (campaign/source/medium)",
+      "Attribute Records via Tracking Cookies & URL Parameters"
     ],
-    "value_streams": [],
+    "value_streams": [
+      "Attribution back-fill: web visit (utm_* params) -> tracking cookies -> campaign/source/medium stamped on the created record (lead/mailing/link)"
+    ],
     "information_concepts": [
       "utm.campaign",
-      "utm.medium",
-      "utm.mixin",
       "utm.source",
-      "utm.source.mixin",
-      "utm.stage"
+      "utm.medium",
+      "utm.tag",
+      "utm.stage",
+      "utm.mixin (attribution trait)"
     ],
     "organization": [],
     "products": [],
-    "policies": [],
-    "stakeholders": [],
+    "policies": [
+      "SQL UNIQUE(name) on campaign/source/medium enforced via _get_unique_names counter",
+      "ondelete guards: protected reference mediums (Email/Direct/Website/X/Facebook/LinkedIn) and the 'Referral' source cannot be deleted",
+      "UTM defaulting skipped for internal salespeople (group_sale_salesman) unless superuser"
+    ],
+    "stakeholders": [
+      "Marketing user (campaign owner, res.users)",
+      "Downstream marketing/sales modules (mass_mailing, crm, sale, link_tracker, social)",
+      "Web visitor (attribution subject, anonymous)"
+    ],
     "strategy": null,
-    "metrics": []
+    "metrics": [
+      "Campaign stage progression (utm.stage Kanban)",
+      "Aggregate stats surfaced by consumers (e.g. mailing/click counts added onto utm.campaign downstream)"
+    ]
   },
   "classification": {
     "value_model": "support",
     "activity_class": "support",
     "apqc_category": "3.0 Market and Sell Products and Services",
-    "rationale": "utm: thin support/support module (auto-architect baseline)."
+    "rationale": "utm is cross-cutting marketing-attribution mixin and reference data (campaign/source/medium/tag/stage) consumed by many primary marketing/sales modules (mass_mailing, crm, sale, link_tracker, social); it is foundational, not a value stream of its own. It owns no operational document chain and exposes no value-creating service - its contribution is campaign attribution and marketing administration (APQC 3.0, marketing performance/admin), so it is a support activity rather than a chain/shop/network primary."
   },
   "fit_to_standard": {
     "standard_capabilities": [
-      "UTM Trackers"
+      "campaign / source / medium / tag reference data with enforced unique names",
+      "utm.mixin trait that stamps campaign/source/medium on any inheriting record",
+      "cookie + URL-param attribution wired through ir.http dispatch",
+      "campaign Kanban with configurable stages and starter examples",
+      "auto find-or-create of UTM records from free text (find_or_create_record)"
     ],
-    "typical_fits": [],
-    "common_gaps": [],
+    "typical_fits": [
+      "attributing leads, mailings and tracked links to a campaign/source/medium",
+      "standard last-touch web attribution via utm_* query parameters",
+      "organizing campaigns into pipeline stages with tags and a responsible user"
+    ],
+    "common_gaps": [
+      "no multi-touch / weighted attribution model (last cookie wins)",
+      "no campaign budget, spend or ROI tracking out of the box",
+      "no analytics views of its own (pivot/graph 0) - reporting comes from consumers",
+      "no portal/public UI; backend-only reference administration"
+    ],
     "drive_hints": [
-      "odoo shell: env['utm.campaign'].search([],limit=3)"
+      "odoo shell: env['utm.campaign'].search([], limit=5).mapped(('name','title','stage_id.name'))",
+      "odoo shell: env['utm.mixin']._get_unique_names('utm.campaign', ['Promo','Promo','Promo'])  # -> ['Promo','Promo [2]','Promo [3]']",
+      "odoo shell: env['utm.source']._find_or_create_record('utm.source','Newsletter')  # case-insensitive find-or-create",
+      "curl 'http://localhost:8069/web/login?utm_campaign=Promo&utm_source=newsletter' -c jar.txt  # sets odoo_utm_* cookies"
     ]
   },
   "reverse_eng_confidence": {
@@ -176,14 +241,18 @@
     "strategy": "human"
   },
   "open_questions": [
-    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+    "Exact set of downstream models that inherit utm.mixin / utm.source.mixin and how each overrides tracking_fields (resolvable only when consumer modules are installed).",
+    "Whether consumers (mass_mailing, link_tracker, social) add A/B-test and click/mailing-count aggregates onto utm.campaign at runtime.",
+    "Live row counts / real campaign data were not captured (runtime models_with_data=0)."
   ],
   "provenance": {
     "explorer_facts": "doc/revres/facts/utm.facts.json",
     "tools": [
-      "extract_module.py",
+      "code-read",
       "extract_frontend.py",
-      "gen_thin.py"
+      "extract_module.py",
+      "extract_runtime.sh",
+      "run-odoo (odoo shell)"
     ],
     "odoo_version": "19.0"
   }

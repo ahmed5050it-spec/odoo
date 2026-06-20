@@ -79,7 +79,7 @@ gamification_sale_crm	support	support	7.0 Develop and Manage Human	0	0	0	0	meta
 google_account	support	support	13.0 Develop and Manage Busi	1	1	0	0	meta+integ
 google_address_autocomplete	support	support	13.0 Develop and Manage Busi	0	2	2	0	meta+fe+integ
 google_calendar	support	support	8.0 Manage Information Techn	5	2	3	0	meta+code+fe+integ
-google_gmail	support	support	13.0 Develop and Manage Busi	3	2	0	0	meta+integ
+google_gmail	support	support	8.0 Manage Information Techn	5	2	0	0	meta+code+integ
 google_recaptcha	support	support	13.0 Develop and Manage Busi	0	0	2	0	meta+fe+integ
 hr	support	support	7.0 Develop and Manage Human	6	0	36	6	meta+code+fe
 hr_attendance	support	support	7.0 Develop and Manage Human	5	5	13	11	meta+code+fe+integ
@@ -363,7 +363,7 @@ mass_mailing_sms	network	primary	3.0 Market and Sell Products	2	3	1	0	meta+fe
 mass_mailing_themes	network	primary	3.0 Market and Sell Products	0	0	0	0	meta
 microsoft_account	support	support	13.0 Develop and Manage Busi	1	1	0	0	meta+integ
 microsoft_calendar	support	support	8.0 Manage Information Techn	6	2	3	0	meta+code+fe+integ
-microsoft_outlook	support	support	13.0 Develop and Manage Busi	3	2	0	0	meta+integ
+microsoft_outlook	support	support	8.0 Manage Information Techn	5	2	0	0	meta+code+integ
 mrp	chain	primary	4.3 Produce/Manufacture/Deli	9	0	26	15	meta+code+fe
 mrp_account	support	support	9.0 Manage Financial Resourc	3	0	2	0	meta+fe
 mrp_landed_costs	chain	primary	4.3 Produce/Manufacture/Deli	0	0	0	0	meta
@@ -375,7 +375,7 @@ mrp_subcontracting_dropshipping	chain	primary	4.3 Produce/Manufacture/Deli	0	0	0
 mrp_subcontracting_landed_costs	chain	primary	4.3 Produce/Manufacture/Deli	0	0	0	0	meta
 mrp_subcontracting_purchase	chain	primary	4.3 Produce/Manufacture/Deli	0	0	0	0	meta
 mrp_subcontracting_repair	chain	primary	4.3 Produce/Manufacture/Deli	0	0	0	0	meta
-onboarding	support	support	13.0 Develop and Manage Busi	4	0	1	0	meta+fe
+onboarding	support	support	13.0 Develop and Manage Busi	4	0	1	0	meta+code+fe
 partner_autocomplete	support	support	13.0 Develop and Manage Busi	1	0	5	1	meta+fe+integ
 partnership	chain	primary	3.0 Market and Sell Products	1	0	0	0	meta
 payment	network	support	9.0 Manage Financial Resourc	6	5	5	0	meta+code+fe+integ
@@ -401,7 +401,7 @@ payment_stripe	network	support	9.0 Manage Financial Resourc	0	5	3	0	meta+fe
 payment_toss_payments	network	support	9.0 Manage Financial Resourc	0	3	1	0	meta+fe
 payment_worldline	network	support	9.0 Manage Financial Resourc	0	2	1	0	meta+fe
 payment_xendit	network	support	9.0 Manage Financial Resourc	0	3	3	1	meta+fe
-phone_validation	support	support	8.0 Manage Information Techn	4	0	0	0	meta
+phone_validation	support	support	8.0 Manage Information Techn	6	0	0	0	meta+code
 point_of_sale	chain	primary	3.0 Market and Sell Products	7	7	166	23	meta+code+fe
 portal	network	support	6.0 Manage Customer Service	4	7	27	2	meta+code+fe
 portal_rating	network	support	6.0 Manage Customer Service	0	1	9	0	meta+fe
@@ -418,7 +418,7 @@ pos_glory_cash	chain	primary	3.0 Market and Sell Products	0	0	8	2	meta+fe
 pos_hr	chain	primary	3.0 Market and Sell Products	3	0	14	1	meta+fe
 pos_hr_restaurant	chain	primary	3.0 Market and Sell Products	0	0	2	0	meta+fe
 pos_imin	chain	primary	3.0 Market and Sell Products	0	0	2	0	meta+fe
-pos_loyalty	chain	support	3.0 Market and Sell Products	4	0	13	1	meta+fe
+pos_loyalty	chain	primary	3.0 Market and Sell Products	14	0	13	1	meta+code+fe
 pos_mercado_pago	chain	primary	3.0 Market and Sell Products	0	1	2	0	meta+fe+integ
 pos_mollie	chain	primary	3.0 Market and Sell Products	0	1	2	0	meta+fe
 pos_mrp	chain	primary	3.0 Market and Sell Products	0	0	0	0	meta
@@ -588,7 +588,7 @@ test_website_slides_full	support	support	13.0 Develop and Manage Busi	0	0	0	0	me
 theme_default	network	primary	3.0 Market and Sell Products	0	0	0	0	meta
 transifex	support	support	13.0 Develop and Manage Busi	2	0	1	0	meta+fe
 uom	support	support	2.0 Develop and Manage Produ	1	0	2	1	meta+fe
-utm	support	support	3.0 Market and Sell Products	7	0	1	0	meta+fe
+utm	support	support	3.0 Market and Sell Products	7	0	1	0	meta+code+fe
 web	support	support	8.0 Manage Information Techn	4	12	526	32	meta+code+fe
 web_hierarchy	support	support	8.0 Manage Information Techn	0	0	8	3	meta+fe
 web_tour	support	support	8.0 Manage Information Techn	2	0	16	3	meta+fe
@@ -613,7 +613,7 @@ website_event_sale	network	primary	3.0 Market and Sell Products	0	1	0	0	meta
 website_event_track	network	primary	3.0 Market and Sell Products	6	9	9	1	meta+code+fe
 website_event_track_live	network	primary	3.0 Market and Sell Products	0	1	3	0	meta+fe
 website_event_track_live_quiz	network	primary	3.0 Market and Sell Products	0	0	2	0	meta+fe
-website_event_track_quiz	network	primary	3.0 Market and Sell Products	3	5	2	0	meta+fe
+website_event_track_quiz	network	primary	3.0 Market and Sell Products	6	4	2	0	meta+code+fe
 website_forum	network	primary	3.0 Market and Sell Products	5	4	17	2	meta+code+fe+integ
 website_google_map	network	primary	3.0 Market and Sell Products	0	1	2	0	meta+fe
 website_hr_recruitment	network	support	7.0 Develop and Manage Human	1	6	7	1	meta+fe
@@ -635,7 +635,7 @@ website_sale_collect_wishlist	network	primary	3.0 Market and Sell Products	0	0	0
 website_sale_comparison	network	support	3.0 Market and Sell Products	1	2	5	2	meta+fe
 website_sale_comparison_wishlist	network	primary	3.0 Market and Sell Products	0	0	1	0	meta+fe
 website_sale_gelato	network	primary	3.0 Market and Sell Products	0	0	0	0	meta
-website_sale_loyalty	network	primary	3.0 Market and Sell Products	2	7	4	0	meta+fe
+website_sale_loyalty	network	primary	3.0 Market and Sell Products	7	5	4	0	meta+code+fe
 website_sale_mass_mailing	network	primary	3.0 Market and Sell Products	0	0	0	0	meta
 website_sale_mondialrelay	network	primary	3.0 Market and Sell Products	0	1	1	0	meta+fe
 website_sale_mrp	network	primary	3.0 Market and Sell Products	0	1	1	0	meta+fe

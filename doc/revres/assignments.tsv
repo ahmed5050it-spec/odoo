@@ -11,6 +11,7 @@ test_read_group	test	todo	support	13.0	17	0	34
 website	deep	done	network	3.0	8	16	32
 html_editor	deep	done	support	8.0	7	15	29
 stock	deep	done	chain	4.0	14	1	29
+pos_loyalty	deep	done	chain	3.0	14	0	28
 account	deep	done	support	9.0	10	4	24
 test_base_automation	test	todo	support	13.0	12	0	24
 account_peppol	deep	done	network	9.0	9	4	22
@@ -32,6 +33,7 @@ lunch	deep	done	support	7.0	9	1	19
 purchase	deep	done	support	4.2	7	5	19
 sms	deep	done	support	9.4	9	1	19
 website_sale	deep	done	network	3.0	6	7	19
+website_sale_loyalty	deep	done	network	3.0	7	5	19
 account_edi_ubl_cii	deep	done	support	9.0	9	0	18
 mail_plugin	deep	done	support	8.0	3	12	18
 mrp	deep	done	chain	4.3	9	0	18
@@ -46,6 +48,7 @@ l10n_fr_pdp	baseline	todo	support	9.0	7	2	16
 mass_mailing	deep	done	network	3.0	6	4	16
 stock_delivery	deep	done	chain	4.4	8	0	16
 test_mail_full	test	todo	support	13.0	6	4	16
+website_event_track_quiz	deep	done	network	3.0	6	4	16
 crm	deep	done	shop	3.0	6	3	15
 hr_attendance	deep	done	support	7.0	5	5	15
 portal	deep	done	network	6.0	4	7	15
@@ -58,7 +61,7 @@ pos_event	deep	done	chain	3.0	7	0	14
 sale_stock	deep	done	chain	4.0	6	2	14
 test_inherit	test	todo	support	13.0	7	0	14
 test_mail_sms	test	todo	support	13.0	7	0	14
-utm	baseline	todo	support	3.0	7	0	14
+utm	deep	done	support	3.0	7	0	14
 website_forum	deep	done	network	3.0	5	4	14
 website_profile	deep	done	network	3.0	3	8	14
 calendar	deep	done	support	13.0	5	3	13
@@ -66,10 +69,13 @@ mail_group	deep	done	network	9.4	5	3	13
 crm_iap_mine	deep	done	shop	3.0	6	0	12
 delivery	deep	done	chain	4.4	5	2	12
 google_calendar	deep	done	support	8.0	5	2	12
+google_gmail	deep	done	support	8.0	5	2	12
 hr	deep	done	support	7.0	6	0	12
 hr_expense	deep	done	support	7.0	6	0	12
 hr_holidays	deep	done	support	7.0	5	2	12
 maintenance	deep	done	support	10.0	6	0	12
+microsoft_outlook	deep	done	support	8.0	5	2	12
+phone_validation	deep	done	support	8.0	6	0	12
 pos_restaurant	deep	done	chain	3.0	6	0	12
 product_expiry	deep	done	chain	4.0	6	0	12
 sale	deep	done	chain	3.0	5	2	12
@@ -78,8 +84,6 @@ test_access_rights	test	todo	support	13.0	6	0	12
 website_blog	deep	done	network	3.0	4	4	12
 hr_timesheet	deep	done	shop	5.0	5	1	11
 marketing_card	deep	done	network	3.0	4	3	11
-website_event_track_quiz	baseline	todo	network	3.0	3	5	11
-website_sale_loyalty	baseline	todo	network	3.0	2	7	11
 account_check_printing	deep	done	support	9.0	5	0	10
 hr_recruitment	deep	done	support	7.0	5	0	10
 l10n_hr_edi	baseline	todo	support	9.0	5	0	10
@@ -87,14 +91,10 @@ l10n_my_edi	baseline	todo	support	9.0	5	0	10
 resource	deep	done	support	7.0	5	0	10
 spreadsheet_dashboard	deep	done	support	13.0	3	4	10
 base_vat	deep	done	support	9.0	4	1	9
-google_gmail	baseline	todo	support	13.0	3	2	8
 hr_work_entry	deep	done	support	7.0	4	0	8
 l10n_ar_withholding	baseline	todo	support	9.0	4	0	8
 l10n_in	baseline	todo	support	9.0	4	0	8
-microsoft_outlook	baseline	todo	support	13.0	3	2	8
-onboarding	baseline	todo	support	13.0	4	0	8
-phone_validation	baseline	todo	support	8.0	4	0	8
-pos_loyalty	baseline	todo	chain	3.0	4	0	8
+onboarding	deep	done	support	13.0	4	0	8
 rating	deep	done	support	6.0	3	2	8
 test_search_panel	test	todo	support	13.0	4	0	8
 website_hr_recruitment	baseline	todo	network	7.0	1	6	8

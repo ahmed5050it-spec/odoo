@@ -15,17 +15,51 @@
       {
         "_name": "event.quiz",
         "_description": "Quiz",
-        "fields": 5
-      },
-      {
-        "_name": "event.quiz.answer",
-        "_description": "Question's Answer",
-        "fields": 6
+        "fields": 5,
+        "relations": [
+          "question_ids->event.quiz.question",
+          "event_track_id->event.track",
+          "event_id->event.event (related event_track_id.event_id, stored)"
+        ]
       },
       {
         "_name": "event.quiz.question",
         "_description": "Content Quiz Question",
-        "fields": 6
+        "fields": 6,
+        "relations": [
+          "quiz_id->event.quiz (ondelete=cascade)",
+          "answer_ids->event.quiz.answer",
+          "correct_answer_id->event.quiz.answer (computed: answers filtered is_correct)"
+        ]
+      },
+      {
+        "_name": "event.quiz.answer",
+        "_description": "Question's Answer",
+        "fields": 6,
+        "relations": [
+          "question_id->event.quiz.question (ondelete=cascade)"
+        ]
+      },
+      {
+        "_name": "event.track",
+        "_description": "(extension) adds quiz_id/quiz_ids + per-visitor quiz state (is_quiz_completed, quiz_points)",
+        "fields": 5,
+        "relations": [
+          "quiz_id->event.quiz (computed, stored, groups=event.group_event_user)",
+          "quiz_ids->event.quiz (event_track_id inverse)"
+        ]
+      },
+      {
+        "_name": "event.track.visitor",
+        "_description": "(extension) stores the visitor's quiz result (quiz_completed, quiz_points)",
+        "fields": 2,
+        "relations": []
+      },
+      {
+        "_name": "event.event",
+        "_description": "(extension) community_menu sync onchange (_compute_community_menu)",
+        "fields": 0,
+        "relations": []
       }
     ],
     "routes": [
@@ -45,22 +79,19 @@
       },
       {
         "paths": [
-          "/event/<model("
+          "/event/<model(\"event.event\"):event>/community/leaderboard",
+          "/event/<model(\"event.event\"):event>/community/leaderboard/results",
+          "/event/<model(\"event.event\"):event>/community/leaderboard/results/page/<int:page>"
         ],
-        "auth": null,
-        "type": null
+        "auth": "public",
+        "type": "http"
       },
       {
         "paths": [
-          "/event/<model("
+          "/event/<model(\"event.event\"):event>/community"
         ],
-        "auth": null,
-        "type": null
-      },
-      {
-        "paths": [],
-        "auth": null,
-        "type": null
+        "auth": "public",
+        "type": "http"
       }
     ],
     "security": {
@@ -111,73 +142,150 @@
     },
     "behavioral_notes": [
       {
-        "element": "frontend (OWL/JS)",
-        "observation": "2 JS files, 0 OWL components, 2 registry adds; bundles ['web.assets_frontend'].",
-        "source": "static"
+        "element": "WebsiteEventTrackQuiz.event_track_quiz_submit (/event_track/quiz/submit, jsonrpc, auth=public)",
+        "observation": "The public submit route is the module's core write. It _fetch_track(track_id) (parent-module ACL/website check), then track._get_event_track_visitors(force_create=True) which resolves the caller's website.visitor (force-creating one for anonymous users) or partner and returns/creates the event.track.visitor row. It reads the submitted answer_ids as sudo (event.quiz.answer is not public-readable) via _get_quiz_answers_details, which guards completeness (len(user_answers.question_id) must equal track.quiz_questions_count, else error 'quiz_incomplete') and SCORES the attempt as points = sum(answer.awarded_points) over the chosen answers. It then writes quiz_completed=True and quiz_points=points onto the event.track.visitor and returns per-question correction (correct_answer text, is_correct, awarded_points, comment). So an anonymous attendee accumulates gamification points on a real event.track.visitor row. Not visible in metadata.",
+        "source": "code-read"
       },
       {
-        "element": "thin module",
-        "observation": "3 models, 5 routes, 421 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
-        "source": "ast"
+        "element": "Anti-cheat / one-attempt gating (submit + reset)",
+        "observation": "Scoring is server-side and single-attempt: event_track_quiz_submit short-circuits with {'error': 'track_quiz_done'} if the resolved event.track.visitor.quiz_completed is already True, so a visitor cannot re-submit to farm points. Answers and points are fetched/computed server-side as sudo (the browser only POSTs answer_ids), so the client cannot dictate the score, and the completeness check forces every question to be answered. The /event_track/quiz/reset route clears quiz_completed/quiz_points back to 0 but is gated: it raises werkzeug Forbidden unless the user has_group('event.group_event_manager') OR the quiz's repeatable ('Unlimited Tries') flag is set, so a normal attendee can only retake when the organizer explicitly allows it. Pure code semantics, invisible to metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "event.quiz.question scoring model: awarded_points / correct_answer_id / _check_answers_integrity",
+        "observation": "Points live on event.quiz.answer.awarded_points (Integer, per-answer). event.quiz.question.awarded_points is a compute summing its answers' awarded_points, and correct_answer_id is a compute = answer_ids.filtered(is_correct). A @api.constrains('answer_ids') _check_answers_integrity enforces data validity at write time: each question must have exactly 1 correct answer and at least 2 answers total (else ValidationError), guaranteeing every quiz question is gradeable. event.quiz.repeatable governs retakes. These compute/constraint semantics are not derivable from field metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "event.track._compute_quiz_data (is_quiz_completed / quiz_points, @api.depends_context uid)",
+        "observation": "The track page render is personalised per viewer: _compute_quiz_data (@api.depends_context('uid')) resolves the current website.visitor (_get_visitor_from_request) and/or logged partner, sudo search_reads event.track.visitor for (track, quiz_completed, quiz_points) and projects is_quiz_completed / quiz_points onto the track for the current user only (public + no-visitor -> 0/False). This couples the public track page to per-visitor event.track.visitor state so the quiz interaction widget knows whether to lock itself. Python logic, not metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "WebsiteEventTrackQuizCommunityController.leaderboard / _get_leaderboard (/event/<event>/community/leaderboard)",
+        "observation": "The community/leaderboard routes aggregate the gamification scores into a ranking: _get_leaderboard sudo _read_groups event.track.visitor over the event's tracks (visitor_id set, quiz_points>0) summing quiz_points:sum per visitor, ordered DESC, building positions and a top3, then highlighting the current visitor's row (current_visitor_position). _get_community_leaderboard_render_values paginates 30/page (max 5 pager pages) and can auto-scroll to the caller's position. This cross-track points roll-up per attendee is the community-engagement payoff of the quizzes and exists only in controller code.",
+        "source": "code-read"
+      },
+      {
+        "element": "frontend public.interactions Quiz + Leaderboard widgets (static)",
+        "observation": "2 JS files / 1 XML template, no OWL components: the quiz UX is a website public.interaction Quiz (static selector '.o_quiz_main') extracting questions/answers from server-rendered DOM, posting checked radio answer_ids to /event_track/quiz/submit, then decorating each answer (check/times icon, awarded-points badge, comment) and re-rendering the karma/validation box from the JSON correction; onResetQuizClick POSTs /event_track/quiz/reset. A second Leaderboard interaction simply smooth-scrolls the current visitor's leaderboard row into view. Entirely client-side, outside Python metadata.",
+        "source": "static"
       }
     ]
   },
   "it_architecture": {
-    "application": "website_event_track_quiz (Quizzes on Tracks)",
+    "application": "website_event_track_quiz (gamified-quiz extension on the event-track website experience)",
     "software_services": [
-      "/event/<model(",
-      "/event_track/quiz/reset",
-      "/event_track/quiz/submit"
+      "/event_track/quiz/submit (jsonrpc, public) -- score answers + write event.track.visitor (quiz_completed, quiz_points)",
+      "/event_track/quiz/reset (jsonrpc, public) -- clear a visitor's quiz result (gated by repeatable / event_manager)",
+      "/event/<event>/community/leaderboard (+ /results, /results/page/<n>) -- per-event points ranking",
+      "/event/<event>/community -- community page rendering the leaderboard"
     ],
     "data_objects": [
       "event.quiz",
+      "event.quiz.question",
       "event.quiz.answer",
-      "event.quiz.question"
+      "event.track",
+      "event.track.visitor",
+      "event.event"
     ],
     "logical_data_erm": [
-      "event.quiz -> event.event",
-      "event.quiz -> event.quiz.question",
-      "event.quiz -> event.track",
-      "event.quiz.answer -> event.quiz.question",
-      "event.quiz.question -> event.quiz",
-      "event.quiz.question -> event.quiz.answer"
+      "event.quiz -> event.track (event_track_id) / event.event (event_id related, stored)",
+      "event.quiz.question -> event.quiz (quiz_id, cascade); event.quiz.answer -> event.quiz.question (question_id, cascade)",
+      "event.track -> event.quiz (quiz_id computed/stored, quiz_ids inverse)",
+      "event.track.visitor -> event.track / website.visitor / res.partner (carries quiz_completed, quiz_points)",
+      "leaderboard: event.track.visitor.quiz_points:sum grouped by website.visitor over event.track_ids"
     ],
     "information_flows": [
-      "depends: website_profile, website_event_track"
+      "depends: website_profile, website_event_track (-> website_event, event, website)",
+      "side-effect: POST /event_track/quiz/submit -> _get_event_track_visitors force-creates website.visitor + event.track.visitor, scores answers, writes quiz_completed/quiz_points",
+      "side-effect: POST /event_track/quiz/reset -> event.track.visitor.write(quiz_completed=False, quiz_points=0) when repeatable or event_manager",
+      "read-flow: event.track._compute_quiz_data (depends_context uid) -> per-viewer event.track.visitor projection onto the track page",
+      "aggregation: community leaderboard -> _read_group event.track.visitor quiz_points:sum per visitor across the event's tracks"
     ],
-    "frontend_components": []
+    "frontend_components": [
+      "public.interaction Quiz (.o_quiz_main): submit answers to /event_track/quiz/submit, decorate correction, render karma/validation, reset via /event_track/quiz/reset",
+      "public.interaction Leaderboard (.o_wevent_quiz_leaderboard .o_wevent_quiz_scroll_to): smooth-scroll current visitor row into view",
+      "static/src/xml/quiz_templates.xml (quiz.badge / quiz.comment / quiz.validation client templates)"
+    ]
   },
   "business_architecture": {
     "capabilities": [
-      "Quizzes on Tracks"
+      "Author Track Quizzes (quiz, questions, answers with per-answer points)",
+      "Gamified Self-Assessment on a Talk/Track (answer + immediate scored correction)",
+      "Attendee Points Accumulation per Track (quiz_points on event.track.visitor)",
+      "One-Attempt / Repeatable Quiz Gating (anti-cheat completion + optional retry)",
+      "Event Community Leaderboard / Ranking (cross-track points roll-up per visitor)"
     ],
-    "value_streams": [],
+    "value_streams": [
+      "Engage-and-Score: attendee opens a track page -> answers the quiz -> server scores answers (sum awarded_points) -> event.track.visitor stamped quiz_completed/quiz_points -> correction shown -> points roll up into the event leaderboard ranking"
+    ],
     "information_concepts": [
-      "event.quiz",
-      "event.quiz.answer",
-      "event.quiz.question"
+      "event.quiz (quiz attached to a track)",
+      "event.quiz.question (gradeable question)",
+      "event.quiz.answer (option carrying is_correct + awarded_points)",
+      "event.track (talk/session bearing the quiz)",
+      "event.track.visitor (per-attendee quiz result: quiz_completed, quiz_points)",
+      "website.visitor (the ranked participant)"
     ],
-    "organization": [],
+    "organization": [
+      "event.group_event_user (quiz/question/answer authoring access)",
+      "event.group_event_manager (privileged quiz reset)"
+    ],
     "products": [],
-    "policies": [],
-    "stakeholders": [],
+    "policies": [
+      "3 ir.model.access rules: event.quiz / .question / .answer are read-write-create-unlink for event.group_event_user only (authoring restricted to event staff)",
+      "anti-cheat: server-side single attempt -- submit refused once quiz_completed is True; score computed server-side as sudo, never trusted from the client",
+      "data-integrity constraint: each quiz question must have exactly 1 correct answer and >=2 answers (_check_answers_integrity)",
+      "reset policy: a visitor may retake only if quiz.repeatable ('Unlimited Tries') is set, otherwise only event managers can reset",
+      "leaderboard scope: only visitor-linked event.track.visitor rows with quiz_points>0 are ranked"
+    ],
+    "stakeholders": [
+      "Event Attendee / Website Visitor (quiz taker, public user)",
+      "Registered Attendee (res.partner / website.visitor on the leaderboard)",
+      "Event Speaker / Content Author (event.group_event_user authoring quizzes)",
+      "Event Manager (event.group_event_manager - resets, oversight)"
+    ],
     "strategy": null,
-    "metrics": []
+    "metrics": [
+      "event.track.visitor.quiz_points (points earned per attendee per track)",
+      "quiz completion per track (event.track.is_quiz_completed)",
+      "event.track.quiz_questions_count / question awarded_points (max attainable)",
+      "leaderboard standings: quiz_points:sum per visitor across an event's tracks"
+    ]
   },
   "classification": {
     "value_model": "network",
     "activity_class": "primary",
     "apqc_category": "3.0 Market and Sell Products and Services",
-    "rationale": "website_event_track_quiz: thin network/primary module (auto-architect baseline)."
+    "rationale": "website_event_track_quiz is a community-engagement extension layered on the website_event value network: it inherits the mediating-technology logic (Stabell & Fjeldstad) of its parents rather than transforming inputs into outputs. Its reason to exist is to deepen the connection between an open population of attendees and the event's content -- it bolts a gamified quiz onto each talk/track, lets anonymous and logged visitors answer and earn points (quiz_points on event.track.visitor), and rolls those points up into a per-event community leaderboard that ranks participants. That is membership/mediation value (engagement, scoring, and ranking of a shared pool of attendees around shared content), the network signature, not a sequential chain (no input->output good is produced) nor case-by-case shop problem-solving. activity_class is primary because it is a customer-facing audience-engagement / event-marketing feature on the public website, not a back-office support function. apqc_category 3.0 Market and Sell Products and Services is the closest PCF home, matching the website_event / website_event_track lineage: the motion is engaging and retaining a marketed event's audience (demand-side market/sell), not post-sale customer service (6.0). strategy is null (human-only)."
   },
   "fit_to_standard": {
     "standard_capabilities": [
-      "Quizzes on Tracks"
+      "attach a quiz (event.quiz) with ordered questions and multiple-choice answers to any event track",
+      "per-answer point weighting (awarded_points) with exactly-one-correct-answer validation",
+      "public, single-attempt quiz taking with immediate scored correction (check/cross, points badge, per-answer comment)",
+      "per-attendee points stored on event.track.visitor for both anonymous (website.visitor) and logged users",
+      "optional 'Unlimited Tries' (repeatable) retake, with event-manager override reset",
+      "per-event community leaderboard ranking visitors by total quiz points, paginated, with current-visitor highlight"
     ],
-    "typical_fits": [],
-    "common_gaps": [],
+    "typical_fits": [
+      "conferences / trainings adding interactive knowledge-check quizzes to recorded or live talks",
+      "gamified audience engagement with a points leaderboard to drive session attendance/competition",
+      "free self-assessment after a session with instant feedback and explanatory comments"
+    ],
+    "common_gaps": [
+      "karma / badges depth: the quiz template surfaces karma data attributes, but full karma awarding lives in website_profile / gamification glue, not here",
+      "quiz analytics / per-question success-rate reporting beyond raw points",
+      "richer question types (multi-select, free-text, ordering) -- only single-correct multiple-choice is standard",
+      "certification / pass-fail thresholds and time limits are not part of this module"
+    ],
     "drive_hints": [
-      "odoo shell: env['event.quiz'].search([],limit=3)"
+      "odoo shell: env['event.quiz'].search([]).mapped(('name','event_track_id','event_id','repeatable'))",
+      "odoo shell: env['event.quiz.answer'].search([('is_correct','=',True)], limit=5).mapped(('text_value','awarded_points','question_id'))",
+      "odoo shell: env['event.track.visitor'].search([('quiz_points','>',0)], limit=5).mapped(('track_id','visitor_id','quiz_completed','quiz_points'))",
+      "odoo shell: env['event.track.visitor'].sudo()._read_group([('quiz_points','>',0)], ['visitor_id'], ['quiz_points:sum'])",
+      "curl -s 'http://localhost:8069/event/1/community/leaderboard' | head  (public points leaderboard page)"
     ]
   },
   "reverse_eng_confidence": {
@@ -188,17 +296,22 @@
     "value_streams": "inferred",
     "policies": "inferred",
     "metrics": "inferred",
+    "stakeholders": "inferred",
     "strategy": "human"
   },
   "open_questions": [
-    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+    "Exact karma/gamification coupling with website_profile: the quiz template surfaces quizKarmaMax/Won/Gain data attributes, but where karma is actually awarded to the partner (vs. the local quiz_points on event.track.visitor) was not traced in this module.",
+    "Interplay of reset-then-resubmit with the leaderboard sum in a live DB: reset zeroes the event.track.visitor row (no historization of prior points observed).",
+    "Runtime row counts for event.quiz / event.track.visitor with quiz_points were not captured (extract_runtime.sh not run)."
   ],
   "provenance": {
     "explorer_facts": "doc/revres/facts/website_event_track_quiz.facts.json",
     "tools": [
-      "extract_module.py",
+      "code-read",
       "extract_frontend.py",
-      "gen_thin.py"
+      "extract_module.py",
+      "Grep",
+      "Read"
     ],
     "odoo_version": "19.0"
   }
