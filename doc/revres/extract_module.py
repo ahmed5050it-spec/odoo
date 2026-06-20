@@ -128,11 +128,16 @@ def extract_security(mod_path):
 
 def extract_routes(mod_path):
     routes = []
-    cdir = os.path.join(mod_path, "controllers")
-    for root, _d, files in os.walk(cdir):
+    # scan the whole module tree (not just controllers/) — some modules use
+    # controller/ (singular) or define @route inline elsewhere.
+    for root, _d, files in os.walk(mod_path):
+        if os.sep + "tests" in root or os.sep + "static" in root:
+            continue
         for fn in files:
             if fn.endswith(".py"):
                 src = _read(os.path.join(root, fn))
+                if "route(" not in src:
+                    continue
                 for m in ROUTE_RE.finditer(src):
                     args = m.group("args")
                     paths = re.findall(r"['\"](/[^'\"]+)['\"]", args)
