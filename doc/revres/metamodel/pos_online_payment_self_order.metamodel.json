@@ -4,6 +4,10 @@
     "manifest": {
       "name": "POS Self-Order / Online Payment",
       "category": "Sales/Point of Sale",
+      "summary": "Support online payment in self-order",
+      "version": "1.0",
+      "author": "Odoo S.A.",
+      "license": "LGPL-3",
       "depends": [
         "pos_online_payment",
         "pos_self_order"
@@ -11,34 +15,102 @@
       "auto_install": true,
       "application": false
     },
-    "models": [],
-    "routes": [
+    "models": [
       {
-        "paths": [],
-        "auth": null,
-        "type": null
+        "_name": null,
+        "_inherit": "ir.http",
+        "_description": "(extension) register module for frontend translation loading",
+        "fields": 0,
+        "methods": 1,
+        "file": "models/ir_http.py",
+        "relations": []
       },
       {
-        "paths": [],
-        "auth": null,
-        "type": null
+        "_name": null,
+        "_inherit": "payment.transaction",
+        "_description": "(extension) settle a confirmed self-order transaction back into the POS",
+        "fields": 0,
+        "methods": 3,
+        "file": "models/payment_transaction.py",
+        "relations": [
+          "pos_order_id->pos.order (inherited from pos_online_payment)"
+        ]
+      },
+      {
+        "_name": null,
+        "_inherit": "pos.config",
+        "_description": "(extension) self-order online payment method per config",
+        "fields": 1,
+        "methods": 4,
+        "file": "models/pos_config.py",
+        "relations": [
+          "self_order_online_payment_method_id->pos.payment.method"
+        ]
+      },
+      {
+        "_name": null,
+        "_inherit": "pos.order",
+        "_description": "(extension) self-order online-payment routing + bus status + receipt",
+        "fields": 1,
+        "methods": 9,
+        "file": "models/pos_order.py",
+        "relations": [
+          "use_self_order_online_payment (Boolean, computed)"
+        ]
+      },
+      {
+        "_name": null,
+        "_inherit": "pos.payment.method",
+        "_description": "(extension) which online methods load into the self-order client",
+        "fields": 0,
+        "methods": 1,
+        "file": "models/pos_payment_method.py",
+        "relations": []
+      },
+      {
+        "_name": null,
+        "_inherit": "res.config.settings",
+        "_description": "(extension) settings proxy for the self-order online payment method",
+        "fields": 1,
+        "methods": 0,
+        "file": "models/res_config_settings.py",
+        "relations": [
+          "pos_self_order_online_payment_method_id->pos.config.self_order_online_payment_method_id (related)"
+        ]
+      }
+    ],
+    "routes": [
+      {
+        "paths": [
+          "/pos/pay/<int:pos_order_id>"
+        ],
+        "auth": "public",
+        "type": "http",
+        "note": "@http.route() override (no args) of pos_online_payment.PaymentPortal.pos_order_pay -- wraps the parent route to fire a 'progress' bus status before rendering the pay form."
+      },
+      {
+        "paths": [
+          "/pos/pay/confirmation/<int:pos_order_id>"
+        ],
+        "auth": "public",
+        "type": "http",
+        "note": "@http.route() override of pos_online_payment.PaymentPortal.pos_order_pay_confirmation -- after the parent settles the tx, fires a 'fail' bus status if the tx did not reach authorized/done."
       }
     ],
     "security": {
       "access_rules": 0,
       "record_rules": 0,
-      "groups": 0
+      "groups": 0,
+      "note": "No own security: reuses pos_online_payment's public auth='public' + access_token (_check_order_access / _document_check_access) gating on the pay routes, and pos_self_order's anonymous-to-POS-user impersonation; the only new field on a stored model (pos.config.self_order_online_payment_method_id) is reachable through existing POS config ACLs."
     },
     "views": {
       "form": 0,
       "list": 0,
-      "tree": 0,
       "kanban": 0,
       "search": 0,
       "pivot": 0,
       "graph": 0,
-      "calendar": 0,
-      "activity": 0
+      "note": "1 inherited view (views/res_config_settings_views.xml, 36 xml_loc): adds the 'Online Payment' method selector under the self-order 'pay-after' settings block, visible only when self_ordering_mode=='mobile', plus a shortcut button to Payment Methods. No new standalone views."
     },
     "frontend": {
       "present": true,
@@ -74,54 +146,158 @@
     },
     "behavioral_notes": [
       {
-        "element": "frontend (OWL/JS)",
-        "observation": "4 JS files, 0 OWL components, 0 registry adds; bundles ['pos_self_order.assets', 'point_of_sale._assets_pos', 'web.assets_tests'].",
-        "source": "static"
+        "element": "controllers/payment_portal.py: PaymentPortalSelfOrder.pos_order_pay / pos_order_pay_confirmation (the 2 routes) + _send_notification_payment_status",
+        "observation": "The module subclasses pos_online_payment.PaymentPortal and re-decorates its two public HTTP routes with bare @http.route() (inheriting path/auth from the parent, so /pos/pay/<id> and /pos/pay/confirmation/<id> stay auth='public'). pos_order_pay calls self._send_notification_payment_status(pos_order_id, 'progress') BEFORE super() so the self-order client shows a 'payment in progress' state the instant the customer opens the pay page. pos_order_pay_confirmation calls super() first (which does the real settlement) then re-reads the payment.transaction; if its state is not in ('authorized','done') it fires status 'fail'. _send_notification_payment_status sudo-browses the pos.order, calls pos_order._send_notification_online_payment_status(status) (the bus push) and, on 'success', also pos_order._send_order() (the kitchen/prep-display hook). This thin route-wrapping that turns the synchronous portal confirmation into real-time self-order feedback is pure Python and not in metadata.",
+        "source": "code-read"
       },
       {
-        "element": "thin module",
-        "observation": "0 models, 2 routes, 683 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
-        "source": "ast"
+        "element": "models/payment_transaction.py: _process_pos_online_payment / _process / _is_self_order_payment_confirmed",
+        "observation": "_process_pos_online_payment is overridden to add self-order behaviour AROUND the parent settlement (the parent _create_payment's account.payment, calls pos_order.add_payment to write the online pos.payment line linked via online_account_payment_id, and finalises a draft order via _process_saved_order). This override snapshots each tx's pos_order_id.state BEFORE super(); after super(), for txs now in authorized/done it (a) if the order WAS draft, calls pos_order_id._send_self_order_receipt() to email the customer their receipt via the preset mail template, and (b) always calls pos_order_id._send_notification_online_payment_status('success') so the self-order/kiosk client live-confirms. Separately, _process is overridden so that as soon as a self-order/kiosk transaction is confirmed (_is_self_order_payment_confirmed: pos_order_id set, state in authorized/done, source in ('mobile','kiosk')) it triggers the payment.cron_post_process_payment_tx cron immediately -- forcing prompt async post-processing instead of waiting for the scheduler. These settlement-feedback side-effects (receipt email + bus + cron kick) are invisible to field metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "models/pos_order.py: use_self_order_online_payment + _compute_online_payment_method_id override + get_and_set_online_payments_data",
+        "observation": "pos.order gains a stored computed Boolean use_self_order_online_payment (= bool(config_id.self_order_online_payment_method_id)), also stamped at create() from the session's config and guarded in write() (it is system-managed: writes to it are only honoured for draft orders whose config still has a self-order online method, otherwise silently dropped via filtered_domain rather than raising). _compute_online_payment_method_id is overridden so that when use_self_order_online_payment is true the order's online_payment_method_id resolves to config_id.self_order_online_payment_method_id (the self-order method) instead of the cashier method from super(); this is what makes the portal _get_allowed_providers_sudo offer the self-order providers. get_and_set_online_payments_data (the cashier-frontend RPC) is wrapped so that requesting next_online_payment_amount=0 (cancelling a cashier online tender) flips use_self_order_online_payment back on if a self-order method is configured -- i.e. it falls back to the self-order pay flow. This routing of WHICH online method a self-order uses is pure Python.",
+        "source": "code-read"
+      },
+      {
+        "element": "models/pos_order.py: _send_notification_online_payment_status + get_order_to_print + _load_pos_self_data_fields + _check_pos_order",
+        "observation": "_send_notification_online_payment_status(status) is the bus primitive: it calls config_id._notify('ONLINE_PAYMENT_STATUS', {status, data}) where data carries the order and its pos.payment lines read with _load_pos_self_data_fields (extended here to add online_payment_method_id + next_online_payment_amount) so the self-order client can reconcile the paid order without a full reload; status is one of progress/success/fail. get_order_to_print takes a Postgres row lock (SELECT ... FOR UPDATE NOWAIT) and refuses to print twice (raises if nb_print>0), guaranteeing the kiosk/mobile receipt prints exactly once across concurrent bus listeners. _check_pos_order (the self-order intake sanitiser from pos_self_order) is extended to propagate use_self_order_online_payment from the submitted order dict. These concurrency-safe, data-minimised feedback mechanics are not reverse-engineerable from metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "models/pos_config.py + models/pos_payment_method.py: self_order_online_payment_method_id config + _load_pos_self_data_domain + has_valid_self_payment_method",
+        "observation": "pos.config.self_order_online_payment_method_id (Many2one pos.payment.method, domain is_online_payment=True) designates the online method customers use in mobile self-order; a @api.constrains rejects it for mobile+pay-each configs unless its provider supports the config currency (_get_online_payment_providers(error_if_invalid=True)). pos.payment.method._load_pos_self_data_domain is overridden so the self-order CLIENT only receives the right online methods: in kiosk mode it OR-adds all is_online_payment methods on the config; otherwise it ships exactly the one self_order_online_payment_method_id. has_valid_self_payment_method is extended so a mobile config counts as payable if it has a self-order online method (and any config if any of its methods is_online_payment). _load_pos_self_data_fields(pos.config) is extended to publish self_order_online_payment_method_id to the public self-order app. (Note: this module also defines _get_self_ordering_data/_get_self_ordering_payment_methods_data overrides, but those names have no parent in the current pos_self_order codebase -- the live payment-method exposure runs through the _load_pos_self_data_* family above.) This config-driven channel gating is pure Python.",
+        "source": "code-read"
+      },
+      {
+        "element": "frontend (gap #3): SelfOrder/PaymentPage/PosStore/OrderDisplay patches + the bus 'ONLINE_PAYMENT_STATUS' loop",
+        "observation": "4 JS files / 1 XML template, no new OWL components or registry services -- only 4 prototype patches across two bundles. In the customer self-order SPA (pos_self_order.assets): SelfOrder.setup opens a connectWebSocket('ONLINE_PAYMENT_STATUS') listener that, for the current order's uuid, merges the pushed pos.order/pos.payment via models.connectNewData, sets onlinePaymentStatus/paymentError, and on 'success' routes to the confirmation page; getOnlinePaymentUrl builds the /pos/pay/<id>?access_token=...&exit_route=... URL (with table_identifier for table service); filterPaymentMethods surfaces the is_online_payment method(s) (the configured one, or all in kiosk); PaymentPage.startPayment, for an online method, first sendDraftOrderToServer() then in kiosk shows a scan-to-pay QR (generateQRCodeDataUrl) while in mobile window.open's the pay URL in _self; payment_page.xml adds the kiosk 'Scan the QR code to pay' panel; OrderDisplay.buttonToShow relabels the action button (Order/Pay/Pay at cashier) per mode. In the cashier app (point_of_sale._assets_pos): PosStore.setup, for mobile configs, listens to the SAME bus channel and on 'success' prints the self-order prep+receipt (printSelfOrderReceipt -> getSelfOrderToPrint -> get_order_to_print), queuing it while the tab is hidden (visibilitychange). This entire client-side request/QR/await-confirmation/auto-print journey is not reverse-engineerable from Python metadata. integrations_gap7.uses_api_keys=true is indirect: the acquirer credentials live in the underlying payment/payment_<provider> modules, not here.",
+        "source": "static"
       }
     ]
   },
   "it_architecture": {
-    "application": "pos_online_payment_self_order (POS Self-Order / Online Payment)",
-    "software_services": [],
-    "data_objects": [],
-    "logical_data_erm": [],
-    "information_flows": [
-      "depends: pos_online_payment, pos_self_order"
+    "application": "pos_online_payment_self_order (auto-install double-bridge: lets a self-order/kiosk customer pay their pos.order online and reconciles the confirmed transaction back into the live POS session with real-time bus feedback and auto-receipt)",
+    "software_services": [
+      "/pos/pay/<pos_order_id> (override: fire 'progress' bus status, then the inherited public pay form)",
+      "/pos/pay/confirmation/<pos_order_id> (override: inherited settlement, then fire 'fail' status if tx not authorized/done)"
     ],
-    "frontend_components": []
+    "data_objects": [
+      "pos.config (+self_order_online_payment_method_id)",
+      "pos.order (+use_self_order_online_payment; online routing + bus + receipt)",
+      "pos.payment.method (self-order load-domain override)",
+      "payment.transaction (settlement-feedback override)",
+      "res.config.settings (+pos_self_order_online_payment_method_id related)",
+      "ir.http (frontend translation registration)"
+    ],
+    "logical_data_erm": [
+      "pos.config -> pos.payment.method (self_order_online_payment_method_id, domain is_online_payment=True)",
+      "pos.order -> pos.payment.method (online_payment_method_id, re-pointed to the self-order method when use_self_order_online_payment)",
+      "payment.transaction -> pos.order (pos_order_id; inherited from pos_online_payment)",
+      "pos.payment -> account.payment (online_account_payment_id; written by the inherited add_payment on settlement)",
+      "res.config.settings -> pos.config (pos_self_order_online_payment_method_id related)"
+    ],
+    "information_flows": [
+      "depends: pos_online_payment (public /pos/pay portal + transaction->pos.payment settlement + account.payment), pos_self_order (the public OWL self-order/kiosk SPA, pos.order.source mobile/kiosk, the config._notify bus, preset receipt mail)",
+      "inbound: self-order client startPayment -> sendDraftOrderToServer -> window.open or QR to /pos/pay/<id> (public) -> parent jsonrpc /pos/pay/transaction creates payment.transaction(pos_order_id=...) -> provider redirect/inline/token",
+      "settlement: tx authorized|done -> _process_pos_online_payment(super: account.payment + online pos.payment + finalise draft order) -> _send_self_order_receipt (email, if order was draft) + _send_notification_online_payment_status('success')",
+      "bus: config._notify('ONLINE_PAYMENT_STATUS', {status, pos.order, pos.payment}) -> self-order SPA confirms + cashier PosStore (mobile) auto-prints the prep/receipt once (FOR UPDATE NOWAIT, nb_print guard)",
+      "method routing: use_self_order_online_payment -> _compute_online_payment_method_id resolves online_payment_method_id = config.self_order_online_payment_method_id, which the portal uses to pick compatible providers",
+      "cron kick: _process -> for confirmed mobile/kiosk tx, _trigger payment.cron_post_process_payment_tx for prompt async finalisation"
+    ],
+    "frontend_components": [
+      "SelfOrder.prototype (patch: ONLINE_PAYMENT_STATUS listener, getOnlinePaymentUrl, filterPaymentMethods, shouldUpdateLastOrderChange)",
+      "PaymentPage.prototype (patch: startPayment online branch, kiosk QR vs mobile window.open)",
+      "OrderDisplay.prototype (patch: Order/Pay/Pay-at-cashier button labelling)",
+      "PosStore.prototype (patch: cashier-side mobile bus listener -> printSelfOrderReceipt once)"
+    ],
+    "external_integrations": {
+      "sdk": null,
+      "uses_api_keys": true,
+      "files": [],
+      "pattern": "No direct outbound HTTP in this module: it reuses pos_online_payment's portal + the payment engine's providers. The acquirer API calls / api-keys live in payment + payment_<provider>; this bridge contributes only the self-order routing, the bus feedback loop and the auto-receipt.",
+      "note": "gap #7 uses_api_keys=true is indirect/inherited; this module adds no endpoint or SDK import of its own."
+    }
   },
   "business_architecture": {
     "capabilities": [
-      "POS Self-Order / Online Payment"
+      "Pay a Self-Order / Kiosk POS Order Online (customer pays their own order on their phone or via kiosk QR)",
+      "Configure a Self-Order Online Payment Method per till (mobile) and expose online methods to kiosks",
+      "Settle the Confirmed Transaction into the Live POS Session (online pos.payment + account.payment + order finalise)",
+      "Real-time Status Feedback to the Self-Order Client and Cashier (progress / success / fail over the bus)",
+      "Auto-email the Self-Order Receipt and Auto-print the Preparation/Receipt on Payment Success"
     ],
-    "value_streams": [],
-    "information_concepts": [],
-    "organization": [],
+    "value_streams": [
+      "Self-Order-Pay-Online: build cart in the self-order/kiosk SPA -> choose an online method -> sendDraftOrderToServer -> open /pos/pay (QR in kiosk, window.open in mobile) -> create + confirm payment.transaction at provider -> _process_pos_online_payment writes account.payment + online pos.payment and finalises the order -> bus 'success' -> SPA shows confirmation, cashier prints, customer emailed receipt"
+    ],
+    "information_concepts": [
+      "pos.order (self-order, source mobile/kiosk)",
+      "pos.config (self-order online payment channel)",
+      "pos.payment.method (the online method exposed to self-order)",
+      "payment.transaction (the customer's online tender)",
+      "pos.payment / account.payment (the settled online tender)"
+    ],
+    "organization": [
+      "(no new groups) reuses point_of_sale POS groups + the public/portal access of the pos_online_payment pay routes and pos_self_order's self_ordering_default_user_id"
+    ],
     "products": [],
-    "policies": [],
-    "stakeholders": [],
+    "policies": [
+      "auto_install=true: activates only when both pos_online_payment and pos_self_order are present",
+      "use_self_order_online_payment is system-managed: writable only on draft orders whose config still has a self-order online method, else the write is silently stripped (never raises)",
+      "mobile + pay-each self-order online method must have a provider supporting the config currency (_check_self_order_online_payment_method_id constraint)",
+      "online method exposure is mode-gated: kiosk gets all is_online_payment methods on the config, mobile gets exactly self_order_online_payment_method_id (_load_pos_self_data_domain)",
+      "the kiosk/self receipt prints exactly once (get_order_to_print: FOR UPDATE NOWAIT + nb_print>0 guard) despite multiple bus listeners",
+      "settlement reuses pos_online_payment invariants (online pos.payment is 1:1 with account.payment, online lines never trusted from a draft client)"
+    ],
+    "stakeholders": [
+      "Self-order / kiosk customer (pays their own order online)",
+      "Cashier / POS User (sees the live status, gets the auto-printed prep/receipt)",
+      "Payment Provider (external acquirer, via the payment engine)",
+      "Kitchen / Preparation display (receives _send_order on success)",
+      "Accountant (consumes the account.payment + session closing entry)"
+    ],
     "strategy": null,
-    "metrics": []
+    "metrics": [
+      "share of self-order/kiosk orders paid online vs at cashier",
+      "online payment status outcomes (progress->success vs fail) per config",
+      "payment.transaction state distribution for self-order/kiosk pos.order-linked transactions"
+    ]
   },
   "classification": {
     "value_model": "chain",
     "activity_class": "primary",
     "apqc_category": "3.0 Market and Sell Products and Services",
-    "rationale": "pos_online_payment_self_order: thin chain/primary module (auto-architect baseline)."
+    "rationale": "pos_online_payment_self_order is a sell-flow bridge classified chain / primary / 3.0, inheriting the call of both parents (pos_online_payment is chain/primary/3.0; pos_self_order is the one network-flavoured outlier, but classed primary/3.0 as a customer order-capture channel). The mission this module completes is the SETTLEMENT of a retail self-order: it lets the diner pay the pos.order they just built on their phone/kiosk and then drives that confirmed transaction back into the live POS session as a real pos.payment + account.payment and finalises the order -- the Market-and-Sell 'tender and complete the sale' step (3.5 manage-sales-orders) realised on the customer's own device. It is primary because it is part of completing a revenue transaction (not a back-office utility) and chain because its value logic moves the order along the sell pipeline to paid/fulfilled, then fires the kitchen/prep hook (_send_order) and the receipt. It carries clear NETWORK overtones -- it mediates buyer + acquirer through public mediation routes (/pos/pay) and a real-time bus, much like pos_online_payment and the self-order channel it sits on -- but, exactly as the pos_online_payment record argues, the value it actually completes is the chain sell, with the buyer/acquirer brokering being the mechanism, so chain wins over network. APQC 9.0 (Manage Financial Resources) was considered because the confirmed tx does feed an account.payment (a 9.x collect-cash effect) and the trigger is a payment; rejected as the dominant concern because that accounting settlement is a triggered downstream consequence of finishing the POS sale -- the module exists to complete the self-order checkout, so its home is 3.0 Market and Sell, mirroring its payment-side parent rather than the account_payment engine."
   },
   "fit_to_standard": {
     "standard_capabilities": [
-      "POS Self-Order / Online Payment"
+      "online payment of a self-order/kiosk pos.order via the public /pos/pay portal (phone window.open or kiosk scan-to-pay QR)",
+      "one configurable self-order online payment method per mobile till; all online methods exposed in kiosk mode",
+      "automatic settlement of the confirmed transaction into an online pos.payment + account.payment and order finalisation (reused from pos_online_payment)",
+      "real-time progress/success/fail feedback to both the customer SPA and the cashier terminal over the ONLINE_PAYMENT_STATUS bus",
+      "auto-emailed self-order receipt (preset mail template) and once-only cashier-side prep/receipt auto-print on success",
+      "prompt async post-processing of self-order transactions (immediate cron trigger)"
     ],
-    "typical_fits": [],
-    "common_gaps": [],
+    "typical_fits": [
+      "restaurant mobile QR table-ordering where the diner pays online from their phone",
+      "fast-food self-service kiosk presenting a scan-to-pay QR for an online provider",
+      "pay-each self-order flows that must settle and notify the kitchen the moment payment confirms",
+      "any provider already supported by an installed payment_<provider> module"
+    ],
+    "common_gaps": [
+      "ships no acquirer: a payment_<provider> module must be installed and a provider published/enabled, sharing the config currency",
+      "kiosk-terminal (in-person card reader) payment is pos_self_order's _payment_request_from_kiosk path, not this online-portal flow",
+      "the self-order online method is single per mobile config; multi-provider choice in mobile needs customisation",
+      "QR/redirect UX is the standard popup/QR; bespoke kiosk or table-QR presentation is OWL dev on pos_self_order.assets",
+      "no per-provider fee/reconciliation handling beyond what account_payment provides"
+    ],
     "drive_hints": [
-      "n/a"
+      "odoo shell: env['pos.config'].search([('self_order_online_payment_method_id','!=',False)]).mapped(lambda c:(c.name, c.self_ordering_mode, c.self_order_online_payment_method_id.name))",
+      "odoo shell: env['pos.order'].search([('source','in',('mobile','kiosk')),('use_self_order_online_payment','=',True)], limit=5).mapped(('name','state','online_payment_method_id.name'))",
+      "odoo shell: tx=env['payment.transaction'].search([('pos_order_id.source','in',('mobile','kiosk')),('state','in',('authorized','done'))],limit=1); print(tx.payment_id, tx.pos_order_id.payment_ids.mapped(('amount','online_account_payment_id')))",
+      "curl GET /pos/pay/<pos_order_id>?access_token=...&exit_route=... (auth=public) to render the self-order pay form (and trigger the 'progress' bus push)",
+      "browse /pos-self/<config_id> (mobile), build an order, choose the online method -> the client opens /pos/pay and awaits ONLINE_PAYMENT_STATUS"
     ]
   },
   "reverse_eng_confidence": {
@@ -132,17 +308,24 @@
     "value_streams": "inferred",
     "policies": "inferred",
     "metrics": "inferred",
+    "stakeholders": "inferred",
     "strategy": "human"
   },
   "open_questions": [
-    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+    "The dead-looking pos.config._get_self_ordering_data / _get_self_ordering_payment_methods_data overrides call super() but no parent of those names exists in the current pos_self_order tree -- whether they are vestigial or guard a not-yet-present upstream method.",
+    "Exact client reconciliation when the ONLINE_PAYMENT_STATUS bus message races the customer returning via /pos/pay/confirmation (which path marks the SPA confirmed first).",
+    "Behaviour of split payments (partial online + cashier) on a self-order, and how use_self_order_online_payment toggles via get_and_set_online_payments_data(0).",
+    "Whether the immediate payment.cron_post_process_payment_tx trigger in _process can double-settle if the confirmation route already ran _process_pos_online_payment (idempotency relies on tx.payment_id.pos_order_id guard).",
+    "Which payment_<provider> modules are installed and which require a logged-in customer (tokenization is force-disabled for public users on these routes)."
   ],
   "provenance": {
     "explorer_facts": "doc/revres/facts/pos_online_payment_self_order.facts.json",
     "tools": [
-      "extract_module.py",
+      "code-read (addons/pos_online_payment_self_order/controllers/payment_portal.py + models/{payment_transaction,pos_order,pos_config,pos_payment_method,res_config_settings,ir_http}.py + static/src/**; addons/pos_online_payment/controllers/payment_portal.py + models/{pos_order,payment_transaction}.py; addons/pos_self_order/models/{pos_order,pos_config}.py; views/res_config_settings_views.xml)",
       "extract_frontend.py",
-      "gen_thin.py"
+      "extract_module.py",
+      "Grep",
+      "Read"
     ],
     "odoo_version": "19.0"
   }

@@ -393,13 +393,13 @@ payment_iyzico	network	support	9.0 Manage Financial Resourc	2	2	0	0	meta+code
 payment_mercado_pago	network	support	9.0 Manage Financial Resourc	3	4	1	0	meta+code+fe
 payment_mollie	network	support	9.0 Manage Financial Resourc	2	2	0	0	meta+code
 payment_nuvei	network	support	9.0 Manage Financial Resourc	2	2	0	0	meta+code
-payment_paymob	network	support	9.0 Manage Financial Resourc	0	2	0	0	meta
-payment_paypal	network	support	9.0 Manage Financial Resourc	0	2	2	0	meta+fe
+payment_paymob	network	support	9.0 Manage Financial Resourc	2	2	0	0	meta+code
+payment_paypal	network	support	9.0 Manage Financial Resourc	2	2	2	0	meta+code+fe
 payment_razorpay	network	support	9.0 Manage Financial Resourc	3	3	1	0	meta+code+fe
-payment_redsys	network	support	9.0 Manage Financial Resourc	0	2	0	0	meta
+payment_redsys	network	support	9.0 Manage Financial Resourc	2	2	0	0	meta+code
 payment_stripe	network	support	9.0 Manage Financial Resourc	3	5	3	0	meta+code+fe
 payment_toss_payments	network	support	9.0 Manage Financial Resourc	2	3	1	0	meta+code+fe
-payment_worldline	network	support	9.0 Manage Financial Resourc	0	2	1	0	meta+fe
+payment_worldline	network	support	9.0 Manage Financial Resourc	2	2	1	0	meta+code+fe
 payment_xendit	network	support	9.0 Manage Financial Resourc	2	3	3	1	meta+code+fe
 phone_validation	support	support	8.0 Manage Information Techn	6	0	0	0	meta+code
 point_of_sale	chain	primary	3.0 Market and Sell Products	7	7	166	23	meta+code+fe
@@ -411,9 +411,9 @@ pos_cashdro	chain	primary	3.0 Market and Sell Products	0	0	5	1	meta+fe
 pos_cashmatic	chain	primary	3.0 Market and Sell Products	0	0	3	0	meta+fe
 pos_discount	chain	primary	3.0 Market and Sell Products	0	0	5	0	meta+fe
 pos_dpopay	chain	primary	3.0 Market and Sell Products	0	0	2	0	meta+fe+integ
-pos_edi_ubl	chain	primary	3.0 Market and Sell Products	1	0	0	0	meta
+pos_edi_ubl	support	support	9.0 Manage Financial Resourc	1	0	0	0	meta+code
 pos_event	chain	primary	3.0 Market and Sell Products	7	0	11	3	meta+code+fe
-pos_event_sale	chain	primary	3.0 Market and Sell Products	1	0	0	0	meta
+pos_event_sale	chain	primary	3.0 Market and Sell Products	1	0	0	0	meta+code
 pos_glory_cash	chain	primary	3.0 Market and Sell Products	0	0	8	2	meta+fe
 pos_hr	chain	support	3.0 Market and Sell Products	11	0	14	1	meta+code+fe
 pos_hr_restaurant	chain	primary	3.0 Market and Sell Products	0	0	2	0	meta+fe
@@ -423,7 +423,7 @@ pos_mercado_pago	chain	primary	3.0 Market and Sell Products	0	1	2	0	meta+fe+inte
 pos_mollie	chain	primary	3.0 Market and Sell Products	0	1	2	0	meta+fe
 pos_mrp	chain	primary	3.0 Market and Sell Products	0	0	0	0	meta
 pos_online_payment	chain	primary	3.0 Market and Sell Products	7	3	9	1	meta+code+fe
-pos_online_payment_self_order	chain	primary	3.0 Market and Sell Products	0	2	4	0	meta+fe
+pos_online_payment_self_order	chain	primary	3.0 Market and Sell Products	6	2	4	0	meta+code+fe
 pos_pine_labs	chain	primary	3.0 Market and Sell Products	0	0	2	0	meta+fe+integ
 pos_qfpay	chain	primary	3.0 Market and Sell Products	0	1	3	0	meta+fe
 pos_razorpay	chain	primary	3.0 Market and Sell Products	0	0	4	0	meta+fe+integ
@@ -438,11 +438,11 @@ pos_sale_loyalty	chain	primary	3.0 Market and Sell Products	0	0	1	0	meta+fe
 pos_sale_margin	chain	primary	3.0 Market and Sell Products	0	0	0	0	meta
 pos_self_order	network	primary	3.0 Market and Sell Products	6	6	54	28	meta+code+fe
 pos_self_order_adyen	chain	primary	3.0 Market and Sell Products	0	0	0	0	meta
-pos_self_order_pine_labs	chain	primary	3.0 Market and Sell Products	0	2	3	0	meta+fe
+pos_self_order_pine_labs	chain	primary	3.0 Market and Sell Products	1	2	3	0	meta+code+fe
 pos_self_order_qfpay	chain	primary	3.0 Market and Sell Products	0	0	2	0	meta+fe
-pos_self_order_razorpay	chain	primary	3.0 Market and Sell Products	0	2	3	0	meta+fe
+pos_self_order_razorpay	chain	primary	3.0 Market and Sell Products	1	2	3	0	meta+code+fe
 pos_self_order_sale	chain	primary	3.0 Market and Sell Products	0	0	0	0	meta
-pos_self_order_stripe	chain	primary	3.0 Market and Sell Products	0	2	3	0	meta+fe
+pos_self_order_stripe	chain	primary	3.0 Market and Sell Products	1	2	3	0	meta+code+fe
 pos_self_order_viva_com	chain	primary	3.0 Market and Sell Products	0	1	2	0	meta+fe
 pos_sms	chain	primary	3.0 Market and Sell Products	0	0	1	0	meta+fe
 pos_stripe	chain	primary	3.0 Market and Sell Products	0	0	3	0	meta+fe
@@ -451,7 +451,7 @@ privacy_lookup	support	support	13.0 Develop and Manage Busi	4	0	0	0	meta+code
 product	support	support	2.0 Develop and Manage Produ	6	3	15	4	meta+code+fe
 product_email_template	support	support	2.0 Develop and Manage Produ	0	0	0	0	meta
 product_expiry	chain	support	4.0 Deliver Physical Product	6	0	2	0	meta+code+fe
-product_margin	support	support	2.0 Develop and Manage Produ	1	0	0	0	meta
+product_margin	support	support	9.0 Manage Financial Resourc	2	0	0	0	meta+code
 product_matrix	support	support	2.0 Develop and Manage Produ	0	0	2	1	meta+fe
 project	shop	primary	5.0 Deliver Services	8	6	119	14	meta+code+fe
 project_account	shop	primary	5.0 Deliver Services	0	0	0	0	meta
@@ -470,7 +470,7 @@ project_stock	shop	primary	5.0 Deliver Services	0	0	0	0	meta
 project_stock_account	shop	primary	5.0 Deliver Services	0	0	0	0	meta
 project_stock_landed_costs	shop	primary	5.0 Deliver Services	0	0	0	0	meta
 project_timesheet_holidays	shop	primary	5.0 Deliver Services	0	0	0	0	meta
-project_todo	shop	primary	5.0 Deliver Services	1	0	14	1	meta+fe
+project_todo	shop	support	5.0 Deliver Services (person	3	0	14	1	meta+code+fe
 purchase	support	support	4.2 Procure Materials and Se	7	5	15	4	meta+code+fe
 purchase_edi_ubl_bis3	support	support	4.2 Procure Materials and Se	1	0	0	0	meta
 purchase_mrp	support	support	4.2 Procure Materials and Se	0	0	1	0	meta+fe

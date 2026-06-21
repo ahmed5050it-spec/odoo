@@ -4,35 +4,81 @@
     "manifest": {
       "name": "Margins by Products",
       "category": "Sales/Sales",
+      "summary": null,
+      "description": "Adds a reporting menu in products that computes sales, purchases, margins and other interesting indicators based on invoices.",
       "depends": [
         "account"
       ],
       "auto_install": false,
-      "application": false
+      "application": false,
+      "license": "LGPL-3",
+      "author": "Odoo S.A."
     },
     "models": [
       {
         "_name": "product.margin",
         "_description": "Product Margin",
-        "fields": 3
+        "kind": "TransientModel (wizard, has DB table but transient)",
+        "file": "wizard/product_margin.py",
+        "fields": 3,
+        "field_names": [
+          "from_date",
+          "to_date",
+          "invoice_state"
+        ],
+        "relations": [],
+        "methods": [
+          "action_open_window"
+        ]
+      },
+      {
+        "_inherit": "product.product",
+        "_description": "Product Variant (inherit; adds 17 non-stored computed margin fields)",
+        "file": "models/product_product.py",
+        "fields": 17,
+        "stored": false,
+        "field_names": [
+          "date_from",
+          "date_to",
+          "invoice_state",
+          "sale_avg_price",
+          "purchase_avg_price",
+          "sale_num_invoiced",
+          "purchase_num_invoiced",
+          "sales_gap",
+          "purchase_gap",
+          "turnover",
+          "total_cost",
+          "sale_expected",
+          "normal_cost",
+          "total_margin",
+          "expected_margin",
+          "total_margin_rate",
+          "expected_margin_rate"
+        ],
+        "relations": [],
+        "methods": [
+          "_compute_product_margin_fields_values",
+          "_read_group_select",
+          "_read_group",
+          "_read_grouping_sets"
+        ],
+        "note": "All 17 added fields are compute='_compute_product_margin_fields_values', store=False (purely runtime/in-memory); no new column is created. The compute reads context keys date_from/date_to/invoice_state set by the product.margin wizard. The model is NOT _auto=False (it is the real product.product table) but these particular fields behave like a virtual SQL-view layered over account.move.line."
       }
     ],
     "routes": [],
     "security": {
       "access_rules": 1,
       "record_rules": 0,
-      "groups": 0
+      "groups": 0,
+      "note": "Single ir.model.access row: model_product_margin granted read/write/create (no unlink) to account.group_account_user. No record rules; the margin fields ride on product.product's own security. The reporting menu sits under account.account_reports_management_menu, so it is reachable only by Accounting users."
     },
     "views": {
-      "form": 1,
+      "form": 2,
       "list": 1,
-      "tree": 0,
-      "kanban": 0,
-      "search": 0,
-      "pivot": 0,
       "graph": 1,
-      "calendar": 0,
-      "activity": 0
+      "search": 0,
+      "note": "Two forms (the product.margin wizard form product_margin_form_view; and view_product_margin_form, a product.product Margins form with Sales/Purchases/Margins notebook page). One list view_product_margin_tree with column sums (Turnover/Sales Gap/Total Cost/Total Margin) and progressbar widgets on the two margin-rate fields. One graph view_product_margin_graph plotting total_margin as a measure grouped by product_tmpl_id. The wizard's act_window product_margin_act_window opens target=new; action_open_window then re-opens product.product in list,form,graph with the date/state context injected."
     },
     "frontend": {
       "present": false,
@@ -57,53 +103,135 @@
     },
     "behavioral_notes": [
       {
-        "element": "thin module",
-        "observation": "1 models, 0 routes, 612 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
-        "source": "ast"
+        "element": "product.product._compute_product_margin_fields_values (raw SQL over account.move.line)",
+        "observation": "The whole module's substance. For self.ids it runs ONE parametrised SQL statement TWICE (invoice_types ('out_invoice','out_refund') for sales, then ('in_invoice','in_refund') for purchases) against account_move_line l JOIN account_move i JOIN product_product JOIN product_template pt, wrapped in a MATERIALIZED currency_rate CTE from res.currency._select_companies_rates() so multi-currency invoice amounts are converted to company currency. Refund lines are netted by the CASE move_type IN ('out_invoice','in_invoice') THEN 1 ELSE -1 sign. Per product it derives: avg_unit_price = SUM(price_subtotal/rate*sign)/NULLIF(SUM(qty*sign),0) -> sale_avg_price / purchase_avg_price; num_qty -> sale_num_invoiced / purchase_num_invoiced; total (signed -balance) -> turnover (sales) and total_cost (purchases); and SUM(qty*pt.list_price*sign) -> sale_expected (catalog price x invoiced qty). The compute is gated by invoice_state -> (state, payment_state) filter sets: 'paid' = posted & {in_payment,paid,reversed}; 'open_paid' = posted & {not_paid,in_payment,paid,reversed,partial}; 'draft_open_paid' = adds draft state. Filtered by i.invoice_date BETWEEN date_from AND date_to (defaults this calendar year), i.company_id = force_company|env.company, and l.display_type='product'. None of this exists in metadata - the field list shows 14 Floats with no hint they are SQL aggregates.",
+        "source": "code-read"
+      },
+      {
+        "element": "product.product margin formulas (the metadata gap: derived KPIs)",
+        "observation": "After the two SQL passes, the Python derives the headline margin KPIs from the raw aggregates: normal_cost = product.standard_price * purchase_num_invoiced (expected cost at the cost-price, NOT the actually-billed total_cost); sales_gap = sale_expected - turnover (catalog vs realised revenue); purchase_gap = normal_cost - total_cost (expected vs realised cost); total_margin = turnover - total_cost (realised margin); expected_margin = sale_expected - normal_cost (catalog/theoretical margin); total_margin_rate = total_margin*100/turnover and expected_margin_rate = expected_margin*100/sale_expected (both guarded against /0 with the and/or idiom). So 'expected' figures are theoretical (catalog list_price x cost standard_price) while 'total/turnover' figures are what invoices actually booked - the report's whole point is the gap between the two, which is pure Python arithmetic invisible to the schema.",
+        "source": "code-read"
+      },
+      {
+        "element": "product.margin.action_open_window (wizard -> contextual product.product report)",
+        "observation": "product.margin is a TransientModel (3 fields: from_date, to_date, invoice_state default 'open_paid'). It owns no margin data itself. action_open_window (ensure_one) looks up the product search view plus the three product_margin.* product.product views by xml_id, copies the env context with create=False/edit=False, injects date_from=from_date, date_to=to_date and invoice_state=self.invoice_state, and returns an ir.actions.act_window on res_model='product.product' with view_mode 'list,form,graph'. Those context keys are exactly what _compute_product_margin_fields_values reads, so the wizard is purely a parameter form that re-launches product.product in 'margin mode' for the chosen period/state. There is no product.margin table of results.",
+        "source": "code-read"
+      },
+      {
+        "element": "product.product._read_group / _read_grouping_sets / _read_group_select (non-stored-field aggregation override)",
+        "observation": "Because the 17 margin fields are store=False, Odoo's grouping/SQL layer cannot SUM them in the database. The override declares _SPECIAL_SUM_AGGREGATES = {'<field>:sum' for the 13 numeric margin fields}; _read_group_select returns SQL('NULL') for those specs so _description_aggregator() does not fail; then _read_group/_read_grouping_sets fall back to fetching the matching records (adding 'id:recordset'), force-computing them in Python via self._fields['turnover'].compute_value(all_records) (which triggers the shared compute) to bypass PREFETCH_MAX batching, and replace each NULL aggregate with sum(records.mapped(field_name)). This is how the list view's sum='Turnover'/'Total Margin' columns and the graph measure get totals for fields that have no column - a Python-side group-by-sum shim, entirely invisible to metadata.",
+        "source": "code-read"
       }
     ]
   },
   "it_architecture": {
-    "application": "product_margin (Margins by Products)",
+    "application": "product_margin (Margins by Products analytical reporting component over account invoices)",
     "software_services": [],
     "data_objects": [
-      "product.margin"
+      "product.margin",
+      "product.product"
     ],
-    "logical_data_erm": [],
+    "logical_data_erm": [
+      "product.margin (wizard) -> product.product (act_window target, no FK)",
+      "product.product -> account.move.line (read via raw SQL on l.product_id)",
+      "account.move.line -> account.move (l.move_id -> i.id; state/payment_state/move_type/invoice_date/company_id filters)",
+      "product.product -> product.template (pt.list_price for sale_expected)",
+      "account.move -> res.currency (currency_rate CTE via res.currency._select_companies_rates)"
+    ],
     "information_flows": [
-      "depends: account"
+      "depends: account (account.move / account.move.line are the sole data source)",
+      "flow: user opens Product Margins wizard (product.margin) -> picks from_date/to_date/invoice_state -> action_open_window injects date_from/date_to/invoice_state into context -> product.product list/form/graph",
+      "side-effect: rendering product.product margin fields -> _compute_product_margin_fields_values fires raw SQL twice (sales + purchases) over account_move_line -> 17 computed KPIs",
+      "side-effect: list-sum / graph-measure on margin fields -> _read_group / _read_grouping_sets Python shim computes group totals for non-stored fields",
+      "no outbound integration, no routes, no stored result table"
     ],
     "frontend_components": []
   },
   "business_architecture": {
     "capabilities": [
-      "Margins by Products"
+      "Compute Product Sales/Purchase Margins from Invoices",
+      "Compare Realised vs Expected (Catalog/Standard-cost) Margins",
+      "Parameterise Margin Analysis by Date Range & Invoice State",
+      "Quantify Sales & Purchase Gaps per Product",
+      "Visualise Margin by Product (list sums / graph measure)"
     ],
-    "value_streams": [],
+    "value_streams": [
+      "Analyse-Margin: choose period + invoice state in the product.margin wizard -> system aggregates customer-invoice and vendor-bill lines per product -> derive turnover, costs, expected vs realised margins and rates -> present as list (with sums), form (KPI sheet) and graph for decision-making"
+    ],
     "information_concepts": [
-      "product.margin"
+      "product.product (product as the margin subject)",
+      "product.template (list_price = catalog/expected sale price)",
+      "account.move.line (invoiced quantity/price subtotal/balance)",
+      "account.move (invoice/bill state, payment_state, move_type, date)",
+      "res.currency (rate for company-currency conversion)"
     ],
-    "organization": [],
-    "products": [],
-    "policies": [],
-    "stakeholders": [],
+    "organization": [
+      "account.group_account_user (Accounting user - the only group granted access to the wizard and the report menu)"
+    ],
+    "products": [
+      "product.product",
+      "product.template"
+    ],
+    "policies": [
+      "invoice_state policy: 'paid' / 'open_paid' (default) / 'draft_open_paid' maps to the set of account.move state + payment_state included in the aggregation",
+      "expected vs realised policy: 'expected' KPIs use catalog list_price and cost standard_price; 'total/turnover' KPIs use actually-invoiced amounts; the report exposes the gap",
+      "company scoping: aggregation restricted to env.company (or context force_company); multi-currency normalised via currency_rate CTE",
+      "line scoping: only l.display_type='product' lines counted; refunds netted by move_type sign"
+    ],
+    "stakeholders": [
+      "Accounting / Controlling user (account.group_account_user)",
+      "Sales & Purchasing management (consume the margin KPIs)",
+      "Product Manager (catalog list_price / standard_price feed expected margins)"
+    ],
     "strategy": null,
-    "metrics": []
+    "metrics": [
+      "turnover (sum of invoiced sale price x qty)",
+      "total_cost (sum of vendor-bill price x qty)",
+      "sale_expected (catalog list_price x invoiced qty)",
+      "normal_cost (standard_price x purchased qty)",
+      "total_margin (turnover - total_cost)",
+      "expected_margin (sale_expected - normal_cost)",
+      "total_margin_rate % (total_margin*100/turnover)",
+      "expected_margin_rate % (expected_margin*100/sale_expected)",
+      "sales_gap (sale_expected - turnover)",
+      "purchase_gap (normal_cost - total_cost)",
+      "sale_avg_price / purchase_avg_price (avg invoiced unit price)",
+      "sale_num_invoiced / purchase_num_invoiced (invoiced quantities)"
+    ]
   },
   "classification": {
     "value_model": "support",
     "activity_class": "support",
-    "apqc_category": "2.0 Develop and Manage Products and Services",
-    "rationale": "product_margin: thin support/support module (auto-architect baseline)."
+    "apqc_category": "9.0 Manage Financial Resources (cost/profitability analysis), secondary 2.0 Develop and Manage Products and Services",
+    "rationale": "product_margin is a read-only analytical/management-reporting overlay, not an operational document flow: it creates no business object (product.margin is a throwaway TransientModel parameter form) and owns no stored data - it just aggregates existing account.move.line records into per-product margin KPIs on the fly. That is a firm-infrastructure SUPPORT activity (Stabell & Fjeldstad support / Porter management-accounting support), feeding decisions in the primary chain (sale/purchase) rather than performing them. APQC: the work is product profitability / cost-and-margin analysis driven entirely off posted invoices and standard cost, which maps most precisely to 9.0 Manage Financial Resources (9.x perform planning/management accounting and cost analysis); the module's surface lives under the Accounting Reporting menu and is gated to account.group_account_user, reinforcing the finance-analysis reading. 2.0 Develop and Manage Products/Services was considered because the manifest category is Sales/Sales and the subject is the product, but the module does not develop, price or manage products - it measures their financial margin - so 2.0 is at most secondary. The value driver is decision-support information, characteristic of support, not the throughput of a value chain."
   },
   "fit_to_standard": {
     "standard_capabilities": [
-      "Margins by Products"
+      "per-product margin report built from posted customer invoices and vendor bills",
+      "configurable analysis window (from/to date) and invoice-state scope (paid / open+paid / draft+open+paid)",
+      "realised KPIs (turnover, total cost, total margin, margin rate) and expected KPIs (catalog sale, normal cost, expected margin, expected rate)",
+      "sales gap and purchase gap (expected vs realised) per product",
+      "multi-currency normalisation to company currency; multi-company scoping",
+      "list view with column sums + progressbar margin rates, KPI form page, and total_margin graph"
     ],
-    "typical_fits": [],
-    "common_gaps": [],
+    "typical_fits": [
+      "quick product profitability review off the accounting ledger without a dedicated BI tool",
+      "spotting products where realised margin diverges from catalog/standard-cost expectation",
+      "period-over-period margin checks by changing the wizard date range",
+      "accounting/controlling users analysing margin alongside the Accounting Reporting menu"
+    ],
+    "common_gaps": [
+      "margin is invoice-based only: unbilled sale orders / POS / stock-valuation moves are not included (no link to sale.order, purchase.order or stock valuation)",
+      "expected margin uses current standard_price/list_price, not the price at invoice date (no historical cost layering)",
+      "no landed costs, discounts-at-line beyond price_subtotal, or analytic-account dimension in the aggregation",
+      "fields are non-stored, so grouping/pivoting beyond the provided list-sum/graph requires the Python read-group shim and cannot be used in arbitrary BI pivots",
+      "single hard-coded company-currency conversion; no cross-company consolidated view"
+    ],
     "drive_hints": [
-      "odoo shell: env['product.margin'].search([],limit=3)"
+      "odoo shell: w = env['product.margin'].create({'invoice_state':'open_paid'}); w.action_open_window()['context']  # see injected date_from/date_to/invoice_state",
+      "odoo shell: p = env['product.product'].browse(<id>).with_context(date_from='2024-01-01', date_to='2024-12-31', invoice_state='open_paid'); (p.turnover, p.total_cost, p.total_margin, p.total_margin_rate, p.expected_margin)",
+      "odoo shell: env['product.product'].with_context(date_from='2024-01-01', date_to='2024-12-31')._read_group([], [], ['turnover:sum','total_margin:sum'])  # exercises the non-stored-field group-sum shim",
+      "UI: Accounting > Reporting menu (account.account_reports_management_menu) > Product Margins…"
     ]
   },
   "reverse_eng_confidence": {
@@ -117,14 +245,16 @@
     "strategy": "human"
   },
   "open_questions": [
-    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+    "Exact semantics of res.currency._select_companies_rates() (the MATERIALIZED currency_rate CTE) and how it picks the rate row per invoice_date/company - defined in account/base, not here.",
+    "Whether downstream/enterprise modules add stock-valuation or sale/purchase-order based margin that this invoice-only report deliberately omits.",
+    "Behaviour of the margin fields when a product spans companies with different standard_price, given the single force_company scoping."
   ],
   "provenance": {
     "explorer_facts": "doc/revres/facts/product_margin.facts.json",
     "tools": [
+      "code-read (wizard/product_margin.py, models/product_product.py, wizard/product_margin_view.xml, views/product_product_views.xml, security/ir.model.access.csv, __manifest__.py)",
       "extract_module.py",
-      "extract_frontend.py",
-      "gen_thin.py"
+      "extract_frontend.py"
     ],
     "odoo_version": "19.0"
   }

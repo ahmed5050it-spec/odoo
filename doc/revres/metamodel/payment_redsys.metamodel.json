@@ -4,21 +4,49 @@
     "manifest": {
       "name": "Payment Provider: Redsys",
       "category": "Accounting/Payment Providers",
+      "summary": "A payment provider covering the Spanish market.",
+      "version": "1.0",
+      "author": "Odoo S.A.",
+      "license": "LGPL-3",
       "depends": [
         "payment"
       ],
       "auto_install": false,
       "application": false
     },
-    "models": [],
+    "models": [
+      {
+        "_name": "payment.provider (inherit)",
+        "_description": "Payment Provider (Redsys credentials: merchant code / merchant terminal / secret key)",
+        "fields": 4,
+        "relations": [
+          "code (Selection selection_add 'redsys', ondelete set default)",
+          "redsys_merchant_code (Char, required_if_provider=redsys, copy=False)",
+          "redsys_merchant_terminal (Char, required_if_provider=redsys, copy=False)",
+          "redsys_secret_key (Char, required_if_provider=redsys, copy=False, groups=base.group_system)"
+        ]
+      },
+      {
+        "_name": "payment.transaction (inherit)",
+        "_description": "Payment Transaction (Redsys hosted-redirect SIS flow via realizarPago; no direct API, no tokenization)",
+        "fields": 0,
+        "relations": [
+          "no new fields; 7 methods overriding payment's create/reference/rendering/notification hooks"
+        ]
+      }
+    ],
     "routes": [
       {
-        "paths": [],
+        "paths": [
+          "/payment/redsys/return"
+        ],
         "auth": "public",
         "type": "http"
       },
       {
-        "paths": [],
+        "paths": [
+          "/payment/redsys/webhook"
+        ],
         "auth": "public",
         "type": "http"
       }
@@ -26,19 +54,50 @@
     "security": {
       "access_rules": 0,
       "record_rules": 0,
-      "groups": 0
+      "groups": 0,
+      "note": "No own ACL/rules; relies on payment's security and on the base.group_system field group guarding redsys_secret_key (merchant code and merchant terminal are left ungrouped)."
     },
     "views": {
       "form": 1,
       "list": 0,
-      "tree": 0,
       "kanban": 0,
       "search": 0,
       "pivot": 0,
       "graph": 0,
-      "calendar": 0,
-      "activity": 0
+      "note": "xml_loc=53: payment.provider form inheritance (payment_provider_views.xml: Redsys merchant code / merchant terminal / secret key, shown only when code=='redsys', secret key password-masked) + the QWeb redirect-form template payment_redsys_templates.xml (auto-submit POST form to the Redsys SIS endpoint with three hidden inputs Ds_MerchantParameters / Ds_Signature / Ds_SignatureVersion), plus data/payment_provider_data.xml wiring redirect_form_view_id. No own model views. Module also declares post_init_hook / uninstall_hook (inherited payment install hooks)."
     },
+    "behavioral_notes": [
+      {
+        "element": "payment.transaction._get_specific_rendering_values -> hidden-field POST redirect to the Redsys SIS endpoint (live https://sis.redsys.es/sis/realizarPago ; test https://sis-t.redsys.es:25443/sis/realizarPago)",
+        "observation": "Redsys is a pure hosted-redirect acquirer: there is NO server-to-server payment API call. _get_specific_rendering_values builds the merchant-parameters dict via _redsys_prepare_merchant_parameters (DS_MERCHANT_AMOUNT=to_minor_currency_units(amount,currency) as a string, DS_MERCHANT_CURRENCY=currency.iso_numeric, DS_MERCHANT_MERCHANTCODE=redsys_merchant_code, DS_MERCHANT_TERMINAL=redsys_merchant_terminal, DS_MERCHANT_ORDER=tx.reference, DS_MERCHANT_MERCHANTURL=webhook_url (/payment/redsys/webhook), DS_MERCHANT_TRANSACTIONTYPE='0' i.e. Authorization, DS_MERCHANT_URLOK=DS_MERCHANT_URLKO=return_url (/payment/redsys/return), DS_MERCHANT_PAYMETHODS mapped from the payment method code via const.PAYMENT_METHODS_MAPPING (default 'C'), and a DS_MERCHANT_EMV3DS sub-block carrying the billing address + cardholderName + email for 3-D Secure). It JSON-serialises that dict, Base64-encodes it into encoded_merchant_parameters, signs it via provider._redsys_calculate_signature(encoded_merchant_parameters, reference, redsys_secret_key), and returns {api_url=provider._redsys_get_api_url() (live vs test by provider.state), merchant_parameters, signature, signature_version='HMAC_SHA256_V1'}. These three values feed the redirect_form QWeb template (Ds_MerchantParameters / Ds_Signature / Ds_SignatureVersion) whose hidden inputs auto-POST the browser to Redsys' SIS realizarPago page. The acquirer endpoint, the Base64 merchant-parameters envelope, and the signed-form handoff are invisible to Python model/field metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "payment.provider._redsys_calculate_signature -> per-order 3DES-derived key then HMAC-SHA256 (signature_version HMAC_SHA256_V1)",
+        "observation": "_redsys_calculate_signature implements Redsys' official signing scheme and is the SAME routine used for both directions. (1) It Base64-decodes redsys_secret_key into the master 3DES key. (2) It derives a PER-ORDER key by 3DES-CBC encrypting the transaction reference (the DS_MERCHANT_ORDER) -- encoded and zero-padded to 16 bytes with a zero (8x b'\\x00') IV -- using cryptography's TripleDES (imported from cryptography.hazmat.decrepit.ciphers.algorithms on cryptography>=43, else the legacy primitives path). (3) It computes hmac.new(derived_key, merchant_parameters.encode(), hashlib.sha256) over the Base64 merchant-parameters string. (4) It urlsafe-Base64-encodes the HMAC digest and returns it. So the signature is an HMAC-SHA256 keyed by a key that is itself unique per order (the 3DES encryption of the order id under the shared secret) -- NOT a plain HMAC over the secret, and NOT an asymmetric signature. This per-order-key derivation plus HMAC is pure code semantics, not derivable from metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "RedsysController.redsys_return_from_checkout (/payment/redsys/return, GET) + redsys_webhook (/payment/redsys/webhook, POST, csrf=False) -> Base64-decode Ds_MerchantParameters, _search_by_reference, then _verify_signature BEFORE _process; reference via _extract_reference -> Ds_Order",
+        "observation": "Both public routes share the same guarded pattern. Each JSON-decodes Base64(Ds_MerchantParameters) into data, calls _search_by_reference('redsys', data) (routing through _extract_reference -> data['Ds_Order']) to locate the tx, and -- only if a tx is found -- calls _verify_signature(encoded_data, tx_sudo) BEFORE tx_sudo._process('redsys', data). _verify_signature reads data['Ds_Signature'] and rejects with werkzeug Forbidden (HTTP 403) when it is missing OR when hmac.compare_digest(received, provider._redsys_calculate_signature(Ds_MerchantParameters, tx.reference, redsys_secret_key)) fails -- a constant-time compare against the signature recomputed with the per-order 3DES-derived key. The return route is a GET that redirects to /payment/status; the webhook is a POST that returns the literal 'OK' (per its docstring; the handler returns '') to acknowledge. _process then runs _validate_amount then _apply_updates. Note both routes only verify when a tx is found (a missing reference silently skips), but verification always precedes processing. This Base64-envelope decode + signature-before-process guard is pure code, not visible in metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "payment.transaction._apply_updates -> Redsys Ds_Response -> payment state mapping (no S2S, status read from the signed feedback)",
+        "observation": "_apply_updates resolves the payment method from data['Ds_Card_Brand'] via payment.method._get_from_code(..., mapping=const.PAYMENT_METHODS_MAPPING) (falling back to the current method), then maps the numeric data['Ds_Response'] through const.PAYMENT_STATUS_MAPPING into payment's guarded transitions: codes '0000'..'0099' plus '400' and '900' -> _set_done; '9915' -> _set_canceled; a fixed list of ~35 error codes (e.g. '101','102','180','184','190','191','202','912','9915'... '9997','9998','9999') -> _set_error carrying data['Ds_ErrorCode']; any other code -> _set_error('Unknown status code'). _extract_amount_data reads data['Ds_Amount'] (converted from minor units via to_major_currency_units) and resolves the currency by matching data['Ds_Currency'] against res.currency.iso_numeric for the engine's amount cross-check. provider_reference is NOT set here -- it is stamped at create() time to tx.reference (Redsys keys the order by the reference itself). This inbound numeric-status->state translation (the 0000-0099/400/900 success band and the explicit cancel vs error code buckets) is pure code, not visible in metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "external integration surface (gap #7) -- endpoints, secret key (no transport API key)",
+        "observation": "Static gap-#7 facts (extract_frontend.py): uses_api_keys=true (because of the pre-shared redsys_secret_key), but there is NO outbound REST client: the only declared endpoints are the two Redsys SIS pages -- https://sis.redsys.es/sis/realizarPago (live) and https://sis-t.redsys.es:25443/sis/realizarPago (test) -- selected by provider.state in models/payment_provider.py (_redsys_get_api_url). Redsys is reached purely by the browser POSTing the signed hidden-field form (Ds_MerchantParameters / Ds_Signature / Ds_SignatureVersion=HMAC_SHA256_V1) to the SIS page, and Redsys returns to Odoo's /payment/redsys/return + pushes to /payment/redsys/webhook (the DS_MERCHANT_MERCHANTURL). The 'API key' is the pre-shared Base64 secret used ONLY to derive the per-order 3DES key for the HMAC-SHA256 signature (redsys_secret_key), not a bearer token on any HTTP call. This redirect-only acquirer link is the canonical metadata gap #7: none of the SIS endpoints, the Base64 envelope, or the 3DES-derived-key HMAC signing are reachable from model/field metadata.",
+        "source": "static"
+      },
+      {
+        "element": "frontend (static) -- no JS, no OWL (gap #3)",
+        "observation": "0 JS files, 0 OWL components, 0 registry adds, 0 patches (gap #3). payment_redsys ships no client-side code: the entire buyer interaction is the server-rendered redirect_form QWeb template (payment_redsys_templates.xml) whose three hidden inputs auto-submit to the Redsys SIS page. There is no browser SDK and no inline card form -- card / Bizum data are collected on Redsys' hosted SIS page (with EMV 3-D Secure driven by the DS_MERCHANT_EMV3DS block), never in Odoo. The only browser-visible artifact is the auto-POST redirect form (plain server-rendered HTML, no gap-#3 JS surface).",
+        "source": "static"
+      }
+    ],
     "frontend": {
       "present": false,
       "js_files": 0,
@@ -64,52 +123,127 @@
     "runtime": {
       "models_with_data": 0,
       "top": []
-    },
-    "behavioral_notes": [
-      {
-        "element": "thin module",
-        "observation": "0 models, 2 routes, 624 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
-        "source": "ast"
-      }
-    ]
+    }
   },
   "it_architecture": {
-    "application": "payment_redsys (Payment Provider: Redsys)",
-    "software_services": [],
-    "data_objects": [],
-    "logical_data_erm": [],
-    "information_flows": [
-      "depends: payment"
+    "application": "payment_redsys (Redsys acquirer adapter for the payment engine; _inherit-only, no own models/views)",
+    "software_services": [
+      "/payment/redsys/return (redirect-return, http GET: Base64-decodes Ds_MerchantParameters, signature-verified, processes, then /payment/status)",
+      "/payment/redsys/webhook (async notification, http POST, csrf=False: Base64-decodes Ds_MerchantParameters, signature-verified, processes, returns 'OK')"
     ],
-    "frontend_components": []
+    "data_objects": [
+      "payment.provider (+redsys_merchant_code, redsys_merchant_terminal, redsys_secret_key)",
+      "payment.transaction (Redsys hosted-redirect SIS flow; no new fields; 7 override methods)"
+    ],
+    "logical_data_erm": [
+      "payment.transaction -> payment.provider (provider_id; provider_code=='redsys' gates every override)",
+      "payment.provider.code selection_add 'redsys'",
+      "external: payment.transaction.reference == Redsys DS_MERCHANT_ORDER / Ds_Order (9-12 alphanumeric chars; cross-system key for return/webhook lookup via _extract_reference)",
+      "external: payment.transaction.provider_reference == tx.reference (stamped at create() time; Redsys keys the order by the reference itself)"
+    ],
+    "information_flows": [
+      "depends: payment (inherits the provider/transaction engine + redirect-form rendering + _process state machine)",
+      "outbound (redirect): _get_specific_rendering_values -> Base64-enveloped, HMAC_SHA256_V1-signed hidden-field POST form -> browser auto-submit to https://sis.redsys.es/sis/realizarPago (test sis-t.redsys.es:25443) -- no server-to-server API call",
+      "inbound (return): Redsys -> GET /payment/redsys/return -> Base64-decode Ds_MerchantParameters -> _verify_signature (per-order 3DES-derived-key HMAC-SHA256, constant-time compare) -> _process -> /payment/status",
+      "inbound (webhook): Redsys -> POST /payment/redsys/webhook (the DS_MERCHANT_MERCHANTURL) -> Base64-decode -> _verify_signature -> _process -> payment state machine",
+      "no tokenization / no refund / no capture / no void flows in this module"
+    ],
+    "frontend_components": [
+      "redirect_form QWeb template (payment_redsys_templates.xml; server-rendered hidden-field auto-POST form to the Redsys SIS page; three inputs Ds_MerchantParameters / Ds_Signature / Ds_SignatureVersion; no JS/OWL)"
+    ],
+    "external_integrations": {
+      "sdk": "none (no python SDK and no browser SDK; card / Bizum data entered on Redsys' hosted SIS page, never in Odoo)",
+      "uses_api_keys": true,
+      "endpoints": [
+        "https://sis.redsys.es/sis/realizarPago (live)",
+        "https://sis-t.redsys.es:25443/sis/realizarPago (test)"
+      ],
+      "auth": "no transport bearer token; the pre-shared Base64 redsys_secret_key is used ONLY to derive a per-order 3DES key (3DES-CBC of the order id, zero IV) which keys an HMAC-SHA256 over the Base64 merchant-parameters (signature_version HMAC_SHA256_V1); the same _redsys_calculate_signature routine signs outbound (Ds_Signature) and verifies inbound",
+      "files": [
+        "const.py",
+        "models/payment_provider.py",
+        "models/payment_transaction.py",
+        "controllers/main.py"
+      ],
+      "pattern": "Concrete realization of metadata gap #7: a real external acquirer integration in its hosted-redirect form. Although uses_api_keys=true, there is NO authenticated S2S endpoint -- the secret key is purely the seed for the per-order signing key. The browser POSTs a server-signed, Base64-enveloped hidden-field form to Redsys' SIS realizarPago page (live or test by provider.state), the buyer pays on Redsys (with EMV 3-D Secure via DS_MERCHANT_EMV3DS), and Redsys returns the signed feedback to /payment/redsys/return and pushes to /payment/redsys/webhook, both verified by recomputing the HMAC-SHA256 under the per-order 3DES-derived key. The base 'payment' engine ships no live acquirer; this module is that override, contrasting with Stripe/Xendit by being redirect-only (no S2S API, no tokenization) and with APS/Buckaroo by its distinctive 3DES-derived-key HMAC scheme.",
+      "note": "Gap-#7 example where uses_api_keys=true is misleading: the 'key' is a signing secret (Base64-decoded into the master 3DES key), not a transport credential. None of the Redsys SIS endpoints, the Base64 merchant-parameters envelope, or the per-order 3DES-derived-key HMAC-SHA256 signing (HMAC_SHA256_V1) are derivable from Python model/field metadata; they were established only by reading const.py + models/payment_provider.py + models/payment_transaction.py + controllers/main.py."
+    }
   },
   "business_architecture": {
     "capabilities": [
-      "Payment Provider: Redsys"
+      "Accept Card and Bizum payments via Redsys' hosted SIS page across the Spanish market",
+      "Accept specific card brands (Visa, Mastercard, Amex, Diners, JCB) -- mapped to Redsys DS_MERCHANT_PAYMETHODS codes, or default 'C' (card)",
+      "EMV 3-D Secure authentication driven by the DS_MERCHANT_EMV3DS billing/cardholder block",
+      "Signed-redirect settlement (per-order 3DES-derived-key HMAC-SHA256, HMAC_SHA256_V1) with no card data ever touching Odoo",
+      "Multi-currency acceptance (currency sent as ISO-4217 numeric via currency.iso_numeric; no module-side currency allow-list)"
     ],
-    "value_streams": [],
-    "information_concepts": [],
-    "organization": [],
+    "value_streams": [
+      "Collect-Payment (redirect): initiate tx -> _get_specific_rendering_values builds the Base64-enveloped, signed merchant-parameters form -> browser auto-POST to the Redsys SIS realizarPago page -> buyer pays/authenticates on Redsys -> GET /payment/redsys/return (signature-verified) AND/OR async POST /payment/redsys/webhook -> _process -> state machine done/cancel/error",
+      "Settle: Ds_Response in the 0000-0099/400/900 band -> _set_done -> downstream post-process settlement (account_payment / sale)"
+    ],
+    "information_concepts": [
+      "payment.provider (Redsys credentials: merchant code, merchant terminal, secret key)",
+      "payment.transaction (mapped to a Redsys SIS order; keyed by DS_MERCHANT_ORDER/Ds_Order=reference, provider_reference=reference)"
+    ],
+    "organization": [
+      "(no module-owned res.groups; redsys_secret_key is restricted to base.group_system; the merchant code, merchant terminal and everything else inherit payment's groups/record rules)"
+    ],
     "products": [],
-    "policies": [],
-    "stakeholders": [],
+    "policies": [
+      "Inbound authenticity: return and webhook data must pass _verify_signature (per-order 3DES-derived-key HMAC-SHA256 recomputed over Ds_MerchantParameters, constant-time hmac.compare_digest) or are rejected with HTTP 403 Forbidden",
+      "Outbound redirect-form integrity: the Base64 merchant-parameters are signed into Ds_Signature (signature_version HMAC_SHA256_V1) before the browser POSTs them to Redsys",
+      "References are constrained to Redsys' rules -- alphanumeric, 9-12 chars -- via _compute_reference (a 10-char epoch-timestamp prefix joined by an 'S' separator)",
+      "provider_reference is fixed to the transaction reference at create() time (Redsys orders are keyed by the reference)",
+      "Amounts are sent in minor currency units (to_minor_currency_units) and the currency as its ISO-4217 numeric code (currency.iso_numeric)",
+      "Secret key gated by base.group_system field group"
+    ],
+    "stakeholders": [
+      "Payer / Cardholder / Bizum user (res.partner)",
+      "Merchant / Company (res.company, holds the Redsys merchant code, terminal & secret key)",
+      "Redsys (external acquirer / PSP for the Spanish market; operated by the Spanish banking sector)",
+      "Accountant (consumes settled payments via account_payment downstream)"
+    ],
     "strategy": null,
-    "metrics": []
+    "metrics": [
+      "(no own reports; transaction volumes/amounts/state surfaced by the parent payment.transaction pivot/graph)"
+    ]
   },
   "classification": {
     "value_model": "network",
     "activity_class": "support",
-    "apqc_category": "9.0 Manage Financial Resources",
-    "rationale": "payment_redsys: thin network/support module (auto-architect baseline)."
+    "apqc_category": "9.0 Manage Financial Resources (9.5 process payments / collect cash; manage external payment provider)",
+    "rationale": "payment_redsys is a value-NETWORK (Stabell & Fjeldstad mediating-technology) component: a concrete acquirer adapter whose purpose is to interconnect two parties who would not otherwise transact directly -- the Spanish cardholder / Bizum user and the merchant -- by linking the merchant to Redsys, the Spanish banking sector's card-acquiring network. It exhibits the mediating-technology activities: network promotion & contract management (merchant code, merchant terminal and signing secret-key management, per-brand DS_MERCHANT_PAYMETHODS enablement), service provisioning (building, Base64-enveloping and signing the per-transaction SIS redirect and confirming the signed return/webhook feedback), and infrastructure operation (the hosted-redirect handoff to the Redsys SIS realizarPago page plus the signature-verified return/webhook settlement loop). It does not transform inputs into outputs (chain) nor solve a bespoke customer problem (shop). It inherits the parent 'payment' engine's value_model exactly: the engine is the generic mediator and this module is its Redsys realization. activity_class is 'support' because, from the enterprise value-chain perspective, payment acceptance is an infrastructure/finance support function (category Accounting/Payment Providers, application=False, no end-user app) sitting under 9.0 Manage Financial Resources -- specifically 9.5 process payments / collect cash, with the side of 'manage an external payment provider'. So value_model=network (its own internal logic is mediation, an acquirer integration -- gap #7), activity_class=support (its place on the enterprise value chain). This mirrors the sibling payment_stripe / payment_xendit metamodels (network/support) and the parent payment engine; like APS and Buckaroo, Redsys is a redirect-only acquirer (no S2S API, no tokenization), distinctively signed with a per-order 3DES-derived-key HMAC-SHA256 (HMAC_SHA256_V1)."
   },
   "fit_to_standard": {
     "standard_capabilities": [
-      "Payment Provider: Redsys"
+      "hosted-redirect card / Bizum payment via the Redsys SIS realizarPago page (DS_MERCHANT_TRANSACTIONTYPE='0' authorization, live vs test by provider.state)",
+      "per-brand payment-method routing (Visa / Mastercard / Amex / Diners / JCB / Bizum) via DS_MERCHANT_PAYMETHODS, or default 'C' card",
+      "EMV 3-D Secure via the DS_MERCHANT_EMV3DS billing-address + cardholder block",
+      "signed-redirect integrity and signature-verified settlement via a per-order 3DES-derived-key HMAC-SHA256 (HMAC_SHA256_V1)",
+      "asynchronous settlement via a signature-verified webhook (DS_MERCHANT_MERCHANTURL) plus a signature-verified redirect-return route",
+      "multi-currency acceptance (minor-unit amounts; currency as ISO-4217 numeric via currency.iso_numeric; no module-side allow-list)"
     ],
-    "typical_fits": [],
-    "common_gaps": [],
+    "typical_fits": [
+      "online shop / portal checkout collecting card or Bizum payments in Spain via Redsys",
+      "send-a-payment-link or pay-an-invoice-online collection (with account_payment / sale downstream)",
+      "merchants needing card acceptance without holding card data (SAQ-A: Redsys-hosted SIS page, nothing entered in Odoo)",
+      "Spanish e-commerce dominated by Bizum and domestic card schemes, with bank-issued Redsys merchant credentials"
+    ],
+    "common_gaps": [
+      "no server-to-server API: only the hosted-redirect SIS flow is implemented (no direct/S2S charge, no inline form); the 'secret key' is a signing seed, not a transport credential",
+      "no tokenization / saved cards (no _extract_token_values, no off-session recurring) -- every payment is a fresh redirect",
+      "no manual capture / authorize-then-capture, no void, and no in-module refund operation (no _send_capture/void/refund_request override)",
+      "signature pinned to the per-order 3DES + HMAC-SHA256 scheme (HMAC_SHA256_V1, not configurable); the public-URL requirement for the return/webhook means local/dev instances need a tunnel; without the secret key set, signing/verification has no seed",
+      "verification is skipped when no transaction matches the reference (both routes only call _verify_signature inside `if tx_sudo`), though verification always precedes processing for a found tx",
+      "bespoke reconciliation / settlement document chains live downstream (account_payment, sale), not here"
+    ],
     "drive_hints": [
-      "n/a"
+      "odoo shell: env['payment.provider'].search([('code','=','redsys')]).mapped(('name','state','redsys_merchant_code','redsys_merchant_terminal'))",
+      "odoo shell: p=env['payment.provider'].search([('code','=','redsys')],limit=1); print(p._redsys_get_api_url(), p.support_tokenization, p.support_refund)",
+      "odoo shell: tx=env['payment.transaction'].search([('provider_code','=','redsys')],limit=1); print(tx.reference, tx.state, tx.provider_reference)",
+      "odoo shell: print([m for m in dir(env['payment.transaction']) if '_redsys' in m] + [m for m in dir(env['payment.provider']) if '_redsys' in m])",
+      "curl -X POST https://<host>/payment/redsys/webhook (csrf=False, auth=public) with a Ds_MerchantParameters whose decoded Ds_Order matches a tx but a missing/invalid Ds_Signature -> expect HTTP 403 Forbidden from _verify_signature",
+      "Redsys SIS test: provider in 'test' state targets https://sis-t.redsys.es:25443/sis/realizarPago (Redsys test merchant code/terminal/secret + test cards)"
     ]
   },
   "reverse_eng_confidence": {
@@ -123,14 +257,20 @@
     "strategy": "human"
   },
   "open_questions": [
-    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+    "Exact Redsys SIS request and response field sets beyond those built in _redsys_prepare_merchant_parameters / read in _apply_updates (Ds_Order, Ds_Amount, Ds_Currency, Ds_Response, Ds_Card_Brand, Ds_ErrorCode, Ds_Signature, Ds_MerchantParameters).",
+    "Real-world distribution of Redsys transaction states (done/cancel/error) and method mix (card vs Bizum vs specific brands) -- no runtime row counts captured.",
+    "How refunds / chargebacks are handled operationally given no in-module refund override (likely via the Redsys/bank administration portal or a downstream module).",
+    "Whether instances reliably register the webhook (DS_MERCHANT_MERCHANTURL) vs rely on the (also signed) GET return route, and whether both can fire for the same transaction."
   ],
   "provenance": {
     "explorer_facts": "doc/revres/facts/payment_redsys.facts.json",
     "tools": [
-      "extract_module.py",
-      "extract_frontend.py",
-      "gen_thin.py"
+      "apqc_odoo_map.tsv",
+      "code-read (const.py, models/payment_provider.py, models/payment_transaction.py, controllers/main.py, __manifest__.py)",
+      "extract_frontend.py (frontend/payment_redsys.frontend.json)",
+      "extract_module.py (facts/payment_redsys.facts.json)",
+      "Grep",
+      "Read"
     ],
     "odoo_version": "19.0"
   }
