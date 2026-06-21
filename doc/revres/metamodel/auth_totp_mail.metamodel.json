@@ -4,37 +4,100 @@
     "manifest": {
       "name": "2FA Invite mail",
       "category": "Extra Tools",
+      "summary": null,
       "depends": [
         "auth_totp",
         "mail"
       ],
       "auto_install": true,
-      "application": false
+      "application": false,
+      "license": "LGPL-3",
+      "author": "Odoo S.A.",
+      "data_files": 6,
+      "demo_files": 0
     },
-    "models": [],
+    "models": [
+      {
+        "_name": null,
+        "_inherit": "res.users",
+        "_description": "Adds the 'totp_mail' email-OTP MFA branch (_mfa_type/_mfa_url/_check_credentials), the code generator/sender, the 2FA invite, and new-connection security alerts",
+        "fields": 0,
+        "methods": 14,
+        "relations": []
+      },
+      {
+        "_name": null,
+        "_inherit": "auth_totp.device",
+        "_description": "On unlink, email the owning user a 'trusted device removed' security alert",
+        "fields": 0,
+        "methods": 2,
+        "relations": [
+          "user_id->res.users (via inherited auth_totp.device)"
+        ]
+      },
+      {
+        "_name": null,
+        "_inherit": "res.config.settings",
+        "_description": "Settings toggle that maps to ir.config_parameter 'auth_totp.policy' (enforce 2FA for employees / all users)",
+        "fields": 2,
+        "methods": 2,
+        "relations": []
+      }
+    ],
     "routes": [
       {
-        "paths": [],
-        "auth": null,
-        "type": null
+        "paths": [
+          "/web/login/totp"
+        ],
+        "auth": "public",
+        "type": "http",
+        "note": "Not a new route - controllers/home.Home extends auth_totp's Home.web_totp (@http.route() re-decoration keeps path '/web/login/totp', type='http', auth='public', methods GET/POST). The override fires AFTER super() to send the email OTP."
       }
     ],
     "security": {
       "access_rules": 0,
       "record_rules": 0,
-      "groups": 0
+      "groups": 0,
+      "note": "No own ACL/groups/record rules. It reuses auth_totp's security and base groups: the 2FA invite server action (data/ir_action_data.xml) is restricted to base.group_erp_manager, and the 'activate 2FA' link action to base.group_user. All OTP send/check runs sudo() during the pre-authentication (pre_uid) phase. uses_api_keys=true is inherited from auth_totp (totp_mail also forces _rpc_api_keys_only)."
     },
     "views": {
       "form": 2,
       "list": 0,
-      "tree": 0,
-      "kanban": 0,
       "search": 0,
-      "pivot": 0,
-      "graph": 0,
-      "calendar": 0,
-      "activity": 0
+      "note": "2 res.users form inherits (an 'Invite to use 2FA' button on the security form; a stripped 'Enable 2FA' form reached from the invite mail) + a res.config.settings view for the enforce toggle + a QWeb inherit of auth_totp.auth_totp_form adding the email-code instructions and a 'Re-send email' POST button. No new model, so no list/search."
     },
+    "behavioral_notes": [
+      {
+        "element": "res.users._check_credentials(type='totp_mail') + _get_totp_mail_key (the email-OTP verification, no stored secret)",
+        "observation": "This is the join point into auth_totp's login gate. When the pre-auth controller posts a code with credentials['type']=='totp_mail', _check_credentials (res_users.py:137) first calls _totp_rate_limit('code_check') (auth_totp caps it at 5/hour), derives the key with _get_totp_mail_key, and verifies with TOTP(key).match(token, window=3600, timestep=3600). CRUCIALLY there is NO per-user stored secret like authenticator-app TOTP: _get_totp_mail_key returns hmac(env(su=True), 'auth_totp_mail-code', (self.id, self.login, self.login_date)).encode() - a deterministic HMAC bound to the user id + login + last login_date, so a password change/new login rotates the key automatically. The 3600s window/timestep means the same 6-digit code is valid for ~1 hour (matching the email-delivery use case) instead of the 30s authenticator window. On success it purges BOTH the code_check and send_email rate-limit counters and returns the auth dict {uid, auth_method:'totp_mail', mfa:'default'}; on miss it raises AccessDenied('Verification failed, please double-check the 6-digit code'). Entirely invisible to ORM metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "res.users._mfa_type / _mfa_url / _rpc_api_keys_only (policy-driven email-2FA enrolment without a device)",
+        "observation": "_mfa_type (res_users.py:115) extends auth_totp: if super() returns None (user has NO authenticator-app TOTP), it reads ir.config_parameter 'auth_totp.policy' and returns 'totp_mail' when policy=='all_required', or 'employee_required' AND self._is_internal(). So email-OTP is the FALLBACK second factor that the admin can force on users who never set up an app - they get a one-time emailed code instead. _mfa_url then returns '/web/login/totp' for the totp_mail type (reusing auth_totp's controller + form). _rpc_api_keys_only returns True for totp_mail too, so a policy-enforced user cannot use password RPC. This wires email-2FA into auth_totp's existing _mfa_type/_mfa_url extension points with no new route or device record.",
+        "source": "code-read"
+      },
+      {
+        "element": "res.users._send_totp_mail_code / _get_totp_mail_code + controllers/home.web_totp (the send-code-by-email flow)",
+        "observation": "The GET (or re-POST) of the TOTP form triggers the email. controllers/home.Home.web_totp (controllers/home.py) calls super() (auth_totp's render), then - only if response is 200 and the user's _mfa_type()=='totp_mail' and the session is still pre_uid (not yet uid) - opens a cr.savepoint() and calls user._send_totp_mail_code(); any AccessDenied/UserError (e.g. rate limit hit) is shown as the form error instead of crashing. _send_totp_mail_code (res_users.py:180) rate-limits via _totp_rate_limit('send_email') (5/hour), requires an email (else UserError), and sends mail.template 'auth_totp_mail.mail_template_totp_mail_code' force_send with email_layout 'mail.mail_notification_light', injecting request context (location via GeoIP city/country, device, browser, IP) so the email warns about the new-device login. The template calls object._get_totp_mail_code() at render time, which computes hotp(key, counter) with counter=int(timestamp/3600) and zero-pads to 6 digits, returning (code, human expiration '~1 hour'). The 'Re-send email' button in the inherited form simply re-POSTs the route to re-render and re-send (still rate-limited).",
+        "source": "code-read"
+      },
+      {
+        "element": "res.users.action_totp_invite / get_totp_invite_url / action_open_my_account_settings (admin-driven 2FA onboarding)",
+        "observation": "Beyond login, the module nudges users to set up REAL app-based 2FA. action_totp_invite (res_users.py:92), bound to a base.group_erp_manager server action on res.users list/kanban (data/ir_action_data.xml), filters recipients to users with no totp_secret and send_mails the 'auth_totp_mail.mail_template_totp_invite' template (force_send, light layout), then returns a display_notification toaster listing invited users. get_totp_invite_url returns '/odoo/action-auth_totp_mail.action_activate_two_factor_authentication'; clicking it runs a base.group_user server action that calls action_open_my_account_settings to open a stripped, non-editable res.users form (auth_totp_mail.res_users_view_form) showing only the 'Enable 2FA' button. So email here serves two distinct jobs: deliver a login OTP, and deliver an enrolment invitation.",
+        "source": "code-read"
+      },
+      {
+        "element": "res.users security alerts + auth_totp.device.unlink notification (mail.thread security-update emails)",
+        "observation": "The module turns several account events into emails via _notify_security_setting_update (from auth_signup/base): res.users.write fires '2FA Activated'/'2FA Deactivated' alerts when totp_secret is set/cleared; authenticate() -> _notify_security_new_connection emails 'New Connection to your Account' ONLY when the user has _mfa_type() set and the request's td_id cookie does NOT match a trusted auth_totp.device (i.e. a genuinely new device); and the auth_totp.device.unlink override emails 'Security Update: Device Removed' (listing device names, grouped per user via _classify_by_user) when a trusted device is revoked. _notify_security_setting_update_prepare_values also injects suggest_2fa = (flag and not totp_enabled) so the security-alert template only nags users who haven't enabled app-2FA. These cross-model email side-effects are pure behaviour, absent from metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "frontend / static assets",
+        "observation": "frontend_gap3 present=false: 0 JS modules, 0 OWL components, 0 registry adds, 0 services, 0 patches. The only client-side artifact is static/tests/totp_flow.js (a browser test), so the only asset bundle touched is web.assets_tests (1). The entire UX is server-rendered: QWeb inherits of the auth_totp login form (email-code text + 'Re-send email' button), res.users/res.config.settings backend form inherits, and emailed mail.templates. No custom OWL component is shipped.",
+        "source": "static"
+      }
+    ],
     "frontend": {
       "present": false,
       "js_files": 0,
@@ -57,52 +120,117 @@
     "runtime": {
       "models_with_data": 0,
       "top": []
-    },
-    "behavioral_notes": [
-      {
-        "element": "thin module",
-        "observation": "0 models, 1 routes, 518 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
-        "source": "ast"
-      }
-    ]
+    }
   },
   "it_architecture": {
-    "application": "auth_totp_mail (2FA Invite mail)",
-    "software_services": [],
-    "data_objects": [],
-    "logical_data_erm": [],
+    "application": "auth_totp_mail (email-delivered one-time-code second factor + 2FA invitation/enforcement layered on auth_totp's login flow)",
+    "software_services": [
+      "/web/login/totp (public HTTP, inherited from auth_totp; override emails the OTP on render)"
+    ],
+    "data_objects": [
+      "res.users (inherit)",
+      "auth_totp.device (inherit)",
+      "res.config.settings (inherit)"
+    ],
+    "logical_data_erm": [
+      "res.users -> mail.template 'auth_totp_mail.mail_template_totp_mail_code' (the login OTP email)",
+      "res.users -> mail.template 'auth_totp_mail.mail_template_totp_invite' (the enrolment invite email)",
+      "res.config.settings -> ir.config_parameter 'auth_totp.policy' (enforce scope)",
+      "auth_totp.device -> res.users (user_id; revocation alert)",
+      "totp_mail OTP key = hmac(self.id, self.login, self.login_date) — derived, no stored secret table"
+    ],
     "information_flows": [
-      "depends: auth_totp, mail"
+      "depends: auth_totp (login MFA gate, rate-limit, TOTP/hotp), mail (mail.template send_mail)",
+      "challenge: web login -> _mfa_type()=='totp_mail' -> _mfa_url='/web/login/totp' -> web_totp GET -> _send_totp_mail_code -> email OTP",
+      "verify: web_totp POST -> _check_credentials(type='totp_mail') -> TOTP(_get_totp_mail_key()).match(token, window=3600) -> session.finalize | AccessDenied",
+      "throttle: _send_totp_mail_code -> _totp_rate_limit('send_email') (5/hr); _check_credentials -> _totp_rate_limit('code_check') (5/hr); both purged on success",
+      "enforce: res.config.settings -> ir.config_parameter 'auth_totp.policy' (employee_required | all_required) -> _mfa_type fallback",
+      "invite: erp_manager server action -> action_totp_invite -> mail_template_totp_invite -> get_totp_invite_url -> action_open_my_account_settings (Enable 2FA form)",
+      "alerts: write(totp_secret) / authenticate() new-device / device.unlink -> _notify_security_setting_update emails"
     ],
     "frontend_components": []
   },
   "business_architecture": {
     "capabilities": [
-      "2FA Invite mail"
+      "Email-delivered one-time-code second factor (fallback when no authenticator app)",
+      "Policy-based 2FA enforcement (employees-only / all users) via settings",
+      "2FA enrolment invitation by email (admin-driven onboarding)",
+      "Security-event email alerts (2FA on/off, new-device login, trusted-device removed)",
+      "Reuse of auth_totp rate-limiting on both code send and code check"
     ],
-    "value_streams": [],
-    "information_concepts": [],
-    "organization": [],
+    "value_streams": [
+      "Login-by-Email-OTP: password accepted -> held at pre_uid -> _mfa_type='totp_mail' -> code emailed -> user enters code -> _check_credentials -> session finalized",
+      "Enforce-then-Onboard: admin sets auth_totp.policy + sends invite -> user opens Enable-2FA form -> sets up app-based TOTP (graduates off email OTP)"
+    ],
+    "information_concepts": [
+      "res.users (the authenticating identity; no new field, behaviour only)",
+      "totp_mail OTP (derived HMAC code, ~1h validity, not persisted)",
+      "mail.template totp_mail_code / totp_invite (the two emails)",
+      "ir.config_parameter 'auth_totp.policy' (enforcement scope)"
+    ],
+    "organization": [
+      "base.group_erp_manager (sends 2FA invites; settings enforce toggle)",
+      "base.group_user (receives invite link / opens Enable-2FA form)",
+      "(no own groups)"
+    ],
     "products": [],
-    "policies": [],
-    "stakeholders": [],
+    "policies": [
+      "Enforcement policy: ir.config_parameter 'auth_totp.policy' in {employee_required, all_required} drives _mfa_type fallback to totp_mail",
+      "Rate limits (inherited from auth_totp): 5 emailed codes/hour (send_email) and 5 verifications/hour (code_check) per user, AccessDenied on breach, purged on success",
+      "Code validity: ~1 hour (window=timestep=3600) vs the 30s authenticator window",
+      "Key rotation: OTP key bound to (id, login, login_date) so it self-rotates on login/credential change",
+      "Invite targets only users without totp_secret; nag/suggest_2fa suppressed once app-2FA is enabled"
+    ],
+    "stakeholders": [
+      "End user / employee (receives and enters the emailed login code; may be invited to set up app-2FA)",
+      "Security administrator / ERP manager (enforces 2FA policy, sends invites)",
+      "Mail subsystem (delivers the OTP and invite/alert emails)",
+      "auth_totp base module (owns the login gate, rate-limit ledger and TOTP/hotp crypto this module reuses)"
+    ],
     "strategy": null,
-    "metrics": []
+    "metrics": [
+      "auth.totp.rate.limit.log rows for send_email / code_check (abuse / delivery-retry signal, owned by auth_totp)",
+      "_logger '2FA check (mail): SUCCESS|FAIL' audit events",
+      "count of users covered by policy (auth_totp.policy) vs users with app-based totp_secret",
+      "invites sent (action_totp_invite recipients)"
+    ]
   },
   "classification": {
     "value_model": "support",
     "activity_class": "support",
     "apqc_category": "8.0 Manage Information Technology",
-    "rationale": "auth_totp_mail: thin support/support module (auto-architect baseline)."
+    "rationale": "auth_totp_mail is IT security infrastructure (Porter support activity; Stabell & Fjeldstad 'support'). It owns NO business object - 0 own models, only behaviour grafted onto res.users / auth_totp.device / res.config.settings - and exists solely to add an email-delivered one-time-code second factor (and policy enforcement + invitations) to the login that every module sits behind (auto_install=true, depends auth_totp + mail). It creates no document chain and holds no customer/order/product/ledger data, so it is 'support', not chain/shop/network. APQC 8.0 'Manage Information Technology' is the precise fit: this is the 'manage IT security / identity & access management' capability - the concrete running access-control mechanism (email OTP generation/verification, MFA challenge wiring, rate-limited delivery, enforcement policy). It mirrors its parent auth_totp (also 8.0/support). 11.0 'Manage Enterprise Risk, Compliance, Remediation and Resiliency' was considered (2FA mitigates account-takeover risk and supports compliance), but rejected: 11.0 is the governance layer (risk registers, control frameworks, audits), whereas auth_totp_mail is the technical *implementation* IT builds and operates. The numbering 8.0 = 'Manage Information Technology' matches the name."
   },
   "fit_to_standard": {
     "standard_capabilities": [
-      "2FA Invite mail"
+      "Email one-time-code as a second factor when a user has no authenticator app",
+      "Code wired into auth_totp's existing login gate (_mfa_type='totp_mail', _mfa_url='/web/login/totp', _check_credentials)",
+      "Derived (non-stored) HMAC code keyed to user id+login+login_date, ~1h validity (window=3600)",
+      "Rate limiting on both emailed codes and verifications (5/hr each, inherited) with new-device context (GeoIP/IP/browser) in the email",
+      "Policy enforcement via Settings: require 2FA for employees only or all users (ir.config_parameter auth_totp.policy)",
+      "Admin 2FA invitation email + one-click Enable-2FA onboarding form",
+      "Security-event alert emails (2FA activated/deactivated, new-device login, trusted-device removed)"
     ],
-    "typical_fits": [],
-    "common_gaps": [],
+    "typical_fits": [
+      "Forcing 2FA org-wide even for users who never installed an authenticator app (they get email codes)",
+      "Onboarding users onto app-based 2FA via the 'Invite to use 2FA' bulk action",
+      "Notifying users of suspicious new-device logins and device revocations by email",
+      "Tightening login security without deploying SMS/hardware tokens"
+    ],
+    "common_gaps": [
+      "Email OTP is weaker than app-based TOTP (email-account compromise defeats it) - intended as a fallback/bridge, not the recommended factor",
+      "Delivery depends on the mail subsystem (outgoing mail server + the user's reachable email); no SMS/push channel here",
+      "~1h code validity is much longer than a 30s authenticator code (larger interception window)",
+      "Enforcement is a coarse two-level policy (employees / all); no per-group or risk-based rules out of the box",
+      "No self-service backup-codes / recovery flow beyond admin disable (inherited from auth_totp)"
+    ],
     "drive_hints": [
-      "n/a"
+      "odoo shell: u=env['res.users'].browse(2); u._mfa_type()  # 'totp_mail' once auth_totp.policy is set and user has no app-2FA",
+      "odoo shell: env['ir.config_parameter'].sudo().set_param('auth_totp.policy','all_required'); env['res.users'].browse(2)._mfa_type()",
+      "odoo shell: env['res.users'].sudo().browse(2)._get_totp_mail_code()  # (6-digit code, '~1 hour' expiration)",
+      "odoo shell: env['res.users'].sudo().browse(2)._send_totp_mail_code()  # rate-limited send (needs an email)",
+      "odoo shell: env.ref('auth_totp_mail.mail_template_totp_mail_code'); env.ref('auth_totp_mail.mail_template_totp_invite')  # the two templates",
+      "curl -i 'http://localhost:8069/web/login/totp'  # without a pre_uid session -> redirect to /web/login (the gate)"
     ]
   },
   "reverse_eng_confidence": {
@@ -116,14 +244,16 @@
     "strategy": "human"
   },
   "open_questions": [
-    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+    "Exact interplay with auth_totp's _assert_can_auth login-attempt budget and how it composes with the send_email/code_check 5/hr limits during a flaky-email retry storm.",
+    "Whether deployments actually set auth_totp.policy (enforcement) in practice and the resulting email-OTP vs app-TOTP adoption mix - needs runtime data (models empty at capture).",
+    "Behaviour when the same emailed code is replayed within the 1h window - unlike app-TOTP's totp_last_counter replay guard, the email path relies on the hour-long match window and rate limits rather than a per-code one-time-use counter."
   ],
   "provenance": {
     "explorer_facts": "doc/revres/facts/auth_totp_mail.facts.json",
     "tools": [
-      "extract_module.py",
+      "code-read (models/res_users.py, models/auth_totp_device.py, models/res_config_settings.py, controllers/home.py, data/mail_template_data.xml, data/ir_action_data.xml, views/templates.xml, views/res_users_views.xml; plus auth_totp base: models/res_users.py, models/totp.py, controllers/home.py)",
       "extract_frontend.py",
-      "gen_thin.py"
+      "extract_module.py"
     ],
     "odoo_version": "19.0"
   }

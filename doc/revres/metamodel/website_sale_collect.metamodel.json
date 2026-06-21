@@ -12,12 +12,74 @@
       "auto_install": false,
       "application": false
     },
-    "models": [],
+    "models": [
+      {
+        "_name": "delivery.carrier (inherit)",
+        "_description": "(extension) adds the in_store delivery type and a Stores (warehouse_ids) M2M; carrier acts as the pickup-point catalog",
+        "fields": 2,
+        "relations": [
+          "warehouse_ids->stock.warehouse (Stores)"
+        ]
+      },
+      {
+        "_name": "sale.order (inherit)",
+        "_description": "(extension) in-store warehouse/fiscal-position selection + pickup-location stock checks (11 methods)",
+        "fields": 0,
+        "relations": [
+          "warehouse_id->stock.warehouse (set from pickup_location_data['id'])",
+          "carrier_id->delivery.carrier (in_store method)",
+          "pickup_location_data (Json, inherited from delivery.sale_order)"
+        ]
+      },
+      {
+        "_name": "stock.warehouse (inherit)",
+        "_description": "(extension) a warehouse becomes a pickup point: opening_hours calendar + _prepare_pickup_location_data() geo/address payload",
+        "fields": 1,
+        "relations": [
+          "opening_hours->resource.calendar (Opening Hours, check_company)",
+          "partner_id->res.partner (geolocalized store address)"
+        ]
+      },
+      {
+        "_name": "website (inherit)",
+        "_description": "(extension) in_store_dm_id computed Click&Collect carrier for the website + per-store availability roll-up",
+        "fields": 1,
+        "relations": [
+          "in_store_dm_id->delivery.carrier (computed published in_store method)"
+        ]
+      },
+      {
+        "_name": "product.template (inherit)",
+        "_description": "(extension) injects show_click_and_collect_availability + in_store/delivery stock data into combination info (1 method)",
+        "fields": 0,
+        "relations": []
+      },
+      {
+        "_name": "payment.provider (inherit)",
+        "_description": "(extension) adds custom_mode='on_site' (Pay on site) and gates it to in_store orders with physical products (2 methods)",
+        "fields": 1,
+        "relations": []
+      },
+      {
+        "_name": "payment.transaction (inherit)",
+        "_description": "(extension) on_site _post_process confirms the draft order to trigger picking creation (1 method)",
+        "fields": 0,
+        "relations": []
+      },
+      {
+        "_name": "res.config.settings (inherit)",
+        "_description": "(extension) action_view_in_store_delivery_methods admin shortcut to the in_store carriers (1 method)",
+        "fields": 0,
+        "relations": []
+      }
+    ],
     "routes": [
       {
-        "paths": [],
-        "auth": null,
-        "type": null
+        "paths": [
+          "/website_sale/get_pickup_locations"
+        ],
+        "auth": "public",
+        "type": "jsonrpc"
       },
       {
         "paths": [
@@ -30,18 +92,16 @@
     "security": {
       "access_rules": 0,
       "record_rules": 0,
-      "groups": 0
+      "groups": 0,
+      "note": "No own ir.model.access / ir.rule rows: the module ships no new stored model (8 inherit-only extensions). Access is governed by the parent models' security (delivery.carrier, stock.warehouse, sale.order, payment.* under website_sale_stock / delivery / payment). Storefront routes are auth='public' (website public user), back-office config is reached through res.config.settings / Website settings (website group_website_designer/publisher)."
     },
     "views": {
       "form": 0,
       "list": 1,
-      "tree": 0,
       "kanban": 0,
       "search": 0,
-      "pivot": 0,
       "graph": 0,
-      "calendar": 0,
-      "activity": 0
+      "note": "6 view XML files (483 XML LOC), all view-inherit (no new act_window/menu): a stock.warehouse form extension adding opening_hours, a delivery.carrier form/list for in_store config (Stores, excluded tags), res.config.settings (eCommerce Shipping > Click & Collect toggle + action button), stock.picking, and storefront QWeb (templates.xml / delivery_form_templates.xml) for the in-store delivery option and pickup-address block. The 'list:1' counted is the in_store delivery-carrier list."
     },
     "frontend": {
       "present": true,
@@ -80,58 +140,164 @@
     },
     "behavioral_notes": [
       {
-        "element": "frontend (OWL/JS)",
-        "observation": "6 JS files, 1 OWL components, 3 registry adds; bundles ['web.assets_frontend'].",
-        "source": "static"
+        "element": "pickup-location routes: InStoreDelivery.website_sale_get_pickup_locations + shop_set_click_and_collect_location (controllers/delivery.py) -> sale.order._get_pickup_locations -> delivery.carrier._in_store_get_close_locations",
+        "observation": "Two jsonrpc/public routes drive store selection. (1) website_sale_get_pickup_locations (bare @route(), so it keeps the parent path /website_sale/get_pickup_locations) is overridden so that when opened from a PRODUCT page (kwargs['product_id']) it first forces the in-store method onto the order: if request.cart exists and its carrier is not in_store it calls order.set_delivery_line(in_store_dm, in_store_dm.product_id.list_price); if there is NO cart it builds a transient sale.order.new({'carrier_id': in_store_dm.id}) and returns its pickup locations WITHOUT creating a cart. It then calls super(), which dispatches reflectively to _{delivery_type}_get_close_locations = delivery.carrier._in_store_get_close_locations: that method geo_localizes the partner address (base_geolocalize), iterates warehouse_ids, builds each store's _prepare_pickup_location_data() payload, attaches per-store in_store_stock_data, computes the Haversine distance via utils.calculate_partner_distance(partner, wh.partner_id) and returns the stores SORTED BY DISTANCE. (2) /shop/set_click_and_collect_location (new route, called by the product-page widget) does request.cart or request.website._create_cart(), forces the in_store carrier via set_delivery_line if needed, then order._set_pickup_location(pickup_location_data). It is deliberately distinct from website_sale's /website_sale/set_pickup_location, which is only used on the checkout page after the delivery method is already chosen. Not visible in metadata.",
+        "source": "code-read"
       },
       {
-        "element": "thin module",
-        "observation": "0 models, 2 routes, 1626 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
-        "source": "ast"
+        "element": "warehouse + fiscal-position selection from the chosen store (models/sale_order.py _set_pickup_location / _compute_warehouse_id / _compute_fiscal_position_id / _set_delivery_method)",
+        "observation": "Picking a store rewires the order. _set_pickup_location() (override) stores pickup_location_data = json.loads(...) and, for in_store carriers, sets self.warehouse_id = pickup_location_data['id'] (the warehouse IS the pickup point) then _compute_fiscal_position_id(). _compute_warehouse_id() is overridden to SKIP recomputation for in_store orders that already have pickup data (otherwise super() would override the user's store choice) and instead pins warehouse_id to the picked store. _compute_fiscal_position_id() is overridden so tax is computed against the STORE's address (delivery=order.warehouse_id.partner_id) rather than the customer's shipping address, so in-store taxes are the store's. _set_delivery_method() detects a transition OUT of in_store (was in_store, new method isn't) and re-runs _compute_warehouse_id + _compute_fiscal_position_id to undo the store pinning. Not visible in metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "per-warehouse stock availability (models/website.py _get_product_available_qty / _get_max_in_store_product_available_qty; models/sale_order.py _get_free_qty / _get_insufficient_stock_data / _is_in_stock; models/product_template.py _get_additionnal_combination_info)",
+        "observation": "Availability is computed per candidate warehouse using product.with_context(warehouse_id=wh.id).free_qty. website._get_product_available_qty (override) returns: the SELECTED store's stock when an in_store pickup location is chosen; otherwise max(website-warehouse stock, _get_max_in_store_product_available_qty) = the best stock across all in_store warehouses, so the product page can show 'available in store' before any store is picked. product.template._get_additionnal_combination_info injects show_click_and_collect_availability (true when Click&Collect is enabled, the variant is_storable, and not excluded by the carrier's excluded_tag_ids) plus delivery_stock_data and in_store_stock_data into the storefront combination info (the ClickAndCollectAvailability OWL widget reads these). sale.order._get_insufficient_stock_data groups order lines by product, compares free_qty (rounded DOWN to integer) against ordered qty in the line UoM, and on shortage sets ol.shop_warning '%(available_qty)s/%(line_qty)s available at this location'; _is_in_stock(wh_id) = no insufficient-stock data. Not visible in metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "delivery.carrier in_store type + publish/warehouse defaults (models/delivery_carrier.py) and website.in_store_dm_id resolution",
+        "observation": "delivery_type gets a selection_add ('in_store', 'Pick up in store') with ondelete set default; warehouse_ids (Stores M2M to stock.warehouse) is the pickup-point catalog. create()/write() force in_store defaults via _get_in_store_default_vals() (integration_level='rate' -- rate only, never rate_and_ship; allow_cash_on_delivery=False; clears country_ids/state_ids/zip_prefix_ids so geographic delivery filters don't apply), and on create auto-fills warehouse_ids with all company warehouses and is_published = bool(warehouses). @api.constrains block publishing an in_store method with no warehouse and forbid warehouses from a different company. in_store_rate_shipment returns a flat price = carrier.product_id.list_price (the Click&Collect 'shipping' fee). website.in_store_dm_id is a COMPUTED field: it searches published in_store carriers and filters to the website's company/website scope, [:1] -- this single computed carrier is the gate every other override checks (request.website.sudo().in_store_dm_id). Not visible in metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "pay-in-store completion (payment_custom): models/payment_provider.py _get_compatible_providers + _get_default_payment_method_codes; models/payment_transaction.py _post_process; controllers/payment.py _validate_transaction_for_order",
+        "observation": "'Pay on site' is payment_custom with custom_mode='on_site'. _get_compatible_providers (override) only offers the on_site custom provider when the order's carrier is in_store AND the order has a physical ('consu') product, else it filters the provider out and records reason 'no in-store delivery methods available' in the availability report. _validate_transaction_for_order (controller override) hard-guards the inverse: paying with the on_site custom provider while the carrier is NOT in_store raises ValidationError ('You can only pay on site when selecting the pick up in store delivery method') -- defence against a forged request. The completion itself is payment.transaction._post_process (override): for on_site txs in state 'pending' it takes their draft sale orders and calls .with_context(send_email=True).action_confirm() -- i.e. an on-site order is CONFIRMED (and its stock.picking created, confirmation email sent) on a PENDING transaction, because the cash is collected later at the counter; there is no captured online payment. post_init_hook/uninstall_hook call setup_provider/reset_payment_provider(env,'custom',custom_mode='on_site'). Not visible in metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "frontend (OWL/JS public component + LocationSelectorDialog patch)",
+        "observation": "6 JS files, 1 OWL component (ClickAndCollectAvailability, registered as a public_component on the product page), 5 patches (Checkout.prototype, LocationSelectorDialog + .prototype, PaymentForm.prototype, WebsiteSale.prototype) and 2 web_tour tours; 1 web.assets_frontend bundle ('website_sale_collect/static/src/**/*'). The store-picker UX is delivered as a website public component that opens @delivery's LocationSelectorDialog (map + list, patched here for the product-page/frontend case) and, on save, posts the chosen store to /shop/set_click_and_collect_location; it listens on env.bus 'updateCombinationInfo' to refresh in_store/delivery stock badges when the variant changes. No backend OWL views.",
+        "source": "static"
       }
     ]
   },
   "it_architecture": {
-    "application": "website_sale_collect (Click & Collect)",
+    "application": "website_sale_collect (Click & Collect / in-store pickup add-on; storefront fulfilment option bridging website_sale_stock + delivery + payment_custom + base_geolocalize)",
     "software_services": [
-      "/shop/set_click_and_collect_location"
+      "/website_sale/get_pickup_locations (overridden: force in_store method + list stores sorted by distance, incl. transient cart from product page)",
+      "/shop/set_click_and_collect_location (new: create cart if needed, set in_store method + pickup location)",
+      "(reuses website_sale) /website_sale/set_pickup_location, /shop/checkout, /shop/payment, /shop/payment/validate, /shop/confirmation"
     ],
-    "data_objects": [],
-    "logical_data_erm": [],
+    "data_objects": [
+      "(no own model) extends: delivery.carrier (delivery_type='in_store', warehouse_ids)",
+      "(no own model) extends: sale.order (warehouse/fiscal-position from pickup_location_data)",
+      "(no own model) extends: stock.warehouse (pickup point: opening_hours, _prepare_pickup_location_data)",
+      "(no own model) extends: website (in_store_dm_id computed)",
+      "(no own model) extends: product.template (Click&Collect availability combination info)",
+      "(no own model) extends: payment.provider (custom_mode='on_site')",
+      "(no own model) extends: payment.transaction (on_site confirm)",
+      "(no own model) extends: res.config.settings (admin shortcut)"
+    ],
+    "logical_data_erm": [
+      "delivery.carrier -> stock.warehouse (warehouse_ids 'Stores', the pickup-point catalog)",
+      "website -> delivery.carrier (in_store_dm_id, computed published in_store method)",
+      "sale.order -> delivery.carrier (carrier_id = in_store method)",
+      "sale.order -> stock.warehouse (warehouse_id pinned from pickup_location_data['id'])",
+      "sale.order.pickup_location_data (Json, from delivery) <- stock.warehouse._prepare_pickup_location_data()",
+      "stock.warehouse -> resource.calendar (opening_hours)",
+      "stock.warehouse -> res.partner (partner_id, geolocalized for distance sort)",
+      "payment.provider custom_mode='on_site' -> payment.transaction -> sale.order.action_confirm"
+    ],
     "information_flows": [
-      "depends: base_geolocalize, payment_custom, website_sale_stock"
+      "depends: base_geolocalize (geo_localize / Haversine distance), payment_custom (Pay on site provider), website_sale_stock (storefront stock + pickup_location plumbing; transitively website_sale, stock, delivery, sale)",
+      "inbound: shopper on /shop product page -> ClickAndCollectAvailability widget -> LocationSelectorDialog -> /shop/set_click_and_collect_location -> in_store carrier + pickup_location_data set on the cart",
+      "side-effect: _set_pickup_location/_compute_warehouse_id pin sale.order.warehouse_id to the chosen store; _compute_fiscal_position_id recomputes tax against the store address",
+      "side-effect: stock availability read per warehouse via product.with_context(warehouse_id=...).free_qty; shortage sets sale.order.line.shop_warning and blocks payment (_check_cart_is_ready_to_be_paid / _get_shop_payment_errors)",
+      "side-effect: on_site payment.transaction._post_process -> sale.order.action_confirm(send_email=True) on a PENDING tx -> stock.picking created, confirmation email sent (cash collected at the counter)",
+      "boundary: base 'delivery' supplies the pickup-location abstraction (pickup_location_data Json, _get_pickup_locations reflective dispatch, LocationSelectorDialog); this module implements the in_store concretion and points it at warehouses"
     ],
     "frontend_components": [
-      "ClickAndCollectAvailability"
+      "ClickAndCollectAvailability (OWL public_component on the product page; opens the store selector, shows in-store/delivery stock badges)",
+      "LocationSelectorDialog (patched from @delivery for the product-page/frontend store picker: map + list)",
+      "Checkout.prototype / WebsiteSale.prototype / PaymentForm.prototype (patches for in-store delivery option + pay-on-site button)"
     ]
   },
   "business_architecture": {
     "capabilities": [
-      "Click & Collect"
+      "Offer In-Store Pickup (Click & Collect) as a checkout delivery option",
+      "Locate & Select a Pickup Store (geolocated, distance-sorted, opening hours)",
+      "Show Per-Store Product Availability (in-store vs ship-from-warehouse stock)",
+      "Pin Order Warehouse & Tax to the Chosen Store",
+      "Pay on Site (cash/at-counter) Order Completion",
+      "Configure Stores as Pickup Points (warehouse opening hours, publish gating)"
     ],
-    "value_streams": [],
-    "information_concepts": [],
-    "organization": [],
-    "products": [],
-    "policies": [],
-    "stakeholders": [],
+    "value_streams": [
+      "Browse-to-Collect: shopper sees in-store stock on a product -> opens store selector -> picks a store -> in_store carrier + warehouse set on the cart -> checkout",
+      "Reserve-and-Collect (pay on site): confirm order on a pending on_site transaction -> stock.picking created at the chosen store -> customer pays and collects at the counter",
+      "Pay-online-then-collect: standard /shop/payment online payment, but fulfilled as pickup at the selected warehouse"
+    ],
+    "information_concepts": [
+      "delivery.carrier (in_store method = a Click&Collect store group)",
+      "stock.warehouse (pickup point with opening_hours and geo address)",
+      "sale.order.pickup_location_data (chosen store snapshot) + warehouse_id",
+      "payment.provider custom_mode='on_site' (Pay on site)"
+    ],
+    "organization": [
+      "base.group_public (anonymous shopper selecting a store)",
+      "base.group_portal (online customer)",
+      "website group_website_designer / group_website_publisher (configures Click&Collect, stores, pay-on-site in Website settings)",
+      "stock.group_stock_user / group_stock_manager (warehouse as pickup point; fulfils the picking)"
+    ],
+    "products": [
+      "product.template / product.product (storable goods shown with in-store availability)",
+      "delivery.carrier product_id (the in_store 'Pick up in store' service line / fee)"
+    ],
+    "policies": [
+      "in_store delivery method must have >=1 warehouse to be published (@api.constrains _check_in_store_dm_has_warehouses_when_published)",
+      "in_store method and its warehouses must share the same company (@api.constrains _check_warehouses_have_same_company)",
+      "Pay-on-site offered only for in_store orders containing a physical (consu) product; using it otherwise raises ValidationError (forge guard)",
+      "in_store carriers forced to integration_level='rate' with no country/state/zip geographic filters and no cash-on-delivery (_get_in_store_default_vals)",
+      "cannot pay / cannot proceed if a storable product is short at the selected store (_check_cart_is_ready_to_be_paid, _get_shop_payment_errors)"
+    ],
+    "stakeholders": [
+      "Online Shopper / In-store Collector (res.partner / public visitor)",
+      "Store / Warehouse staff (prepares the picking, takes on-site payment)",
+      "eCommerce / Website Manager (enables Click&Collect, curates stores)",
+      "Payment / Finance (on-site cash reconciliation via payment_custom)"
+    ],
     "strategy": null,
-    "metrics": []
+    "metrics": [
+      "per-store free_qty / insufficient-stock per order line (availability signal)",
+      "in_store_rate_shipment price (Click&Collect fee = carrier product list_price)",
+      "distance (km) from shopper to candidate stores (Haversine, drives store ranking)"
+    ]
   },
   "classification": {
     "value_model": "network",
     "activity_class": "primary",
     "apqc_category": "3.0 Market and Sell Products and Services",
-    "rationale": "website_sale_collect: thin network/primary module (auto-architect baseline)."
+    "rationale": "website_sale_collect inherits the value logic of its website_sale(_stock) parent: it is an omnichannel eCommerce FULFILMENT OPTION bolted onto the online sell-side channel, so value_model is network (Stabell & Fjeldstad). Its work is mediation over shared channel infrastructure -- matching a shopper to a nearby store (geolocated, distance-sorted, stock-aware) and binding the storefront cart to a specific warehouse and a pay-on-site provider -- not the linear transform-inputs-to-output of a chain. It owns no document/order chain of its own: it decorates website_sale's sale.order cart (pins warehouse_id + fiscal position, adds the in_store carrier) and hands off to the existing flow (action_confirm -> stock.picking via stock; on_site cash leg via payment_custom). Activity is primary because it is a revenue- and customer-facing channel/fulfilment capability on the sell side, hence APQC 3.0 Market and Sell Products and Services (it extends the eCommerce sell channel with a click-and-collect option), matching the website_sale / website_sale_wishlist family. A secondary OUTBOUND-LOGISTICS / order-fulfilment facet is real -- it selects the fulfilling warehouse and triggers the pickup picking, which touches APQC 4.x Deliver Physical Products (notably 4.4 outbound transportation/ship, here a customer-collect variant) -- but that fulfilment is executed by the underlying stock / delivery / sale_stock chain, not by this add-on, so 3.0 (sell channel) is primary and 4.4 (deliver) is a downstream facet, not the home category.",
+    "apqc_secondary_facet": "4.4 Operate outbound logistics / order fulfilment (Deliver Physical Products) -- in-store-collect variant; executed by stock/delivery, triggered here."
   },
   "fit_to_standard": {
     "standard_capabilities": [
-      "Click & Collect"
+      "In-store pickup ('Pick up in store') as a published delivery method backed by one or more warehouses",
+      "Geolocated, distance-sorted store selector (map + list) reachable from the product page and from checkout",
+      "Per-store, per-variant stock availability badges on the storefront (in-store vs ship-from-warehouse)",
+      "Order warehouse and fiscal position automatically set from the chosen store",
+      "Pay on site (cash at counter) provider, restricted to in-store orders with physical goods",
+      "Order confirmed (picking created) on a pending on-site transaction for later in-store payment",
+      "Store opening-hours and address shown in the picker; single-store auto-selection"
     ],
-    "typical_fits": [],
-    "common_gaps": [],
+    "typical_fits": [
+      "Retailer with physical shops offering buy-online / collect-in-store on the eCommerce site",
+      "Multi-warehouse company exposing several stores as pickup points (distance-ranked)",
+      "Reserve-and-pay-at-counter (no online payment) using the built-in 'Pay on site' provider",
+      "Single-store merchant where the one store is auto-selected for every Click&Collect order"
+    ],
+    "common_gaps": [
+      "Pickup time-slot / appointment booking and capacity per store (opening hours are display-only)",
+      "Store-level reservation/hold of stock between order and collection (relies on standard stock reservation at confirm)",
+      "Partial fulfilment / split between in-store-available and to-be-shipped lines in one order",
+      "Real distance/driving time or external store-locator API (uses Haversine + OpenStreetMap geocoding only)",
+      "Click&Collect-specific notifications (ready-for-pickup SMS/email beyond the standard confirmation email)"
+    ],
     "drive_hints": [
-      "n/a"
+      "odoo shell: env['delivery.carrier'].search([('delivery_type','=','in_store')]).mapped(('name','is_published','warehouse_ids.name'))",
+      "odoo shell: w = env['website'].get_current_website(); w.sudo().in_store_dm_id  # the computed Click&Collect carrier for the site",
+      "odoo shell: env['payment.provider'].search([('code','=','custom'),('custom_mode','=','on_site')])  # the Pay-on-site provider",
+      "curl jsonrpc /shop/set_click_and_collect_location {pickup_location_data: <json store>}  # set in_store method + store on the cart (auth=public)",
+      "odoo shell: so = env['sale.order'].search([('carrier_id.delivery_type','=','in_store')], limit=1); so.read(['warehouse_id','pickup_location_data','fiscal_position_id'])"
     ]
   },
   "reverse_eng_confidence": {
@@ -145,14 +311,16 @@
     "strategy": "human"
   },
   "open_questions": [
-    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+    "Exact stock semantics between order confirmation and collection: whether the pending on_site action_confirm reserves stock at the chosen warehouse (standard stock reservation) or only creates the picking, and how oversell at the counter is handled.",
+    "How a mixed cart (some lines in stock at the store, some not) is meant to be resolved at checkout -- the code blocks payment on any shortage rather than splitting shipped vs collected lines.",
+    "Whether opening_hours / store capacity feed any pickup-scheduling beyond display, and how express-checkout (which excludes in_store methods) interacts with a customer who wanted click-and-collect."
   ],
   "provenance": {
     "explorer_facts": "doc/revres/facts/website_sale_collect.facts.json",
     "tools": [
-      "extract_module.py",
+      "code-read (controllers/delivery.py, controllers/payment.py, controllers/main.py, models/sale_order.py, models/delivery_carrier.py, models/website.py, models/product_template.py, models/payment_provider.py, models/payment_transaction.py, models/stock_warehouse.py, utils.py; cross-read delivery/models/sale_order.py, website_sale/controllers/delivery.py)",
       "extract_frontend.py",
-      "gen_thin.py"
+      "extract_module.py"
     ],
     "odoo_version": "19.0"
   }

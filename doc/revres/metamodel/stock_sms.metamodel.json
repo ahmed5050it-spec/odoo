@@ -4,6 +4,7 @@
     "manifest": {
       "name": "Stock - SMS",
       "category": "Supply Chain/Inventory",
+      "summary": "Send text messages when final stock move",
       "depends": [
         "stock",
         "sms"
@@ -13,28 +14,85 @@
     },
     "models": [
       {
+        "_name": "stock.picking",
+        "_inherit": "stock.picking",
+        "_description": "(extended) injects the outgoing-delivery SMS confirmation into the picking validation + done flow",
+        "fields": 0,
+        "methods": 4,
+        "relations": []
+      },
+      {
+        "_name": "res.company",
+        "_inherit": "res.company",
+        "_description": "(extended) carries the per-company delivery-SMS template + the one-time warning-seen flag",
+        "fields": 2,
+        "relations": [
+          "stock_sms_confirmation_template_id->sms.template"
+        ]
+      },
+      {
+        "_name": "res.config.settings",
+        "_inherit": "res.config.settings",
+        "_description": "(extended) exposes the company SMS template field in Inventory Settings",
+        "fields": 1,
+        "relations": [
+          "stock_sms_confirmation_template_id->company_id.stock_sms_confirmation_template_id (related)"
+        ]
+      },
+      {
         "_name": "confirm.stock.sms",
-        "_description": "Confirm Stock SMS",
-        "fields": 1
+        "_inherit": null,
+        "_description": "Confirm Stock SMS (TransientModel: the 'about to confirm by SMS' validation wizard)",
+        "fields": 1,
+        "relations": [
+          "pick_ids->stock.picking (M2M stock_picking_sms_rel)"
+        ]
       }
     ],
     "routes": [],
     "security": {
       "access_rules": 2,
       "record_rules": 1,
-      "groups": 0
+      "groups": 0,
+      "note": "No own res.groups. 2 ir.model.access: full CRUD on sms.template for stock.group_stock_manager, and CRU (no unlink) on confirm.stock.sms for stock.group_stock_user. 1 record rule (ir_rule_sms_template_stock_manager) lets stock managers CUD only sms.template rows whose model_id.model == 'stock.picking' (scopes their template access to delivery templates)."
     },
     "views": {
-      "form": 0,
+      "form": 1,
       "list": 0,
-      "tree": 0,
-      "kanban": 0,
       "search": 0,
       "pivot": 0,
       "graph": 0,
       "calendar": 0,
-      "activity": 0
+      "activity": 0,
+      "note": "1 form (the confirm.stock.sms wizard: 'You are about to confirm this Delivery Order by SMS' with Confirm / Disable SMS / Cancel buttons). Plus an inherited res.config.settings form xpath that unhides the SMS template picker + the IAP buy-credits widget under the existing stock 'stock_text_confirmation' setting. 68 XML LOC."
     },
+    "behavioral_notes": [
+      {
+        "element": "stock.picking._send_confirmation_email override (the actual SMS trigger on delivery validation)",
+        "observation": "The SMS is sent from the override of stock._send_confirmation_email, which the parent stock module calls inside _action_done (stock_picking.py:1279) -- i.e. AFTER a delivery is fully validated (button_validate -> _pre_action_done_hook==True -> _action_done -> _send_confirmation_email). The override super()s (keeping the email branch) then, unless context skip_sms or modules.module.current_test, filters self to pickings where picking.company_id._get_text_validation('sms') AND picking_type_id.code=='outgoing' AND picking.partner_id.phone, and for each calls picking._message_sms_with_template(template=company.sudo().stock_sms_confirmation_template_id, partner_ids=picking.partner_id.ids, put_in_queue=False). So the real trigger is 'outgoing delivery order with a customer phone is validated, with company SMS confirmation enabled'; the template is sudo()-read because the validating user may lack sms.template rights, and put_in_queue=False means the sms.sms is sent immediately (synchronously through the sms IAP gateway), not batched.",
+        "source": "code-read"
+      },
+      {
+        "element": "company._get_text_validation('sms') gate (stock_text_confirmation + stock_confirmation_type)",
+        "observation": "The on/off switch is NOT a field named stock_move_sms_validation -- it is the parent stock res.company pair stock_text_confirmation (Boolean) + stock_confirmation_type (Selection [('sms','SMS')]); _get_text_validation('sms') returns bool(stock_text_confirmation and stock_confirmation_type=='sms') (stock/models/res_company.py:213). stock_sms only ADDS stock_sms_confirmation_template_id (M2M-domain to sms.template on model stock.picking, default = sms_template_data_stock_delivery) and has_received_warning_stock_sms (Boolean, the 'user already saw the SMS warning' flag). res.config.settings re-exposes the template as a related field, and the settings view xpath reveals the template picker + IAP buy-credits widget only when stock_confirmation_type=='sms' and stock_text_confirmation. The post_init_hook _assign_default_sms_template_picking_id turns the feature ON for companies lacking a template (sets stock_text_confirmation=True + the default template); the uninstall_hook _reset_sms_text_confirmation turns it back OFF.",
+        "source": "code-read"
+      },
+      {
+        "element": "stock.picking._pre_action_done_hook + _check_warn_sms + _action_generate_warn_sms_wizard (one-time confirmation wizard)",
+        "observation": "Before the SMS ever fires, the override of _pre_action_done_hook (called by button_validate at stock_picking.py:1414, before _action_done) inserts a guard: if super() returned True and context has no skip_sms, _check_warn_sms collects outgoing pickings with a partner phone and SMS validation enabled WHERE company.has_received_warning_stock_sms is still False and not modules.module.current_test; if any, it returns _action_generate_warn_sms_wizard -- an ir.actions.act_window opening the confirm.stock.sms (target='new') wizard carrying pick_ids and the surrounding context (which includes button_validate_picking_ids set by the parent button_validate at line 1413). Returning an action from _pre_action_done_hook aborts the validation and pops the modal instead. So the FIRST time a company uses delivery SMS the user is asked to confirm; thereafter has_received_warning_stock_sms suppresses the prompt.",
+        "source": "code-read"
+      },
+      {
+        "element": "confirm.stock.sms.send_sms / dont_send_sms (wizard resolution -> re-validate)",
+        "observation": "The wizard has two buttons. send_sms(): sets has_received_warning_stock_sms=True (sudo) on each picking's company so the prompt never reappears, then re-runs button_validate on env['stock.picking'].browse(context['button_validate_picking_ids']) -- this second pass has the warning flag set so _check_warn_sms returns empty and validation proceeds to _action_done -> _send_confirmation_email -> the SMS. dont_send_sms(): also sets has_received_warning_stock_sms=True AND writes stock_text_confirmation=False on the company (globally disabling delivery SMS), then re-validates -- now _get_text_validation('sms') is False so no SMS is sent. Both paths converge on button_validate of the same pickings via the context key set upstream by stock.button_validate. This is the human-confirmation handshake metadata cannot show.",
+        "source": "code-read"
+      },
+      {
+        "element": "sms_template_data_stock_delivery (the delivery SMS template body)",
+        "observation": "data/sms_data.xml defines the default sms.template 'Delivery: Send by SMS Text Message' (noupdate=1) on model stock.picking. Its body renders, per recipient picking object: '<company name>: We are glad to inform you that your order n° <origin> has been shipped.' (or '...your order has been shipped.' when object.origin is empty), and APPENDS ' Your tracking reference is <carrier_tracking_ref>.' only when hasattr(object,'carrier_tracking_ref') and it is set (the carrier_tracking_ref field exists only if stock_delivery/a carrier module is installed, so the hasattr guard keeps the template safe without it). Rendering goes through sms.template's mail.render.mixin against the stock.picking record; the company default is wired by _default_confirmation_sms_picking_template / the post_init hook.",
+        "source": "code-read"
+      }
+    ],
     "frontend": {
       "present": false,
       "js_files": 0,
@@ -55,60 +113,121 @@
     "runtime": {
       "models_with_data": 0,
       "top": []
-    },
-    "behavioral_notes": [
-      {
-        "element": "thin module",
-        "observation": "1 models, 0 routes, 179 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
-        "source": "ast"
-      }
-    ]
+    }
   },
   "it_architecture": {
-    "application": "stock_sms (Stock - SMS)",
-    "software_services": [],
+    "application": "stock_sms (Stock - SMS -- sends a delivery-shipped SMS to the customer when an outgoing picking is validated)",
+    "software_services": [
+      "(no HTTP routes) -- behavior is server-side: stock.picking validation hooks + the confirm.stock.sms wizard action"
+    ],
     "data_objects": [
-      "confirm.stock.sms"
+      "stock.picking (extended)",
+      "res.company (extended: stock_sms_confirmation_template_id, has_received_warning_stock_sms)",
+      "res.config.settings (extended)",
+      "confirm.stock.sms (transient wizard)",
+      "sms.template (operated, from sms)",
+      "sms.sms (produced via _message_sms_with_template, from sms)"
     ],
     "logical_data_erm": [
-      "confirm.stock.sms -> stock.picking"
+      "res.company -> sms.template (stock_sms_confirmation_template_id, domain model='stock.picking')",
+      "confirm.stock.sms -> stock.picking (pick_ids M2M)",
+      "stock.picking._send_confirmation_email -> sms.sms (per picking, partner_ids=partner_id) via _message_sms_with_template",
+      "sms.template body rendered against stock.picking (origin, company_id.name, carrier_tracking_ref?)",
+      "res.config.settings.stock_sms_confirmation_template_id -> company_id.stock_sms_confirmation_template_id (related)"
     ],
     "information_flows": [
-      "depends: stock, sms"
+      "depends: stock, sms",
+      "side-effect: button_validate -> _pre_action_done_hook (override) -> _check_warn_sms -> (first time) confirm.stock.sms wizard; else proceed",
+      "side-effect: _action_done -> _send_confirmation_email (override) -> outgoing pickings with partner phone + SMS enabled -> _message_sms_with_template (put_in_queue=False) -> sms.sms sent immediately via sms IAP",
+      "side-effect: confirm.stock.sms.send_sms -> set company.has_received_warning_stock_sms=True -> re-run button_validate (now sends SMS)",
+      "side-effect: confirm.stock.sms.dont_send_sms -> company.stock_text_confirmation=False -> re-run button_validate (SMS globally off)",
+      "config: post_init_hook _assign_default_sms_template_picking_id enables feature + default template; uninstall_hook _reset_sms_text_confirmation disables it",
+      "gate: company._get_text_validation('sms') = stock_text_confirmation and stock_confirmation_type=='sms'"
     ],
-    "frontend_components": []
+    "frontend_components": [],
+    "external_integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "endpoints": [],
+      "notes": "No own outbound HTTP/SDK. The actual SMS delivery (and IAP credit consumption) happens in the base sms module's IAP layer (sms.sms.send -> SmsApi -> https://sms.api.odoo.com); stock_sms only produces the sms.sms via _message_sms_with_template. The settings view embeds the sms IAP buy-credits widget. uses_api_keys=false."
+    }
   },
   "business_architecture": {
     "capabilities": [
-      "Stock - SMS"
+      "Notify Customer of Shipment by SMS on Delivery Validation",
+      "Per-Company Delivery SMS Template Management (sms.template on stock.picking)",
+      "One-time Confirmation Prompt before enabling Delivery SMS (warn wizard)",
+      "Enable/Disable Delivery SMS from Inventory Settings",
+      "Include Carrier Tracking Reference in the SMS when available"
     ],
-    "value_streams": [],
+    "value_streams": [
+      "Ship-and-Notify: validate an outgoing delivery order (button_validate) -> [first-use] confirm SMS wizard -> _action_done completes the goods move -> _send_confirmation_email renders the delivery template against the picking -> sms.sms sent immediately to the customer's phone via the sms IAP gateway"
+    ],
     "information_concepts": [
-      "confirm.stock.sms"
+      "stock.picking (the validated delivery order)",
+      "sms.template (the delivery confirmation message)",
+      "sms.sms (the outgoing SMS, from sms)",
+      "res.company (holds the template + feature flags)"
     ],
-    "organization": [],
+    "organization": [
+      "stock.group_stock_manager (CUD on stock.picking sms.template via record rule)",
+      "stock.group_stock_user (use of the confirm.stock.sms wizard)"
+    ],
     "products": [],
     "policies": [
-      "1 record rules"
+      "SMS sent only when company._get_text_validation('sms') AND picking_type code=='outgoing' AND partner_id.phone is set",
+      "Skipped under context skip_sms and during automated tests (modules.module.current_test)",
+      "First delivery-SMS validation per company prompts a confirmation wizard until has_received_warning_stock_sms=True",
+      "'Disable SMS' in the wizard sets company.stock_text_confirmation=False (turns the feature off globally)",
+      "Stock managers may edit only sms.template rows whose model is stock.picking (ir.rule)",
+      "post_init enables feature with a default template; uninstall resets stock_text_confirmation"
     ],
-    "stakeholders": [],
+    "stakeholders": [
+      "Warehouse user (validates the delivery, sees the confirm wizard)",
+      "Stock manager (maintains the delivery SMS template)",
+      "Customer / delivery contact (receives the shipment SMS on their phone)",
+      "Odoo IAP SMS service (delivers the SMS, consumes credits)"
+    ],
     "strategy": null,
-    "metrics": []
+    "metrics": [
+      "delivery confirmation SMS sent per period (sms.sms with stock.picking origin)",
+      "IAP SMS credit consumption from deliveries",
+      "share of companies with delivery SMS enabled (stock_text_confirmation + type sms)"
+    ]
   },
   "classification": {
     "value_model": "chain",
     "activity_class": "support",
-    "apqc_category": "4.0 Deliver Physical Products",
-    "rationale": "stock_sms: thin chain/support module (auto-architect baseline)."
+    "apqc_category": "4.0 Deliver Physical Products (4.4 Operate outbound transportation / ship)",
+    "rationale": "stock_sms attaches to the outbound-logistics primary activity of the inventory value chain (Porter / Stabell & Fjeldstad): its sole trigger is validation of an OUTGOING stock.picking (button_validate -> _action_done -> _send_confirmation_email), i.e. the moment goods physically ship to the customer -- the same 4.4 'Operate outbound transportation / ship' step that the parent stock and stock_delivery occupy in this corpus. value_model is therefore chain (it rides the goods-flow/shipment transformation), NOT network: unlike the cross-cutting base sms gateway (classified support / 9.4 internal communications because it is generic messaging infrastructure), stock_sms is a specific, delivery-bound shipment notification with no audience/mediation semantics of its own. apqc_category 4.0 Deliver Physical Products (4.4 ship/outbound) matches the name and the trigger. activity_class is support (mirroring stock_delivery in this corpus): the SMS is an ancillary customer-notification step layered onto the delivery -- it informs the customer but does not itself move or transform the goods (the stock.move ledger is untouched by this module), so it supports rather than performs the deliver value stream. It is classed under Deliver (4.x), not under the sms module's 9.4 communications code, because the message is an integral confirmation event of the shipment, not a standalone internal-comms channel."
   },
   "fit_to_standard": {
     "standard_capabilities": [
-      "Stock - SMS"
+      "Automatic SMS to the customer when an outgoing delivery order is validated",
+      "Default delivery SMS template (company name + order origin + optional carrier tracking ref)",
+      "Per-company SMS template configurable from Inventory Settings (gated by the stock text-confirmation toggle)",
+      "First-use confirmation wizard (Confirm / Disable SMS / Cancel) to avoid surprise charges",
+      "Immediate (non-queued) send through the sms IAP gateway, with the buy-credits widget in settings",
+      "Stock-manager-scoped editing of delivery SMS templates via a record rule",
+      "post_init auto-enable with default template; clean uninstall reset"
     ],
-    "typical_fits": [],
-    "common_gaps": [],
+    "typical_fits": [
+      "'Your order has been shipped' SMS to B2C / e-commerce customers on dispatch",
+      "Adding a tracking reference to the shipment SMS when a carrier (stock_delivery) is installed",
+      "Companies wanting delivery confirmations without writing automation rules"
+    ],
+    "common_gaps": [
+      "Fires only on the outgoing picking_type and only when partner_id.phone is set (no fallback to mobile-only contacts unless phone resolves)",
+      "No per-customer / per-order opt-out for this transactional SMS (it is not marketing opt-out aware)",
+      "Single delivery template per company (no per-warehouse / per-carrier template selection out of box)",
+      "Synchronous send (put_in_queue=False) -- a slow/failing IAP call happens inside validation",
+      "Depends on Odoo IAP SMS credits/country support; non-Odoo providers need the base sms gateway customization"
+    ],
     "drive_hints": [
-      "odoo shell: env['confirm.stock.sms'].search([],limit=3)"
+      "odoo shell: env.company.write({'stock_text_confirmation':True,'stock_confirmation_type':'sms'}); env.company._get_text_validation('sms')  # enable + verify gate",
+      "odoo shell: env.ref('stock_sms.sms_template_data_stock_delivery').body  # the delivery SMS body template",
+      "odoo shell: p=env['stock.picking'].search([('picking_type_id.code','=','outgoing'),('state','=','assigned')],limit=1); p.with_context(skip_sms=False).button_validate()  # triggers the wizard/SMS path",
+      "odoo shell: env['sms.sms'].search([], order='id desc', limit=5).mapped(('number','state','body'))  # SMS produced by deliveries"
     ]
   },
   "reverse_eng_confidence": {
@@ -119,17 +238,22 @@
     "value_streams": "inferred",
     "policies": "inferred",
     "metrics": "inferred",
+    "stakeholders": "inferred",
     "strategy": "human"
   },
   "open_questions": [
-    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+    "Live counts of delivery SMS sent / IAP credit consumption were not captured (runtime models_with_data=0) and require an activated IAP account.",
+    "Behavior when partner_id has only a mobile (not phone) field set -- the gate checks partner_id.phone specifically, so mobile-only contacts may be skipped depending on phone resolution.",
+    "Interaction with multi-step delivery routes (pick/pack/ship): whether the SMS fires on the final 'ship' picking only is governed by which outgoing picking type is validated, not enforced here."
   ],
   "provenance": {
     "explorer_facts": "doc/revres/facts/stock_sms.facts.json",
     "tools": [
-      "extract_module.py",
+      "code-read (models/stock_picking.py, models/res_company.py, models/res_config_settings.py, wizard/confirm_stock_sms.py, wizard/confirm_stock_sms_views.xml, data/sms_data.xml, security/ir.model.access.csv, security/sms_security.xml, __init__.py hooks; cross-ref addons/stock models/stock_picking.py (_action_done/_pre_action_done_hook/button_validate) + models/res_company.py (_get_text_validation))",
       "extract_frontend.py",
-      "gen_thin.py"
+      "extract_module.py",
+      "Grep",
+      "Read"
     ],
     "odoo_version": "19.0"
   }

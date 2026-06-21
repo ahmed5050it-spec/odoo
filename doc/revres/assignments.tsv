@@ -27,6 +27,7 @@ stock_dropshipping	deep	done	chain	4.0	11	0	22
 test_mass_mailing	test	todo	network	3.0	11	0	22
 website_crm_partner_assign	deep	done	network	3.0	8	6	22
 website_event	deep	done	network	3.0	7	8	22
+website_sale_stock	deep	done	network	3.0	10	2	22
 website_slides	deep	done	network	3.0	8	6	22
 im_livechat	deep	done	network	6.0	8	5	21
 point_of_sale	deep	done	chain	3.0	7	7	21
@@ -34,6 +35,7 @@ website_event_track	deep	done	network	3.0	6	9	21
 event_booth_sale	deep	done	network	3.0	10	0	20
 event_sale	deep	done	network	3.0	10	0	20
 purchase_requisition	deep	done	support	4.2	10	0	20
+purchase_stock	deep	done	support	4.2	10	0	20
 sale_loyalty	deep	done	chain	3.0	10	0	20
 survey	deep	done	support	13.0	6	8	20
 web	deep	done	support	8.0	4	12	20
@@ -49,6 +51,7 @@ mrp	deep	done	chain	4.3	9	0	18
 pos_self_order	deep	done	network	3.0	6	6	18
 test_inherits	test	todo	support	13.0	9	0	18
 website_hr_recruitment	deep	done	network	7.0	6	6	18
+website_sale_collect	deep	done	network	3.0	8	2	18
 bus	deep	done	support	8.0	5	7	17
 hr_skills	deep	done	support	7.0	8	1	17
 payment	deep	done	network	9.0	6	5	17
@@ -59,6 +62,7 @@ gamification	deep	done	support	7.0	8	0	16
 l10n_fr_pdp	baseline	todo	support	9.0	7	2	16
 mass_mailing	deep	done	network	3.0	6	4	16
 repair	deep	done	chain	4.0	8	0	16
+snailmail	deep	done	support	9.4	8	0	16
 stock_delivery	deep	done	chain	4.4	8	0	16
 stock_picking_batch	deep	done	chain	4.0	8	0	16
 test_mail_full	test	todo	support	13.0	6	4	16
@@ -147,12 +151,15 @@ l10n_in	baseline	todo	support	9.0	4	0	8
 onboarding	deep	done	support	13.0	4	0	8
 privacy_lookup	deep	done	support	13.0	4	0	8
 rating	deep	done	support	6.0	3	2	8
+sale_crm	deep	done	chain	3.0	4	0	8
 sales_team	deep	done	support	3.0	4	0	8
+stock_sms	deep	done	chain	4.0	4	0	8
 test_search_panel	test	todo	support	13.0	4	0	8
 web_tour	deep	done	support	8.0	4	0	8
 website_crm_iap_reveal	deep	done	network	3.0	4	0	8
 website_customer	deep	done	network	3.0	3	2	8
 api_doc	deep	done	support	13.0	1	5	7
+auth_totp_mail	deep	done	support	8.0	3	1	7
 base_automation	deep	done	support	8.0	3	1	7
 crm_mail_plugin	deep	done	shop	3.0	1	5	7
 hr_org_chart	deep	done	support	7.0	2	3	7
@@ -190,9 +197,12 @@ payment_paypal	deep	done	network	9.0	2	2	6
 payment_redsys	deep	done	network	9.0	2	2	6
 payment_worldline	deep	done	network	9.0	2	2	6
 project_todo	deep	done	shop	5.0	3	0	6
+purchase_edi_ubl_bis3	deep	done	support	4.2	3	0	6
+sale_edi_ubl	deep	done	chain	3.0	3	0	6
 stock_landed_costs	deep	done	support	9.0	3	0	6
 test_converter	test	todo	support	13.0	3	0	6
 transifex	deep	done	support	13.0	3	0	6
+website_mail	deep	done	network	3.0	2	2	6
 l10n_tw_edi_ecpay	baseline	todo	support	9.0	2	1	5
 l10n_tw_edi_ecpay_website_sale	baseline	todo	support	9.0	0	5	5
 microsoft_account	deep	done	support	8.0	2	1	5
@@ -221,6 +231,7 @@ test_action_bindings	test	todo	support	13.0	2	0	4
 test_convert	test	todo	support	13.0	2	0	4
 test_rpc	test	todo	support	13.0	2	0	4
 test_translation_import	test	todo	support	13.0	2	0	4
+website_mass_mailing	deep	done	network	3.0	1	2	4
 board	deep	done	support	13.0	1	1	3
 google_account	deep	done	support	8.0	1	1	3
 l10n_id	baseline	todo	support	9.0	1	1	3
@@ -263,12 +274,6 @@ l10n_sg_ubl_pint	baseline	todo	support	9.0	1	0	2
 l10n_tr_nilvera_edispatch	baseline	todo	support	9.0	1	0	2
 pos_edi_ubl	deep	done	support	9.0	1	0	2
 pos_event_sale	deep	done	chain	3.0	1	0	2
-purchase_edi_ubl_bis3	baseline	todo	support	4.2	1	0	2
-purchase_stock	baseline	todo	support	4.2	1	0	2
-sale_crm	baseline	todo	chain	3.0	1	0	2
-sale_edi_ubl	baseline	todo	chain	3.0	1	0	2
-snailmail	baseline	todo	support	9.4	1	0	2
-stock_sms	baseline	todo	chain	4.0	1	0	2
 test_auth_custom	test	todo	support	13.0	0	2	2
 test_html_field_history	test	todo	support	13.0	1	0	2
 test_inherit_depends	test	todo	support	13.0	1	0	2
@@ -276,12 +281,7 @@ test_main_flows	test	todo	support	13.0	1	0	2
 test_resource	test	todo	support	13.0	1	0	2
 test_spreadsheet	test	todo	support	13.0	1	0	2
 test_uninstall	test	todo	support	13.0	1	0	2
-uom	baseline	todo	support	2.0	1	0	2
-website_mail	baseline	todo	network	3.0	0	2	2
-website_mass_mailing	baseline	todo	network	3.0	0	2	2
-website_sale_collect	baseline	todo	network	3.0	0	2	2
-website_sale_stock	baseline	todo	network	3.0	0	2	2
-auth_totp_mail	baseline	todo	support	8.0	0	1	1
+uom	deep	done	support	2.0	1	0	2
 cloud_storage	baseline	todo	support	13.0	0	1	1
 iot_drivers	baseline	todo	support	13.0	0	1	1
 payment_authorize	baseline	todo	network	9.0	0	1	1

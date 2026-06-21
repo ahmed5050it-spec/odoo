@@ -4,6 +4,7 @@
     "manifest": {
       "name": "Newsletter Subscribe Button",
       "category": "Website/Website",
+      "summary": "Attract visitors to subscribe to mailing lists",
       "depends": [
         "website",
         "mass_mailing",
@@ -15,39 +16,82 @@
       ],
       "application": false
     },
-    "models": [],
+    "models": [
+      {
+        "_name": "res.company",
+        "_inherit": "res.company",
+        "_description": "(inherit-only) _get_social_media_links override so the newsletter/footer social links fall back to the current website's social_* fields",
+        "fields": 0,
+        "methods": 1,
+        "relations": []
+      }
+    ],
     "routes": [
       {
         "paths": [
           "/website_mass_mailing/is_subscriber"
         ],
         "auth": "public",
-        "type": "jsonrpc"
+        "type": "jsonrpc",
+        "note": "website=True; returns {is_subscriber, value} for the current visitor against a mailing.list by counting non-opted-out mailing.subscription rows; pre-fills + disables the snippet when already subscribed"
       },
       {
         "paths": [
           "/website_mass_mailing/subscribe"
         ],
         "auth": "public",
-        "type": "jsonrpc"
+        "type": "jsonrpc",
+        "note": "website=True; recaptcha-gated newsletter opt-in -- find-or-create mailing.contact + mailing.subscription on the target list (or clear opt_out), returns a success/danger toast"
       }
     ],
     "security": {
       "access_rules": 1,
       "record_rules": 0,
-      "groups": 0
+      "groups": 0,
+      "note": "Single ir.model.access (access_mailing_list_website_designer) grants read-only on mass_mailing.mailing.list to website.group_website_designer (so a designer can pick the list when configuring the snippet). The public subscribe/is_subscriber routes themselves run sudo() on mailing.subscription / mailing.contact; no own record rules or groups."
     },
     "views": {
       "form": 1,
       "list": 0,
-      "tree": 0,
-      "kanban": 0,
       "search": 0,
       "pivot": 0,
       "graph": 0,
       "calendar": 0,
-      "activity": 0
+      "activity": 0,
+      "note": "No backend data views of its own. 466 XML LOC are website snippet templates: the newsletter subscribe inline block, the newsletter popup, the benefits popup (static/shapes/s_newsletter_benefits_popup.svg) and website-builder option panels (list picker, layout, recaptcha toggle). The single 'form' is the website form-editor binding for create_mailing_contact."
     },
+    "behavioral_notes": [
+      {
+        "element": "MassMailController.subscribe (POST /website_mass_mailing/subscribe) -> recaptcha gate + subscribe_to_newsletter",
+        "observation": "This is the snippet's opt-in endpoint and overrides nothing -- it is a new route on the inherited mass_mailing.controllers.main.MassMailController. It FIRST calls request.env['ir.http']._verify_request_recaptcha_token('website_mass_mailing_subscribe'); if that raises UserError it returns early with {'toast_type':'danger','toast_content': str(e)} and never touches the data -- so the recaptcha is a hard gate on the whole subscription, unlike website_mail where the captcha only gates partner creation. On success it derives fname via _get_fname(subscription_type) ('email' for the 'email' type, '' otherwise) and calls the static subscribe_to_newsletter(subscription_type, value, list_id, fname), then returns {'toast_type':'success','toast_content': 'Thanks for subscribing!'}. The toast strings are exactly what the Subscribe public.interaction renders via the notification service.",
+        "source": "code-read"
+      },
+      {
+        "element": "MassMailController.subscribe_to_newsletter (static) -> mailing.contact + mailing.subscription find-or-create / un-opt-out",
+        "observation": "The core side-effect, all sudo(). For an 'email' subscription it parses name/value out of the raw input via tools.parse_contact_from_email(value) (so 'Joe <joe@x.com>' is split). It then searches mailing.subscription for an existing row on (list_id, contact_id.<fname> == value) limit 1. THREE branches: (a) no subscription AND no mailing.contact with that value -> create the mailing.contact({name, fname:value}) then create the mailing.subscription({contact_id, list_id}); (b) no subscription but a contact already exists -> reuse it and only create the mailing.subscription; (c) a subscription already exists and is opted-out -> flip subscription.opt_out = False (re-subscribe); (d) an active subscription -> no-op. Finally it writes request.session['mass_mailing_<fname>'] = value so the visitor's email is remembered for is_subscriber on later page loads. Net: a website visitor self-creates a mailing.contact and joins a mailing.list, idempotently, without login.",
+        "source": "code-read"
+      },
+      {
+        "element": "MassMailController.is_subscriber (POST /website_mass_mailing/is_subscriber, readonly intent) -> mailing.subscription search_count + _get_value",
+        "observation": "Decides whether to show the snippet as 'already subscribed'. _get_value(subscription_type) resolves the visitor's email WITHOUT a form: a logged-in user -> request.env.user.email; a public user -> request.session.get('mass_mailing_email') if a prior subscribe stored it (else None). Only when both value and fname are truthy does it sudo().search_count mailing.subscription on (list_id in [list_id], contact_id.<fname> == value, opt_out == False); is_subscriber = count > 0. Returns {'is_subscriber', 'value'} -- value is echoed back so the snippet can pre-fill the email box and disable the button. opt_out is part of the predicate, so an opted-out contact correctly shows as NOT subscribed and can re-join.",
+        "source": "code-read"
+      },
+      {
+        "element": "WebsiteNewsletterForm._handle_website_form (controllers/website_form.py) -> private-list guard on the generic website form path",
+        "observation": "Beyond the two jsonrpc routes, the module also extends website.controllers.form.WebsiteForm: when the generic website Form snippet posts model_name=='mailing.contact', _handle_website_form requires a list_ids param (else {'error':'Mailing List(s) not found!'}), splits it to ints, and sudo()-searches mailing.list for any of those that are is_public=False; if found it refuses with 'You cannot subscribe to the following list anymore : <names>'. Only then does it super(). This is the security boundary that stops a crafted form POST from enrolling visitors into private/internal mailing lists -- the create_mailing_contact form action is whitelisted to public lists only. Invisible to metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "res.company._get_social_media_links website fallback (models/res_company.py)",
+        "observation": "The only model override: _get_social_media_links() super-extends the company social link dict and overlays the CURRENT website's social_facebook / social_linkedin / social_twitter / social_instagram / social_tiktok (via website.get_current_website()) when set, falling back to the company values otherwise. This makes the newsletter block / footer social icons multi-website aware (each website can advertise its own social handles). Pure read-side computation, no persistence.",
+        "source": "code-read"
+      },
+      {
+        "element": "frontend (OWL/JS newsletter snippet + popup) -- metadata gap #3",
+        "observation": "Copied intent from frontend/website_mass_mailing.frontend.json: present=true, 13 JS files, 5 XML templates, 0 OWL components, registry_adds ['public.interactions.edit:website_mass_mailing.fix_newsletter_list_class','public.interactions:website_mass_mailing.subscribe','website.form_editor_actions:create_mailing_contact'], patches ['FormOptionPlugin.prototype','Popup.prototype'], services ['email','list_ids','name'], bundles {web.assets_frontend:5, website.website_builder_assets:4, website.assets_inside_builder_iframe:1, web.assets_tests:1, web.assets_unit_tests:1, web.assets_unit_tests_setup:1}. The Subscribe public.interaction (static/src/interactions/subscribe.js, selector .js_subscribe) on load RPCs /is_subscriber to toggle subscribe-vs-subscribed UI, validates the email regex, loads google_recaptcha (and renders a Cloudflare turnstile widget when session.turnstile_site_key is set), then RPCs /subscribe with list_id/value/subscription_type/token and shows the returned toast; on success it disables the form and hides the enclosing .o_newsletter_modal. The Popup.prototype patch (popup.js) suppresses the newsletter popup (canShowPopup=false) when the visitor is already subscribed, and stops the subscribe button from closing the popup prematurely. The remaining JS is website-builder option UI (list picker, layout, recaptcha toggle, form editor). All interactive behavior lives in static/src.",
+        "source": "static"
+      }
+    ],
     "frontend": {
       "present": true,
       "js_files": 13,
@@ -86,60 +130,123 @@
     "runtime": {
       "models_with_data": 0,
       "top": []
-    },
-    "behavioral_notes": [
-      {
-        "element": "frontend (OWL/JS)",
-        "observation": "13 JS files, 0 OWL components, 3 registry adds; bundles ['web.assets_frontend', 'website.website_builder_assets', 'website.assets_inside_builder_iframe'].",
-        "source": "static"
-      },
-      {
-        "element": "thin module",
-        "observation": "0 models, 2 routes, 221 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
-        "source": "ast"
-      }
-    ]
+    }
   },
   "it_architecture": {
-    "application": "website_mass_mailing (Newsletter Subscribe Button)",
+    "application": "website_mass_mailing (Newsletter Subscribe Button -- website snippet/popup that enrolls visitors into Email-Marketing mailing lists)",
     "software_services": [
-      "/website_mass_mailing/is_subscriber",
-      "/website_mass_mailing/subscribe"
+      "/website_mass_mailing/subscribe (jsonrpc, public, website: recaptcha-gated find-or-create mailing.contact + mailing.subscription on a list; toast response)",
+      "/website_mass_mailing/is_subscriber (jsonrpc, public, website: report whether the current visitor already subscribes to a list, echo their email)",
+      "WebsiteNewsletterForm._handle_website_form (extends the generic website Form controller to block private-list enrollment for create_mailing_contact)"
     ],
-    "data_objects": [],
-    "logical_data_erm": [],
+    "data_objects": [
+      "res.company (inherited)",
+      "mailing.subscription (operated, from mass_mailing)",
+      "mailing.contact (operated, from mass_mailing)",
+      "mailing.list (target / picked by designer)"
+    ],
+    "logical_data_erm": [
+      "mailing.subscription -> mailing.contact (contact_id) + mailing.list (list_id) with opt_out flag",
+      "mailing.contact -> mailing.list (M2M via mailing.subscription join)",
+      "/website_mass_mailing/subscribe -> mailing.contact (find-or-create by email/value)",
+      "request.session['mass_mailing_email'] -> remembered visitor email for is_subscriber",
+      "res.company._get_social_media_links -> website.social_* (current website)"
+    ],
     "information_flows": [
-      "depends: website, mass_mailing, google_recaptcha"
+      "depends: website, mass_mailing, google_recaptcha",
+      "side-effect: POST /website_mass_mailing/subscribe -> recaptcha 'website_mass_mailing_subscribe' (hard gate) -> subscribe_to_newsletter -> find-or-create mailing.contact + mailing.subscription / clear opt_out -> session email stored -> success toast",
+      "flow: POST /website_mass_mailing/is_subscriber -> mailing.subscription.search_count(opt_out=False) -> snippet shows subscribed vs subscribe",
+      "guard: generic website Form POST (mailing.contact) -> _handle_website_form rejects private (is_public=False) lists",
+      "side-effect: res.company._get_social_media_links -> overlay current website social_* handles"
     ],
-    "frontend_components": []
+    "frontend_components": [
+      "Subscribe (public.interaction: is_subscriber load, email validation, recaptcha+turnstile, subscribe RPC, toast, modal close)",
+      "Popup.prototype (patch: hide newsletter popup when already subscribed; keep popup open on subscribe click)",
+      "FormOptionPlugin.prototype + create_mailing_contact (website form-editor action wiring the Form snippet to mailing.contact)",
+      "fix_newsletter_list_class (edit-mode public.interaction normalizing the snippet's list-id markup)"
+    ],
+    "external_integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "endpoints": [],
+      "notes": "No own outbound HTTP/SDK/API keys. google_recaptcha verifies the subscribe token server-side; an optional Cloudflare turnstile widget renders client-side when session.turnstile_site_key is configured. All data coupling is internal Odoo (mass_mailing subscription/contact/list, website current-website + form controller)."
+    }
   },
   "business_architecture": {
     "capabilities": [
-      "Newsletter Subscribe Button"
+      "Website Newsletter Opt-in (self-service subscribe to a mailing list from a snippet/popup)",
+      "Find-or-Create Web Contacts into Mailing Lists (mailing.contact + mailing.subscription)",
+      "Re-subscribe / Opt-out-aware Enrollment (clear opt_out, never double-subscribe)",
+      "Show Already-Subscribed State to Returning Visitors (session + is_subscriber)",
+      "Spam-protected Subscription (recaptcha + optional Cloudflare turnstile gate)",
+      "Private-List Protection on the Generic Website Form"
     ],
-    "value_streams": [],
-    "information_concepts": [],
-    "organization": [],
+    "value_streams": [
+      "Visitor-to-Subscriber: visitor sees newsletter block/popup -> enters email -> passes recaptcha -> mailing.contact found/created + mailing.subscription added (or opt_out cleared) on the chosen list -> email remembered in session -> returning visitor sees 'subscribed' state -> contact is now reachable by Email Marketing campaigns to that list"
+    ],
+    "information_concepts": [
+      "mailing.subscription (contact<->list link with opt_out)",
+      "mailing.contact (the subscribing web visitor)",
+      "mailing.list (the newsletter audience)"
+    ],
+    "organization": [
+      "website.group_website_designer (read-only on mailing.list, to configure the snippet)"
+    ],
     "products": [],
-    "policies": [],
-    "stakeholders": [],
+    "policies": [
+      "recaptcha 'website_mass_mailing_subscribe' must pass before any contact/subscription is created (hard gate)",
+      "Idempotent enrollment: existing active subscription -> no-op; opted-out -> opt_out cleared; missing -> create",
+      "Generic website Form may only enroll into is_public=True mailing lists (private lists rejected by _handle_website_form)",
+      "is_subscriber counts only non-opted-out subscriptions (opted-out visitors can re-join)",
+      "Public routes act sudo() on mailing.subscription/contact after the captcha gate"
+    ],
+    "stakeholders": [
+      "Website visitor (newsletter subscriber, anonymous or logged-in)",
+      "Website designer (configures the snippet, picks the mailing list)",
+      "Marketing user (consumes the grown mailing.list for campaigns via mass_mailing)",
+      "Mailing list / audience (mailing.list the contact is added to)"
+    ],
     "strategy": null,
-    "metrics": []
+    "metrics": [
+      "subscriptions created per list (mailing.subscription rows, opt_out=False)",
+      "is_subscriber conversion signal (returning visitors shown subscribed)",
+      "mailing.list contact counts feeding campaign reach (from mass_mailing)"
+    ]
   },
   "classification": {
     "value_model": "network",
     "activity_class": "primary",
     "apqc_category": "3.0 Market and Sell Products and Services",
-    "rationale": "website_mass_mailing: thin network/primary module (auto-architect baseline)."
+    "rationale": "website_mass_mailing is the website-side audience-acquisition front-end of the mass_mailing value network (which is itself network / 3.0 in this corpus): it is mediating-technology that connects an open population of anonymous web visitors to the firm's mailing lists by self-service opt-in, find-or-creating a mailing.contact and a mailing.subscription on each subscribe. Per Stabell & Fjeldstad the value is network promotion & contract management -- recruiting and enrolling participants into the contact network -- and its worth grows with the number of subscribers captured, not via a sequential transformation (chain) or a diagnostic problem-solving cycle (shop). activity_class is primary because the newsletter snippet is a demand-side lead/audience-capture service the public website delivers (it directly grows the marketable audience), not a back-office support function. apqc_category 3.0 Market and Sell Products and Services (3.4 Develop and manage marketing communications -- subscriber/lead capture for the email channel) fits because the artifact converts website traffic into opted-in marketing contacts, mirroring website_mail, website_links and mass_mailing in this set. The recaptcha/turnstile gate and private-list guard are compliance/anti-abuse policies on that capture, not a separate value model."
   },
   "fit_to_standard": {
     "standard_capabilities": [
-      "Newsletter Subscribe Button"
+      "Drop-in 'Newsletter' inline block and 'Newsletter Popup' website snippets bound to a chosen mailing.list",
+      "One-click public subscribe -> find-or-create mailing.contact + mailing.subscription (or clear opt_out)",
+      "recaptcha v3 + optional Cloudflare turnstile spam protection on subscribe",
+      "Already-subscribed detection (session email + is_subscriber) that pre-fills/disables the form and suppresses the popup",
+      "Website Form-snippet 'create_mailing_contact' action with private-list protection",
+      "Multi-website social links fallback on the newsletter/footer block",
+      "Website-builder options to pick the list, layout, and toggle recaptcha"
     ],
-    "typical_fits": [],
-    "common_gaps": [],
+    "typical_fits": [
+      "Newsletter sign-up block in a page footer or hero section",
+      "Exit-intent / timed newsletter popup growing a marketing list",
+      "Lead capture funneling website visitors into an Email Marketing audience",
+      "Multi-site setups where each website feeds its own mailing list and shows its own social handles"
+    ],
+    "common_gaps": [
+      "No double opt-in / confirmation email -- a subscribe (post captcha) joins the list immediately",
+      "Only email (and a generic 'mobile' value placeholder) subscription types out of box; richer profile fields need the generic Form snippet",
+      "Anonymous already-subscribed detection is session-bound (cleared session shows the form again)",
+      "Unsubscribe is not on this snippet -- handled by mass_mailing's unsubscribe pages",
+      "List must be configured by a website designer; no per-visitor list self-selection beyond what the designer exposes"
+    ],
     "drive_hints": [
-      "n/a"
+      "curl jsonrpc: POST /website_mass_mailing/is_subscriber {list_id:<id>,subscription_type:'email'} (auth=public) -> {is_subscriber,value}",
+      "curl jsonrpc: POST /website_mass_mailing/subscribe {list_id:<id>,value:'visitor@example.com',subscription_type:'email'} (needs a valid recaptcha token) -> {toast_type,toast_content}",
+      "odoo shell: env['mailing.subscription'].search_count([('list_id','=',<id>),('opt_out','=',False)])  # subscribers on a list",
+      "odoo shell: env['mailing.contact'].search([('email','=','visitor@example.com')]).subscription_list_ids  # lists a web-captured contact joined"
     ]
   },
   "reverse_eng_confidence": {
@@ -150,17 +257,22 @@
     "value_streams": "inferred",
     "policies": "inferred",
     "metrics": "inferred",
+    "stakeholders": "inferred",
     "strategy": "human"
   },
   "open_questions": [
-    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+    "Live subscription/contact row counts created via the snippet were not captured (runtime models_with_data=0).",
+    "Whether google_recaptcha and/or website_cf_turnstile are configured in the target deployment -- the subscribe route hard-fails the opt-in if recaptcha is enabled but the token is invalid.",
+    "The 'mobile' subscription_type branch is present in subscribe_to_newsletter but _get_fname returns '' for non-email types here; SMS-list subscription is fully wired only when an SMS-marketing list/field is installed."
   ],
   "provenance": {
     "explorer_facts": "doc/revres/facts/website_mass_mailing.facts.json",
     "tools": [
-      "extract_module.py",
+      "code-read (controllers/main.py, controllers/website_form.py, models/res_company.py, security/ir.model.access.csv, static/src/interactions/subscribe.js, static/src/interactions/popup.js; cross-ref addons/mass_mailing controllers/main.py + models/mailing_subscription.py + models/mailing_contact.py)",
       "extract_frontend.py",
-      "gen_thin.py"
+      "extract_module.py",
+      "Grep",
+      "Read"
     ],
     "odoo_version": "19.0"
   }

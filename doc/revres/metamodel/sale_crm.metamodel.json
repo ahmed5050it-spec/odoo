@@ -15,7 +15,33 @@
       {
         "_name": "crm.quotation.partner",
         "_description": "Create new or use existing Customer on new Quotation",
-        "fields": 3
+        "fields": 3,
+        "relations": [
+          "lead_id->crm.lead",
+          "partner_id->res.partner"
+        ]
+      },
+      {
+        "_name": "crm.lead",
+        "_description": "(extension) Lead/Opportunity linked to its sale.order quotations",
+        "fields": 4,
+        "relations": [
+          "order_ids->sale.order (One2many, inverse opportunity_id)"
+        ]
+      },
+      {
+        "_name": "crm.team",
+        "_description": "(extension) team dashboard retargeted to Sales Analysis in the Sales app",
+        "fields": 0,
+        "relations": []
+      },
+      {
+        "_name": "sale.order",
+        "_description": "(extension) quotation/order linked back to its source opportunity",
+        "fields": 1,
+        "relations": [
+          "opportunity_id->crm.lead"
+        ]
       }
     ],
     "routes": [],
@@ -58,56 +84,148 @@
     },
     "behavioral_notes": [
       {
-        "element": "thin module",
-        "observation": "1 models, 0 routes, 590 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
-        "source": "ast"
+        "element": "sale.order.opportunity_id + sale.order.action_confirm -> crm.lead._update_revenues_from_so",
+        "observation": "sale_crm wires the sale<->crm bridge with a single field: sale.order.opportunity_id (Many2one crm.lead, check_company=True, index='btree_not_null', domain type='opportunity' and same/no company). sale.order.action_confirm is overridden to call super() under a context stripped of 'default_tag_ids' (so the order's tags don't leak as crm defaults), then for each order calls order.opportunity_id._update_revenues_from_so(order): this raises the opportunity's expected_revenue to the order's amount_untaxed ONLY when the current expected_revenue is lower AND order.currency_id equals the opportunity company's currency, and logs a tracked chatter message ('Expected revenue has been updated based on the linked Sales Orders.'). Confirming a quotation therefore back-propagates revenue to the pipeline; cross-currency orders are skipped silently. None of this side-effect is visible in metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "crm.lead._compute_sale_data (sale_amount_total / quotation_count / sale_order_count)",
+        "observation": "The reciprocal counts on crm.lead are one compute (_compute_sale_data, @api.depends on order_ids.state/currency_id/amount_untaxed/date_order/company_id) splitting order_ids by three domain helpers: _get_lead_quotation_domain = state in (draft,sent) -> quotation_count; _get_lead_sale_order_domain = state NOT in (draft,sent,cancel) -> sale_order_count and the basis for sale_amount_total. sale_amount_total sums each confirmed order's amount_untaxed converted into the lead company_currency via currency_id._convert(date_order or today). So 'Quotations' counts open quotes while 'Orders'/'Sum of Orders' count only confirmed (non-draft/sent/cancel) orders, and amounts are FX-normalised to the lead's company currency. The stat buttons on the opportunity form bind these (action_view_sale_quotation drills to draft/sent/cancel quotes, action_view_sale_order to confirmed orders).",
+        "source": "code-read"
+      },
+      {
+        "element": "crm.lead.action_sale_quotations_new / action_new_quotation (the 'New Quotation' button)",
+        "observation": "The opportunity form's 'New Quotation' button calls action_sale_quotations_new: if the lead has no partner_id it opens the crm.quotation.partner wizard (action sale_crm.crm_quotation_partner_action) to resolve a customer first; otherwise it calls action_new_quotation, which opens the sale_crm.sale_action_quotations_new act_window with a context built by _prepare_opportunity_quotation_context -- carrying default_opportunity_id, default_partner_id, default_origin=lead.name, UTM defaults (campaign/medium/source), default_company_id, default_tag_ids, and default_team_id/default_user_id when set. So a quotation created from an opportunity inherits the lead's customer, salesperson, team, UTM attribution and tags, and is auto-linked back via opportunity_id. The button is hidden for type=='lead' and for inactive zero-probability leads.",
+        "source": "code-read"
+      },
+      {
+        "element": "crm.quotation.partner (default_get + action_apply)",
+        "observation": "The transient wizard crm.quotation.partner resolves which customer a new quotation targets. default_get refuses to run unless context active_model=='crm.lead' (UserError otherwise), loads the lead, prefills partner_id from lead._find_matching_partner() (email-based match, no create) and defaults action to 'exist' when a match exists else 'create'. action_apply: for 'create' calls lead._handle_partner_assignment(create_missing=True) (creates a res.partner from lead data when none), for 'exist' forces lead._handle_partner_assignment(force_partner_id=..., create_missing=False), 'nothing' leaves the lead partner untouched; then returns lead.action_new_quotation(). NB: despite its docstring ('Convert lead to opportunity or merge lead and opportunity'), the wizard does NOT convert the lead -- it only sets/creates the lead's partner_id before launching the quotation form.",
+        "source": "code-read"
+      },
+      {
+        "element": "crm.lead._merge_get_fields_specific (sale orders survive lead merge)",
+        "observation": "crm.lead._merge_get_fields_specific is overridden to add order_ids: lambda fname, leads: [(4, order.id) for order in leads.order_ids]. When duplicate leads/opportunities are merged (crm's _merge_opportunity), this re-parents every sale.order from the losing leads onto the surviving opportunity instead of orphaning them, so quotation/order links and the reciprocal counts follow the merge. Pure-Python merge behaviour invisible to metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "crm.team._compute_dashboard_button_name / action_primary_channel_button",
+        "observation": "Two crm.team overrides retarget the Sales Teams dashboard when viewed inside the Sales app: when context 'in_sales_app' is set and the team use_opportunities, _compute_dashboard_button_name relabels dashboard_button_name to 'Sales Analysis', and action_primary_channel_button returns the sale.action_order_report_so_salesteam report action instead of the CRM pipeline action. So the same crm.team kanban card opens the CRM forecast from CRM but the sales-order analysis from Sales -- a context-sensitive UI redirect, not a data change.",
+        "source": "code-read"
+      },
+      {
+        "element": "frontend (OWL/JS)",
+        "observation": "No JS/OWL: 0 js files, 0 xml templates, 0 OWL components, 0 registry adds/patches, no asset bundles. The module is entirely backend/ORM plus static XML view inheritance (the 'New Quotation' button and Quotations/Orders stat buttons on crm.lead_view_form, opportunity_id on sale.view_order_form, a 'My Quotations' menu under the CRM app). data/crm_lead_merge_template.xml supplies the merge mail template.",
+        "source": "static"
       }
     ]
   },
   "it_architecture": {
-    "application": "sale_crm (Opportunity to Quotation)",
+    "application": "sale_crm (sale<->crm bridge: quotations from opportunities and revenue/pipeline feedback)",
     "software_services": [],
     "data_objects": [
-      "crm.quotation.partner"
+      "crm.quotation.partner",
+      "crm.lead",
+      "crm.team",
+      "sale.order"
     ],
     "logical_data_erm": [
-      "crm.quotation.partner -> crm.lead",
-      "crm.quotation.partner -> res.partner"
+      "sale.order -> crm.lead (opportunity_id)",
+      "crm.lead -> sale.order (order_ids, One2many inverse of opportunity_id)",
+      "crm.quotation.partner -> crm.lead (lead_id)",
+      "crm.quotation.partner -> res.partner (partner_id)"
     ],
     "information_flows": [
-      "depends: sale, crm"
+      "depends: sale, crm",
+      "side-effect: crm.lead.action_sale_quotations_new -> crm.quotation.partner wizard (when no partner) -> action_new_quotation -> sale.order prefilled from lead (partner, UTM, team, user, tags, origin)",
+      "side-effect: sale.order.action_confirm -> crm.lead._update_revenues_from_so -> opportunity expected_revenue raised + chatter log",
+      "side-effect: crm.lead._compute_sale_data -> quotation_count / sale_order_count / sale_amount_total (FX-normalised) on the opportunity",
+      "side-effect: crm.lead merge -> _merge_get_fields_specific re-parents order_ids to the surviving opportunity",
+      "ui-flow: crm.team dashboard in Sales app -> Sales Analysis (sale.action_order_report_so_salesteam) via in_sales_app context"
     ],
     "frontend_components": []
   },
   "business_architecture": {
     "capabilities": [
-      "Opportunity to Quotation"
+      "Create a quotation from an opportunity (prefilled customer/UTM/team/salesperson/tags)",
+      "Resolve or create the quotation customer from lead data",
+      "Link sale orders back to their source opportunity",
+      "Roll up quotation count, order count and confirmed-order revenue onto the opportunity",
+      "Feed back confirmed-order revenue into the opportunity's expected revenue",
+      "Preserve order links when opportunities are merged",
+      "Retarget the Sales Team dashboard to sales-order analysis inside the Sales app"
     ],
-    "value_streams": [],
+    "value_streams": [
+      "Opportunity-to-Quotation: qualified opportunity -> New Quotation -> partner resolution wizard -> sale.order created with opportunity_id + lead context",
+      "Quote-to-Pipeline feedback: sale.order.action_confirm -> expected_revenue update + sale_amount_total / sale_order_count refresh on the opportunity"
+    ],
     "information_concepts": [
-      "crm.quotation.partner"
+      "crm.lead (opportunity owning its quotations)",
+      "sale.order (quotation/order originating from the opportunity)",
+      "crm.quotation.partner (customer-resolution wizard)",
+      "crm.team (sales team / dashboard)",
+      "res.partner (the quotation customer)"
     ],
-    "organization": [],
+    "organization": [
+      "sales_team.group_sale_salesman (controls opportunity_id visibility on the sale order form)"
+    ],
     "products": [],
-    "policies": [],
-    "stakeholders": [],
+    "policies": [
+      "Quotations counted in draft/sent; orders counted only when confirmed (not draft/sent/cancel)",
+      "expected_revenue only raised (never lowered) and only when order currency matches the company currency",
+      "New Quotation button hidden for leads (type=='lead') and inactive zero-probability opportunities",
+      "Quotation tags excluded from CRM defaults on confirm (default_tag_ids stripped)",
+      "Merging opportunities re-parents linked sale orders rather than orphaning them"
+    ],
+    "stakeholders": [
+      "Salesperson (res.users) working the opportunity",
+      "Sales Team (crm.team)",
+      "Customer / Prospect (res.partner)",
+      "Sales Manager (pipeline & forecast owner)"
+    ],
     "strategy": null,
-    "metrics": []
+    "metrics": [
+      "crm.lead.quotation_count (open quotations per opportunity)",
+      "crm.lead.sale_order_count (confirmed orders per opportunity)",
+      "crm.lead.sale_amount_total (untaxed confirmed-order revenue, FX-normalised)",
+      "sale.action_order_report_so_salesteam (Sales Analysis by team)"
+    ]
   },
   "classification": {
     "value_model": "chain",
     "activity_class": "primary",
     "apqc_category": "3.0 Market and Sell Products and Services",
-    "rationale": "sale_crm: thin chain/primary module (auto-architect baseline)."
+    "rationale": "sale_crm is a primary value-chain bridge: it sits at the Marketing-and-Sell -> Sell handoff, turning a qualified crm opportunity into a sale.order quotation and feeding the resulting confirmed-order revenue back into the pipeline. Its substance is the order document linkage (opportunity_id) plus action_confirm -> expected_revenue feedback and the reciprocal quote/order counts -- i.e. it advances the linear quote-to-cash chain rather than running a recursive diagnose/qualify loop (that is crm's own value-shop concern, classified separately) or maintaining firm infrastructure (support). It is a primary activity feeding APQC 3.0 Market and Sell Products and Services (the sell / manage-sales-orders process groups, 3.5 sales-order leg specifically, with the New-Quotation-from-opportunity bridging 3.4/3.5). 9.0 Financial was rejected: although action_confirm touches revenue, it updates a CRM forecast figure (expected_revenue), not a financial ledger. The bridge inherits the value model of its sale side (chain), while the crm side it connects to is the value-shop -- the join point itself is chain/primary because it operates on and progresses the sales order.",
+    "rationale_apqc_number": "3.0 number matches name 'Market and Sell Products and Services' (not 9.0 Financial / not 13.0 master-data)."
   },
   "fit_to_standard": {
     "standard_capabilities": [
-      "Opportunity to Quotation"
+      "'New Quotation' action on the opportunity form (with customer-resolution wizard)",
+      "sale.order <-> crm.lead linkage (opportunity_id / order_ids) with auto-prefill of customer, UTM, team, salesperson and tags",
+      "Quotations / Orders stat buttons and 'Sum of Orders' on the opportunity, drilling into the related orders",
+      "Confirmed-order revenue feedback into opportunity expected_revenue",
+      "Order links preserved across opportunity merges",
+      "Context-sensitive Sales Team dashboard (Sales Analysis report inside the Sales app)",
+      "'My Quotations' menu surfaced in the CRM app"
     ],
-    "typical_fits": [],
-    "common_gaps": [],
+    "typical_fits": [
+      "Sell from the pipeline: quote directly off a qualified opportunity and keep the order traceable to its source lead",
+      "Forecast accuracy: confirmed orders auto-update the opportunity's expected revenue and stat counters",
+      "Same salesperson/team/UTM carried from opportunity to quotation for clean attribution",
+      "Deduplicate opportunities without losing their quotations/orders"
+    ],
+    "common_gaps": [
+      "expected_revenue is only ever raised and only for same-currency orders -- multi-currency pipelines or downward revisions need customisation",
+      "No automatic stage advance / won-marking when a linked order is confirmed (the order link does not move the opportunity through the pipeline)",
+      "sale_amount_total / counts are non-stored computes -- reporting that needs stored or historical snapshots requires extra fields",
+      "Customer resolution is email-match only (lead._find_matching_partner) -- richer matching (VAT, phone) is not built in",
+      "No portal/website quotation-from-lead flow (backend opportunity form only; gap #3 empty)"
+    ],
     "drive_hints": [
-      "odoo shell: env['crm.quotation.partner'].search([],limit=3)"
+      "odoo shell: l = env['crm.lead'].search([('type','=','opportunity')], limit=1); print(l.quotation_count, l.sale_order_count, l.sale_amount_total)",
+      "odoo shell: act = l.action_sale_quotations_new(); print(act.get('res_model'), act.get('context'))  # wizard vs new-quotation action depending on l.partner_id",
+      "odoo shell: so = env['sale.order'].search([('opportunity_id','!=',False)], limit=1); print(so.opportunity_id.name); so.action_confirm(); print(so.opportunity_id.expected_revenue)",
+      "UI: open an opportunity with a customer -> 'New Quotation' -> confirm the order -> watch the opportunity 'Sum of Orders' / expected revenue update"
     ]
   },
   "reverse_eng_confidence": {
@@ -121,14 +239,16 @@
     "strategy": "human"
   },
   "open_questions": [
-    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+    "Whether downstream modules ever store/snapshot sale_amount_total for historical pipeline reporting, since the field is a non-stored compute.",
+    "Exact ordering of _handle_partner_assignment versus lead enrichment when the wizard creates a brand-new partner from sparse lead data.",
+    "Whether any localisation or sales-team automation auto-advances the opportunity stage on linked-order confirmation (not present in core sale_crm)."
   ],
   "provenance": {
     "explorer_facts": "doc/revres/facts/sale_crm.facts.json",
     "tools": [
-      "extract_module.py",
+      "code-read (models/crm_lead.py, models/crm_team.py, models/sale_order.py, wizard/crm_opportunity_to_quotation.py, views/crm_lead_views.xml, views/sale_order_views.xml, tests/test_crm_lead_convert_quotation.py)",
       "extract_frontend.py",
-      "gen_thin.py"
+      "extract_module.py"
     ],
     "odoo_version": "19.0"
   }

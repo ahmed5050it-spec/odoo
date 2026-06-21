@@ -4,37 +4,154 @@
     "manifest": {
       "name": "Snail Mail",
       "category": "Hidden/Tools",
+      "summary": null,
       "depends": [
         "iap_mail",
         "mail"
       ],
       "auto_install": true,
-      "application": false
+      "application": false,
+      "version": "0.4",
+      "license": "LGPL-3",
+      "author": "Odoo S.A.",
+      "data_files": 5,
+      "demo_files": 0
     },
     "models": [
       {
         "_name": "snailmail.letter",
         "_description": "Snailmail Letter",
-        "fields": 24
+        "_inherit": null,
+        "fields": 24,
+        "methods": 20,
+        "relations": [
+          "user_id->res.users",
+          "partner_id->res.partner",
+          "company_id->res.company",
+          "report_template->ir.actions.report",
+          "attachment_id->ir.attachment",
+          "message_id->mail.message",
+          "notification_ids->mail.notification",
+          "state_id->res.country.state",
+          "country_id->res.country"
+        ]
+      },
+      {
+        "_name": null,
+        "_inherit": "ir.actions.report",
+        "_description": "Force re-render under snailmail_layout + euro/A4 paperformat",
+        "fields": 0,
+        "methods": 2,
+        "relations": []
+      },
+      {
+        "_name": null,
+        "_inherit": "mail.message",
+        "_description": "Adds snailmail_error flag + letter_ids + 'snailmail' message_type",
+        "fields": 3,
+        "methods": 4,
+        "relations": [
+          "letter_ids->snailmail.letter"
+        ]
+      },
+      {
+        "_name": null,
+        "_inherit": "mail.notification",
+        "_description": "Adds 'snail' notification_type + letter_id + 6 sn_* failure_types",
+        "fields": 3,
+        "methods": 0,
+        "relations": [
+          "letter_id->snailmail.letter"
+        ]
+      },
+      {
+        "_name": null,
+        "_inherit": "mail.thread",
+        "_description": "notify_cancel_by_type('snail') -> cancel pending letters",
+        "fields": 0,
+        "methods": 2,
+        "relations": []
+      },
+      {
+        "_name": null,
+        "_inherit": "res.company",
+        "_description": "Adds snailmail_color / snailmail_cover / snailmail_duplex print defaults",
+        "fields": 3,
+        "methods": 0,
+        "relations": []
+      },
+      {
+        "_name": null,
+        "_inherit": "res.config.settings",
+        "_description": "Surfaces company print defaults + cover-required-by-layout compute",
+        "fields": 4,
+        "methods": 3,
+        "relations": []
+      },
+      {
+        "_name": null,
+        "_inherit": "res.partner",
+        "_description": "Address propagation to live letters + snailmail address formatting (DE/Pingen)",
+        "fields": 0,
+        "methods": 3,
+        "relations": []
       }
     ],
     "routes": [],
     "security": {
       "access_rules": 2,
       "record_rules": 0,
-      "groups": 0
+      "groups": 0,
+      "note": "snailmail defines NO own res.groups and NO record rules; the 2 ir.model.access rows scope snailmail.letter to base.group_user (read/write/create, no unlink) and base.group_system (full). Attachment confidentiality is enforced in Python: create()/write() call letters.attachment_id.check_access('read') so a user can only attach a document they may read. All IAP/print side-effects run sudo()."
     },
     "views": {
       "form": 1,
       "list": 1,
-      "tree": 0,
-      "kanban": 0,
       "search": 0,
-      "pivot": 0,
-      "graph": 0,
-      "calendar": 0,
-      "activity": 0
+      "note": "Only a list + form on snailmail.letter (+ a 'Snailmail Letters' act_window under base.menu_email). The user-facing surface is the chatter: a posted message of message_type='snailmail' with Send/Cancel buttons and the SnailmailNotificationPopover, not a dedicated app."
     },
+    "behavioral_notes": [
+      {
+        "element": "snailmail.letter._snailmail_print / _snailmail_print_valid_address (egress via iap_jsonrpc)",
+        "observation": "_snailmail_print (snailmail_letter.py:347) partitions self into valid/invalid by _is_valid_address (requires street, city, zip, country_id); invalid letters go straight to state='error' / error_code='MISSING_REQUIRED_FIELDS' with the notification flipped to 'exception'. For each valid letter it calls _snailmail_print_valid_address and self.env.cr.commit() after EACH one (so a later rollback never re-sends an already-printed letter). _snailmail_print_valid_address reads ir.config_parameter 'snailmail.endpoint' (default https://iap-snailmail.odoo.com) + 'snailmail.timeout' (30s), builds the payload via _snailmail_create('print'), and POSTs through odoo.addons.iap.tools.iap_tools.iap_jsonrpc(endpoint + '/iap/snailmail/1/print'). The payload carries the iap.account('snailmail').account_token, database.uuid, per-document recipient + return address blocks, the base64 PDF (pdf_bin), company logo, and color/cover/duplex options. Response docs with sent==True + request_code==200 -> state='sent' + tracking note 'The tracking id is <send_id>'; otherwise the per-doc error string is mapped to state='error'. AccessError from IAP is re-raised after marking letters UNKNOWN_ERROR. Entirely invisible to ORM metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "snailmail.letter.create (mail.message + mail.notification side-effects)",
+        "observation": "create() (snailmail_letter.py:89, @api.model_create_multi) is NOT a passive insert: for each letter it first message_post(body='Letter sent by post with Snailmail', message_type='snailmail') on the SOURCE record (self.env[vals['model']].browse(vals['res_id'])), stores that mail.message in message_id, and snapshots the recipient's street/street2/zip/city/state_id/country_id onto the letter (so the mailed address is frozen at creation). After super().create it bulk-creates one mail.notification per letter with notification_type='snail', notification_status='ready', is_read=True (so it never clutters Inbox) — this is the row the Discuss delivery icon and SnailmailNotificationPopover read. Finally letters.attachment_id.check_access('read') enforces attachment ACL. So creating a snailmail.letter mutates the chatter of an unrelated business document.",
+        "source": "code-read"
+      },
+      {
+        "element": "snailmail.letter IAP credit gate + error->failure_type mapping (no local ledger)",
+        "observation": "There is no local credit balance in this module; credit is metered on the remote service. When the print response carries error 'CREDIT_ERROR', _snailmail_print_valid_address calls iap.account._send_no_credit_notification(service_name='snailmail', title='Not enough credits for Snail Mail') and _get_error_message builds an HTML link to iap.account.get_credits_url('snailmail') so the user can top up. _get_error_message / _get_failure_type translate the wire error codes (CREDIT_ERROR, TRIAL_ERROR, NO_PRICE_AVAILABLE, MISSING_REQUIRED_FIELDS, FORMAT_ERROR, TOO_MANY_PAGES, UNKNOWN_ERROR) into mail.notification.failure_type values sn_credit / sn_trial / sn_price / sn_fields / sn_format / sn_error, which drive mail.message.snailmail_error and the red delivery badge. The data/iap_service_data.xml registers iap.service 'snailmail' (unit_name 'Stamps', integer_balance) as the IAP product. Credit pricing/coverage lives entirely on iap-snailmail.odoo.com.",
+        "source": "code-read"
+      },
+      {
+        "element": "snailmail.letter._snailmail_cron (ir.cron queue retry) + state machine",
+        "observation": "data/snailmail_data.xml defines ir.cron 'snailmail_print' running model._snailmail_cron() every 24 hours. _snailmail_cron (snailmail_letter.py:449) re-searches letters in state='pending' OR state='error' with a *recoverable* error_code (TRIAL_ERROR, CREDIT_ERROR, ATTACHMENT_ERROR, MISSING_REQUIRED_FIELDS) and re-runs _snailmail_print on each, committing after every send; crucially it breaks the loop the moment a letter returns CREDIT_ERROR to 'avoid spam' (one failed credit check stops the batch so it doesn't burn through retries). state flows pending -> sent | error | canceled; snailmail_print() resets a letter to pending and re-sends if a singleton; cancel() sets canceled and notification_status='canceled'. Non-recoverable errors (e.g. FORMAT_ERROR, NO_PRICE_AVAILABLE) are NOT retried by the cron.",
+        "source": "code-read"
+      },
+      {
+        "element": "snailmail.letter._fetch_attachment / _generate_report_pdf / PDF post-processing (the print artifact)",
+        "observation": "When no attachment exists, _fetch_attachment renders the report_template (or the report named in context) to PDF via ir.actions.report.with_context(snailmail_layout=not cover, lang='en_US')._render_qweb_pdf, but FIRST enforces an A4 paperformat (raises UserError 'Please use an A4 Paper format.' otherwise) and temporarily swaps unsupported external_report_layout_id (bubble/wave/folder) to web.external_layout_standard for the render, restoring it after. The PDF is then run through _overwrite_margins (paints white reportlab rectangles over the 5mm postal margins + bottom-left franking square) and, if cover is set, _append_cover_page (reportlab Canvas writes the recipient address into a window-envelope frame, inserting a blank page first when duplex). The ir.actions.report override retrieve_attachment returns False under snailmail_layout to force a fresh render, and get_paperformat forces base.paperformat_euro (except for the l10n_de DIN5008 layout). This is real PDF engineering for window-envelope postal compliance, fully outside metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "res.partner address propagation + snailmail country/address formatting",
+        "observation": "res.partner.write override (models/res_partner.py): when any of street/street2/city/zip/state_id/country_id changes, it searches snailmail.letter rows in state not in ('sent','canceled') for that partner and writes the new address onto them — so editing a contact updates the queued (not-yet-sent) letters' frozen address. _get_country_name returns the English country name from country_utils.SNAILMAIL_COUNTRIES when snailmail_layout is set (the postal carrier requires English country names), and _get_address_format collapses street/street2 onto one line, with a special DE branch ('%(street)s // %(street2)s', zip+city) for Pingen (the German postal provider). mail.thread.notify_cancel_by_type('snail') -> _notify_cancel_snail cancels the current author's in-flight letters for that model.",
+        "source": "code-read"
+      },
+      {
+        "element": "frontend (OWL/JS)",
+        "observation": "5 JS files, 1 OWL component (SnailmailNotificationPopover), 0 registry adds, 3 patches (Failure.prototype, MessagingMenu.prototype, Notification.prototype); asset bundles ['web.assets_backend' (1), 'snailmail.report_assets_snailmail' (5), 'web.assets_unit_tests' (1)]. The JS patches the Discuss/Messaging notification UI to surface snailmail delivery state (red failure badge, Send Letter / Cancel actions, the address popover) — it adds no new screen, it decorates the existing chatter/notification components. report_assets_snailmail is the SCSS/QWeb bundle for the postal PDF layout.",
+        "source": "static"
+      },
+      {
+        "element": "external integrations (IAP, gap #7)",
+        "observation": "0 raw http_call_sites and no third-party SDK imports in this module; the only outbound HTTP is the printing call, brokered by odoo.addons.iap.tools.iap_tools.iap_jsonrpc to endpoint https://iap-snailmail.odoo.com (PRINT path /iap/snailmail/1/print), overridable via ir.config_parameter 'snailmail.endpoint'. uses_api_keys=false at this layer: auth is the per-account iap.account('snailmail').account_token + database.uuid, not a user-held API key. The physical-mail fulfilment, franking, postage pricing and per-country coverage all live on the remote Odoo IAP service (and its downstream postal carriers, e.g. Pingen for DE). reportlab is a local PDF dependency, not a network SDK.",
+        "source": "static"
+      }
+    ],
     "frontend": {
       "present": true,
       "js_files": 5,
@@ -69,73 +186,138 @@
     "runtime": {
       "models_with_data": 0,
       "top": []
-    },
-    "behavioral_notes": [
-      {
-        "element": "frontend (OWL/JS)",
-        "observation": "5 JS files, 1 OWL components, 0 registry adds; bundles ['web.assets_backend', 'snailmail.report_assets_snailmail', 'web.assets_unit_tests'].",
-        "source": "static"
-      },
-      {
-        "element": "thin module",
-        "observation": "1 models, 0 routes, 1166 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
-        "source": "ast"
-      }
-    ]
+    }
   },
   "it_architecture": {
-    "application": "snailmail (Snail Mail)",
+    "application": "snailmail (Snail Mail - a physical-letter egress channel layered on mail's notification pipeline, posting documents via Odoo IAP)",
     "software_services": [],
     "data_objects": [
-      "snailmail.letter"
+      "snailmail.letter",
+      "ir.actions.report (inherit)",
+      "mail.message (inherit)",
+      "mail.notification (inherit)",
+      "mail.thread (inherit)",
+      "res.company (inherit)",
+      "res.config.settings (inherit)",
+      "res.partner (inherit)"
     ],
     "logical_data_erm": [
-      "snailmail.letter -> ir.actions.report",
-      "snailmail.letter -> ir.attachment",
-      "snailmail.letter -> mail.message",
-      "snailmail.letter -> mail.notification",
-      "snailmail.letter -> res.company",
-      "snailmail.letter -> res.country",
-      "snailmail.letter -> res.country.state",
-      "snailmail.letter -> res.partner",
-      "snailmail.letter -> res.users"
+      "snailmail.letter -> mail.message (message_id; the chatter status message)",
+      "snailmail.letter -> mail.notification (notification_ids, type='snail'; delivery icon)",
+      "snailmail.letter -> ir.attachment (attachment_id; the rendered PDF)",
+      "snailmail.letter -> ir.actions.report (report_template; source report)",
+      "snailmail.letter -> res.partner (partner_id; recipient, address snapshotted)",
+      "snailmail.letter -> res.company (company_id; return address + print defaults)",
+      "snailmail.letter -> res.country / res.country.state (frozen postal address)",
+      "snailmail.letter -> (model, res_id) generic reference to the source business document",
+      "iap.account('snailmail') -> external IAP print service"
     ],
     "information_flows": [
-      "depends: iap_mail, mail"
+      "depends: iap_mail (-> iap -> web, base_setup), mail",
+      "side-effect: snailmail.letter.create -> message_post(message_type='snailmail') on source record + mail.notification(type='snail') + address snapshot + attachment ACL check",
+      "side-effect: _snailmail_print -> _snailmail_print_valid_address -> iap_tools.iap_jsonrpc -> POST https://iap-snailmail.odoo.com/iap/snailmail/1/print (external, per-letter commit)",
+      "side-effect: _fetch_attachment -> ir.actions.report._render_qweb_pdf (snailmail_layout) -> _overwrite_margins / _append_cover_page -> ir.attachment",
+      "queue: ir.cron snailmail_print (24h) -> _snailmail_cron -> retry pending + recoverable errors, break on CREDIT_ERROR",
+      "credit-gate: error CREDIT_ERROR -> iap.account._send_no_credit_notification + get_credits_url; errors -> mail.notification.failure_type sn_* -> mail.message.snailmail_error",
+      "side-effect: res.partner.write(address) -> propagate to in-flight letters; mail.thread.notify_cancel_by_type('snail') -> cancel author's letters"
     ],
     "frontend_components": [
       "SnailmailNotificationPopover"
-    ]
+    ],
+    "external_integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "endpoints": [
+        "https://iap-snailmail.odoo.com"
+      ]
+    }
   },
   "business_architecture": {
     "capabilities": [
-      "Snail Mail"
+      "Send a business document as physical post (queue + print via IAP)",
+      "Postal PDF preparation (A4/euro layout, margin masking, window-envelope cover page)",
+      "Physical-mail delivery tracking & failure handling (state machine + notification badge)",
+      "Recipient address validation & freezing (street/city/zip/country, English country names, DE/Pingen formatting)",
+      "IAP credit gate + top-up redirect for postage",
+      "Per-company print defaults (color / cover / duplex)"
     ],
-    "value_streams": [],
+    "value_streams": [
+      "Send-by-Post: action creates snailmail.letter -> message_post + notification -> render PDF -> _snailmail_print -> IAP /iap/snailmail/1/print -> sent + tracking id, or error",
+      "Queued-Retry: ir.cron _snailmail_cron -> re-send pending + recoverable-error letters -> break on credit error",
+      "Address-Correction: edit res.partner address -> propagate to in-flight letters -> next send uses corrected address"
+    ],
     "information_concepts": [
-      "snailmail.letter"
+      "snailmail.letter (the queued/sent physical letter)",
+      "mail.message (status message, message_type='snailmail')",
+      "mail.notification (delivery row, notification_type='snail', failure_type sn_*)",
+      "ir.attachment (rendered postal PDF)",
+      "iap.account / iap.service 'snailmail' (postage credit, remote)"
     ],
-    "organization": [],
+    "organization": [
+      "base.group_user (creates/sends letters)",
+      "base.group_system (full access incl. unlink + IAP/print config)",
+      "(snailmail defines no own groups; 2 access rules + Python attachment ACL)"
+    ],
     "products": [],
-    "policies": [],
-    "stakeholders": [],
+    "policies": [
+      "Address completeness gate: _is_valid_address requires street, city, zip, country_id before any IAP call -> else MISSING_REQUIRED_FIELDS / sn_fields",
+      "Attachment confidentiality: create()/write() enforce attachment_id.check_access('read')",
+      "Credit-spam guard: _snailmail_cron breaks on the first CREDIT_ERROR; commit after each letter so a rollback never double-sends",
+      "Paper compliance: non-A4 paperformat raises UserError; unsupported report layouts swapped to standard for the postal render",
+      "Recoverable vs terminal errors: only TRIAL/CREDIT/ATTACHMENT/MISSING_REQUIRED_FIELDS are retried by the cron"
+    ],
+    "stakeholders": [
+      "Internal user / accountant (posts invoices & follow-ups, owns IAP credits)",
+      "Recipient contact (res.partner with a postal address)",
+      "System/admin (sets print defaults, manages IAP snailmail account/credit)",
+      "Odoo IAP Snail Mail service + downstream postal carriers (e.g. Pingen) — external physical fulfilment"
+    ],
     "strategy": null,
-    "metrics": []
+    "metrics": [
+      "snailmail.letter.state distribution (pending/sent/error/canceled)",
+      "mail.notification.failure_type counts (sn_credit/sn_trial/sn_price/sn_fields/sn_format/sn_error)",
+      "mail.message.snailmail_error flag (drives the red delivery badge)",
+      "IAP snailmail credit balance / 'Stamps' consumed (iap.account, remote)"
+    ]
   },
   "classification": {
     "value_model": "support",
     "activity_class": "support",
-    "apqc_category": "9.4 Manage internal controls",
-    "rationale": "snailmail: thin support/support module (auto-architect baseline)."
+    "apqc_category": "9.4 Manage internal communications",
+    "rationale": "snailmail is a cross-cutting SUPPORT subsystem (Stabell & Fjeldstad 'support'): a physical-mail egress CHANNEL, not part of any single primary value chain. It is the postal sibling of sms and mail - it plugs into mail.thread's notification pipeline (message_type='snailmail', notification_type='snail', mail.notification.failure_type sn_*) and reuses mail.message / mail.notification, so any business document (most often an account.move invoice or follow-up report) can be mailed with no schema change. auto_install=True with mail/iap_mail confirms it is shared messaging/communication infrastructure consumed by accounting (account_followup, l10n_* invoice posting) rather than a selling or finance activity in itself. APQC best fit is 9.4 'Manage internal communications' - the firm-wide communication-channel category that also houses mail and sms; chosen over an 8.x IT code because the substance is a *communication delivery channel* (compose -> deliver a document to a recipient), not IT-service plumbing, and over a 9.x finance code because snailmail itself is channel infrastructure (it merely carries finance documents, it does not own the ledger). The number 9.4 = 'Manage internal communications' matches the name used here. NOTE the external integration (gap #7): all printing goes through Odoo IAP (https://iap-snailmail.odoo.com /iap/snailmail/1/print) via iap_tools.iap_jsonrpc with a per-account token, and postage is a metered IAP credit ('Stamps')."
   },
   "fit_to_standard": {
     "standard_capabilities": [
-      "Snail Mail"
+      "Mail any printable Odoo document by post (Send by Post on the chatter, or snailmail_print)",
+      "Physical mail as a chatter/notification channel alongside email & SMS (message_type='snailmail')",
+      "Automatic postal-PDF preparation: A4/euro paperformat, 5mm margin masking, window-envelope cover page, duplex blank page",
+      "Recipient address validation (street/city/zip/country) and address freezing at queue time",
+      "Per-country address/Country-name normalisation (English names; DE/Pingen single-line formatting)",
+      "Delivery state machine + notification badge (pending/sent/error) with tracking id",
+      "Queued sending + 24h retry cron with credit-spam guard and per-letter commit",
+      "IAP snailmail account, postage credit ('Stamps') and buy-more redirect",
+      "Per-company print defaults (color / cover / duplex)"
     ],
-    "typical_fits": [],
-    "common_gaps": [],
+    "typical_fits": [
+      "Posting customer invoices and payment follow-ups physically (the canonical account_followup / invoicing use case)",
+      "Letting a user send a record's report by post from the chatter when email is not an option",
+      "Centralising postal print defaults (cover/color/duplex) per company",
+      "Surfacing postal delivery failures (insufficient credit, bad address) in Discuss for follow-up"
+    ],
+    "common_gaps": [
+      "Using a non-Odoo postal provider requires bypassing the hard-wired IAP endpoint /iap/snailmail/1/print (default is Odoo IAP only)",
+      "Only A4 / euro (and l10n_de DIN5008) paperformats are supported; other formats raise UserError",
+      "No inbound/return-mail or scan-back handling - delivery is one-way with a tracking id only",
+      "Postage pricing, country coverage and the 8-page limit (TOO_MANY_PAGES) are enforced remotely, not configurable locally",
+      "No mass/batch UI beyond the queue cron; bulk posting is driven by upstream modules creating letters"
+    ],
     "drive_hints": [
-      "odoo shell: env['snailmail.letter'].search([],limit=3)"
+      "odoo shell: env['snailmail.letter'].read_group([], ['id'], ['state'])  # delivery state distribution",
+      "odoo shell: l = env['snailmail.letter'].search([], limit=1); l._is_valid_address(l)  # address completeness gate",
+      "odoo shell: env['iap.account'].get('snailmail').read(['account_token'])  # IAP postage account",
+      "odoo shell: env['iap.account'].get_credits('snailmail')  # remaining 'Stamps' credit (remote)",
+      "odoo shell: env['ir.config_parameter'].sudo().get_param('snailmail.endpoint','https://iap-snailmail.odoo.com')  # print endpoint",
+      "odoo shell: env['ir.cron'].search([('cron_name','=','Snailmail: process letters queue')])  # the 24h retry cron"
     ]
   },
   "reverse_eng_confidence": {
@@ -149,14 +331,17 @@
     "strategy": "human"
   },
   "open_questions": [
-    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+    "Exact IAP wire contract / response schema of /iap/snailmail/1/print (sent flags, send_id tracking, per-doc error reasons) and credit/postage pricing live on iap-snailmail.odoo.com and are not reverse-engineerable from this module (gap #7).",
+    "Which downstream modules create snailmail.letter rows in practice (account_followup, invoice 'Send & Print') and how they batch them is outside this module.",
+    "Live IAP-dependent behavior - credit checks, per-country coverage, the 8-page TOO_MANY_PAGES limit, carrier routing (Pingen for DE) - cannot be observed without an activated database + credits.",
+    "Precise APQC leaf for a cross-cutting physical-comms channel (9.4 internal communications vs a 12.x external-relationship code) mirrors the open question on the mail/sms records."
   ],
   "provenance": {
     "explorer_facts": "doc/revres/facts/snailmail.facts.json",
     "tools": [
-      "extract_module.py",
+      "code-read (models/snailmail_letter.py, models/mail_message.py, models/mail_notification.py, models/mail_thread.py, models/res_partner.py, models/res_company.py, models/res_config_settings.py, models/ir_actions_report.py, data/snailmail_data.xml, data/iap_service_data.xml, security/ir.model.access.csv, views/snailmail_views.xml)",
       "extract_frontend.py",
-      "gen_thin.py"
+      "extract_module.py"
     ],
     "odoo_version": "19.0"
   }
