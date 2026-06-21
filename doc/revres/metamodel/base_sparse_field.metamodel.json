@@ -8,13 +8,36 @@
         "base"
       ],
       "auto_install": false,
-      "application": false
+      "application": false,
+      "version": "1.0",
+      "license": "LGPL-3",
+      "summary": "Implementation of sparse fields.",
+      "author": "Odoo S.A.",
+      "data_files": 2,
+      "demo_files": 0
     },
     "models": [
       {
         "_name": "sparse_fields.test",
-        "_description": "Sparse fields Test",
-        "fields": 7
+        "_description": "Sparse fields Test (TransientModel — demo/test fixture only)",
+        "fields": 7,
+        "relations": [
+          "partner->res.partner (Many2one, sparse='data')"
+        ]
+      },
+      {
+        "_name": "base (inherit)",
+        "_description": "Adds _valid_field_parameter to accept 'sparse' as a recognized field parameter",
+        "fields": 0,
+        "relations": []
+      },
+      {
+        "_name": "ir.model.fields (inherit)",
+        "_description": "Adds 'serialized' ttype and serialization_field_id linkage; guards rename/reparent of sparse fields",
+        "fields": 2,
+        "relations": [
+          "serialization_field_id->ir.model.fields (Many2one, the Serialized host field)"
+        ]
       }
     ],
     "routes": [],
@@ -57,55 +80,129 @@
     },
     "behavioral_notes": [
       {
-        "element": "thin module",
-        "observation": "1 models, 0 routes, 268 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
-        "source": "ast"
+        "element": "fields.py — monkey_patch / fields.Field._get_attrs: sparse field wiring at class-definition time",
+        "observation": "The module monkey-patches fields.Field using a decorator-based monkey_patch(cls) helper that saves the original method as func.super. _get_attrs is patched so that if attrs.get('sparse') is truthy, the field is made non-stored (store=False), non-copied by default (copy=False unless explicitly set), compute is wired to self._compute_sparse, and — if not readonly — inverse is wired to self._inverse_sparse. The sparse parameter is just a string naming the Serialized host field. The net effect: any field declared with sparse='<serialized_field_name>' becomes a computed+inverse field with no DB column of its own, backed entirely by a JSON TEXT column.",
+        "source": "code-read"
+      },
+      {
+        "element": "fields.py — _compute_sparse / _inverse_sparse: JSON read-write mechanics",
+        "observation": "_compute_sparse iterates records, reads record[self.sparse] (the Serialized JSON dict), and assigns values.get(self.name) to record[self.name]; for relational fields it additionally calls .exists() to discard stale ids (avoids broken Many2one references after record deletion). _inverse_sparse calls self.convert_to_read(record[self.name], record, use_display_name=False) to obtain a serialisable value; if truthy and different from the stored value it updates the dict and writes back record[self.sparse] = values; if falsy it pops the key entirely — so absent/null sparse values are never stored in the JSON, keeping the dict compact. Both methods work entirely through the ORM cache layer with no direct SQL.",
+        "source": "code-read"
+      },
+      {
+        "element": "fields.py — class Serialized(fields.Field): the column-level storage type",
+        "observation": "Serialized is a concrete fields.Field subclass with type='serialized' and column_type=('text','text') — maps to a PostgreSQL TEXT column. prefetch=False prevents batch-loading in normal queries (avoids pulling large JSON blobs when other fields are prefetched). convert_to_cache stores the value as json.dumps(value, default=json_default) if isinstance(value, dict), else None — cache format is a JSON string or None. convert_to_record calls json.loads(value or '{}') — always returns a dict to callers. convert_to_column_insert delegates to convert_to_cache ensuring INSERTs and UPDATEs see the same serialised form. fields.Serialized = Serialized registers the type on the fields namespace so other modules can use fields.Serialized().",
+        "source": "code-read"
+      },
+      {
+        "element": "models.py — ir.model.fields._reflect_fields: ORM registry -> ir_model_fields synchronisation for serialization_field_id",
+        "observation": "_reflect_fields overrides the base method, calls super() first (structural reflection finishes), then runs a raw SQL SELECT on ir_model_fields to read (model, name, id, serialization_field_id) for all affected model names. For each model's _fields entries where field.sparse is set, it resolves the target serialisation field's id from the same result set; misses raise UserError('Serialization field not found'). Changed mappings are batched by target value and emitted as UPDATE ir_model_fields SET serialization_field_id=%s WHERE id IN %s (one statement per distinct value to minimise round-trips). pool.post_init(records.modified, ['serialization_field_id']) marks the ORM cache dirty post-install.",
+        "source": "code-read"
+      },
+      {
+        "element": "models.py — ir.model.fields.write + _instanciate_attrs: immutability guards and dynamic field reconstruction",
+        "observation": "write() enforces two immutability rules: (1) changing serialization_field_id on a field that already has one raises UserError('Changing the storing system for field … is not allowed') — storage binding is fixed after creation; (2) renaming a sparse field (field.serialization_field_id set and new name != old name) raises UserError('Renaming sparse field … is not allowed'). _instanciate_attrs reads field_data['serialization_field_id'], browses the ir.model.fields record to obtain its name, and sets attrs['sparse'] = serialization_record.name — so sparse fields dynamically created via ir.model.fields (Studio/API) are correctly reconstructed with the sparse parameter at instantiation time without requiring a Python module reload.",
+        "source": "code-read"
       }
     ]
   },
   "it_architecture": {
-    "application": "base_sparse_field (Sparse Fields)",
+    "application": "base_sparse_field (ORM framework extension: adds a 'Serialized' field type and 'sparse' parameter to pack multiple logical fields into a single JSON TEXT column, circumventing PostgreSQL's 1600-column-per-table limit)",
     "software_services": [],
     "data_objects": [
-      "sparse_fields.test"
+      "fields.Field (monkey-patched: _get_attrs, _compute_sparse, _inverse_sparse added)",
+      "fields.Serialized (new field class: type='serialized', column_type text/text, prefetch=False)",
+      "ir.model.fields (inherit: ttype += 'serialized', serialization_field_id Many2one self-reference)",
+      "base (inherit: _valid_field_parameter whitelist includes 'sparse')",
+      "sparse_fields.test (TransientModel: unit-test/demo fixture with 1 Serialized + 6 sparse fields)"
     ],
     "logical_data_erm": [
-      "sparse_fields.test -> res.partner"
+      "sparse_field.serialization_field_id -> ir.model.fields (the Serialized host; immutable after create)",
+      "sparse_field value stored inside Serialized TEXT/JSON dict — no own DB column",
+      "sparse_fields.test.data (Serialized) aggregates: boolean, integer, float, char, selection, partner",
+      "sparse_fields.test.partner -> res.partner (Many2one, sparse='data')"
     ],
     "information_flows": [
-      "depends: base"
+      "depends: base only",
+      "import-time: models/fields.py monkey-patches fields.Field at Python module import (before ORM registry build)",
+      "field-compute path: read sparse_field -> _compute_sparse -> record[self.sparse] dict -> .get(self.name) -> typed value",
+      "field-inverse path: write sparse_field -> _inverse_sparse -> convert_to_read -> JSON dict update/pop -> record[self.sparse] = values",
+      "reflection path: module install -> ir.model.fields._reflect_fields -> raw SQL read ir_model_fields -> UPDATE serialization_field_id -> pool.post_init modified",
+      "dynamic-field path: ir.model.fields._instanciate_attrs -> browse serialization_field_id -> attrs['sparse'] = name"
     ],
     "frontend_components": []
   },
   "business_architecture": {
     "capabilities": [
-      "Sparse Fields"
+      "Declare N logical fields (Boolean, Integer, Float, Char, Selection, Many2one, …) backed by a single JSON TEXT column, avoiding PostgreSQL column-count exhaustion",
+      "Automatic compute/inverse wiring for all sparse fields — consuming modules write no custom compute methods",
+      "Compact JSON storage: falsy/null sparse values are omitted from the dict, keeping the column lean",
+      "Graceful handling of deleted relational targets via .exists() guard in _compute_sparse",
+      "ORM reflection of sparse field metadata into ir.model.fields (serialization_field_id linkage discoverable in Settings > Technical > Fields)",
+      "Dynamic reconstruction of sparse fields created via ir.model.fields API/Studio (_instanciate_attrs)"
     ],
-    "value_streams": [],
+    "value_streams": [
+      "Module-definition stream: developer declares fields.Serialized() + fields.X(sparse='data') -> _get_attrs wires compute/inverse at class load -> no extra DB columns created",
+      "Data-read stream: UI/ORM read sparse_field -> _compute_sparse -> parse JSON TEXT -> return typed Python value",
+      "Data-write stream: UI/ORM write sparse_field -> _inverse_sparse -> serialise value -> update JSON TEXT column (or pop key if falsy)",
+      "Reflection stream: module install -> _reflect_fields -> serialization_field_id links written in ir_model_fields -> sparse field relationships visible in Settings"
+    ],
     "information_concepts": [
-      "sparse_fields.test"
+      "fields.Serialized (the JSON TEXT host column)",
+      "sparse parameter (str attr on fields.Field: name of the Serialized host)",
+      "serialization_field_id (ir.model.fields Many2one: the reflection of the sparse->Serialized relationship)"
     ],
     "organization": [],
     "products": [],
-    "policies": [],
-    "stakeholders": [],
+    "policies": [
+      "Sparse field is always non-stored (store=False) — JSON column is sole persistence",
+      "Sparse field is non-copied by default (copy=False) unless the declaring code overrides it",
+      "serialization_field_id is immutable after creation (write() guard: UserError on change)",
+      "Sparse field names cannot be renamed after creation (write() guard: UserError on rename)",
+      "Falsy values are removed from the JSON dict (not stored as null) — the JSON remains sparse"
+    ],
+    "stakeholders": [
+      "Odoo module developers needing many optional fields on a model near PostgreSQL's 1600-column ceiling",
+      "Studio/low-code users adding ad-hoc optional fields without requiring DBA involvement",
+      "DBA/ops team (benefit: fewer ALTER TABLE ADD COLUMN statements, narrower table width)"
+    ],
     "strategy": null,
-    "metrics": []
+    "metrics": [
+      "Number of sparse fields per model (density indicator for the JSON column)",
+      "Serialized TEXT column size growth (observable via pg_column_size on the host column)"
+    ]
   },
   "classification": {
     "value_model": "support",
     "activity_class": "support",
     "apqc_category": "8.0 Manage Information Technology",
-    "rationale": "base_sparse_field: thin support/support module (auto-architect baseline)."
+    "rationale": "base_sparse_field is pure ORM framework infrastructure: a developer-facing extension that introduces a new field type (Serialized) and a sparse parameter to manage database schema width. It owns no business model (sparse_fields.test is a transient test fixture), has 0 routes, 0 business views, application=False, category=Hidden. Its value is entirely as shared IT plumbing allowing other modules to stay within PostgreSQL's 1600-column limit. Porter support activity; Stabell & Fjeldstad 'support' (infrastructure capability enabling all other activities). APQC 8.0 'Manage Information Technology' is the correct fit: this is database schema engineering — a technology management concern, not a business capability. 13.0 was considered and rejected: this is DB engine augmentation, not master-data management."
   },
   "fit_to_standard": {
     "standard_capabilities": [
-      "Sparse Fields"
+      "Declare fields.Serialized() as a JSON TEXT host column on any model",
+      "Declare any field type with sparse='<host_field>' to store its value in that JSON with zero extra SQL columns",
+      "Automatic compute/inverse wiring — no custom @api.depends or write() required on consuming models",
+      "Relational sparse fields (Many2one) work correctly: .exists() guards stale ids on read",
+      "ir.model.fields reflection: sparse fields display serialization_field_id in Settings > Technical > Fields",
+      "Protection against renaming or reparenting sparse fields after initial creation"
     ],
-    "typical_fits": [],
-    "common_gaps": [],
+    "typical_fits": [
+      "Adding many optional/rarely-used configurable attributes to a model already near PostgreSQL's 1600-column ceiling",
+      "Storing product-variant or configuration-specific attributes in a single column without schema migrations",
+      "Low-code/Studio scenarios adding ad-hoc optional fields without DBA involvement"
+    ],
+    "common_gaps": [
+      "Sparse fields cannot be searched via ORM domain syntax — they are computed non-stored fields; SQL filtering requires custom query or a stored computed field",
+      "No group-by or aggregate support on individual sparse field values — SQL aggregation needs the host JSON column",
+      "Renaming a sparse field after creation requires a data migration (name immutability guard blocks the normal path)",
+      "Converting an existing stored field to sparse after a table already has data is not supported",
+      "No automatic indexing of individual sparse keys (no GIN/btree on JSON keys by default)"
+    ],
     "drive_hints": [
-      "odoo shell: env['sparse_fields.test'].search([],limit=3)"
+      "odoo shell: r = env['sparse_fields.test'].create({}); r.write({'boolean': True, 'integer': 42}); r.data  # -> {'boolean': True, 'integer': 42}",
+      "odoo shell: env['ir.model.fields'].search([('model','=','sparse_fields.test'),('serialization_field_id.name','=','data')])  # list all sparse fields",
+      "psql: SELECT data FROM sparse_fields_test LIMIT 5;  # inspect raw JSON TEXT storage"
     ]
   },
   "reverse_eng_confidence": {
@@ -119,14 +216,16 @@
     "strategy": "human"
   },
   "open_questions": [
-    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+    "Does any Odoo 19 application module use sparse fields in production, or is base_sparse_field now a legacy/test-only framework remnant?",
+    "Performance characteristics of large JSON TEXT columns under high write concurrency — no benchmarks in source.",
+    "Whether fields.Serialized is accessible to Studio/low-code flows or only to Python module developers declaring fields statically."
   ],
   "provenance": {
     "explorer_facts": "doc/revres/facts/base_sparse_field.facts.json",
     "tools": [
       "extract_module.py",
       "extract_frontend.py",
-      "gen_thin.py"
+      "code-read"
     ],
     "odoo_version": "19.0"
   }

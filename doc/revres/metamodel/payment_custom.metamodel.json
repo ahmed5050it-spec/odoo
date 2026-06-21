@@ -4,36 +4,89 @@
     "manifest": {
       "name": "Payment Provider: Custom Payment Modes",
       "category": "Accounting/Payment Providers",
+      "summary": "A payment provider for custom flows like wire transfers.",
+      "version": "2.0",
+      "author": "Odoo S.A.",
+      "license": "LGPL-3",
       "depends": [
         "payment"
       ],
       "auto_install": false,
       "application": false
     },
-    "models": [],
+    "models": [
+      {
+        "_name": "payment.provider (inherit)",
+        "_description": "Payment Provider (Custom mode: wire_transfer; optional QR code display)",
+        "fields": 3,
+        "relations": [
+          "code (Selection selection_add 'custom', ondelete set default)",
+          "custom_mode (Selection: wire_transfer; required_if_provider=custom)",
+          "qr_code (Boolean: Enable QR Codes for wire transfer)"
+        ]
+      },
+      {
+        "_name": "payment.transaction (inherit)",
+        "_description": "Payment Transaction (Custom: always set to pending; no real payment network involved)",
+        "fields": 0,
+        "relations": [
+          "no new fields; 6 methods overriding payment rendering/processing/messaging hooks"
+        ]
+      }
+    ],
     "routes": [
       {
-        "paths": [],
+        "paths": [
+          "/payment/custom/process"
+        ],
         "auth": "public",
-        "type": "http"
+        "type": "http",
+        "methods": ["POST"],
+        "csrf": false
       }
     ],
     "security": {
       "access_rules": 0,
       "record_rules": 0,
-      "groups": 0
+      "groups": 0,
+      "note": "No own ACL/rules; relies on payment's security. DB constraint: CHECK(custom_mode IS NULL OR (code = 'custom' AND custom_mode IS NOT NULL))."
     },
     "views": {
       "form": 1,
       "list": 0,
-      "tree": 0,
       "kanban": 0,
       "search": 0,
       "pivot": 0,
       "graph": 0,
-      "calendar": 0,
-      "activity": 0
+      "note": "xml_loc=175: payment.provider form inheritance (custom_mode + qr_code fields), QWeb pending_msg template rendering bank account details. No own model views."
     },
+    "behavioral_notes": [
+      {
+        "element": "payment.transaction._get_specific_rendering_values -> api_url=CustomController._process_url + reference; _apply_updates -> _set_pending unconditionally; _extract_amount_data -> None (skips amount validation)",
+        "observation": "Unlike real online acquirers, payment_custom implements an offline/manual flow. _get_specific_rendering_values returns only {api_url: '/payment/custom/process', reference: self.reference}; there is no redirect to a payment gateway. The QWeb template renders a form that POSTs to /payment/custom/process. CustomController.custom_process_transaction (csrf=False, public, POST) does nothing except call payment.transaction.sudo()._process('custom', post) and redirect to /payment/status. _apply_updates (the hook called by _process) unconditionally calls self._set_pending() -- the transaction is always placed in 'pending' state regardless of what POST data is received. _extract_amount_data returns None for provider_code=='custom', instructing the payment engine to skip amount validation entirely. This means no funds movement is tracked, no API call is ever made, and the transaction settles to 'pending' only -- it never advances to 'done' via this module. All of this deliberate no-op flow is invisible from model/field metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "post_processing.js: PaymentPostProcessing patch adds 'pending' to getFinalStates for 'custom' provider so the post-processing page redirects immediately rather than polling",
+        "observation": "The standard payment post-processing page polls transaction state until a terminal state (done/error/canceled) is reached. For 'custom' providers, transactions stay in 'pending' forever because _apply_updates never calls _set_done. Without the JS patch, the post-processing page would poll indefinitely. static/src/interactions/post_processing.js patches PaymentPostProcessing.getFinalStates: when providerCode === 'custom', 'pending' is added to the finalStates set, causing the post-processing widget to treat 'pending' as a terminal state and redirect to the landing route immediately. This client-side patch is the only thing that makes the user experience coherent for offline/manual payment flows, and it is entirely invisible from Python metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "payment.provider.action_recompute_pending_msg -> builds HTML pending_msg from account.journal bank accounts when account_payment module is installed; _transfer_ensure_pending_msg_is_set auto-triggers it",
+        "observation": "The wire-transfer pending_msg (the payment instructions shown to the customer after they submit) is dynamically built from the company's bank accounts. action_recompute_pending_msg checks whether the account_payment module is installed (ir.module.module._get('account_payment').state == 'installed'); if yes, it searches account.journal records of type='bank' for the provider's company, collects their bank_account_id.display_name values, and assembles an HTML block listing them with a 'Please use the following transfer details' header. _transfer_ensure_pending_msg_is_set is called to auto-invoke this when pending_msg is empty. The create() override also nullifies pending_msg immediately after creation for wire_transfer providers so it gets freshly computed. The dependency on account_payment and the dynamic bank-account lookup are completely invisible from field/model metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "payment.transaction._get_communication -> returns invoice payment_reference or sale order reference or tx.reference for wire transfers; _get_sent_message -> custom message; _log_received_message -> suppressed for custom",
+        "observation": "_get_communication builds the communication string the customer should include in their bank transfer: it checks for invoice_ids (uses invoice_ids[0].payment_reference) then sale_order_ids (uses sale_order_ids[0].reference) and falls back to self.reference. This allows the merchant to match incoming bank transfers to the right Odoo document by payment reference. _get_sent_message returns 'The customer has selected {provider_name} to make the payment.' instead of the generic acquirer message. _log_received_message is overridden to exclude custom transactions from the chatter message (filtered out before calling super), because custom providers do not actually 'receive' a notification from any external system -- logging a received message would be misleading. These three messaging overrides tailor the UX for an offline flow and are invisible to metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "payment.provider DB constraint + _get_provider_domain + custom_mode selection extensibility design",
+        "observation": "A PostgreSQL CHECK constraint (_custom_providers_setup: 'CHECK(custom_mode IS NULL OR (code = custom AND custom_mode IS NOT NULL))') enforces that only providers with code='custom' may have a non-null custom_mode, and that custom providers must have a custom_mode set. Currently only one custom_mode value exists: 'wire_transfer'. _get_provider_domain is overridden: when provider_code=='custom' and a custom_mode keyword argument is provided, it ANDs a ('custom_mode', '=', custom_mode) domain clause so callers can locate a specific custom provider variant. _get_removal_values nullifies custom_mode when a provider is removed/reset. This design allows future custom_mode values (e.g. 'check', 'cash') to be added without schema changes. The constraint and domain extension are invisible to field/model metadata.",
+        "source": "code-read"
+      }
+    ],
     "frontend": {
       "present": true,
       "js_files": 1,
@@ -58,57 +111,114 @@
     "runtime": {
       "models_with_data": 0,
       "top": []
-    },
-    "behavioral_notes": [
-      {
-        "element": "frontend (OWL/JS)",
-        "observation": "1 JS files, 0 OWL components, 0 registry adds; bundles ['web.assets_frontend'].",
-        "source": "static"
-      },
-      {
-        "element": "thin module",
-        "observation": "0 models, 1 routes, 328 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
-        "source": "ast"
-      }
-    ]
+    }
   },
   "it_architecture": {
-    "application": "payment_custom (Payment Provider: Custom Payment Modes)",
-    "software_services": [],
-    "data_objects": [],
-    "logical_data_erm": [],
-    "information_flows": [
-      "depends: payment"
+    "application": "payment_custom (manual/offline payment adapter for the payment engine; no external API; _inherit-only, no own models)",
+    "software_services": [
+      "/payment/custom/process (http, public, POST, csrf=False: receives the submitted payment form; calls _process('custom', post) -> _set_pending; redirects to /payment/status)"
     ],
-    "frontend_components": []
+    "data_objects": [
+      "payment.provider (+code='custom', custom_mode='wire_transfer', qr_code; DB constraint enforces custom_mode not null for code='custom')",
+      "payment.transaction (offline/manual flow; always -> pending; no new fields)"
+    ],
+    "logical_data_erm": [
+      "payment.transaction -> payment.provider (provider_id; provider_code=='custom' gates every override)",
+      "payment.provider.custom_mode (Selection: wire_transfer; extensible for future modes)",
+      "payment.provider.pending_msg (HTML; dynamically built from account.journal bank accounts when account_payment installed)",
+      "external reference: payment.transaction._get_communication -> invoice payment_reference or sale order reference (cross-document reconciliation hint for the bank)"
+    ],
+    "information_flows": [
+      "depends: payment (inherits the provider/transaction engine)",
+      "optional integration: account_payment module (checked at runtime to build bank-account pending_msg; not a declared depends)",
+      "inbound (form submit): browser -> /payment/custom/process POST -> _process('custom', post) -> _set_pending -> redirect /payment/status",
+      "side-effect: action_recompute_pending_msg queries account.journal (bank type, company-scoped) to build wire transfer instructions HTML",
+      "no outbound API calls: payment_custom makes zero HTTP calls to external systems (uses_api_keys=false, endpoints=[])"
+    ],
+    "frontend_components": [
+      "PaymentPostProcessing (patch; adds 'pending' to getFinalStates for 'custom' provider so the post-processing page treats pending as terminal and redirects immediately rather than polling)"
+    ],
+    "external_integrations": {
+      "sdk": "none",
+      "uses_api_keys": false,
+      "endpoints": [],
+      "files": [],
+      "pattern": "Deliberately no external integration: payment_custom is an offline/manual provider. There are no outbound API calls, no SDKs, no webhooks, and no external payment network. The gap #7 surface is empty by design. The only 'integration' is the optional runtime check for the account_payment module to populate bank account details."
+    }
   },
   "business_architecture": {
     "capabilities": [
-      "Payment Provider: Custom Payment Modes"
+      "Accept offline / manual payments via wire transfer (bank transfer) with customer-facing instructions listing company bank accounts",
+      "Generate a communication/reference string for bank reconciliation (invoice payment_reference or sale order reference)",
+      "Display QR codes on the wire-transfer instructions page (qr_code flag; rendered by upstream payment QWeb template)",
+      "Support any future custom payment mode via the extensible custom_mode Selection field without schema changes",
+      "Adapt the post-processing experience to offline flows: treat 'pending' as final for custom providers (no polling)"
     ],
-    "value_streams": [],
-    "information_concepts": [],
-    "organization": [],
+    "value_streams": [
+      "Collect-Payment (wire transfer, offline): customer selects Custom provider -> _get_specific_rendering_values -> pending_msg with bank account details displayed -> customer submits form -> POST /payment/custom/process -> _set_pending -> /payment/status (pending treated as final by JS patch) -> accountant manually reconciles incoming bank transfer",
+      "Reconcile: _get_communication returns invoice/sale reference -> customer includes reference in bank transfer -> accountant matches transfer to invoice/order"
+    ],
+    "information_concepts": [
+      "payment.provider (custom code; custom_mode=wire_transfer; qr_code; pending_msg HTML with bank account details)",
+      "payment.transaction (offline payment intent; always pending; reference used as bank transfer communication)",
+      "account.journal bank accounts (queried dynamically to build pending_msg; owned by account_payment module)"
+    ],
+    "organization": [
+      "(no module-owned res.groups; relies entirely on payment's groups and record rules)"
+    ],
     "products": [],
-    "policies": [],
-    "stakeholders": [],
+    "policies": [
+      "Transaction always lands in 'pending': _apply_updates unconditionally calls _set_pending; no done/error/canceled path exists in this module",
+      "Amount validation skipped: _extract_amount_data returns None for 'custom' so the payment engine skips amount reconciliation (no API response to validate against)",
+      "DB integrity: PostgreSQL CHECK constraint ensures custom_mode is set if and only if code='custom'",
+      "Pending message auto-recomputed: wire_transfer providers with empty pending_msg auto-trigger action_recompute_pending_msg via _transfer_ensure_pending_msg_is_set; create() nullifies pending_msg on creation to force a fresh compute",
+      "Chatter suppressed: _log_received_message excludes custom transactions (no real external notification received)",
+      "Post-processing polls: PaymentPostProcessing JS patch adds 'pending' to finalStates for 'custom' so the browser does not poll indefinitely"
+    ],
+    "stakeholders": [
+      "Payer / Customer (res.partner; sees wire-transfer instructions and reference in the portal)",
+      "Merchant / Company (res.company; owns the bank accounts listed in the instructions)",
+      "Accountant (manually reconciles incoming bank transfers against pending payment.transactions using the communication reference)",
+      "System Administrator (configures custom provider, custom_mode, bank accounts)"
+    ],
     "strategy": null,
-    "metrics": []
+    "metrics": [
+      "(no own reports; pending transaction counts surfaced by the parent payment.transaction pivot/graph; accountant must manually track reconciliation)"
+    ]
   },
   "classification": {
     "value_model": "network",
     "activity_class": "support",
-    "apqc_category": "9.0 Manage Financial Resources",
-    "rationale": "payment_custom: thin network/support module (auto-architect baseline)."
+    "apqc_category": "9.0 Manage Financial Resources (9.5 process payments / collect cash; offline wire-transfer collection)",
+    "rationale": "payment_custom is classified as value-NETWORK (Stabell & Fjeldstad mediating-technology) because it mediates between the payer and the merchant -- specifically by providing the payment instructions and reference that allow an offline bank transfer to be matched to an Odoo transaction. It is a degenerate case of a network: there is no real-time external network call, but the module's structural role in the payment engine is identical to other acquirers (it is a 'code=custom' selection_add provider, extends payment.provider and payment.transaction, and plugs into the same payment flow). activity_class is 'support' because offline payment collection is a finance/administrative support function (category Accounting/Payment Providers, application=False) under 9.0 Manage Financial Resources -- specifically 9.5 process payments / collect cash via wire transfer."
   },
   "fit_to_standard": {
     "standard_capabilities": [
-      "Payment Provider: Custom Payment Modes"
+      "wire-transfer payment instructions with dynamic bank account listing (requires account_payment for account.journal lookup)",
+      "QR code display on wire-transfer instructions (qr_code flag)",
+      "bank-reconciliation communication reference (invoice payment_reference or sale order reference or tx reference)",
+      "extensible custom_mode Selection for future offline payment types without schema change",
+      "post-processing UX adapted for offline flows (pending treated as terminal, no polling)"
     ],
-    "typical_fits": [],
-    "common_gaps": [],
+    "typical_fits": [
+      "B2B merchants accepting bank transfers / wire transfers (e.g. invoicing with deferred payment)",
+      "markets where online card acceptance is not practical or available",
+      "any scenario where payment intent is recorded in Odoo but settlement happens outside the system"
+    ],
+    "common_gaps": [
+      "transaction never advances past 'pending' automatically: the accountant must manually match and confirm each bank transfer",
+      "no automated bank reconciliation or SEPA import integration in this module; downstream account_payment module handles that",
+      "no real-time payment confirmation: there is no webhook or API callback, so the customer experience ends at 'pending'",
+      "only one custom_mode currently (wire_transfer); other offline modes (check, cash) would require extending the Selection and adding new pending_msg logic",
+      "qr_code display depends on upstream payment QWeb templates and downstream bank-account QR generation; this module only sets the flag",
+      "pending_msg HTML is generated at configuration time, not at transaction time, so if bank accounts change after providers are configured the message can become stale unless action_recompute_pending_msg is re-run"
+    ],
     "drive_hints": [
-      "n/a"
+      "odoo shell: env['payment.provider'].search([('code','=','custom')]).mapped(lambda p: (p.name, p.custom_mode, p.qr_code))",
+      "odoo shell: p=env['payment.provider'].search([('code','=','custom'),('custom_mode','=','wire_transfer')],limit=1); print(p.pending_msg[:200] if p.pending_msg else 'empty')",
+      "odoo shell: p.action_recompute_pending_msg(); print(p.pending_msg[:200])",
+      "odoo shell: tx=env['payment.transaction'].search([('provider_code','=','custom')],limit=1); print(tx.reference, tx.state, tx._get_communication())",
+      "curl -X POST https://<host>/payment/custom/process (public, csrf=False) with reference=<ref> -> expect redirect to /payment/status with tx in 'pending' state"
     ]
   },
   "reverse_eng_confidence": {
@@ -122,14 +232,20 @@
     "strategy": "human"
   },
   "open_questions": [
-    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+    "How does the accountant operationally confirm and close a pending wire-transfer transaction in Odoo -- is there a manual 'mark as paid' action in account_payment, or does it happen via bank statement import/reconciliation?",
+    "The qr_code flag is set here but the actual QR rendering is upstream; which QWeb template consumes it and what format (SEPA QR, Swiss QR bill, generic URL QR)?",
+    "Are there plans to add more custom_mode values (e.g. 'check', 'cash_on_delivery')? The extensibility design is in place but no values other than 'wire_transfer' exist.",
+    "pending_msg can become stale if bank accounts are added/removed after provider configuration; is there a server action or cron that keeps it fresh?",
+    "Real-world transaction volume and pending-to-reconciled conversion rate (no runtime row counts captured)."
   ],
   "provenance": {
     "explorer_facts": "doc/revres/facts/payment_custom.facts.json",
     "tools": [
-      "extract_module.py",
-      "extract_frontend.py",
-      "gen_thin.py"
+      "code-read (models/payment_provider.py, models/payment_transaction.py, controllers/main.py, const.py, static/src/interactions/post_processing.js)",
+      "extract_frontend.py (frontend/payment_custom.frontend.json)",
+      "extract_module.py (facts/payment_custom.facts.json)",
+      "Grep",
+      "Read"
     ],
     "odoo_version": "19.0"
   }

@@ -11,7 +11,31 @@
       "auto_install": true,
       "application": false
     },
-    "models": [],
+    "models": [
+      {
+        "_name": null,
+        "_inherit": "ir.http",
+        "_description": "(extension)",
+        "fields": 0,
+        "relations": []
+      },
+      {
+        "_name": null,
+        "_inherit": "mail.message",
+        "_description": "(extension)",
+        "fields": 0,
+        "relations": []
+      },
+      {
+        "_name": null,
+        "_inherit": "rating.rating",
+        "_description": "(extension)",
+        "fields": 3,
+        "relations": [
+          "publisher_id->res.partner"
+        ]
+      }
+    ],
     "routes": [
       {
         "paths": [
@@ -37,6 +61,33 @@
       "calendar": 0,
       "activity": 0
     },
+    "behavioral_notes": [
+      {
+        "element": "rating.rating._synchronize_publisher_values / _check_synchronize_publisher_values",
+        "observation": "When publisher_comment is set during create or write, the module auto-fills publisher_id (current user's partner) and publisher_datetime (Datetime.now()) if not already supplied. Before persisting, _check_synchronize_publisher_values enforces dual-path authorization: either the user holds website.group_website_restricted_editor (resolved via ir.model.data._xmlid_to_res_id to avoid a hard bridge dependency) OR they have write access on the rated document (checked via records.check_access('write')). Metadata shows only field definitions, not this gating behavior.",
+        "source": "code-read"
+      },
+      {
+        "element": "mail.message._portal_message_format / _portal_message_format_rating",
+        "observation": "When rating_include=True is in options, _portal_message_format performs a sudo search_read on rating.rating filtered by message_id, then injects a rating_id dict per message (publisher_comment, publisher_id, publisher_datetime formatted via format_datetime, publisher_avatar URL as /web/image/res.partner/<id>/avatar_128/50x50). It also calls rating_get_stats() on the related document model if that method exists, attaching aggregate stats as rating_stats. This enrichment is a runtime injection invisible in ORM metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "PortalChatter._get_non_empty_message_domain / _setup_portal_message_fetch_extra_domain",
+        "observation": "portal_rating extends PortalChatter: _get_non_empty_message_domain adds Domain('rating_value', '!=', False) via OR so that messages containing only a rating (no text body) are still shown in the chatter. _setup_portal_message_fetch_extra_domain accepts an optional rating_value float from the client and appends an AND Domain filter, enabling server-side star-rating-filtered chatter views without any dedicated filter model.",
+        "source": "code-read"
+      },
+      {
+        "element": "Thread.prototype.getFetchParams (JS patch in thread_model_patch.js)",
+        "observation": "The frontend Thread model patch unconditionally adds rating_include=true to all chatter fetch params for non-discuss.channel threads, and also forwards rating_value when a star filter is active (this.selectedRating). This drives the server-side rating enrichment on every portal chatter load — the metadata-level Module has no OWL components; all behavior is delivered through patches on existing components.",
+        "source": "code-read"
+      },
+      {
+        "element": "RatingPopupComposer (portal_rating_composer.js, public.interactions registry)",
+        "observation": "The RatingPopupComposer Interaction renders a star average widget (portal_rating.rating_stars_static template) and a modal wrapping the portal.Composer. On reload (triggered by bus event reload_rating_popup_composer), it merges returned mail.thread rating_avg/rating_count and rating.rating rating values back into options, changing the send button label to 'Update review' vs 'Post review' depending on whether default_message_id is set. Access token (token field) is passed through options from the server-rendered page.",
+        "source": "code-read"
+      }
+    ],
     "frontend": {
       "present": true,
       "js_files": 9,
@@ -72,59 +123,89 @@
     "runtime": {
       "models_with_data": 0,
       "top": []
-    },
-    "behavioral_notes": [
-      {
-        "element": "frontend (OWL/JS)",
-        "observation": "9 JS files, 0 OWL components, 1 registry adds; bundles ['web.assets_frontend', 'web.assets_unit_tests_setup', 'portal.assets_chatter'].",
-        "source": "static"
-      },
-      {
-        "element": "thin module",
-        "observation": "0 models, 1 routes, 227 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
-        "source": "ast"
-      }
-    ]
+    }
   },
   "it_architecture": {
-    "application": "portal_rating (Portal Rating)",
+    "application": "portal_rating (bridge: exposes rating.rating publisher comments and aggregate stats in the customer portal chatter)",
     "software_services": [
-      "/website/rating/comment"
+      "/website/rating/comment (jsonrpc, auth=user)"
     ],
-    "data_objects": [],
-    "logical_data_erm": [],
+    "data_objects": [
+      "rating.rating (extended: publisher_comment, publisher_id, publisher_datetime)",
+      "mail.message (extended: rating payload injected into portal format at runtime)"
+    ],
+    "logical_data_erm": [
+      "rating.rating -> res.partner (publisher_id)",
+      "rating.rating -> mail.message (message_id, read in _portal_message_format)",
+      "rating.rating -> <any rated document model> (write-access check via _classify_by_model)"
+    ],
     "information_flows": [
-      "depends: portal, rating"
+      "depends: portal, rating",
+      "portal chatter fetch -> Thread.getFetchParams injects rating_include=true -> mail.message._portal_message_format enriches payload with rating_id + rating_stats",
+      "portal user POSTs /website/rating/comment -> rating.rating.write (access-gated) -> returns formatted publisher block to frontend"
     ],
-    "frontend_components": []
+    "frontend_components": [
+      "RatingPopupComposer (public.interactions — star popup + portal composer modal)",
+      "Patches: Thread, Chatter, Composer, Message, PortalComposer, Store"
+    ]
   },
   "business_architecture": {
     "capabilities": [
-      "Portal Rating"
+      "Display customer star ratings with aggregate average and count in portal chatter",
+      "Allow portal users to post and edit rating reviews (star + text via portal composer)",
+      "Allow publishers (website editors or document owners) to respond to ratings with a comment",
+      "Filter portal chatter messages by exact star rating value (server-side domain filter)"
     ],
-    "value_streams": [],
-    "information_concepts": [],
+    "value_streams": [
+      "Customer Feedback Loop: customer submits star rating via portal -> publisher sees rating in chatter with aggregate stats -> publisher posts response comment -> customer sees response and updated stats on portal"
+    ],
+    "information_concepts": [
+      "rating.rating (star rating, publisher_comment, publisher_id, publisher_datetime)",
+      "mail.message (chatter message linked to rating via message_id)",
+      "res.partner (publisher identity)"
+    ],
     "organization": [],
     "products": [],
-    "policies": [],
-    "stakeholders": [],
+    "policies": [
+      "Publisher comment write requires either website.group_website_restricted_editor membership OR write access on the rated document (dual-path guard in _check_synchronize_publisher_values — bridge to website is optional, not a hard dependency)"
+    ],
+    "stakeholders": [
+      "Customer (portal user submitting rating via RatingPopupComposer)",
+      "Publisher / Document Owner (res.users with write access on rated record)",
+      "Website Restricted Editor (website.group_website_restricted_editor, optional)"
+    ],
     "strategy": null,
-    "metrics": []
+    "metrics": [
+      "rating_avg and rating_count per document (surfaced via rating_get_stats in portal chatter payload)"
+    ]
   },
   "classification": {
     "value_model": "network",
     "activity_class": "support",
-    "apqc_category": "6.0 Manage Customer Service",
-    "rationale": "portal_rating: thin network/support module (auto-architect baseline)."
+    "apqc_category": "3.0 Market and Sell Products and Services",
+    "rationale": "portal_rating enables bilateral communication between customers and businesses around service/product ratings — a network value model where value lies in connecting reviewers with publishers. It supports the Market & Sell process by surfacing customer satisfaction signals in the portal, helping prospects assess quality and letting businesses respond publicly."
   },
   "fit_to_standard": {
     "standard_capabilities": [
-      "Portal Rating"
+      "Star rating display with average and count in portal chatter",
+      "Rating-filtered chatter (client-side star filter drives server domain)",
+      "Publisher response comments with auto-stamped identity and timestamp",
+      "RatingPopupComposer widget for submitting/editing portal reviews",
+      "Translation support via ir.http frontend module registration"
     ],
-    "typical_fits": [],
-    "common_gaps": [],
+    "typical_fits": [
+      "Any module using mail.thread rating mixin automatically gains portal rating display",
+      "Publisher comment fields auto-populated (user, datetime) on write — no manual tracking needed",
+      "Optional bridge to website.group_website_restricted_editor — works without website module"
+    ],
+    "common_gaps": [
+      "No moderation workflow (approve/reject ratings before publication)",
+      "No separate review model — publisher comment fields tightly coupled to rating.rating",
+      "No notification to publisher when a new rating arrives (relies on upstream rating module events)"
+    ],
     "drive_hints": [
-      "n/a"
+      "curl jsonrpc /website/rating/comment with auth=user session, body: {rating_id: <id>, publisher_comment: '...'}",
+      "odoo shell: env['rating.rating'].search([('publisher_comment','!=',False)], limit=5).read(['publisher_comment','publisher_datetime','publisher_id'])"
     ]
   },
   "reverse_eng_confidence": {
@@ -138,14 +219,16 @@
     "strategy": "human"
   },
   "open_questions": [
-    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+    "Does portal_rating interact with website live-chat or helpdesk rating flows, or only with modules that explicitly implement rating_get_stats?",
+    "Is the RatingPopupComposer access token (options.token) validated server-side by the upstream rating module, or is authentication solely by user session?",
+    "How does the frontend star-filter (rating_value param in Thread.getFetchParams) interact with pagination on large chatter threads — does the count reflect the filtered subset?"
   ],
   "provenance": {
     "explorer_facts": "doc/revres/facts/portal_rating.facts.json",
     "tools": [
-      "extract_module.py",
+      "code-read",
       "extract_frontend.py",
-      "gen_thin.py"
+      "extract_module.py"
     ],
     "odoo_version": "19.0"
   }

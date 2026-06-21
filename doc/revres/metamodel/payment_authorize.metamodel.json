@@ -4,13 +4,46 @@
     "manifest": {
       "name": "Payment Provider: Authorize.Net",
       "category": "Accounting/Payment Providers",
+      "summary": "An payment provider covering the US, Australia, and Canada.",
+      "version": "2.0",
+      "author": "Odoo S.A.",
+      "license": "LGPL-3",
       "depends": [
         "payment"
       ],
       "auto_install": false,
       "application": false
     },
-    "models": [],
+    "models": [
+      {
+        "_name": "payment.provider (inherit)",
+        "_description": "Payment Provider (Authorize.Net credentials: login / transaction_key / signature_key / client_key)",
+        "fields": 5,
+        "relations": [
+          "code (Selection selection_add 'authorize', ondelete set default)",
+          "authorize_login (Char, required_if_provider=authorize)",
+          "authorize_transaction_key (Char, required_if_provider=authorize, groups=base.group_system)",
+          "authorize_signature_key (Char, required_if_provider=authorize, groups=base.group_system)",
+          "authorize_client_key (Char)"
+        ]
+      },
+      {
+        "_name": "payment.token (inherit)",
+        "_description": "Payment Token (Authorize.Net customer/payment profile reference)",
+        "fields": 1,
+        "relations": [
+          "authorize_profile (Char): the Authorize.Net customerProfileId paired with the payment profile"
+        ]
+      },
+      {
+        "_name": "payment.transaction (inherit)",
+        "_description": "Payment Transaction (Authorize.Net direct inline flow; authorize/capture/void/refund operations)",
+        "fields": 0,
+        "relations": [
+          "no new fields; 9 methods overriding payment request/processing/notification hooks"
+        ]
+      }
+    ],
     "routes": [
       {
         "paths": [
@@ -23,19 +56,45 @@
     "security": {
       "access_rules": 0,
       "record_rules": 0,
-      "groups": 0
+      "groups": 0,
+      "note": "No own ACL/rules; relies on payment's security. authorize_transaction_key and authorize_signature_key restricted to base.group_system field groups."
     },
     "views": {
       "form": 0,
       "list": 0,
-      "tree": 0,
       "kanban": 0,
       "search": 0,
       "pivot": 0,
       "graph": 0,
-      "calendar": 0,
-      "activity": 0
+      "note": "xml_loc=118: payment.provider form inheritance (inline form with API login/client key), QWeb inline form template (card + ACH bank account fields rendered in-page via Accept.js). No own model views."
     },
+    "behavioral_notes": [
+      {
+        "element": "AuthorizeAPI._make_request -> POST https://api.authorize.net/xml/v1/request.api (live) / https://apitest.authorize.net/xml/v1/request.api (test) using requests.post with merchantAuthentication block",
+        "observation": "All Authorize.Net API calls route through AuthorizeAPI._make_request in models/authorize_request.py. The URL is selected at AuthorizeAPI.__init__ time: provider.state=='enabled' maps to api.authorize.net, otherwise apitest.authorize.net. Every request wraps a merchantAuthentication block containing authorize_login (name) and authorize_transaction_key (transactionKey). The body is JSON-serialised via json.dumps and posted with Python requests.post with a 60-second timeout. Error detection reads messages.resultCode=='Error' from the JSON response and additionally collects transactionResponse.errors for transaction-level errors; the consolidated error is returned as {'err_code':..., 'err_msg':...}. Unlike other acquirers that delegate to payment.provider._send_api_request, this module uses requests directly (sdk_imports=['requests'] per frontend extractor). The dual-URL test/live routing, the raw requests usage, and the merchantAuthentication embedding are invisible from model/field metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "payment.transaction._authorize_create_transaction_request + _send_payment_request -> AuthorizeAPI.authorize (authOnlyTransaction) vs AuthorizeAPI.auth_and_capture (authCaptureTransaction) branching on capture_manually and operation",
+        "observation": "Authorize.Net supports a full authorize-then-capture split. The inline-form path (_authorize_create_transaction_request) and the off-session token path (_send_payment_request) both branch on provider.capture_manually: when True the API call is authorize() -> 'authOnlyTransaction' (places an auth hold, tx state -> authorized via _apply_updates x_type='auth_only'); when False it calls auth_and_capture() -> 'authCaptureTransaction' (settles immediately, tx -> done via x_type='auth_capture'). Validation operations always use authorize() regardless of capture_manually. For token payments (off-session), _prepare_tx_data builds a 'profile' block using token.authorize_profile (customerProfileId) and token.provider_ref (paymentProfileId); for new card/ACH payments it uses the 'payment.opaqueData' block from the Accept.js nonce. The billTo block (firstName/lastName/company/address/city/state/zip/country, all length-capped per Authorize API limits) is included only for non-profile requests. _apply_updates maps x_response_code '1' (Approved) by x_type: auth_capture/prior_auth_capture -> _set_done; auth_only -> _set_authorized (then _void for validation); void -> _set_done (refund/validation) or _set_canceled; refund -> _set_done + trigger cron. Code '2' -> _set_canceled; code '4' -> _set_pending; else -> _set_error. This authorize/capture split and the profile vs opaqueData divergence are invisible to metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "payment.transaction._send_refund_request -> stateful refund-or-void decision based on getTransactionDetailsRequest transactionStatus",
+        "observation": "Refund logic in _send_refund_request first calls AuthorizeAPI.get_transaction_details (getTransactionDetailsRequest) to fetch the current transactionStatus of the source transaction. The status is then matched against const.TRANSACTION_STATUS_MAPPING: if 'voided' -> _set_canceled (funds never moved, no API call needed); if 'refunded' (refundPendingSettlement / refundSettledSuccessfully) -> _set_done and trigger cron post-processing; if 'authorized' (authorizedPendingCapture / capturedPendingSettlement) -> void() instead of refund because the payment has not settled yet (no refundTransaction needed); if 'captured' (settledSuccessfully) -> refund() which POSTs 'refundTransaction' with the masked cardNumber from tx_details and expirationDate='XXXX'. The void path creates no child tx; the refund path returns x_type='refund' and _set_done triggers cron post-processing. This stateful refund-or-void decision tree is entirely invisible from model/field metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "payment.transaction._extract_token_values -> AuthorizeAPI.create_customer_profile (two-step: createCustomerProfileFromTransactionRequest + getCustomerPaymentProfileRequest) -> payment.token (authorize_profile, provider_ref, payment_details)",
+        "observation": "After a successful charge with tokenize=True, _extract_token_values calls AuthorizeAPI.create_customer_profile(partner, provider_reference). This makes two sequential API calls: (1) createCustomerProfileFromTransactionRequest using the transId and a merchantCustomerId of 'ODOO-{partner.id}-{uuid4()[:8]}'[:20] -- creating a customer + payment profile in Auth.Net from the completed transaction; (2) getCustomerPaymentProfileRequest to retrieve the masked card/bank account number (creditCard.cardNumber[-4:] or bankAccount.accountNumber[-4:] for the last-4 payment_details). The result yields authorize_profile (customerProfileId stored on payment.token.authorize_profile), provider_ref (customerPaymentProfileId stored on payment.token.provider_ref), and payment_details (last 4 digits). Subsequent off-session charges use these two IDs in the 'profile' block of _prepare_tx_data. If _extract_token_values is called on an existing-token transaction (self.token_id set), it returns {} immediately to avoid creating a duplicate profile. The two-call profile creation, the UUID merchant customer ID, and the dual-ID token structure are invisible to field/model metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "payment_form.js: Accept.js client-side tokenization + /payment/authorize/payment jsonrpc route; controller row-lock anti-concurrent pattern",
+        "observation": "The browser-side flow is driven by a patch on PaymentForm.prototype (static/src/interactions/payment_form.js). On 'authorize' provider selection, _prepareInlineForm loads the Accept.js SDK from https://js.authorize.net/v1/Accept.js in live mode or https://jstest.authorize.net/v1/Accept.js in test mode via loadJS. On payment submit, _processDirectFlow assembles a secureData object with authData (apiLoginID=authorize_login, clientKey=authorize_client_key) plus either cardData (cardNumber/month/year/cardCode) or bankData (nameOnAccount/accountNumber/routingNumber/accountType) read from the inline form inputs. Accept.dispatchData(secureData, callback) sends this to Authorize.Net's Accept.js SDK which returns a one-time-use opaqueData nonce (dataDescriptor + dataValue) without card/bank details ever touching the Odoo server (SAQ A-EP PCI scope). The nonce is then posted to /payment/authorize/payment via rpc with an access_token. In the controller AuthorizeController.authorize_payment validates the HMAC access_token (check_access_token(access_token, reference, partner_id)), then executes SELECT FOR NO KEY UPDATE to lock the transaction row against concurrent cron updates before calling _authorize_create_transaction_request -- preventing the single-use OTS token from being consumed twice. All of this client-side tokenization, SDK loading, and row-locking are invisible to Python metadata.",
+        "source": "code-read"
+      }
+    ],
     "frontend": {
       "present": true,
       "js_files": 1,
@@ -67,64 +126,142 @@
     "runtime": {
       "models_with_data": 0,
       "top": []
-    },
-    "behavioral_notes": [
-      {
-        "element": "frontend (OWL/JS)",
-        "observation": "1 JS files, 0 OWL components, 0 registry adds; bundles ['web.assets_frontend'].",
-        "source": "static"
-      },
-      {
-        "element": "external integrations",
-        "observation": "1 HTTP call sites; SDKs ['requests']; api_keys=True.",
-        "source": "static"
-      },
-      {
-        "element": "thin module",
-        "observation": "0 models, 1 routes, 1119 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
-        "source": "ast"
-      }
-    ]
+    }
   },
   "it_architecture": {
-    "application": "payment_authorize (Payment Provider: Authorize.Net)",
+    "application": "payment_authorize (Authorize.Net acquirer adapter for the payment engine; _inherit-only, no own models/views)",
     "software_services": [
-      "/payment/authorize/payment"
+      "/payment/authorize/payment (jsonrpc, public: receives Accept.js opaqueData nonce + access_token; row-locks the tx via SELECT FOR NO KEY UPDATE; calls _authorize_create_transaction_request; processes response synchronously)"
     ],
-    "data_objects": [],
-    "logical_data_erm": [],
+    "data_objects": [
+      "payment.provider (+authorize_login, authorize_transaction_key, authorize_signature_key, authorize_client_key; single-currency constraint via _limit_available_currency_ids)",
+      "payment.transaction (Authorize.Net inline direct flow; authorize/capture/void/refund lifecycle; no new fields)",
+      "payment.token (+authorize_profile: Authorize.Net customerProfileId; provider_ref = customerPaymentProfileId)"
+    ],
+    "logical_data_erm": [
+      "payment.transaction -> payment.provider (provider_id; provider_code=='authorize' gates every override)",
+      "payment.transaction -> payment.token (token_id; off-session charges use token.authorize_profile + token.provider_ref as 'profile' block)",
+      "payment.token.authorize_profile == Authorize.Net customerProfileId",
+      "payment.token.provider_ref == Authorize.Net customerPaymentProfileId",
+      "payment.provider: one-currency constraint (available_currency_ids cardinality <= 1 when state != disabled)",
+      "external: payment.transaction.provider_reference == Authorize.Net transId (x_trans_id)"
+    ],
     "information_flows": [
-      "depends: payment"
+      "depends: payment (inherits the provider/transaction/token engine)",
+      "client-side: Accept.js SDK (loaded lazily from js.authorize.net / jstest.authorize.net) tokenizes card/ACH details in the browser -> opaqueData nonce; SAQ A-EP PCI scope",
+      "inbound (inline): browser -> /payment/authorize/payment jsonrpc -> check_access_token + SELECT FOR NO KEY UPDATE -> _authorize_create_transaction_request -> AuthorizeAPI.authorize or auth_and_capture -> POST api.authorize.net XML/JSON -> _process -> state machine",
+      "outbound (off-session): _send_payment_request -> AuthorizeAPI.authorize or auth_and_capture with token profile block -> POST api.authorize.net -> _process",
+      "outbound (capture): _send_capture_request -> AuthorizeAPI.capture (priorAuthCaptureTransaction) -> POST api.authorize.net -> _process",
+      "outbound (void): _send_void_request -> AuthorizeAPI.void (voidTransaction) -> POST api.authorize.net -> _process",
+      "outbound (refund): _send_refund_request -> getTransactionDetails -> stateful void-or-refund decision -> POST api.authorize.net -> _process",
+      "outbound (tokenize): _extract_token_values -> AuthorizeAPI.create_customer_profile (two calls: createCustomerProfileFromTransactionRequest + getCustomerPaymentProfileRequest) -> payment.token vault",
+      "outbound (setup): action_update_merchant_details -> AuthorizeAPI.test_authenticate + merchant_details (getMerchantDetailsRequest) -> update authorize_client_key + available_currency_ids"
     ],
-    "frontend_components": []
+    "frontend_components": [
+      "PaymentForm.prototype (patch; loads Accept.js SDK lazily; collects card/ACH inline form inputs; calls Accept.dispatchData to tokenize client-side; POSTs opaqueData nonce to /payment/authorize/payment)",
+      "Accept.js tokenization SDK (loaded from js.authorize.net or jstest.authorize.net; client-side card/ACH tokenization; SAQ A-EP)"
+    ],
+    "external_integrations": {
+      "sdk": "Accept.js (browser card/ACH tokenization); server side uses Python requests library directly (not via payment.provider._send_api_request)",
+      "uses_api_keys": true,
+      "endpoints": [
+        "https://api.authorize.net/xml/v1/request.api (live)",
+        "https://apitest.authorize.net/xml/v1/request.api (sandbox)"
+      ],
+      "auth": "merchantAuthentication block in every JSON request body: name=authorize_login, transactionKey=authorize_transaction_key",
+      "files": [
+        "models/authorize_request.py",
+        "models/payment_provider.py",
+        "models/payment_transaction.py",
+        "models/payment_token.py",
+        "controllers/main.py",
+        "const.py"
+      ],
+      "pattern": "Concrete realization of metadata gap #7: server-to-server REST via Python requests (not delegated to the payment engine) to api.authorize.net XML/JSON API authenticated with a login/transactionKey block in every request body; a parallel client-side Accept.js tokenization channel (SAQ A-EP); no inbound webhook -- all state transitions are synchronous responses to the single /payment/authorize/payment route."
+    }
   },
   "business_architecture": {
     "capabilities": [
-      "Payment Provider: Authorize.Net"
+      "Accept Card payments (Visa, Mastercard, Amex, Discover) via Authorize.Net inline form with Accept.js client-side tokenization (SAQ A-EP)",
+      "Accept ACH/eCheck bank-account payments via Authorize.Net inline form with Accept.js bank tokenization",
+      "Manual authorize-then-capture split (support_manual_capture='full_only'): place auth hold, capture later",
+      "Full refund support (support_refund='full_only'): stateful void-or-refund based on Authorize.Net transaction status",
+      "Tokenization / Saved Cards and bank accounts (support_tokenization=True): vault customerProfileId + paymentProfileId for off-session recurring charges",
+      "Merchant self-configuration: action_update_merchant_details fetches authorize_client_key and available currencies directly from Auth.Net API"
     ],
-    "value_streams": [],
-    "information_concepts": [],
-    "organization": [],
+    "value_streams": [
+      "Collect-Payment (new card/ACH, direct): Accept.js tokenize -> opaqueData nonce -> /payment/authorize/payment jsonrpc (row-locked) -> AuthorizeAPI.auth_and_capture or authorize -> POST api.authorize.net -> _process -> done/authorized/pending",
+      "Collect-Payment (off-session token): _send_payment_request -> AuthorizeAPI.authorize/auth_and_capture with profile block -> POST api.authorize.net -> _process -> done/authorized",
+      "Authorize-then-Capture: payment -> authorized state -> _send_capture_request -> priorAuthCaptureTransaction -> done",
+      "Void: _send_void_request -> voidTransaction -> canceled",
+      "Refund: _send_refund_request -> getTransactionDetails (status check) -> void (if authorized/pending settlement) or refundTransaction (if settled) -> done/canceled",
+      "Tokenize: successful charge + tokenize flag -> _extract_token_values -> two Auth.Net API calls -> vault payment.token (customerProfileId + paymentProfileId + last4)"
+    ],
+    "information_concepts": [
+      "payment.provider (Authorize.Net credentials: login / transaction_key / signature_key / client_key; single-currency constraint)",
+      "payment.transaction (mapped to Authorize.Net transId; keyed by reference; supports auth/capture/void/refund lifecycle)",
+      "payment.token (saved card/ACH: authorize_profile=customerProfileId, provider_ref=paymentProfileId, payment_details=last4)"
+    ],
+    "organization": [
+      "(no module-owned res.groups; authorize_transaction_key and authorize_signature_key restricted to base.group_system; everything else inherits payment's groups/record rules)"
+    ],
     "products": [],
-    "policies": [],
-    "stakeholders": [],
+    "policies": [
+      "Single currency per Authorize.Net account: _limit_available_currency_ids raises ValidationError if >1 currency selected and provider is not disabled",
+      "Access token validation: /payment/authorize/payment verifies HMAC check_access_token(reference, partner_id) before processing",
+      "Row-lock anti-concurrent: SELECT FOR NO KEY UPDATE in the controller prevents cron jobs from consuming the single-use OTS nonce a second time",
+      "Test/live URL switch: AuthorizeAPI.__init__ routes to apitest.authorize.net for non-'enabled' provider state; Accept.js also loads from jstest.authorize.net in non-enabled state",
+      "Validation amount: _get_validation_amount returns 0.01 (a $0.01 auth-only charge used to verify card validity, then voided)",
+      "Stateful refund-or-void: refund is issued only when transactionStatus is settledSuccessfully; earlier states trigger a void instead",
+      "Credentials gated: authorize_transaction_key and authorize_signature_key restricted to base.group_system"
+    ],
+    "stakeholders": [
+      "Payer / Cardholder / Bank account holder (res.partner)",
+      "Merchant / Company (res.company, holds the Authorize.Net account and keys)",
+      "Authorize.Net (external acquirer / PSP for US, Australia, Canada)",
+      "Accountant (consumes settled/refunded payments via account_payment downstream)"
+    ],
     "strategy": null,
-    "metrics": []
+    "metrics": [
+      "(no own reports; transaction volumes/amounts/state surfaced by the parent payment.transaction pivot/graph)"
+    ]
   },
   "classification": {
     "value_model": "network",
     "activity_class": "support",
-    "apqc_category": "9.0 Manage Financial Resources",
-    "rationale": "payment_authorize: thin network/support module (auto-architect baseline)."
+    "apqc_category": "9.0 Manage Financial Resources (9.5 process payments / collect cash; manage external payment provider)",
+    "rationale": "payment_authorize is a value-NETWORK (Stabell & Fjeldstad mediating-technology) component: its purpose is to interconnect the payer (cardholder / bank account holder) and the merchant by linking the merchant to the Authorize.Net card/ACH network in the US, Australia, and Canada. Mediating-technology activities present: network contract management (API-key + credential management, single-currency constraint, client-key fetch), service provisioning (creating, capturing, voiding, and refunding Authorize.Net transactions per event), and infrastructure operation (the server-to-server api.authorize.net link and the Accept.js client-side tokenization channel). Does not transform inputs into outputs (chain) nor solve a bespoke customer problem (shop). activity_class is 'support' because payment acceptance is an infrastructure/finance support function (category Accounting/Payment Providers, application=False) sitting under 9.0 Manage Financial Resources -- specifically 9.5 process payments / collect cash."
   },
   "fit_to_standard": {
     "standard_capabilities": [
-      "Payment Provider: Authorize.Net"
+      "inline Card payment (Visa/MC/Amex/Discover) via Accept.js client-side tokenization (SAQ A-EP)",
+      "inline ACH/eCheck bank-account payment via Accept.js bank tokenization",
+      "manual authorize-then-capture split (full_only)",
+      "full refund with stateful void-or-refund decision (full_only)",
+      "saved card/ACH tokenization (customerProfileId + paymentProfileId vault) for off-session recurring charges",
+      "merchant self-configuration: fetch client key and available currencies from Auth.Net API"
     ],
-    "typical_fits": [],
-    "common_gaps": [],
+    "typical_fits": [
+      "US/AU/CA online shop or portal checkout accepting cards and ACH bank transfers via Authorize.Net",
+      "businesses requiring authorize-then-capture (e.g. ship-then-capture or service-then-bill models)",
+      "subscription or recurring billing using saved card/ACH tokens (off-session _send_payment_request)",
+      "single-currency merchants (one Authorize.Net account = one currency)",
+      "pay-invoice-online collection with account_payment / sale downstream"
+    ],
+    "common_gaps": [
+      "single currency only: one Authorize.Net account handles one currency; multiple currencies require multiple provider records",
+      "no inbound webhook for asynchronous settlement notification: all state transitions are synchronous from the /payment/authorize/payment route; Held-for-Review (status_code=4) maps to pending but is never auto-resolved",
+      "no partial capture or partial refund (full_only only)",
+      "authorize_signature_key is stored but not used in any signing or verification in the current code (no webhook signature verification implemented)",
+      "Accept.js CDN dependency means a live internet connection is needed during checkout",
+      "reconciliation and settlement document chains live downstream (account_payment, sale), not here"
+    ],
     "drive_hints": [
-      "n/a"
+      "odoo shell: env['payment.provider'].search([('code','=','authorize')]).mapped(lambda p: (p.name, p.state, p.authorize_login))",
+      "odoo shell: p=env['payment.provider'].search([('code','=','authorize')],limit=1); print(p.support_manual_capture, p.support_refund, p.support_tokenization)",
+      "odoo shell: tx=env['payment.transaction'].search([('provider_code','=','authorize')],limit=1); print(tx.reference, tx.state, tx.provider_reference)",
+      "odoo shell: print([m for m in dir(env['payment.transaction']) if 'authorize' in m.lower()])",
+      "curl -X POST https://<host>/payment/authorize/payment (jsonrpc) without valid access_token -> expect ValidationError 'Received tampered payment request data.'"
     ]
   },
   "reverse_eng_confidence": {
@@ -138,14 +275,20 @@
     "strategy": "human"
   },
   "open_questions": [
-    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+    "authorize_signature_key is stored (base.group_system) but no code in the current module uses it for webhook signature verification -- is webhook/Silent Post notification handling expected in a future patch, or is this field legacy?",
+    "Held-for-Review (x_response_code='4') maps to _set_pending but no cron or route resolves it automatically; what is the operational process for reviewing and capturing/voiding held transactions?",
+    "Real-world distribution of card vs ACH payments and tokenization usage (no runtime row counts captured).",
+    "How multi-currency merchants are expected to configure this given the single-currency constraint (multiple provider records, one per currency).",
+    "Whether partial capture or partial refund is ever needed; support_manual_capture='full_only' and support_refund='full_only' rule those out at the engine level."
   ],
   "provenance": {
     "explorer_facts": "doc/revres/facts/payment_authorize.facts.json",
     "tools": [
-      "extract_module.py",
-      "extract_frontend.py",
-      "gen_thin.py"
+      "code-read (models/payment_provider.py, models/payment_transaction.py, models/payment_token.py, models/authorize_request.py, controllers/main.py, const.py, static/src/interactions/payment_form.js)",
+      "extract_frontend.py (frontend/payment_authorize.frontend.json)",
+      "extract_module.py (facts/payment_authorize.facts.json)",
+      "Grep",
+      "Read"
     ],
     "odoo_version": "19.0"
   }

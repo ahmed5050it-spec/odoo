@@ -10,7 +10,29 @@
       "auto_install": false,
       "application": false
     },
-    "models": [],
+    "models": [
+      {
+        "_name": null,
+        "_inherit": "pos.config",
+        "_description": "(extension)",
+        "fields": 1,
+        "relations": []
+      },
+      {
+        "_name": null,
+        "_inherit": "pos.payment.method",
+        "_description": "(extension)",
+        "fields": 5,
+        "relations": []
+      },
+      {
+        "_name": null,
+        "_inherit": "res.config.settings",
+        "_description": "(extension)",
+        "fields": 1,
+        "relations": []
+      }
+    ],
     "routes": [
       {
         "paths": [
@@ -36,6 +58,33 @@
       "calendar": 0,
       "activity": 0
     },
+    "behavioral_notes": [
+      {
+        "element": "pos.payment.method.proxy_adyen_request (models/pos_payment_method.py)",
+        "observation": "The Odoo server acts as a CORS proxy for the POS JS client: proxy_adyen_request validates the incoming SaleToPOIRequest structure against an allowlist of permitted request shapes (payment, cancel/abort, capture, adjust) using a recursive _is_valid_adyen_request_data validator with a UNPREDICTABLE_ADYEN_DATA sentinel for dynamic fields. Only whitelisted shapes are forwarded to https://terminal-api-{live|test}.adyen.com/async. For payment requests, the server injects a pos_hmac HMAC (odoo.tools.hmac, scope='pos_adyen_payment', message=(SaleID, ServiceID, POIID, TransactionID)) into SaleToAcquirerData before forwarding — this HMAC is later used to authenticate the Adyen webhook response.",
+        "source": "code-read"
+      },
+      {
+        "element": "/pos_adyen/notification controller (controllers/main.py)",
+        "observation": "The public webhook endpoint receives asynchronous SaleToPOIResponse messages from Adyen's cloud terminal API. It validates the HMAC from AdditionalResponse (metadata.pos_hmac) via consteq against the re-computed HMAC, then strips the HMAC from the payload before storing it. The response JSON is written to adyen_latest_response on pos.payment.method, and pos.session notifies the POS frontend via pos_bus (_notify('ADYEN_LATEST_RESPONSE', config_id)). The endpoint unconditionally returns '[accepted]' to satisfy Adyen's cloud webhook guarantee requirement.",
+        "source": "code-read"
+      },
+      {
+        "element": "PosStore.prototype (pos_store.js patch) + PaymentAdyen.handleAdyenStatusResponse (payment_adyen.js)",
+        "observation": "The POS frontend patches PosStore.setup to subscribe to the WebSocket event ADYEN_LATEST_RESPONSE via data.connectWebSocket. On receipt, it calls handleAdyenStatusResponse on the pending Adyen payment line's terminal object. That method calls get_latest_adyen_status (ORM RPC) to fetch the buffered JSON from adyen_latest_response, validates the ServiceID matches the pending line's terminalServiceId, then resolves a Promise stored in paymentLineResolvers[line.uuid] — or falls back to line.handlePaymentResponse(). This is a split async flow: JS initiates payment -> Python proxies to Adyen -> Adyen calls webhook -> bus event -> JS resolves the pending Promise.",
+        "source": "code-read"
+      },
+      {
+        "element": "pos.config.adyen_ask_customer_for_tip + _check_adyen_ask_customer_for_tip constraint",
+        "observation": "When adyen_ask_customer_for_tip is enabled, a @api.constrains validator enforces that tip_product_id and iface_tipproduct are also configured on the POS config — raising ValidationError otherwise. On the JS side, _adyenPayData includes SaleToAcquirerData='tenderOption=AskGratuity' in the payment request, and handleSuccessResponse reads TipAmount from AmountsResp.TipAmount and calls pos.setTip(tip_amount) + line.setAmount(AuthorizedAmount). The tip flow therefore spans Python config validation, a request-time field in SaleToAcquirerData, and a response-time ORM call — none of this is visible in metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "pos.payment.method._is_write_forbidden override",
+        "observation": "pos_adyen overrides _is_write_forbidden to exclude adyen_latest_response from the write-forbidden set. This allows the webhook handler to buffer the asynchronous Adyen notification (adyen_latest_response) even when the POS session is in a state that would normally block writes to the payment method record — a deliberate carve-out to support the async notification buffering pattern.",
+        "source": "code-read"
+      }
+    ],
     "frontend": {
       "present": true,
       "js_files": 4,
@@ -70,47 +119,60 @@
     "runtime": {
       "models_with_data": 0,
       "top": []
-    },
-    "behavioral_notes": [
-      {
-        "element": "frontend (OWL/JS)",
-        "observation": "4 JS files, 0 OWL components, 0 registry adds; bundles ['point_of_sale._assets_pos', 'web.assets_tests', 'web.assets_unit_tests'].",
-        "source": "static"
-      },
-      {
-        "element": "external integrations",
-        "observation": "1 HTTP call sites; SDKs ['requests']; api_keys=True.",
-        "source": "static"
-      },
-      {
-        "element": "thin module",
-        "observation": "0 models, 1 routes, 454 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
-        "source": "ast"
-      }
-    ]
+    }
   },
   "it_architecture": {
-    "application": "pos_adyen (POS Adyen)",
+    "application": "pos_adyen (Adyen Terminal API integration for Odoo POS — cloud async architecture)",
     "software_services": [
-      "/pos_adyen/notification"
+      "/pos_adyen/notification (jsonrpc, auth=public — Adyen cloud webhook receiver)"
     ],
-    "data_objects": [],
-    "logical_data_erm": [],
+    "data_objects": [
+      "pos.payment.method (extended: adyen_api_key, adyen_terminal_identifier, adyen_test_mode, adyen_latest_response, adyen_event_url)",
+      "pos.config (extended: adyen_ask_customer_for_tip)"
+    ],
+    "logical_data_erm": [
+      "pos.payment.method -> pos.session (notify via _notify bus)",
+      "pos.payment.method -> pos.config (adyen_ask_customer_for_tip config constraint)"
+    ],
     "information_flows": [
-      "depends: point_of_sale"
+      "depends: point_of_sale",
+      "POS JS -> proxy_adyen_request (ORM RPC) -> Python CORS proxy (HMAC injection) -> Adyen terminal-api-{env}.adyen.com/async",
+      "Adyen -> /pos_adyen/notification (HMAC-validated webhook) -> adyen_latest_response buffer -> pos_bus ADYEN_LATEST_RESPONSE -> POS JS WebSocket -> Promise resolution"
     ],
-    "frontend_components": []
+    "frontend_components": [
+      "PaymentAdyen (extends PaymentInterface, registered as 'adyen' payment method)",
+      "Patches: PosStore.prototype (WebSocket subscription), PaymentScreen.prototype (pending line recovery on mount), PosPayment.prototype (terminalServiceId field)"
+    ]
   },
   "business_architecture": {
     "capabilities": [
-      "POS Adyen"
+      "Process card payments at POS via Adyen physical terminal (cloud async flow)",
+      "Cancel in-progress terminal payment requests (MerchantAbort)",
+      "Support customer tipping on terminal (AskGratuity tenderOption)",
+      "Buffer and validate asynchronous Adyen payment notifications via webhook",
+      "Enforce unique terminal assignment across payment methods and companies"
     ],
-    "value_streams": [],
-    "information_concepts": [],
+    "value_streams": [
+      "POS Payment: cashier selects Adyen payment -> JS sends request via Odoo proxy to Adyen terminal -> customer taps card -> Adyen sends webhook -> bus event resolves JS promise -> payment line marked done -> order closed"
+    ],
+    "information_concepts": [
+      "pos.payment.method (Adyen credentials and terminal config)",
+      "pos.config (tip configuration)",
+      "adyen_latest_response (async notification buffer on pos.payment.method)"
+    ],
     "organization": [],
     "products": [],
-    "policies": [],
-    "stakeholders": [],
+    "policies": [
+      "Terminal identifier must be unique per company (ValidationError on _check_adyen_terminal_identifier)",
+      "Tipping requires tip_product_id and iface_tipproduct on pos.config (ValidationError on _check_adyen_ask_customer_for_tip)",
+      "proxy_adyen_request requires point_of_sale.group_pos_user or superuser; only allowlisted request shapes are forwarded",
+      "Webhook HMAC validated via consteq before processing; HMAC stripped from stored payload"
+    ],
+    "stakeholders": [
+      "Cashier (POS user initiating payment)",
+      "Customer (cardholder at physical Adyen terminal)",
+      "POS Manager (configures Adyen API key and terminal identifier)"
+    ],
     "strategy": null,
     "metrics": []
   },
@@ -118,16 +180,30 @@
     "value_model": "chain",
     "activity_class": "primary",
     "apqc_category": "3.0 Market and Sell Products and Services",
-    "rationale": "pos_adyen: thin chain/primary module (auto-architect baseline)."
+    "rationale": "pos_adyen is a primary-activity chain module: it closes the payment step of the point-of-sale value chain by connecting the order-taking activity directly to card acceptance at a physical terminal, enabling revenue capture."
   },
   "fit_to_standard": {
     "standard_capabilities": [
-      "POS Adyen"
+      "Cloud async Adyen Terminal API (Nexo Retailer Protocol 3.0) payment flow",
+      "CORS proxy (proxy_adyen_request) with request-shape whitelist and HMAC injection",
+      "Public webhook receiver with HMAC validation and pos_bus notification",
+      "Customer tipping on terminal with tip product constraint",
+      "Test/live environment switching per payment method"
     ],
-    "typical_fits": [],
-    "common_gaps": [],
+    "typical_fits": [
+      "Standard brick-and-mortar POS with Adyen Verifone/Castles terminal",
+      "Cloud architecture: no local network required between POS and terminal",
+      "Tip-on-terminal if tip_product_id is configured"
+    ],
+    "common_gaps": [
+      "No local terminal API (LOCALHOST) support — cloud only",
+      "No offline/fallback when Adyen cloud is unreachable",
+      "No refund flow via terminal (refunds handled externally or via Adyen dashboard)",
+      "Webhook URL must be manually pasted into Adyen portal (adyen_event_url field is informational)"
+    ],
     "drive_hints": [
-      "n/a"
+      "odoo shell: env['pos.payment.method'].search([('adyen_terminal_identifier','!=',False)]).read(['adyen_terminal_identifier','adyen_test_mode','adyen_latest_response'])",
+      "curl -X POST /pos_adyen/notification with a SaleToPOIResponse JSON to test webhook parsing"
     ]
   },
   "reverse_eng_confidence": {
@@ -141,14 +217,16 @@
     "strategy": "human"
   },
   "open_questions": [
-    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+    "Does pos_adyen support local terminal API (LOCALHOST mode) or only Adyen cloud async?",
+    "How does the payment flow behave on POS session reconnect if adyen_latest_response contains a stale notification from a previous session?",
+    "Is there a refund path through the terminal, or are refunds entirely out-of-band?"
   ],
   "provenance": {
     "explorer_facts": "doc/revres/facts/pos_adyen.facts.json",
     "tools": [
-      "extract_module.py",
+      "code-read",
       "extract_frontend.py",
-      "gen_thin.py"
+      "extract_module.py"
     ],
     "odoo_version": "19.0"
   }

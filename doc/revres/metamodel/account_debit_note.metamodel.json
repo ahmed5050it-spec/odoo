@@ -14,7 +14,26 @@
       {
         "_name": "account.debit.note",
         "_description": "Add Debit Note wizard",
-        "fields": 8
+        "fields": 9,
+        "relations": [
+          "move_ids->account.move",
+          "journal_id->account.journal"
+        ]
+      },
+      {
+        "_name": "account.move",
+        "_description": "(extension)",
+        "fields": 3,
+        "relations": [
+          "debit_origin_id->account.move",
+          "debit_note_ids->account.move"
+        ]
+      },
+      {
+        "_name": "account.journal",
+        "_description": "(extension)",
+        "fields": 1,
+        "relations": []
       }
     ],
     "routes": [],
@@ -24,16 +43,41 @@
       "groups": 0
     },
     "views": {
-      "form": 0,
+      "form": 1,
       "list": 0,
-      "tree": 0,
       "kanban": 0,
-      "search": 0,
       "pivot": 0,
       "graph": 0,
       "calendar": 0,
       "activity": 0
     },
+    "behavioral_notes": [
+      {
+        "element": "account.debit.note.default_get",
+        "observation": "On wizard open, validates the active_ids context: raises UserError if any selected move is not 'posted', if any move already has a debit_origin_id (guard against double-debiting), or if move_type is not in ('out_invoice','in_invoice','out_refund','in_refund'). These validation rules are absent from metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "account.debit.note.create_debit / _prepare_default_values",
+        "observation": "Calls move.copy(default=...) with context include_business_fields=True to preserve sale/purchase order backlinks. When the source move_type is a refund (in_refund/out_refund) the debit note is created as the corresponding invoice type (in_invoice/out_invoice) — converting a credit note into a positive document rather than creating another refund. Sets debit_origin_id=move.id on the new move and nullifies invoice_payment_term_id.",
+        "source": "code-read"
+      },
+      {
+        "element": "account.move._get_last_sequence_domain / _get_starting_sequence",
+        "observation": "When journal.debit_sequence is True the sequence domain WHERE clause is extended to partition by 'debit_origin_id IS [NOT] NULL', giving debit notes a separate number series within the same journal. The first sequence for debit invoice-type moves is prefixed with 'D' (e.g. DOUT/2024/0001) so they are visually distinguishable from regular invoices.",
+        "source": "code-read"
+      },
+      {
+        "element": "account.journal.debit_sequence / _compute_debit_sequence",
+        "observation": "A stored Boolean field debit_sequence is added to account.journal and defaults to True for 'sale' and 'purchase' journals (computed via @api.depends('type')). Accountants can unset this flag to merge debit note numbering with regular invoice numbering on a per-journal basis.",
+        "source": "code-read"
+      },
+      {
+        "element": "report_invoice.xml (QWeb template inherit account.report_invoice_document)",
+        "observation": "The invoice PDF title is overridden at print time: if o.debit_origin_id is truthy, all title variants (Draft, Cancelled, Proforma, etc.) display 'Debit Note' instead of 'Invoice', and the date label on out_invoices changes from 'Invoice Date' to 'Debit Note Date'. No model state or field tracks this — it is a purely template-level branch.",
+        "source": "code-read"
+      }
+    ],
     "frontend": {
       "present": false,
       "js_files": 0,
@@ -54,80 +98,118 @@
     "runtime": {
       "models_with_data": 0,
       "top": []
-    },
-    "behavioral_notes": [
-      {
-        "element": "thin module",
-        "observation": "1 models, 0 routes, 258 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
-        "source": "ast"
-      }
-    ]
+    }
   },
   "it_architecture": {
-    "application": "account_debit_note (Debit Notes)",
+    "application": "account_debit_note (Debit Note extension to Accounting)",
     "software_services": [],
     "data_objects": [
-      "account.debit.note"
+      "account.debit.note (TransientModel wizard)",
+      "account.move (extended: debit_origin_id, debit_note_ids, debit_note_count)",
+      "account.journal (extended: debit_sequence)"
     ],
     "logical_data_erm": [
-      "account.debit.note -> account.journal",
-      "account.debit.note -> account.move"
+      "account.move -> account.move (debit_origin_id: debit note -> original invoice, btree_not_null index)",
+      "account.move -> account.move (debit_note_ids: One2many inverse of debit_origin_id)",
+      "account.debit.note ->M2M account.move (source moves via account_move_debit_move table)",
+      "account.debit.note -> account.journal (optional override journal)"
     ],
     "information_flows": [
-      "depends: account"
+      "depends: account",
+      "side-effect: account.debit.note.create_debit -> account.move.copy (new move with debit_origin_id set, include_business_fields=True preserves sale/purchase links)",
+      "side-effect: source in_refund/out_refund -> debit note created as in_invoice/out_invoice"
     ],
     "frontend_components": []
   },
   "business_architecture": {
     "capabilities": [
-      "Debit Notes"
+      "Issue a debit note against a posted customer invoice, vendor bill, or credit note",
+      "Optionally copy original invoice lines to the debit note (copy_lines flag)",
+      "Maintain traceability: debit_origin_id links debit note to source document",
+      "Enforce separate debit note sequence per journal (compliance via debit_sequence)",
+      "Display debit note count smart button on original invoice"
     ],
-    "value_streams": [],
+    "value_streams": [
+      "Invoice-Correction (upward): posted invoice -> Debit Note wizard -> new debit note (draft) -> accountant posts -> increases amount owed by customer",
+      "Credit-Note Cancellation: posted credit note -> Debit Note wizard -> debit note converted to regular invoice -> offsets the credit"
+    ],
     "information_concepts": [
-      "account.debit.note"
+      "account.move (original invoice and debit note)",
+      "account.journal (controls separate debit sequence)",
+      "account.debit.note (wizard transient parameters)"
     ],
-    "organization": [],
+    "organization": [
+      "account.group_account_invoice (required to see the Debit Note button in account.move form)"
+    ],
     "products": [],
-    "policies": [],
-    "stakeholders": [],
+    "policies": [
+      "Only posted moves (state='posted') can be debited",
+      "A move already linked to a debit note (debit_origin_id set) cannot be debited again",
+      "Only move types out_invoice, in_invoice, out_refund, in_refund are eligible",
+      "Refund-type sources are converted to invoice type on debit (in_refund->in_invoice, out_refund->out_invoice)",
+      "Lines are not copied by default when source is a credit note (copy_lines hidden for refund types in the view)"
+    ],
+    "stakeholders": [
+      "Accountant / Billing Clerk (creates and posts debit notes)",
+      "Customer / Vendor (subject of the corrected document)"
+    ],
     "strategy": null,
-    "metrics": []
+    "metrics": [
+      "debit_note_count (per invoice: computed count of linked debit notes via _read_group)"
+    ]
   },
   "classification": {
-    "value_model": "support",
+    "value_model": "chain",
     "activity_class": "support",
     "apqc_category": "9.0 Manage Financial Resources",
-    "rationale": "account_debit_note: thin support/support module (auto-architect baseline)."
+    "rationale": "account_debit_note is an accounting-compliance extension enabling formal upward correction of posted invoices via a legally recognised document type. It extends the Accounts Receivable / Accounts Payable settlement step of the value chain's financial layer (APQC 9.0). It is classified 'chain' because it is a direct element of the order-to-cash and procure-to-pay financial settlement processes, even though the module itself is a correction/adjustment helper rather than a primary revenue activity."
   },
   "fit_to_standard": {
     "standard_capabilities": [
-      "Debit Notes"
+      "Debit note wizard triggered from posted invoice, bill, or credit note",
+      "Optional line copy from source document",
+      "Dedicated per-journal debit note sequence with 'D' prefix",
+      "PDF print title switches to 'Debit Note' based on debit_origin_id",
+      "Smart button on original invoice showing debit note count and navigation",
+      "Filter 'Debit Notes' on invoice list and journal item search views"
     ],
-    "typical_fits": [],
-    "common_gaps": [],
+    "typical_fits": [
+      "Correcting undercharged invoices with a formal debit note",
+      "Cancelling a credit note by converting it to a positive invoice",
+      "Multi-company deployments needing separate debit note numbering per journal"
+    ],
+    "common_gaps": [
+      "No automated reconciliation between original invoice and debit note",
+      "No workflow approval step before the debit note is posted",
+      "No country-specific legal numbering beyond the 'D' prefix convention (l10n modules add this)",
+      "copy_lines silently ignored for refund-source debit notes — user must re-enter lines"
+    ],
     "drive_hints": [
-      "odoo shell: env['account.debit.note'].search([],limit=3)"
+      "env['account.debit.note'].with_context(active_model='account.move', active_ids=[move_id]).create({'date': fields.Date.today(), 'reason': 'price correction', 'copy_lines': True}).create_debit()",
+      "env['account.move'].browse(move_id).debit_note_ids"
     ]
   },
   "reverse_eng_confidence": {
     "information_concepts": "auto",
-    "organization": "auto",
+    "organization": "code-read",
     "products": "auto",
     "capabilities": "inferred",
     "value_streams": "inferred",
-    "policies": "inferred",
-    "metrics": "inferred",
+    "policies": "code-read",
+    "metrics": "code-read",
     "strategy": "human"
   },
   "open_questions": [
-    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+    "Do any l10n_* localization modules override create_debit or _prepare_default_values to inject country-specific debit note fields or numbering?",
+    "Is there a reconcile/link step expected between the posted debit note and the original invoice in the AR payment workflow?",
+    "How does debit_sequence interact with fiscal-year sequence reset logic in account.move?"
   ],
   "provenance": {
     "explorer_facts": "doc/revres/facts/account_debit_note.facts.json",
     "tools": [
+      "code-read",
       "extract_module.py",
-      "extract_frontend.py",
-      "gen_thin.py"
+      "extract_frontend.py"
     ],
     "odoo_version": "19.0"
   }

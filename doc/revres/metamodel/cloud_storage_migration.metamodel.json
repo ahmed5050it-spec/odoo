@@ -8,13 +8,38 @@
         "cloud_storage"
       ],
       "auto_install": false,
-      "application": false
+      "application": false,
+      "version": "1.0",
+      "license": "LGPL-3",
+      "summary": "Migrate local attachments to cloud storage",
+      "author": "Odoo S.A.",
+      "data_files": 5,
+      "demo_files": 0
     },
     "models": [
       {
         "_name": "cloud.storage.migration.report",
-        "_description": "Cloud Storage Migration Report",
-        "fields": 11
+        "_description": "Cloud Storage Migration Report (_auto=False SQL view, list-only)",
+        "fields": 11,
+        "relations": []
+      },
+      {
+        "_name": "ir.attachment (inherit)",
+        "_description": "Adds _migrate_local_to_cloud_storage (per-attachment upload) and _cron_migrate_local_to_cloud_storage (cron entry point)",
+        "fields": 0,
+        "relations": [
+          "ir.attachment -> cloud storage URL (_generate_cloud_storage_url from cloud_storage module)",
+          "ir.attachment -> cloud storage upload endpoint (requests.Session.request, method/url from _generate_cloud_storage_upload_info)"
+        ]
+      },
+      {
+        "_name": "res.config.settings (inherit)",
+        "_description": "Adds migration progress field and model-selector One2many fields wired to ir.config_parameter via config_parameter attr",
+        "fields": 5,
+        "relations": [
+          "cloud_storage_migration_message_model_ids->ir.model (One2many, message-attachment scope)",
+          "cloud_storage_migration_all_model_ids->ir.model (One2many, all-attachment scope)"
+        ]
       }
     ],
     "routes": [],
@@ -61,58 +86,145 @@
     },
     "behavioral_notes": [
       {
-        "element": "external integrations",
-        "observation": "0 HTTP call sites; SDKs ['requests']; api_keys=False.",
-        "source": "static"
+        "element": "ir_attachment.py — _migrate_local_to_cloud_storage: per-attachment upload logic",
+        "observation": "_migrate_local_to_cloud_storage(session) validates that the attachment type is 'binary' and store_fname is set (raises ValidationError otherwise). It calls self._full_path(self.store_fname) to get the filesystem path, then self._generate_cloud_storage_url() (from the cloud_storage module) to get the target URL, and self._generate_cloud_storage_upload_info() to get {method, url, headers, response_status}. The local file is opened as binary and uploaded via session.request(method, url, data=f, headers=headers, timeout=(10, 30)) — the requests.Session is passed in by the caller to allow HTTP keep-alive across batch iterations. On non-matching response status, a ValidationError is raised. On success, the attachment is written with type='cloud_storage', raw=False, and mimetype is explicitly preserved (it is set in the same write call to prevent Odoo from recomputing it from the binary).",
+        "source": "code-read"
       },
       {
-        "element": "thin module",
-        "observation": "1 models, 0 routes, 380 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
-        "source": "ast"
+        "element": "ir_attachment.py — _cron_migrate_local_to_cloud_storage: cron entry point, HTTP vs. cron-worker split",
+        "observation": "_cron_migrate_local_to_cloud_storage (decorated @assert_log_admin_access) is the cron entry point. It reads migration parameters from ir.config_parameter: cloud_storage_provider (must exist), cloud_storage_min_file_size (from cloud_storage module), cloud_storage_migration_max_file_size (default 1 GB), cloud_storage_migration_max_batch_file_size (default 10 GB), and comma-separated model lists cloud_storage_migration_message_models / cloud_storage_migration_all_models (validated against env registry). If neither model list is populated, UserError is raised. A critical branch: if odoo.http.request is truthy (i.e. the call arrives from an HTTP worker via the 'Manually Run' button), the method immediately calls cron._trigger() to reschedule and returns — no upload happens on the HTTP worker. Only a cron-server worker (where request is None) performs actual uploads. This prevents file-upload I/O from blocking HTTP request workers.",
+        "source": "code-read"
+      },
+      {
+        "element": "ir_attachment.py — _cron_migrate_local_to_cloud_storage: SQL query and cursor-level progress tracking",
+        "observation": "The main loop selects one attachment at a time using a raw SQL query on ir_attachment (LEFT JOIN message_attachment_rel to detect mail-linked attachments, LEFT anti-join to documents_document if that module is installed). Filters: type='binary', url IS NULL, res_id IS NOT NULL, res_field IS NULL, store_fname IS NOT NULL, file_size BETWEEN min_file_size AND max_file_size, create_date < now() - 7 days (recent attachments excluded to avoid disrupting ongoing business operations), id between 0 and max_attachment_id (a stable ceiling set once at start). Progress is tracked via ir.config_parameter 'cloud_storage_migration_min_attachment_id': commit_min_attachment_id(attachment.id) directly executes UPDATE ir_config_parameter SET value=%s to bypass ORM cache invalidation (ormcache), then calls env['ir.cron']._commit_progress(1) to commit the transaction. On upload failure, env.cr.rollback() is called to undo only the write ({type,raw}) without losing the progress update (which was already committed by commit_min_attachment_id).",
+        "source": "code-read"
+      },
+      {
+        "element": "cloud_storage_migration_report.py — cloud.storage.migration.report: SQL view and computed migration flags",
+        "observation": "cloud.storage.migration.report is a _auto=False model (no managed table). init() drops and recreates a PostgreSQL VIEW joining ir_attachment (grouped by res_model with SUM/MAX/COUNT of file_size, split into 'message' and 'all' aggregates) with ir_model (to get the ORM id as the record id). The view only counts type='binary' attachments with res_id IS NOT NULL, res_field IS NULL, and non-null file_size/res_model. _compute_message_to_migrate and _compute_all_to_migrate read ir.config_parameter 'cloud_storage_migration_message_models' / 'cloud_storage_migration_all_models' to flag which models are currently scheduled. get_progress() computes migration percent as min_attachment_id * 100 // max(max_attachment_id, min_attachment_id) reading max from ir.config_parameter and min via direct cr.execute to avoid ORM cache interference.",
+        "source": "code-read"
+      },
+      {
+        "element": "res_config_settings.py — CloudStorageMigrationSettings: settings UI wiring and action",
+        "observation": "CloudStorageMigrationSettings inherits res.config.settings and adds cloud_storage_migration_progress (Integer, populated in get_values from report.get_progress()), cloud_storage_migration_message_model_ids (One2many to ir.model, inverse=_inverse_cloud_storage_migration_message_model_ids), and cloud_storage_migration_all_model_ids (One2many to ir.model, inverse=_inverse_cloud_storage_migration_all_model_ids). The inverses write comma-joined model names into the cloud_storage_migration_message_models / cloud_storage_migration_all_models config_parameter Char fields. get_values() reads these params back, validates model names against env, and issues Command.set to hydrate the One2many from ir.model.search. action_open_cloud_storage_migration_configurations returns an act_window on ir.config_parameter filtered to the 7 migration-related parameter keys, providing a power-user escape hatch to the raw parameters.",
+        "source": "code-read"
       }
     ]
   },
   "it_architecture": {
-    "application": "cloud_storage_migration (Cloud Storage Migration)",
+    "application": "cloud_storage_migration (IT operations tool: migrates existing local binary ir.attachment records to cloud storage via a cron-driven batch upload loop, with a settings UI and a SQL-view report)",
     "software_services": [],
     "data_objects": [
-      "cloud.storage.migration.report"
+      "ir.attachment (inherit: _migrate_local_to_cloud_storage, _cron_migrate_local_to_cloud_storage)",
+      "cloud.storage.migration.report (_auto=False SQL view: attachment stats by model + migration flags)",
+      "res.config.settings (inherit: progress display, model-scope selectors, raw-param escape hatch)"
     ],
-    "logical_data_erm": [],
+    "logical_data_erm": [
+      "ir.attachment (type='binary') -> cloud storage provider URL (via cloud_storage._generate_cloud_storage_url)",
+      "ir.attachment.res_model -> ir.model (report view JOIN on model name)",
+      "ir.attachment.id LEFT JOIN message_attachment_rel.attachment_id (to identify mail-linked attachments)",
+      "ir.attachment.id LEFT anti-JOIN documents_document.attachment_id (excluded if documents module present)",
+      "cloud.storage.migration.report.res_model -> ir.model.model (report hydration, read-only view)",
+      "ir.config_parameter keys: cloud_storage_migration_min_attachment_id, cloud_storage_migration_max_attachment_id, cloud_storage_migration_message_models, cloud_storage_migration_all_models, cloud_storage_migration_max_file_size, cloud_storage_migration_max_batch_file_size"
+    ],
     "information_flows": [
-      "depends: cloud_storage"
+      "depends: cloud_storage (provides _generate_cloud_storage_url, _generate_cloud_storage_upload_info, DEFAULT_CLOUD_STORAGE_MIN_FILE_SIZE, res.config.settings view extension point)",
+      "trigger path (HTTP): user clicks 'Manually Run' -> _cron_migrate_local_to_cloud_storage detects request truthy -> cron._trigger() -> returns immediately (no upload on HTTP worker)",
+      "trigger path (cron): cron worker -> _cron_migrate_local_to_cloud_storage -> raw SQL SELECT loop -> per-attachment _migrate_local_to_cloud_storage -> requests.Session.request PUT/POST -> ir.attachment write(type='cloud_storage')",
+      "progress tracking: commit_min_attachment_id -> direct UPDATE ir_config_parameter -> env['ir.cron']._commit_progress(1) commits transaction",
+      "failure path: ValidationError or any Exception -> env.cr.rollback() -> skip attachment -> continue loop",
+      "timeout path: time.monotonic() > end_time (half of limit_time_real_cron or limit_time_real) -> break -> cron._trigger() to reschedule",
+      "batch-size path: total_file_size + file_size >= max_batch_file_size -> break -> cron._trigger()",
+      "report path: cloud.storage.migration.report SQL view -> Settings > Cloud Storage Migration > Attachments Report (list view)",
+      "settings path: res.config.settings.get_values -> cloud.storage.migration.report.get_progress() + ir.config_parameter model lists -> populate form",
+      "settings-write path: _inverse_*_model_ids -> comma-joined model names -> ir.config_parameter (cloud_storage_migration_message_models / all_models)"
     ],
     "frontend_components": []
   },
   "business_architecture": {
     "capabilities": [
-      "Cloud Storage Migration"
+      "Migrate existing local binary attachments (ir.attachment type='binary') to cloud object storage, changing type to 'cloud_storage'",
+      "Scope migration by model (message-linked attachments only, or all attachments per model) configured via Settings UI",
+      "Batch migration with configurable size limits (per-file min/max, per-run max_batch_file_size) and time-budget-aware cron (half of limit_time_real_cron)",
+      "Progress tracking via ir.config_parameter watermark (min_attachment_id / max_attachment_id) and a Settings progressbar",
+      "Resumable, idempotent migration: watermark-based cursor is committed before each upload so a crash does not re-upload already-migrated attachments",
+      "HTTP-worker safety: 'Manually Run' button redirects to cron scheduler without performing I/O on the HTTP worker",
+      "Exclusion rules: attachments created within the last 7 days, those linked to documents.document, those with no res_id or with res_field set, and size outliers are all filtered out",
+      "Attachment report (cloud.storage.migration.report SQL view) showing per-model attachment counts and sizes with current migration scheduling status"
     ],
-    "value_streams": [],
+    "value_streams": [
+      "Admin-configure stream: admin sets model scope in Settings (message models / all models) -> ir.config_parameter updated -> cron enabled",
+      "Cron-migrate stream: cron fires -> raw SQL selects next eligible binary attachment -> _migrate_local_to_cloud_storage -> upload to cloud -> write type='cloud_storage' -> watermark committed -> loop until timeout or batch exhausted -> cron._trigger() reschedules",
+      "Progress-monitor stream: admin opens Settings -> get_values calls get_progress() -> progressbar shows min/max watermark ratio -> Attachments Report list view shows per-model stats and migration flags"
+    ],
     "information_concepts": [
-      "cloud.storage.migration.report"
+      "ir.attachment (the migrated entity: type transitions binary -> cloud_storage)",
+      "cloud.storage.migration.report (read-only SQL view: per-model attachment stats)",
+      "ir.config_parameter (runtime state: watermark ids, model lists, size limits)",
+      "ir.cron (scheduler: cloud_storage_migration.ir_cron_manual_migrate_local_to_cloud_storage)"
     ],
     "organization": [],
     "products": [],
-    "policies": [],
-    "stakeholders": [],
+    "policies": [
+      "Uploads are performed only on cron-server workers, never on HTTP request workers (request-truthy guard in _cron_migrate_local_to_cloud_storage)",
+      "Attachments created within the last 7 days are excluded (create_date < now() - 7 days) to protect ongoing business operations",
+      "Attachments linked to documents.document are excluded when that module is installed",
+      "Attachments with res_field set (binary field storage) or no res_id are excluded",
+      "Only attachments with stored filename (store_fname IS NOT NULL) and within the configured size window are eligible",
+      "The migration cursor (min_attachment_id) is committed before each upload attempt — upload is idempotent across restarts",
+      "Failed uploads trigger env.cr.rollback() and log a warning; the cursor is already committed so the failed attachment is skipped in subsequent runs",
+      "The cron job interval is set to 9999 months by default (effectively disabled until triggered manually or via _trigger)"
+    ],
+    "stakeholders": [
+      "System administrator configuring and monitoring the migration from Settings",
+      "Cron server worker (performs the actual I/O-bound upload batches)",
+      "Cloud storage provider (receives PUT/POST requests from requests.Session)",
+      "Odoo cloud_storage module (provides URL/upload-info generation and the provider abstraction)"
+    ],
     "strategy": null,
-    "metrics": []
+    "metrics": [
+      "Migration progress percentage: min_attachment_id * 100 // max_attachment_id (shown as progressbar in Settings)",
+      "Per-model attachment counts and sizes (cloud.storage.migration.report: message_count, all_count, message_sum_size, all_sum_size in MB)",
+      "total_file_size per cron run (logged at batch-size cutoff)"
+    ]
   },
   "classification": {
     "value_model": "support",
     "activity_class": "support",
-    "apqc_category": "13.0 Develop and Manage Business Capabilities",
-    "rationale": "cloud_storage_migration: thin support/support module (auto-architect baseline)."
+    "apqc_category": "8.0 Manage Information Technology",
+    "rationale": "cloud_storage_migration is a data-infrastructure migration tool with no customer-facing value chain activity: it moves binary blobs from local disk to cloud object storage. It owns no business model of its own (cloud.storage.migration.report is a read-only SQL view for admin monitoring; ir.attachment and res.config.settings are inherited), has 0 routes, application=False. Porter support; Stabell & Fjeldstad 'support' (IT infrastructure capability). APQC 8.0 'Manage Information Technology' is the correct category: this is IT operations/storage management — managing the IT infrastructure (object storage tier) that all other application modules depend on. 13.0 (Business Capabilities) was rejected as this is not a business-process capability; it is a one-time IT infrastructure migration operation."
   },
   "fit_to_standard": {
     "standard_capabilities": [
-      "Cloud Storage Migration"
+      "Cron-driven batch migration of local binary ir.attachment records to cloud object storage (type 'binary' -> 'cloud_storage')",
+      "Two migration scopes: message-linked attachments only, or all attachments per model (configured as model lists in Settings)",
+      "Configurable per-file size window (cloud_storage_min_file_size to cloud_storage_migration_max_file_size) and per-run batch ceiling (max_batch_file_size)",
+      "Time-budget-aware cron with automatic rescheduling (cron._trigger()) on timeout or batch exhaustion",
+      "Resumable watermark-based progress tracking via ir.config_parameter (min_attachment_id cursor committed before each upload)",
+      "HTTP-worker safety: 'Manually Run' button in Settings redirects immediately to cron scheduler",
+      "Attachment report SQL view (cloud.storage.migration.report) with per-model counts, sizes, and migration scheduling flags",
+      "Exclusion of recent attachments (< 7 days), documents.document-linked files, res_field binary fields, and size outliers"
     ],
-    "typical_fits": [],
-    "common_gaps": [],
+    "typical_fits": [
+      "Post-deployment migration of legacy on-premises Odoo attachment binaries to a cloud provider already configured in the cloud_storage module",
+      "Incremental zero-downtime migration during live production (cron runs in background, HTTP workers unaffected)",
+      "Admin-controlled scoping: migrate only email-attachment-heavy models first (e.g. mail.message) then expand"
+    ],
+    "common_gaps": [
+      "No reverse migration (cloud -> local): the module is one-directional only",
+      "No parallel upload workers: the cron is single-threaded (one attachment per loop iteration, one requests.Session)",
+      "Failed attachments are silently skipped after rollback — no retry queue or failed-attachment report",
+      "The 7-day recency exclusion means very new attachments require a manual re-trigger after the window passes",
+      "No notification or alert when migration completes or when an attachment fails repeatedly",
+      "documents.document exclusion is opportunistic (module presence check) but has no UI to override it"
+    ],
     "drive_hints": [
-      "odoo shell: env['cloud.storage.migration.report'].search([],limit=3)"
+      "odoo shell: env['cloud.storage.migration.report'].search_read([], limit=10)  # per-model attachment stats",
+      "odoo shell: env['cloud.storage.migration.report'].get_progress()  # current migration percentage",
+      "odoo shell: env['ir.config_parameter'].sudo().get_param('cloud_storage_migration_min_attachment_id')  # current watermark",
+      "odoo shell: env['ir.config_parameter'].sudo().get_param('cloud_storage_migration_max_attachment_id')  # stable ceiling set at first run",
+      "odoo shell: env['ir.attachment'].sudo()._cron_migrate_local_to_cloud_storage()  # trigger migration directly (runs on shell = cron context)"
     ]
   },
   "reverse_eng_confidence": {
@@ -126,14 +238,16 @@
     "strategy": "human"
   },
   "open_questions": [
-    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+    "What cloud storage providers are supported by the cloud_storage parent module (e.g. S3, GCS, Azure Blob) — the upload method/URL shape depends on _generate_cloud_storage_upload_info which is not in this module.",
+    "Whether the 7-day recency exclusion window is configurable anywhere, or fixed in code.",
+    "Behaviour when the same attachment has been partially uploaded (upload succeeded but the write(type='cloud_storage') rolled back) — does the cloud object end up orphaned?"
   ],
   "provenance": {
     "explorer_facts": "doc/revres/facts/cloud_storage_migration.facts.json",
     "tools": [
       "extract_module.py",
       "extract_frontend.py",
-      "gen_thin.py"
+      "code-read"
     ],
     "odoo_version": "19.0"
   }

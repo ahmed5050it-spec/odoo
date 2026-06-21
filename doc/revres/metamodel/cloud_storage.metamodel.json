@@ -11,12 +11,36 @@
       "auto_install": false,
       "application": false
     },
-    "models": [],
+    "models": [
+      {
+        "_name": null,
+        "_inherit": "ir.attachment",
+        "_description": "(extension)",
+        "fields": 1,
+        "relations": []
+      },
+      {
+        "_name": null,
+        "_inherit": "ir.http",
+        "_description": "(extension)",
+        "fields": 0,
+        "relations": []
+      },
+      {
+        "_name": null,
+        "_inherit": "res.config.settings",
+        "_description": "(extension)",
+        "fields": 3,
+        "relations": []
+      }
+    ],
     "routes": [
       {
-        "paths": [],
-        "auth": null,
-        "type": null
+        "paths": [
+          "/mail/attachment/upload (override via CloudAttachmentController)"
+        ],
+        "auth": "user",
+        "type": "http"
       }
     ],
     "security": {
@@ -35,6 +59,38 @@
       "calendar": 0,
       "activity": 0
     },
+    "behavioral_notes": [
+      {
+        "element": "ir.attachment._post_add_create / _to_http_stream (models/ir_attachment.py)",
+        "observation": "When a chatter upload is flagged cloud_storage=True, _post_add_create sets type='cloud_storage', clears raw bytes (raw=False), and stores only the provider blob URL in the url field. On download, _to_http_stream returns Stream(type='url', url=signed_url) with max_age derived from time_to_expiry-10, so the Odoo server redirects the browser directly to the cloud provider — it never streams the blob bytes itself.",
+        "source": "code-read"
+      },
+      {
+        "element": "CloudAttachmentController.mail_attachment_upload (controllers/attachment.py)",
+        "observation": "Extends the mail attachment upload route. For cloud_storage requests it first creates the ir.attachment record via super() (with an empty stub body), then calls attachment._generate_cloud_storage_upload_info() and appends the returned upload_info dict to the JSON response. The browser JS then PUTs the real file bytes directly to the cloud provider URL — the Odoo server is never in the upload data path.",
+        "source": "code-read"
+      },
+      {
+        "element": "ir.attachment._migrate_remote_to_local (models/ir_attachment.py)",
+        "observation": "Downloads a cloud blob via requests.get(download_url, timeout=10), raises_for_status(), and rewrites the attachment as type='binary', url=False, raw=response.content. This migration helper prevents data loss when the cloud_storage_provider is changed, by repatriating blobs back to the Odoo filestore before the provider switch is committed.",
+        "source": "code-read"
+      },
+      {
+        "element": "ir.http.session_info (models/ir_http.py)",
+        "observation": "Injects cloud_storage_min_file_size (int, bytes) and cloud_storage_unsupported_models (list of model names) into the browser session payload whenever cloud_storage_provider is set. The OWL AttachmentUploadService patch reads these values client-side to decide whether to route a given file through the cloud path. Models inheriting mail.thread.main.attachment or documents.mixin are excluded from cloud offload via _get_cloud_storage_unsupported_models().",
+        "source": "code-read"
+      },
+      {
+        "element": "res.config.settings.set_values + _setup_cloud_storage_provider (models/res_config_settings.py)",
+        "observation": "set_values enforces a provider-switch guard: if cloud_storage_provider was already set and is changing, _check_cloud_storage_uninstallable() is called first. After saving, if _get_cloud_storage_configuration() returns an empty dict (provider credentials incomplete), a UserError is raised. Only a valid non-empty configuration triggers _setup_cloud_storage_provider(). All three methods are designed as overridable stubs for concrete provider modules (cloud_storage_google, cloud_storage_azure, etc.).",
+        "source": "code-read"
+      },
+      {
+        "element": "frontend (OWL/JS patches)",
+        "observation": "3 JS files, 2 XML templates, 0 OWL components; 3 patches: AttachmentUploadService._upload sends a dummy empty File body to Odoo for large files and stores the real File in uploadingCloudFiles; _processLoaded issues a cloud PUT via XMLHttpRequest using upload_info.method/url/headers; Chatter and Composer patches adapt the flow for the public portal chatter.",
+        "source": "static"
+      }
+    ],
     "frontend": {
       "present": true,
       "js_files": 3,
@@ -66,83 +122,113 @@
     "runtime": {
       "models_with_data": 0,
       "top": []
-    },
-    "behavioral_notes": [
-      {
-        "element": "frontend (OWL/JS)",
-        "observation": "3 JS files, 0 OWL components, 0 registry adds; bundles ['web.assets_backend', 'mail.assets_public'].",
-        "source": "static"
-      },
-      {
-        "element": "external integrations",
-        "observation": "1 HTTP call sites; SDKs ['requests']; api_keys=False.",
-        "source": "static"
-      },
-      {
-        "element": "thin module",
-        "observation": "0 models, 1 routes, 320 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
-        "source": "ast"
-      }
-    ]
+    }
   },
   "it_architecture": {
-    "application": "cloud_storage (Cloud Storage)",
-    "software_services": [],
-    "data_objects": [],
-    "logical_data_erm": [],
-    "information_flows": [
-      "depends: base_setup, mail"
+    "application": "cloud_storage (Technical Settings — provider-agnostic cloud attachment offload framework)",
+    "software_services": [
+      "/mail/attachment/upload (CloudAttachmentController override — returns upload_info for direct browser-to-cloud PUT)"
     ],
-    "frontend_components": []
+    "data_objects": [
+      "ir.attachment (extended: type selection adds 'cloud_storage'; url stores blob URL; raw=False for cloud type)",
+      "res.config.settings (extended: cloud_storage_provider, cloud_storage_min_file_size_mb, cloud_storage_min_file_size)",
+      "ir.config_parameter: cloud_storage_provider, cloud_storage_min_file_size"
+    ],
+    "logical_data_erm": [
+      "ir.attachment.url -> external cloud provider blob",
+      "ir.config_parameter.cloud_storage_provider -> provider module identifier"
+    ],
+    "information_flows": [
+      "depends: base_setup, mail",
+      "upload path: browser -> Odoo (stub ir.attachment + upload_info) -> browser XHR PUT -> cloud provider",
+      "download path: browser -> /web/content/<id> -> Odoo 302 redirect to signed cloud URL -> cloud provider",
+      "migration path: _migrate_remote_to_local downloads blob and resets type=binary"
+    ],
+    "frontend_components": [
+      "AttachmentUploadService.prototype (patch — cloud upload intercept)",
+      "Chatter.prototype (patch — portal chatter)",
+      "Composer.prototype (patch — portal composer)"
+    ]
   },
   "business_architecture": {
     "capabilities": [
-      "Cloud Storage"
+      "Offload chatter/mail attachment blobs to external cloud object storage",
+      "Configure per-system minimum file-size threshold (default 20 MB) for cloud vs. local routing",
+      "Protect records requiring local attachment data (documents.mixin, mail.thread.main.attachment) from cloud offload",
+      "Migrate cloud attachments back to local filestore on provider change"
     ],
-    "value_streams": [],
-    "information_concepts": [],
+    "value_streams": [
+      "Attachment lifecycle: upload -> cloud blob storage -> signed-URL serve -> optional local repatriation"
+    ],
+    "information_concepts": [
+      "ir.attachment (cloud type)",
+      "cloud provider blob URL",
+      "signed upload URL (time-limited, method-specific)",
+      "signed download URL (TTL-capped browser cache)",
+      "minimum file size threshold (ir.config_parameter)"
+    ],
     "organization": [],
     "products": [],
-    "policies": [],
-    "stakeholders": [],
+    "policies": [
+      "Files smaller than cloud_storage_min_file_size (default 20 MB) are stored locally in the Odoo filestore",
+      "Models inheriting mail.thread.main.attachment or documents.mixin are excluded from cloud offload",
+      "Provider switch is blocked unless _check_cloud_storage_uninstallable() passes (no stranded blobs)"
+    ],
+    "stakeholders": [
+      "System administrator (configures provider credentials and file-size threshold)",
+      "End users (upload/download attachments transparently via chatter)"
+    ],
     "strategy": null,
     "metrics": []
   },
   "classification": {
     "value_model": "support",
     "activity_class": "support",
-    "apqc_category": "13.0 Develop and Manage Business Capabilities",
-    "rationale": "cloud_storage: thin support/support module (auto-architect baseline)."
+    "apqc_category": "8.0 Manage Information Technology",
+    "rationale": "cloud_storage is a pure IT infrastructure capability: it offloads binary blobs from the Odoo filestore to external cloud object storage. It has no business-process models, no business logic, and no direct user-facing value stream; it exists solely to reduce storage cost and I/O load on the Odoo server. This maps to APQC 8.0 Manage Information Technology — infrastructure management. The baseline used 13.0 (Develop and Manage Business Capabilities) which was incorrect."
   },
   "fit_to_standard": {
     "standard_capabilities": [
-      "Cloud Storage"
+      "Provider-agnostic upload/download URL generation (abstract hooks _generate_cloud_storage_upload_info / _generate_cloud_storage_download_info in ir.attachment)",
+      "Client-side file-size threshold routing via OWL AttachmentUploadService patch",
+      "Session-info injection of cloud config parameters to the OWL frontend",
+      "Provider-switch guard with local repatriation helper (_migrate_remote_to_local)"
     ],
-    "typical_fits": [],
-    "common_gaps": [],
+    "typical_fits": [
+      "Standard chatter attachments (mail.thread) are offloaded transparently once a provider module is installed",
+      "Standard /web/content download route automatically issues signed-URL redirects"
+    ],
+    "common_gaps": [
+      "No concrete provider built in — cloud_storage_google or cloud_storage_azure must be installed separately",
+      "No bulk migration UI — _migrate_remote_to_local is a per-record helper, not an admin wizard",
+      "Documents app (documents.mixin) records are explicitly excluded from cloud offload by design"
+    ],
     "drive_hints": [
-      "n/a"
+      "odoo shell: env['ir.attachment'].search([('type','=','cloud_storage')], limit=5).mapped('url')",
+      "curl /web/content/<attachment_id> to observe the 302 redirect to a signed cloud URL"
     ]
   },
   "reverse_eng_confidence": {
-    "information_concepts": "auto",
+    "information_concepts": "inferred",
     "organization": "auto",
     "products": "auto",
     "capabilities": "inferred",
     "value_streams": "inferred",
     "policies": "inferred",
-    "metrics": "inferred",
+    "metrics": "auto",
     "strategy": "human"
   },
   "open_questions": [
-    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+    "Which concrete provider modules exist in this fork (cloud_storage_google? cloud_storage_azure?) and what credentials do they add to res.config.settings?",
+    "Is _generate_cloud_storage_blob_name (id/uuid4/name) used as-is by all providers or overridden by some?",
+    "How does data/neutralize.sql interact with the cloud_storage_provider ir.config_parameter on database neutralization (DB copy / staging workflows)?"
   ],
   "provenance": {
     "explorer_facts": "doc/revres/facts/cloud_storage.facts.json",
     "tools": [
-      "extract_module.py",
+      "code-read",
       "extract_frontend.py",
-      "gen_thin.py"
+      "extract_module.py"
     ],
     "odoo_version": "19.0"
   }
