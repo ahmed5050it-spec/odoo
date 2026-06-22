@@ -1,0 +1,236 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data>
+        <!-- Value Configuration Form View -->
+        <record id="value_configuration_form_view" model="ir.ui.view">
+            <field name="name">value.configuration.form</field>
+            <field name="model">value.configuration</field>
+            <field name="arch" type="xml">
+                <form string="Value Configuration">
+                    <sheet>
+                        <div class="oe_button_box" name="button_box">
+                            <button class="oe_stat_button" name="action_view_activities" type="object" icon="fa-tasks">
+                                <field name="activity_ids" widget="statinfo" string="Activities"/>
+                            </button>
+                            <button class="oe_stat_button" name="action_view_cost_drivers" type="object" icon="fa-line-chart">
+                                <field name="cost_driver_ids" widget="statinfo" string="Cost Drivers"/>
+                            </button>
+                            <button class="oe_stat_button" name="action_view_value_drivers" type="object" icon="fa-star">
+                                <field name="value_driver_ids" widget="statinfo" string="Value Drivers"/>
+                            </button>
+                            <button class="oe_stat_button" name="action_view_pcf_mappings" type="object" icon="fa-link">
+                                <field name="pcf_mapping_count" widget="statinfo" string="PCF Mappings"/>
+                            </button>
+                        </div>
+
+                        <div class="oe_title">
+                            <label for="name" string="Configuration Name"/>
+                            <h1>
+                                <field name="name" placeholder="e.g., Manufacturing Value Chain"/>
+                            </h1>
+                        </div>
+
+                        <group>
+                            <group>
+                                <field name="company_id" groups="base.group_multi_company"/>
+                                <field name="configuration_type" widget="radio" options="{'horizontal': true}"/>
+                            </group>
+                            <group>
+                                <field name="value_creation_logic" readonly="1"/>
+                                <field name="activity_interactivity" readonly="1"/>
+                            </group>
+                        </group>
+
+                        <notebook>
+                            <!-- Overview Tab -->
+                            <page string="Overview" name="overview">
+                                <group>
+                                    <group string="Value Creation Logic">
+                                        <field name="primary_interdependence" readonly="1" widget="text" nolabel="1" class="oe_inline"/>
+                                    </group>
+                                    <group string="Business Value System">
+                                        <field name="business_value_system" readonly="1"/>
+                                    </group>
+                                    <group string="Cost Drivers">
+                                        <field name="cost_drivers" readonly="1" widget="text" nolabel="1" class="oe_inline"/>
+                                    </group>
+                                    <group string="Value Drivers">
+                                        <field name="value_drivers" readonly="1" widget="text" nolabel="1" class="oe_inline"/>
+                                    </group>
+                                </group>
+                                <separator string="Description"/>
+                                <field name="description" placeholder="Describe this value configuration..."/>
+                            </page>
+
+                            <!-- Activities Tab -->
+                            <page string="Primary Activities" name="activities">
+                                <field name="activity_ids" mode="tree">
+                                    <tree editable="bottom">
+                                        <field name="sequence" widget="handle"/>
+                                        <field name="name"/>
+                                        <field name="activity_type"/>
+                                        <field name="is_core_competency"/>
+                                        <field name="cost_percentage"/>
+                                        <field name="value_impact"/>
+                                    </tree>
+                                </field>
+                            </page>
+
+                            <!-- Cost Drivers Tab -->
+                            <page string="Cost Drivers" name="cost_drivers">
+                                <field name="cost_driver_ids" mode="tree,form">
+                                    <tree editable="bottom">
+                                        <field name="name"/>
+                                        <field name="impact_level"/>
+                                        <field name="current_performance"/>
+                                        <field name="target_performance"/>
+                                        <field name="unit"/>
+                                    </tree>
+                                    <form>
+                                        <sheet>
+                                            <group>
+                                                <field name="name"/>
+                                                <field name="impact_level"/>
+                                                <field name="sequence"/>
+                                            </group>
+                                            <group>
+                                                <field name="current_performance"/>
+                                                <field name="target_performance"/>
+                                                <field name="unit"/>
+                                            </group>
+                                            <separator string="Description"/>
+                                            <field name="description"/>
+                                            <separator string="Strategy"/>
+                                            <field name="optimization_strategy"/>
+                                        </sheet>
+                                    </form>
+                                </field>
+                            </page>
+
+                            <!-- Value Drivers Tab -->
+                            <page string="Value Drivers" name="value_drivers">
+                                <field name="value_driver_ids" mode="tree,form">
+                                    <tree editable="bottom">
+                                        <field name="name"/>
+                                        <field name="impact_level"/>
+                                        <field name="current_performance"/>
+                                        <field name="target_performance"/>
+                                    </tree>
+                                    <form>
+                                        <sheet>
+                                            <group>
+                                                <field name="name"/>
+                                                <field name="impact_level"/>
+                                                <field name="sequence"/>
+                                            </group>
+                                            <group>
+                                                <field name="current_performance"/>
+                                                <field name="target_performance"/>
+                                                <field name="unit"/>
+                                            </group>
+                                            <separator string="Competitive Advantage"/>
+                                            <field name="competitive_advantage"/>
+                                            <separator string="Strategy"/>
+                                            <field name="optimization_strategy"/>
+                                        </sheet>
+                                    </form>
+                                </field>
+                            </page>
+
+                            <!-- PCF Mappings Tab -->
+                            <page string="PCF Framework Mappings" name="pcf_mappings">
+                                <group>
+                                    <field name="pcf_version"/>
+                                    <field name="pcf_adoption_level"/>
+                                </group>
+                                <separator string="Process Classifications"/>
+                                <field name="pcf_mapping_ids" mode="tree">
+                                    <tree>
+                                        <field name="pcf_process_id"/>
+                                        <field name="value_activity_id"/>
+                                        <field name="relevance_level"/>
+                                        <field name="process_percentage"/>
+                                    </tree>
+                                </field>
+                            </page>
+
+                            <!-- Notes Tab -->
+                            <page string="Notes" name="notes">
+                                <field name="notes"/>
+                            </page>
+                        </notebook>
+                    </sheet>
+                    <div class="oe_chatter">
+                        <field name="message_follower_ids" widget="mail_followers"/>
+                        <field name="activity_ids" widget="mail_activity"/>
+                        <field name="message_ids" widget="mail_thread"/>
+                    </div>
+                </form>
+            </field>
+        </record>
+
+        <!-- Value Configuration Tree View -->
+        <record id="value_configuration_tree_view" model="ir.ui.view">
+            <field name="name">value.configuration.tree</field>
+            <field name="model">value.configuration</field>
+            <field name="arch" type="xml">
+                <tree string="Value Configurations">
+                    <field name="name"/>
+                    <field name="configuration_type"/>
+                    <field name="value_creation_logic"/>
+                    <field name="activity_interactivity"/>
+                    <field name="company_id" groups="base.group_multi_company"/>
+                </tree>
+            </field>
+        </record>
+
+        <!-- Value Configuration Search View -->
+        <record id="value_configuration_search_view" model="ir.ui.view">
+            <field name="name">value.configuration.search</field>
+            <field name="model">value.configuration</field>
+            <field name="arch" type="xml">
+                <search string="Search Value Configuration">
+                    <field name="name" string="Configuration" filter_domain="['|', ('name', 'ilike', self), ('description', 'ilike', self)]"/>
+                    <separator/>
+                    <filter string="Value Chain" name="chain" domain="[('configuration_type', '=', 'chain')]"/>
+                    <filter string="Value Shop" name="shop" domain="[('configuration_type', '=', 'shop')]"/>
+                    <filter string="Value Network" name="network" domain="[('configuration_type', '=', 'network')]"/>
+                    <separator/>
+                    <group expand="0" string="Group By">
+                        <filter string="Configuration Type" name="type_group" context="{'group_by': 'configuration_type'}"/>
+                        <filter string="Company" name="company_group" context="{'group_by': 'company_id'}" groups="base.group_multi_company"/>
+                    </group>
+                </search>
+            </field>
+        </record>
+
+        <!-- Value Configuration Action -->
+        <record id="value_configuration_action" model="ir.actions.act_window">
+            <field name="name">Value Configurations</field>
+            <field name="res_model">value.configuration</field>
+            <field name="view_mode">tree,form</field>
+            <field name="context">{}</field>
+            <field name="help" type="html">
+                <p class="o_view_nocontent_smiling_face">
+                    Create your first value configuration!
+                </p>
+                <p>
+                    Configure your business using one of three value creation models:
+                    <ul>
+                        <li><strong>Value Chain:</strong> Transform inputs into products sequentially (manufacturing)</li>
+                        <li><strong>Value Shop:</strong> Resolve unique customer problems cyclically (professional services)</li>
+                        <li><strong>Value Network:</strong> Link customers through parallel activities (telecommunications, banking)</li>
+                    </ul>
+                </p>
+            </field>
+        </record>
+
+        <!-- Menu Item -->
+        <menuitem
+            id="value_configuration_menu"
+            name="Value Configuration"
+            parent="base.menu_tools"
+            action="value_configuration_action"
+            sequence="100"/>
+    </data>
+</odoo>

@@ -1,0 +1,152 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data>
+        <!-- Value Driver Form View -->
+        <record id="value_driver_form_view" model="ir.ui.view">
+            <field name="name">value.driver.form</field>
+            <field name="model">value.driver</field>
+            <field name="arch" type="xml">
+                <form string="Value Driver">
+                    <sheet>
+                        <div class="oe_title">
+                            <label for="name" string="Driver Name"/>
+                            <h1>
+                                <field name="name" placeholder="e.g., Scale, Reputation"/>
+                            </h1>
+                        </div>
+
+                        <group>
+                            <group>
+                                <field name="configuration_id"/>
+                                <field name="driver_type" widget="radio" options="{'horizontal': true}"/>
+                                <field name="impact_level"/>
+                            </group>
+                            <group>
+                                <field name="sequence"/>
+                                <field name="unit" placeholder="e.g., %, units, hours"/>
+                            </group>
+                        </group>
+
+                        <group>
+                            <group string="Current Performance">
+                                <field name="current_performance"/>
+                            </group>
+                            <group string="Target Performance">
+                                <field name="target_performance"/>
+                            </group>
+                        </group>
+
+                        <notebook>
+                            <!-- Description Tab -->
+                            <page string="Description" name="description">
+                                <field name="description"/>
+                            </page>
+
+                            <!-- Strategy Tab -->
+                            <page string="Strategy &amp; Impact" name="strategy">
+                                <separator string="Optimization Strategy"/>
+                                <field name="optimization_strategy" placeholder="How to leverage or optimize this driver..."/>
+                                <separator string="Related Activities"/>
+                                <field name="related_activity_ids" mode="tree">
+                                    <tree>
+                                        <field name="sequence"/>
+                                        <field name="name"/>
+                                        <field name="cost_percentage"/>
+                                        <field name="value_impact"/>
+                                    </tree>
+                                </field>
+                            </page>
+
+                            <!-- Analysis Tab -->
+                            <page string="Analysis" name="analysis">
+                                <group string="Strengths" name="strengths">
+                                    <field name="strengths" nolabel="1" placeholder="Current advantages related to this driver..."/>
+                                </group>
+                                <group string="Weaknesses" name="weaknesses">
+                                    <field name="weaknesses" nolabel="1" placeholder="Current limitations or weaknesses..."/>
+                                </group>
+                                <group string="Competitive Advantage" name="advantage">
+                                    <field name="competitive_advantage" nolabel="1" placeholder="How this driver creates competitive advantage..."/>
+                                </group>
+                            </page>
+
+                            <!-- Notes Tab -->
+                            <page string="Notes" name="notes">
+                                <field name="notes"/>
+                            </page>
+                        </notebook>
+                    </sheet>
+                </form>
+            </field>
+        </record>
+
+        <!-- Value Driver Tree View -->
+        <record id="value_driver_tree_view" model="ir.ui.view">
+            <field name="name">value.driver.tree</field>
+            <field name="model">value.driver</field>
+            <field name="arch" type="xml">
+                <tree string="Value Drivers" editable="top">
+                    <field name="sequence"/>
+                    <field name="name"/>
+                    <field name="driver_type"/>
+                    <field name="impact_level"/>
+                    <field name="current_performance"/>
+                    <field name="target_performance"/>
+                    <field name="unit"/>
+                </tree>
+            </field>
+        </record>
+
+        <!-- Value Driver Search View -->
+        <record id="value_driver_search_view" model="ir.ui.view">
+            <field name="name">value.driver.search</field>
+            <field name="model">value.driver</field>
+            <field name="arch" type="xml">
+                <search string="Search Value Driver">
+                    <field name="name" filter_domain="['|', ('name', 'ilike', self), ('description', 'ilike', self)]"/>
+                    <field name="configuration_id"/>
+                    <separator/>
+                    <filter string="Cost Drivers" name="cost" domain="[('driver_type', '=', 'cost')]"/>
+                    <filter string="Value Drivers" name="value" domain="[('driver_type', '=', 'value')]"/>
+                    <separator/>
+                    <filter string="Critical" name="critical" domain="[('impact_level', '=', 'critical')]"/>
+                    <filter string="High Impact" name="high" domain="[('impact_level', 'in', ['critical', 'high'])]"/>
+                    <separator/>
+                    <filter string="Below Target" name="below_target" domain="[('current_performance', '&lt;', 'target_performance')]"/>
+                    <separator/>
+                    <group expand="0" string="Group By">
+                        <filter string="Configuration" name="config_group" context="{'group_by': 'configuration_id'}"/>
+                        <filter string="Driver Type" name="type_group" context="{'group_by': 'driver_type'}"/>
+                        <filter string="Impact Level" name="impact_group" context="{'group_by': 'impact_level'}"/>
+                    </group>
+                </search>
+            </field>
+        </record>
+
+        <!-- Value Driver Action -->
+        <record id="value_driver_action" model="ir.actions.act_window">
+            <field name="name">Value Drivers</field>
+            <field name="res_model">value.driver</field>
+            <field name="view_mode">tree,form</field>
+            <field name="context">{}</field>
+        </record>
+
+        <!-- Action for Cost Drivers -->
+        <record id="value_driver_cost_action" model="ir.actions.act_window">
+            <field name="name">Cost Drivers</field>
+            <field name="res_model">value.driver</field>
+            <field name="view_mode">tree,form</field>
+            <field name="context">{'default_driver_type': 'cost', 'default_configuration_id': active_id}</field>
+            <field name="domain">[('driver_type', '=', 'cost'), ('configuration_id', '=', active_id)]</field>
+        </record>
+
+        <!-- Action for Value Drivers -->
+        <record id="value_driver_value_action" model="ir.actions.act_window">
+            <field name="name">Value Drivers</field>
+            <field name="res_model">value.driver</field>
+            <field name="view_mode">tree,form</field>
+            <field name="context">{'default_driver_type': 'value', 'default_configuration_id': active_id}</field>
+            <field name="domain">[('driver_type', '=', 'value'), ('configuration_id', '=', active_id)]</field>
+        </record>
+    </data>
+</odoo>

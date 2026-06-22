@@ -1,0 +1,8 @@
+id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_value_configuration_user,Value Configuration User Access,model_value_configuration,,1,1,1,1
+access_value_activity_user,Value Activity User Access,model_value_activity,,1,1,1,1
+access_value_driver_user,Value Driver User Access,model_value_driver,,1,1,1,1
+access_pcf_category_user,PCF Category User Access,model_pcf_category,,1,1,1,1
+access_pcf_process_user,PCF Process User Access,model_pcf_process,,1,1,1,1
+access_pcf_activity_mapping_user,PCF Activity Mapping User Access,model_pcf_activity_mapping,,1,1,1,1
+access_pcf_activity_kpi_user,PCF Activity KPI User Access,model_pcf_activity_kpi,,1,1,1,1

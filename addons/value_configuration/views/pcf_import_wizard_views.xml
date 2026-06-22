@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data>
+        <!-- PCF Import Wizard Form View -->
+        <record id="pcf_import_wizard_form_view" model="ir.ui.view">
+            <field name="name">pcf.import.wizard.form</field>
+            <field name="model">pcf.import.wizard</field>
+            <field name="arch" type="xml">
+                <form string="Import PCF Framework">
+                    <sheet>
+                        <div class="oe_title">
+                            <h1>Import APQC Process Classification Framework</h1>
+                        </div>
+
+                        <div class="alert alert-info" role="alert">
+                            <p>
+                                This wizard will import the APQC Process Classification Framework (PCF) v7.2.1
+                                into your system. This framework provides a standardized cross-industry process
+                                taxonomy that can be mapped to your value configuration activities.
+                            </p>
+                        </div>
+
+                        <group>
+                            <field name="import_status" readonly="1"/>
+                        </group>
+
+                        <div attrs="{'invisible': [('import_status', 'in', ['pending', 'in_progress'])]}">
+                            <group>
+                                <field name="imported_categories" readonly="1" string="Categories Imported"/>
+                                <field name="imported_processes" readonly="1" string="Processes Imported"/>
+                            </group>
+                        </div>
+
+                        <div attrs="{'invisible': [('log_message', '=', '')]}">
+                            <separator string="Import Results"/>
+                            <field name="log_message" readonly="1" nolabel="1"/>
+                        </div>
+                    </sheet>
+                    <footer>
+                        <button name="action_import_pcf" string="Import PCF Framework" type="object"
+                                class="btn-primary"
+                                attrs="{'invisible': [('import_status', '!=', 'pending')]}"/>
+                        <button string="Close" class="btn-secondary" special="cancel"/>
+                    </footer>
+                </form>
+            </field>
+        </record>
+
+        <!-- Action to open import wizard -->
+        <record id="action_pcf_import_wizard" model="ir.actions.act_window">
+            <field name="name">Import PCF Framework</field>
+            <field name="res_model">pcf.import.wizard</field>
+            <field name="view_mode">form</field>
+            <field name="target">new</field>
+        </record>
+
+        <!-- Menu item for import -->
+        <menuitem
+            id="pcf_import_menu"
+            name="Import PCF Framework"
+            parent="value_configuration_pcf_menu"
+            action="action_pcf_import_wizard"
+            sequence="5"/>
+    </data>
+</odoo>

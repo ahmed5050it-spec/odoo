@@ -1,0 +1,141 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data>
+        <!-- Value Activity Form View -->
+        <record id="value_activity_form_view" model="ir.ui.view">
+            <field name="name">value.activity.form</field>
+            <field name="model">value.activity</field>
+            <field name="arch" type="xml">
+                <form string="Value Activity">
+                    <sheet>
+                        <div class="oe_title">
+                            <label for="name" string="Activity Name"/>
+                            <h1>
+                                <field name="name" placeholder="e.g., Operations"/>
+                            </h1>
+                        </div>
+
+                        <group>
+                            <group>
+                                <field name="configuration_id"/>
+                                <field name="activity_type"/>
+                                <field name="sequence"/>
+                            </group>
+                            <group>
+                                <field name="is_core_competency"/>
+                                <field name="cost_percentage" widget="percentBigDecimal"/>
+                                <field name="value_impact"/>
+                            </group>
+                        </group>
+
+                        <notebook>
+                            <!-- Overview Tab -->
+                            <page string="Description" name="description">
+                                <field name="description"/>
+                            </page>
+
+                            <!-- Performance Tab -->
+                            <page string="Performance Metrics" name="performance">
+                                <group>
+                                    <field name="performance_metric" placeholder="e.g., Units per hour, Customer satisfaction %"/>
+                                    <field name="benchmark_value"/>
+                                </group>
+                                <separator string="Analysis"/>
+                                <group string="Strengths" name="strengths">
+                                    <field name="strengths" nolabel="1" placeholder="Describe current strengths in this activity..."/>
+                                </group>
+                                <group string="Weaknesses" name="weaknesses">
+                                    <field name="weaknesses" nolabel="1" placeholder="Describe areas for improvement..."/>
+                                </group>
+                                <group string="Improvement Opportunities" name="opportunities">
+                                    <field name="improvement_opportunities" nolabel="1" placeholder="List strategic improvement opportunities..."/>
+                                </group>
+                            </page>
+
+                            <!-- Dependencies Tab -->
+                            <page string="Dependencies" name="dependencies">
+                                <field name="depends_on_ids" mode="tree">
+                                    <tree>
+                                        <field name="sequence"/>
+                                        <field name="name"/>
+                                        <field name="activity_type"/>
+                                    </tree>
+                                </field>
+                                <separator string="Related Activities"/>
+                                <field name="related_activity_ids" mode="tree">
+                                    <tree>
+                                        <field name="sequence"/>
+                                        <field name="name"/>
+                                        <field name="activity_type"/>
+                                    </tree>
+                                </field>
+                            </page>
+
+                            <!-- Notes Tab -->
+                            <page string="Notes" name="notes">
+                                <field name="notes"/>
+                            </page>
+                        </notebook>
+                    </sheet>
+                </form>
+            </field>
+        </record>
+
+        <!-- Value Activity Tree View -->
+        <record id="value_activity_tree_view" model="ir.ui.view">
+            <field name="name">value.activity.tree</field>
+            <field name="model">value.activity</field>
+            <field name="arch" type="xml">
+                <tree string="Value Activities" editable="top">
+                    <field name="sequence" widget="handle"/>
+                    <field name="name"/>
+                    <field name="configuration_id"/>
+                    <field name="activity_type"/>
+                    <field name="is_core_competency"/>
+                    <field name="cost_percentage"/>
+                    <field name="value_impact"/>
+                </tree>
+            </field>
+        </record>
+
+        <!-- Value Activity Search View -->
+        <record id="value_activity_search_view" model="ir.ui.view">
+            <field name="name">value.activity.search</field>
+            <field name="model">value.activity</field>
+            <field name="arch" type="xml">
+                <search string="Search Value Activity">
+                    <field name="name" filter_domain="['|', ('name', 'ilike', self), ('description', 'ilike', self)]"/>
+                    <field name="configuration_id"/>
+                    <separator/>
+                    <filter string="Primary Activities" name="primary" domain="[('activity_type', '=', 'primary')]"/>
+                    <filter string="Support Activities" name="support" domain="[('activity_type', '=', 'support')]"/>
+                    <separator/>
+                    <filter string="Core Competencies" name="core" domain="[('is_core_competency', '=', True)]"/>
+                    <separator/>
+                    <group expand="0" string="Group By">
+                        <filter string="Configuration" name="config_group" context="{'group_by': 'configuration_id'}"/>
+                        <filter string="Type" name="type_group" context="{'group_by': 'activity_type'}"/>
+                        <filter string="Value Impact" name="value_group" context="{'group_by': 'value_impact'}"/>
+                    </group>
+                </search>
+            </field>
+        </record>
+
+        <!-- Value Activity Action -->
+        <record id="value_activity_action" model="ir.actions.act_window">
+            <field name="name">Value Activities</field>
+            <field name="res_model">value.activity</field>
+            <field name="view_mode">tree,form</field>
+            <field name="context">{}</field>
+        </record>
+
+        <!-- Action for View Activities from Configuration -->
+        <record id="value_activity_action_from_configuration" model="ir.actions.act_window">
+            <field name="name">Activities</field>
+            <field name="res_model">value.activity</field>
+            <field name="view_mode">tree,form</field>
+            <field name="context">{'default_configuration_id': active_id}</field>
+            <field name="domain">[('configuration_id', '=', active_id)]</field>
+        </record>
+    </data>
+</odoo>
