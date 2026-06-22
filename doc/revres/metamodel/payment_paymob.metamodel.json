@@ -4,21 +4,51 @@
     "manifest": {
       "name": "Payment Provider: Paymob",
       "category": "Accounting/Payment Providers",
+      "summary": "An Egyptian payment provider for the Middle East.",
+      "version": "1.0",
+      "author": "Odoo S.A.",
+      "license": "LGPL-3",
       "depends": [
         "payment"
       ],
       "auto_install": false,
       "application": false
     },
-    "models": [],
+    "models": [
+      {
+        "_name": "payment.provider (inherit)",
+        "_description": "Payment Provider (Paymob credentials: account country / public key / secret key / HMAC key / API key)",
+        "fields": 6,
+        "relations": [
+          "code (Selection selection_add 'paymob', ondelete set default)",
+          "paymob_account_country_id (Many2one res.country, required_if_provider=paymob, domain code in [AE,EG,OM,PK,SA], inverse=_inverse_paymob_account_country_id, copy=False)",
+          "paymob_public_key (Char, required_if_provider=paymob, copy=False)",
+          "paymob_secret_key (Char, required_if_provider=paymob, copy=False, groups=base.group_system)",
+          "paymob_hmac_key (Char, required_if_provider=paymob, copy=False)",
+          "paymob_api_key (Char, required_if_provider=paymob, copy=False)"
+        ]
+      },
+      {
+        "_name": "payment.transaction (inherit)",
+        "_description": "Payment Transaction (Paymob Unified Checkout: server-to-server Intention API then hosted-redirect; no direct card capture in Odoo, no tokenization)",
+        "fields": 0,
+        "relations": [
+          "no new fields; 6 methods overriding payment's reference/rendering/notification hooks"
+        ]
+      }
+    ],
     "routes": [
       {
-        "paths": [],
+        "paths": [
+          "/payment/paymob/return"
+        ],
         "auth": "public",
         "type": "http"
       },
       {
-        "paths": [],
+        "paths": [
+          "/payment/paymob/webhook"
+        ],
         "auth": "public",
         "type": "http"
       }
@@ -26,19 +56,55 @@
     "security": {
       "access_rules": 0,
       "record_rules": 0,
-      "groups": 0
+      "groups": 0,
+      "note": "No own ACL/rules; relies on payment's security. Only paymob_secret_key is restricted to base.group_system field group; the other credentials (paymob_account_country_id, paymob_public_key, paymob_hmac_key, paymob_api_key) are left ungrouped though the form password-masks the HMAC, API and secret keys."
     },
     "views": {
       "form": 1,
       "list": 0,
-      "tree": 0,
       "kanban": 0,
       "search": 0,
       "pivot": 0,
       "graph": 0,
-      "calendar": 0,
-      "activity": 0
+      "note": "xml_loc=79: payment.provider form inheritance (payment_provider_views.xml: Paymob account country + public/secret/HMAC/API keys shown only when code=='paymob', secret/HMAC/API password-masked, available_currency_ids forced readonly, plus a 'Synchronize With Paymob' button calling action_sync_paymob_payment_methods) + the QWeb redirect-form template payment_paymob_templates.xml (auto-submit form with method='get' to the per-country {api_url}/unifiedcheckout/ carrying publicKey + clientSecret as query params), plus data/payment_provider_data.xml wiring redirect_form_view_id. No own model views."
     },
+    "behavioral_notes": [
+      {
+        "element": "payment.transaction._get_specific_rendering_values -> server-to-server POST {api_url}/v1/intention/ (Bearer secret key) then GET redirect to {api_url}/unifiedcheckout/ (Paymob Unified Checkout, per-country host)",
+        "observation": "Paymob is a hybrid acquirer: the redirect is preceded by a real server-to-server API call. _get_specific_rendering_values builds the intention payload via _paymob_prepare_payment_request_payload (special_reference=tx.reference, amount=to_minor_currency_units(amount,currency), currency=currency.name, payment_methods=[<method>+env]-suffixed integration names where env is 'live' when provider.state=='enabled' else 'test' -- 'omannet' additionally appends 'card', notification_url=/payment/paymob/webhook, redirection_url=/payment/paymob/return, and a billing_data block with first/last name, email, street, state, phone, country) and POSTs it to '/v1/intention/' via the parent engine's _send_api_request with is_client_request=True (so _build_request_headers sends Authorization: Bearer paymob_secret_key). On success it stores provider_reference=payment_data['id'] and reads client_secret, then returns api_url={base}/unifiedcheckout/ plus url_params={publicKey: paymob_public_key, clientSecret: client_secret}; the QWeb redirect_form (method='get') auto-submits the browser to Paymob's hosted Unified Checkout. On ValidationError the tx is _set_error and an empty dict returned. The per-country base host comes from _paymob_get_api_url -> https://{API_MAPPING[account_country]}.paymob.com (uae/accept/oman/pakistan/ksa). None of this S2S call nor the hosted handoff is visible in Python field/model metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "payment.provider._build_request_headers / _paymob_fetch_access_token -> dual Bearer auth (secret key for client requests vs OAuth access token) over https://{prefix}.paymob.com",
+        "observation": "models/payment_provider.py wires Paymob's outbound auth onto the parent engine: _build_request_url targets _paymob_get_api_url()+endpoint (the per-country https://{API_MAPPING[code]}.paymob.com selected from paymob_account_country_id), and _build_request_headers returns Authorization: Bearer <auth> where auth is paymob_secret_key when is_client_request=True (the intention/checkout creation), or a short-lived OAuth access token otherwise; a refresh-token request (is_refresh_token_request=True) sends an empty bearer. _paymob_fetch_access_token POSTs {api_key: paymob_api_key} to '/api/auth/tokens' to mint that hourly-expiring token. The merchant-config action action_sync_paymob_payment_methods uses the same channel: GET '/api/ecommerce/integrations' to list Paymob gateways, _match_paymob_payment_methods filters them (skipping Apple/Google Pay, moto and is_auth/saved-card gateways via const.PAYMENT_METHODS_MAPPING), then PUT '/api/ecommerce/integrations/{id}' to set each integration_name to '<method><live|test>'. _parse_response_error pulls response.text and surfaces a 'fields must be filled' message from the billing_data error. This three-way endpoint set (auth tokens, intention, integrations) and the secret-vs-token bearer split are pure code, invisible to metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "PaymobController.paymob_return_from_checkout (/payment/paymob/return, GET) + paymob_webhook (/payment/paymob/webhook, POST) -> _verify_signature (HMAC SHA-512) BEFORE _process; reference via _extract_reference -> merchant_order_id",
+        "observation": "Both public routes locate the tx with payment.transaction._search_by_reference('paymob', data) (routing through _extract_reference -> data['merchant_order_id']) then call _verify_signature BEFORE _process. The GET return route reads Paymob's flat query params directly; the POST csrf=False webhook reads request.get_json_data()['obj'] and first runs _normalize_response, which projects the nested webhook object onto the flat const.SIGNATURE_FIELDS shape (json-dumping booleans, str-defaulting missing values to 'false', flattening order.id / order.merchant_order_id / source_data.*) and carries the hmac from the query string. _verify_signature reads received=data['hmac'] (raising werkzeug Forbidden -> HTTP 403 if missing) and recomputes the expected value via _compute_signature: it CONCATENATES, with no separator and in the fixed const.SIGNATURE_FIELDS order (amount_cents, created_at, currency, error_occured, has_parent_transaction, id, integration_id, is_3d_secure, is_auth, is_capture, is_refunded, is_standalone_payment, is_voided, order, owner, pending, source_data.pan, source_data.sub_type, source_data.type, success -- each defaulting to 'false'), then hmac.new(paymob_hmac_key, signing_string, hashlib.sha512).hexdigest(); it rejects (Forbidden) unless hmac.compare_digest matches. This concatenated-in-list-order HMAC-SHA-512 (not sorted, not an SHA-256) and the constant-time compare are pure controller semantics, not derivable from metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "payment.transaction._apply_updates / _extract_amount_data -> Paymob payment status -> payment state mapping",
+        "observation": "_apply_updates maps Paymob's boolean-string flags into payment's guarded transitions: payment_data['pending']=='true' -> _set_pending; else payment_data['success']=='true' -> _set_done; otherwise _set_error carrying payment_data['data.message']. There is NO _set_canceled branch -- failures and cancellations both fall through to the error bucket. _extract_amount_data converts payment_data['amount_cents'] back to major units via to_major_currency_units and returns currency_code=payment_data['currency'] for the engine's amount cross-check. provider_reference is the intention id set at rendering time (data['id']); the webhook's flattened 'order' / 'merchant_order_id' are used only for lookup, not as the provider reference. This inbound flag->state translation is pure code, not visible in metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "payment.provider currency binding -> one currency per Paymob account, matched to the account country",
+        "observation": "Unlike most acquirers Paymob pins exactly ONE currency per provider. _inverse_paymob_account_country_id sets available_currency_ids (Command.set) to the single res.currency whose name is const.CURRENCY_MAPPING[account_country] (AE->AED, EG->EGP, OM->OMR, PK->PKR, SA->SAR), and the @api.constrains _check_available_country_currency_ids rejects (ValidationError) any provider with more than one available currency or a currency outside const.CURRENCY_MAPPING.values(). The form also forces available_currency_ids readonly for code=='paymob'. _get_default_payment_method_codes returns const.DEFAULT_PAYMENT_METHOD_CODES ({'card'}) on activation; const.PAYMENT_METHODS_MAPPING covers MENA methods (card, mobile_wallet_eg, kiosk, halan, sympl, valu, aman, souhoola, contact, premium_card, forsa, tabby, tamara, stcpay, omannet, easypaisa, jazzcash). This single-currency, country-pinned binding is enforced in code, not visible as plain field metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "external integration surface (gap #7) -- endpoints, keys, no SDK",
+        "observation": "Static gap-#7 facts (extract_frontend.py): uses_api_keys=true; the declared endpoint template is the per-country https://{api_prefix}.paymob.com (api_prefix in uae/accept/oman/pakistan/ksa, chosen by paymob_account_country_id) declared in models/payment_provider.py (_build_request_url -> _paymob_get_api_url). Concrete endpoints reached server-to-server: /api/auth/tokens (OAuth access token from paymob_api_key), /v1/intention/ (Intention/Unified Checkout creation, Bearer paymob_secret_key), and /api/ecommerce/integrations[/{id}] (GET+PUT during the merchant payment-method sync). The buyer is then redirected (browser GET) to {base}/unifiedcheckout/ carrying publicKey + clientSecret, where card/wallet data are collected on Paymob's hosted page -- never in Odoo. There is no python SDK import and no browser SDK: HTTP is delegated to payment.provider._send_api_request, configured here via _build_request_url / _build_request_headers / _parse_response_error overrides. Authenticity of the inbound return/webhook rests on the HMAC SHA-512 over paymob_hmac_key. This server-to-server-then-hosted-redirect acquirer link is the canonical metadata gap #7: none of the Paymob endpoints, the secret/api-key bearer auth, the HMAC scheme, or the hosted-checkout handoff are reachable from model/field metadata.",
+        "source": "static"
+      },
+      {
+        "element": "frontend (static) -- no JS, no OWL (gap #3)",
+        "observation": "0 JS files, 0 OWL components, 0 registry adds, 0 patches (gap #3). payment_paymob ships no client-side code and registers no web.assets_frontend bundle: the entire buyer interaction is the server-rendered redirect_form QWeb template (payment_paymob_templates.xml) whose hidden inputs auto-submit (method='get') to Paymob's hosted Unified Checkout. There is no browser SDK and no inline card form -- card/wallet data are collected on Paymob's hosted page, never in Odoo. The only browser-visible artifact is the auto-submitting redirect form (plain server-rendered HTML, no gap-#3 JS surface).",
+        "source": "static"
+      }
+    ],
     "frontend": {
       "present": false,
       "js_files": 0,
@@ -63,52 +129,137 @@
     "runtime": {
       "models_with_data": 0,
       "top": []
-    },
-    "behavioral_notes": [
-      {
-        "element": "thin module",
-        "observation": "0 models, 2 routes, 821 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
-        "source": "ast"
-      }
-    ]
+    }
   },
   "it_architecture": {
-    "application": "payment_paymob (Payment Provider: Paymob)",
-    "software_services": [],
-    "data_objects": [],
-    "logical_data_erm": [],
-    "information_flows": [
-      "depends: payment"
+    "application": "payment_paymob (Paymob acquirer adapter for the payment engine; _inherit-only, no own models/views)",
+    "software_services": [
+      "/payment/paymob/return (redirect-return, http GET: HMAC-SHA-512-verified, processes Paymob's flat feedback, then /payment/status)",
+      "/payment/paymob/webhook (async notification, http POST, csrf=False: reads JSON 'obj', normalizes, HMAC-SHA-512-verified, processes, returns '')"
     ],
-    "frontend_components": []
+    "data_objects": [
+      "payment.provider (+paymob_account_country_id, paymob_public_key, paymob_secret_key, paymob_hmac_key, paymob_api_key)",
+      "payment.transaction (Paymob Unified Checkout: S2S Intention API + hosted redirect; no new fields; 6 override methods)"
+    ],
+    "logical_data_erm": [
+      "payment.transaction -> payment.provider (provider_id; provider_code=='paymob' gates every override)",
+      "payment.provider.code selection_add 'paymob'",
+      "payment.provider.paymob_account_country_id -> res.country (drives the API host and the single available currency)",
+      "external: payment.transaction.reference == Paymob special_reference / merchant_order_id (cross-system key for return/webhook lookup via _extract_reference)",
+      "external: payment.transaction.provider_reference == Paymob intention id (payment_data['id'])"
+    ],
+    "information_flows": [
+      "depends: payment (inherits the provider/transaction engine + redirect-form rendering + _send_api_request + _process state machine)",
+      "outbound (auth): _paymob_fetch_access_token -> POST https://{prefix}.paymob.com/api/auth/tokens (api_key -> hourly OAuth access token)",
+      "outbound (create): _get_specific_rendering_values -> POST https://{prefix}.paymob.com/v1/intention/ (Bearer paymob_secret_key) -> client_secret -> browser GET redirect to {base}/unifiedcheckout/ (publicKey + clientSecret)",
+      "outbound (sync): action_sync_paymob_payment_methods -> GET + PUT /api/ecommerce/integrations[/{id}] to align Paymob gateway integration_names with Odoo payment methods",
+      "inbound (return): Paymob -> GET /payment/paymob/return -> _verify_signature (HMAC SHA-512 over const.SIGNATURE_FIELDS, constant-time compare) -> _process -> /payment/status",
+      "inbound (webhook): Paymob -> POST /payment/paymob/webhook -> _normalize_response -> _verify_signature -> _process -> payment state machine",
+      "no tokenization / no refund / no manual capture flows in this module (saved-card, moto and is_auth gateways are filtered out during sync)"
+    ],
+    "frontend_components": [
+      "redirect_form QWeb template (payment_paymob_templates.xml; server-rendered hidden-field auto-submit GET form to Paymob's hosted Unified Checkout; no JS/OWL)"
+    ],
+    "external_integrations": {
+      "sdk": "none (no python SDK and no browser SDK; card/wallet data entered on Paymob's hosted Unified Checkout page, never in Odoo)",
+      "uses_api_keys": true,
+      "endpoints": [
+        "https://{api_prefix}.paymob.com (api_prefix per account country: uae / accept / oman / pakistan / ksa)",
+        "/v1/intention/ (Intention / Unified Checkout creation)",
+        "/api/auth/tokens (OAuth access token from paymob_api_key)",
+        "/api/ecommerce/integrations[/{id}] (payment-method sync: GET list + PUT integration_name)",
+        "/unifiedcheckout/ (hosted checkout page the buyer is redirected to with publicKey + clientSecret)"
+      ],
+      "auth": "Bearer token via _build_request_headers: paymob_secret_key for is_client_request (intention creation), else a short-lived OAuth access token minted from paymob_api_key at /api/auth/tokens; inbound return/webhook authenticity via HMAC SHA-512 over paymob_hmac_key (no transport key on the callback)",
+      "files": [
+        "const.py",
+        "models/payment_provider.py",
+        "models/payment_transaction.py",
+        "controllers/main.py"
+      ],
+      "pattern": "Concrete realization of metadata gap #7: a real external acquirer integration in a hybrid server-to-server-plus-hosted-redirect form. Outbound REST to the per-country {prefix}.paymob.com (auth-token, intention creation, integration sync) authenticated with a secret key / OAuth bearer; the browser is then GET-redirected to Paymob's hosted Unified Checkout (publicKey + clientSecret) so card/wallet data never touch Odoo; inbound settlement via an HMAC-SHA-512-verified return route plus a JSON webhook. Unlike pure redirect acquirers (APS, Buckaroo) Paymob makes a genuine S2S call to mint the checkout, but unlike Stripe/Xendit it captures no card in Odoo and stores no token. The base 'payment' engine ships no live acquirer; this module is exactly that override.",
+      "note": "Gap-#7 example: none of the Paymob endpoints, the secret-key/OAuth bearer split, the HMAC-SHA-512 callback signing, or the hosted Unified Checkout handoff are derivable from Python model/field metadata; they were established only by reading const.py + payment_provider.py + payment_transaction.py + controllers/main.py."
+    }
   },
   "business_architecture": {
     "capabilities": [
-      "Payment Provider: Paymob"
+      "Accept Card payments via Paymob's hosted Unified Checkout across the MENA region (Egypt, UAE, Oman, Pakistan, Saudi Arabia)",
+      "Accept MENA local payment methods (mobile wallet, kiosk, BNPL/instalments -- valU, Aman, Souhoola, Forsa, Tabby, Tamara, Halan, Sympl, Contact, STC Pay, OmanNet, EasyPaisa, JazzCash) mapped to Paymob gateway types",
+      "Server-side Intention/Unified-Checkout creation then signed-redirect settlement (HMAC SHA-512) with no card data in Odoo",
+      "Single-currency-per-account acceptance pinned to the Paymob account country (AED / EGP / OMR / PKR / SAR)",
+      "Self-service payment-method synchronization with the Paymob portal (action_sync_paymob_payment_methods)"
     ],
-    "value_streams": [],
-    "information_concepts": [],
-    "organization": [],
+    "value_streams": [
+      "Collect-Payment (Unified Checkout): initiate tx -> _get_specific_rendering_values POSTs /v1/intention/ (S2S, Bearer secret key) -> client_secret -> browser GET redirect to {base}/unifiedcheckout/ -> buyer pays on Paymob -> GET /payment/paymob/return (HMAC-verified) AND/OR async POST /payment/paymob/webhook -> _process -> state machine pending/done/error",
+      "Configure-Methods: action_sync_paymob_payment_methods -> GET /api/ecommerce/integrations -> _match_paymob_payment_methods -> PUT integration_name per gateway so Paymob routes each Odoo method correctly",
+      "Settle: success=='true' -> _set_done -> downstream post-process settlement (account_payment / sale)"
+    ],
+    "information_concepts": [
+      "payment.provider (Paymob credentials: account country, public key, secret key, HMAC key, API key)",
+      "payment.transaction (mapped to a Paymob intention/Unified-Checkout order; keyed by special_reference/merchant_order_id=reference, provider_reference=intention id)"
+    ],
+    "organization": [
+      "(no module-owned res.groups; only paymob_secret_key is restricted to base.group_system; the account country, public/HMAC/API keys and everything else inherit payment's groups/record rules)"
+    ],
     "products": [],
-    "policies": [],
-    "stakeholders": [],
+    "policies": [
+      "Inbound authenticity: return and webhook data must pass _verify_signature (HMAC SHA-512 over the concatenated const.SIGNATURE_FIELDS + paymob_hmac_key, constant-time hmac.compare_digest) or are rejected with HTTP 403 Forbidden",
+      "Exactly one currency per Paymob account, pinned to the account country via const.CURRENCY_MAPPING (AED/EGP/OMR/PKR/SAR) -- enforced by _inverse_paymob_account_country_id + the _check_available_country_currency_ids constraint; available_currency_ids is form-readonly",
+      "References are singularized ('tx'-prefixed unique token via _compute_reference) so document names never collide in Paymob's special_reference/merchant_order_id",
+      "Amounts are sent in minor currency units (to_minor_currency_units) and read back via to_major_currency_units",
+      "Outbound auth uses paymob_secret_key for client/intention requests and a short-lived OAuth token (from paymob_api_key) otherwise; tokens expire hourly and are refreshed on demand",
+      "Tokenization, saved cards, manual capture (moto / is_auth gateways) and Apple/Google Pay are explicitly filtered out during payment-method sync",
+      "Secret key gated by base.group_system field group (HMAC/API/secret keys additionally password-masked on the form)"
+    ],
+    "stakeholders": [
+      "Payer / Cardholder / Wallet user (res.partner)",
+      "Merchant / Company (res.company, holds the Paymob account country, public/secret/HMAC/API keys)",
+      "Paymob (external acquirer / PSP for Egypt and the MENA region)",
+      "Accountant (consumes settled payments via account_payment downstream)"
+    ],
     "strategy": null,
-    "metrics": []
+    "metrics": [
+      "(no own reports; transaction volumes/amounts/state surfaced by the parent payment.transaction pivot/graph)"
+    ]
   },
   "classification": {
     "value_model": "network",
     "activity_class": "support",
-    "apqc_category": "9.0 Manage Financial Resources",
-    "rationale": "payment_paymob: thin network/support module (auto-architect baseline)."
+    "apqc_category": "9.0 Manage Financial Resources (9.5 process payments / collect cash; manage external payment provider)",
+    "rationale": "payment_paymob is a value-NETWORK (Stabell & Fjeldstad mediating-technology) component: a concrete acquirer adapter whose purpose is to interconnect two parties who would not otherwise transact directly -- the MENA-region cardholder / wallet user and the merchant -- by linking the merchant to Paymob's Egyptian/MENA payment network. It exhibits the mediating-technology activities: network promotion & contract management (account-country, public/secret/HMAC/API key management, single-currency enablement, and the action_sync_paymob_payment_methods portal synchronization), service provisioning (the per-transaction server-to-server Intention call that mints the Unified Checkout, then confirming the signed feedback), and infrastructure operation (the {prefix}.paymob.com REST link, the hosted Unified Checkout handoff, and the HMAC-SHA-512-verified return/webhook settlement loop). It does not transform inputs into outputs (chain) nor solve a bespoke customer problem (shop). It inherits the parent 'payment' engine's value_model exactly: the engine is the generic mediator and this module is its Paymob realization. activity_class is 'support' because, from the enterprise value-chain perspective, payment acceptance is an infrastructure/finance support function (category Accounting/Payment Providers, application=False, no end-user app) sitting under 9.0 Manage Financial Resources -- specifically 9.5 process payments / collect cash, with the side of 'manage an external payment provider'. So value_model=network (its own internal logic is mediation, an acquirer integration -- gap #7), activity_class=support (its place on the enterprise value chain). This mirrors the sibling payment_stripe / payment_xendit / payment_aps metamodels (network/support) and the parent payment engine; Paymob sits between pure redirect acquirers (APS, Buckaroo) and S2S acquirers (Stripe, Xendit) -- it makes a real S2S Intention call but still hands the buyer to a hosted checkout and holds no card or token."
   },
   "fit_to_standard": {
     "standard_capabilities": [
-      "Payment Provider: Paymob"
+      "server-to-server Intention creation then hosted-redirect payment via Paymob's Unified Checkout (per-country {prefix}.paymob.com, live vs test by provider.state)",
+      "MENA payment-method routing (card, mobile wallet, kiosk, BNPL/instalments: valU/Aman/Souhoola/Forsa/Tabby/Tamara/Halan/Sympl/Contact/STC Pay/OmanNet/EasyPaisa/JazzCash) mapped to Paymob gateway types",
+      "signed-redirect integrity and signature-verified settlement via an HMAC-SHA-512 hash over const.SIGNATURE_FIELDS + the HMAC key",
+      "asynchronous settlement via an HMAC-verified JSON webhook plus an (also HMAC-verified, GET) redirect-return route",
+      "single-currency-per-account acceptance pinned to the account country (AED/EGP/OMR/PKR/SAR)",
+      "self-service payment-method synchronization with the Paymob portal (GET/PUT /api/ecommerce/integrations)"
     ],
-    "typical_fits": [],
-    "common_gaps": [],
+    "typical_fits": [
+      "online shop / portal checkout collecting card or local-method payments in Egypt and the wider MENA region via Paymob",
+      "BNPL / instalment acceptance (valU, Aman, Souhoola, Forsa, Tabby, Tamara) routed through Paymob gateways",
+      "send-a-payment-link or pay-an-invoice-online collection (with account_payment / sale downstream)",
+      "merchants needing card/wallet acceptance without holding card data (Paymob-hosted Unified Checkout, nothing entered in Odoo)"
+    ],
+    "common_gaps": [
+      "no tokenization / saved cards (saved-card gateways are explicitly filtered out during sync) -- every payment is a fresh checkout",
+      "no manual capture / authorize-then-capture (moto and is_auth gateways are filtered out) and no void operation",
+      "no in-module refund operation (no _send_refund_request override here)",
+      "no explicit cancel-state mapping (only pending and success are handled; everything else, including cancellations, falls through to _set_error)",
+      "Apple Pay and Google Pay gateways are not supported (skipped during sync)",
+      "exactly one currency per provider, pinned to the account country -- a merchant operating multiple currencies needs multiple Paymob providers",
+      "the public-URL requirement for the return/webhook means local/dev instances need a tunnel; without the HMAC key set, signature verification has no secret to compare against",
+      "bespoke reconciliation / settlement document chains live downstream (account_payment, sale), not here"
+    ],
     "drive_hints": [
-      "n/a"
+      "odoo shell: env['payment.provider'].search([('code','=','paymob')]).mapped(('name','state','paymob_account_country_id.code'))",
+      "odoo shell: p=env['payment.provider'].search([('code','=','paymob')],limit=1); print(p._paymob_get_api_url(), p._get_supported_currencies().mapped('name'))",
+      "odoo shell: tx=env['payment.transaction'].search([('provider_code','=','paymob')],limit=1); print(tx.reference, tx.state, tx.provider_reference)",
+      "odoo shell: print([m for m in dir(env['payment.transaction']) if '_paymob' in m])",
+      "curl -X POST https://<host>/payment/paymob/webhook (csrf=False, auth=public) with a missing/invalid 'hmac' param -> expect HTTP 403 Forbidden from _verify_signature",
+      "Paymob sandbox: provider in 'test' state targets the same per-country host but suffixes integration names with 'test' (live vs test selected by provider.state)"
     ]
   },
   "reverse_eng_confidence": {
@@ -122,14 +273,20 @@
     "strategy": "human"
   },
   "open_questions": [
-    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+    "Exact Paymob Intention API request/response payloads and Unified Checkout feedback field sets beyond those built in _paymob_prepare_payment_request_payload / read in _apply_updates (id, client_secret, amount_cents, currency, pending, success, data.message, merchant_order_id).",
+    "Real-world distribution of Paymob transaction states and method mix (card vs wallet vs BNPL) across the five supported countries -- no runtime row counts captured.",
+    "How refunds / cancellations are handled operationally given no in-module refund override and no cancel-state mapping (likely via the Paymob dashboard or a downstream module).",
+    "Whether instances reliably register/receive the webhook vs rely on the (also HMAC-verified) GET return route, and whether both can fire for the same transaction."
   ],
   "provenance": {
     "explorer_facts": "doc/revres/facts/payment_paymob.facts.json",
     "tools": [
-      "extract_module.py",
-      "extract_frontend.py",
-      "gen_thin.py"
+      "apqc_odoo_map.tsv",
+      "code-read (const.py, models/payment_provider.py, models/payment_transaction.py, controllers/main.py, __manifest__.py)",
+      "extract_frontend.py (frontend/payment_paymob.frontend.json)",
+      "extract_module.py (facts/payment_paymob.facts.json)",
+      "Grep",
+      "Read"
     ],
     "odoo_version": "19.0"
   }

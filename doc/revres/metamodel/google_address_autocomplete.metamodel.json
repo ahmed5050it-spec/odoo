@@ -4,13 +4,34 @@
     "manifest": {
       "name": "Google Address Autocomplete",
       "category": "Hidden/Tools",
+      "summary": "Assist with automatic completion & suggestions when filling address",
+      "version": "1.0",
+      "author": "Odoo S.A.",
+      "license": "LGPL-3",
       "depends": [
         "web"
       ],
       "auto_install": false,
       "application": false
     },
-    "models": [],
+    "models": [
+      {
+        "_name": "res.config.settings (inherit)",
+        "_description": "Adds the Google Places API key as a system config parameter",
+        "fields": 1,
+        "relations": [
+          "google_places_api_key (Char, config_parameter='google_address_autocomplete.google_places_api_key' -> stored in ir.config_parameter, not a column)"
+        ]
+      },
+      {
+        "_name": "res.partner (inherit)",
+        "_description": "Injects the google_address_autocomplete widget onto the street field at view-render time (no new fields)",
+        "fields": 0,
+        "relations": [
+          "no new fields; overrides _get_view to set widget='google_address_autocomplete' on street/street_name"
+        ]
+      }
+    ],
     "routes": [
       {
         "paths": [
@@ -30,7 +51,8 @@
     "security": {
       "access_rules": 0,
       "record_rules": 0,
-      "groups": 0
+      "groups": 0,
+      "note": "No own ACL/record rules/groups. Both public routes self-gate at runtime via _get_api_key, which asserts request.env.user._is_internal(); the Google Places API key lives in ir.config_parameter (no field on any record), and res_config_settings_views.xml restricts the Settings field to base.group_system."
     },
     "views": {
       "form": 0,
@@ -41,7 +63,8 @@
       "pivot": 0,
       "graph": 0,
       "calendar": 0,
-      "activity": 0
+      "activity": 0,
+      "note": "xml_loc=90: res.config.settings form inheritance (the Google Places API key + setup help) and res.partner / res.company form inheritance. No own model/views; the address widget is injected programmatically by res.partner._get_view, not declared in XML."
     },
     "frontend": {
       "present": true,
@@ -80,62 +103,136 @@
     },
     "behavioral_notes": [
       {
-        "element": "frontend (OWL/JS)",
-        "observation": "2 JS files, 0 OWL components, 1 registry adds; bundles ['web.assets_backend', 'web.assets_web_dark', 'web._assets_core'].",
+        "element": "AutoCompleteController._autocomplete_address (/autocomplete/address) -> _perform_place_search -> GET https://maps.googleapis.com/maps/api/place/autocomplete/json",
+        "observation": "The public, type='jsonrpc', website=True route is the type-ahead proposer. _perform_place_search first reads the ir.config_parameter 'google_address_autocomplete.minimal_partial_address_size' (default 5) and returns no results until the typed string is longer than that, so trivially short inputs never bill Google. It then builds params {key=api_key, fields='formatted_address,name', inputtype='textquery', types='address', input=partial_address, optional components='country:<cc>', language, sessiontoken=session_id} and calls _call_google_route('/autocomplete/json', params) = requests.get(GOOGLE_PLACES_ENDPOINT + route, params=params, timeout=2.5).json(). It logs results['error_message'] if present, then reshapes Google's predictions[] into [{formatted_address: prediction['description'], google_place_id: prediction['place_id']}] plus the session_id. TimeoutError/ValueError are swallowed into an empty result. None of this server-to-server HTTP to Google, the sessiontoken billing-grouping, nor the minimal-size guard is visible in Python model/field metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "AutoCompleteController._autocomplete_address_full (/autocomplete/address_full) -> _perform_complete_place_search -> GET .../place/details/json + _translate_google_to_standard",
+        "observation": "Selecting a prediction calls the second public route with the google_place_id; _perform_complete_place_search GETs '/details/json' with fields='address_component,adr_address', then _translate_google_to_standard maps each Google address component type to Odoo address fields via the module-level FIELDS_MAPPING / FIELDS_PRIORITY tables: 'country' -> res.country.search([('code','=',short_name.upper())]) re-emitted as [id, name]; 'administrative_area_level_1/2' -> res.country.state.search scoped to that country by code or ilike name (only assigned when exactly one matches); locality/postal_town -> city, route -> street, postal_code -> zip, etc. It then resolves a res.city via res.partner._get_res_city_by_name(city_name, country_id) and back-fills state from city.state_id when missing. If Google omits the house number, _guess_number_from_input strips zip/street/city out of the user's raw input to recover it, and builds formatted_street_number (preferring the longer of the adr_address HTML vs the manual concat, to avoid Google's abbreviations like '52 HR St'). This cross-model resolution (Google codes -> live res.country/res.country.state/res.city records) is pure Python, invisible to metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "AutoCompleteController._get_api_key / _call_google_route -- access gating + API-key egress",
+        "observation": "_get_api_key asserts request.env.user._is_internal() and returns ir.config_parameter 'google_address_autocomplete.google_places_api_key' (sudo). The two routes degrade differently on a non-internal caller: /autocomplete/address catches the AssertionError and returns empty results (so a public website visitor simply gets no suggestions and never spends the key), whereas /autocomplete/address_full re-raises it as AccessError(\"You don't have access to the full autocomplete feature.\"). The Google API key is passed to Google as the 'key' query parameter on every call with a hard 2.5s timeout; there is no provider-side rate limiting in this module. The auth boundary (public route + internal-user assertion + key in config-parameter, never exposed to the browser) and the asymmetric degrade-vs-raise behaviour are only knowable by reading the controller.",
+        "source": "code-read"
+      },
+      {
+        "element": "res.partner._get_view -- runtime widget injection gated on base_address_extended",
+        "observation": "res.partner overrides _get_view: on a form view, only if 'enforce_cities' exists in res.country._fields (i.e. base_address_extended is installed) it xpath-finds //field[@name='street' or @name='street_name'] and sets widget='google_address_autocomplete' on each node before returning the arch. The autocomplete widget is therefore wired onto the partner address at view-render time with zero XML view records and is conditionally present depending on an unrelated module being installed -- a dependency that no manifest/metadata field expresses.",
+        "source": "code-read"
+      },
+      {
+        "element": "frontend (static) -- google_address_autocomplete field widget + Places session token",
+        "observation": "2 JS files, 0 OWL components, 1 registry add (gap #3): static/src/google_places_session.js exports a googlePlacesSession singleton that mints a v4-style UUID sessiontoken (per Google's Place-Autocomplete session-billing rules -- one token spans many autocomplete queries + one details fetch, then is reset to null after getAddressDetails), exposing getAddressPropositions() -> rpc('/autocomplete/address') and getAddressDetails() -> rpc('/autocomplete/address_full'). static/src/address_autocomplete/google_address_autocomplete.js registers the 'google_address_autocomplete' field widget that renders the suggestion dropdown (with the 'Powered by Google' image, light/dark variants via web.assets_web_dark) and, on select, writes the resolved standard address back onto the record's street/city/zip/country/state fields. None of this browser behaviour is reachable from Python metadata (gap #3).",
         "source": "static"
       },
       {
-        "element": "external integrations",
-        "observation": "1 HTTP call sites; SDKs ['requests']; api_keys=True.",
+        "element": "external integration surface (gap #7) -- Google Places (Maps Platform) API",
+        "observation": "Static gap-#7 facts (extract_frontend.py): http_call_sites=1, sdk_imports=['requests'], uses_api_keys=true, single endpoint base https://maps.googleapis.com/maps/api/place declared in controllers/google_address_autocomplete.py (GOOGLE_PLACES_ENDPOINT). Concrete endpoints reached: /autocomplete/json (Place Autocomplete) and /details/json (Place Details). Auth is a Google Maps Platform API key sent as the 'key' query parameter; billing is grouped by the per-session sessiontoken. This is the canonical metadata gap #7: a real outbound dependency on a Google cloud service that no model/field metadata can reveal -- established only by reading the controller.",
         "source": "static"
-      },
-      {
-        "element": "thin module",
-        "observation": "0 models, 2 routes, 715 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
-        "source": "ast"
       }
     ]
   },
   "it_architecture": {
-    "application": "google_address_autocomplete (Google Address Autocomplete)",
+    "application": "google_address_autocomplete (server-side proxy + form widget that turns partial address typing into a Google Places lookup and writes the structured result onto res.partner; _inherit-only, no own models/views)",
     "software_services": [
-      "/autocomplete/address",
-      "/autocomplete/address_full"
+      "/autocomplete/address (jsonrpc, public, website: Place Autocomplete predictions for a partial address)",
+      "/autocomplete/address_full (jsonrpc, public, website: Place Details -> structured Odoo address; internal-user only, else AccessError)"
     ],
-    "data_objects": [],
-    "logical_data_erm": [],
+    "data_objects": [
+      "res.config.settings (+google_places_api_key, config_parameter)",
+      "res.partner (inherit; _get_view widget injection, no new fields)"
+    ],
+    "logical_data_erm": [
+      "controller -> res.country (resolve country by ISO code from Google 'country' component)",
+      "controller -> res.country.state (resolve state by code/name within the resolved country)",
+      "controller -> res.city via res.partner._get_res_city_by_name (when base_address_extended present)",
+      "google_places_api_key stored in ir.config_parameter (key 'google_address_autocomplete.google_places_api_key'), not on a record",
+      "external: Google place_id is the cross-system key passed from /autocomplete/address to /autocomplete/address_full"
+    ],
     "information_flows": [
-      "depends: web"
+      "depends: web (OWL field-widget registry + rpc)",
+      "outbound (predictions): _perform_place_search -> GET https://maps.googleapis.com/maps/api/place/autocomplete/json?key=...&sessiontoken=... -> predictions[]",
+      "outbound (details): _perform_complete_place_search -> GET .../place/details/json?place_id=...&fields=address_component,adr_address",
+      "inbound-map: Google address_components -> _translate_google_to_standard -> {country:[id,name], state:[id,name], city, street, zip, number, formatted_street_number} resolved to live res.country/res.country.state/res.city",
+      "frontend: googlePlacesSession (UUID sessiontoken) -> rpc /autocomplete/address (type-ahead) then /autocomplete/address_full (on select) -> write street/city/zip/country/state onto the record",
+      "config: google_places_api_key (ir.config_parameter, group_system) read sudo by _get_api_key after a _is_internal() assertion"
     ],
-    "frontend_components": []
+    "frontend_components": [
+      "google_address_autocomplete (field widget: address-suggestion dropdown with 'Powered by Google', writes the structured address back)",
+      "googlePlacesSession (JS singleton: mints/expires the Google Places sessiontoken; getAddressPropositions / getAddressDetails rpc wrappers)"
+    ]
   },
   "business_architecture": {
     "capabilities": [
-      "Google Address Autocomplete"
+      "Address type-ahead: suggest full postal addresses from a partial string via Google Places",
+      "Structured address capture: turn a chosen suggestion into Odoo street/number/city/zip/state/country fields",
+      "House-number recovery from raw user input when Google omits it",
+      "Configurable Google Places API key (Settings, system-only) and minimal-input-size threshold"
     ],
-    "value_streams": [],
-    "information_concepts": [],
-    "organization": [],
+    "value_streams": [
+      "Type-to-Address: user types a partial address -> /autocomplete/address (Google Autocomplete) -> pick suggestion -> /autocomplete/address_full (Google Details) -> _translate_google_to_standard -> partner address fields populated"
+    ],
+    "information_concepts": [
+      "res.partner address (street, street2, city, zip, state_id, country_id, city_id) -- the data enriched",
+      "Google Places prediction / place_id (external)",
+      "google_places_api_key (ir.config_parameter)"
+    ],
+    "organization": [
+      "(no module-owned res.groups; the API-key setting is restricted to base.group_system, and full lookups require an internal user via _is_internal())"
+    ],
     "products": [],
-    "policies": [],
-    "stakeholders": [],
+    "policies": [
+      "Both endpoints require an internal user to obtain the API key (_get_api_key asserts _is_internal); /autocomplete/address degrades to empty for non-internal callers, /autocomplete/address_full raises AccessError",
+      "No Google call until the partial address exceeds google_address_autocomplete.minimal_partial_address_size (default 5) -- cost guard",
+      "Hard 2.5s timeout on every Google request; TimeoutError/ValueError -> empty result (fail-soft)",
+      "Google Places API key held only server-side in ir.config_parameter (group_system), never shipped to the browser",
+      "State assigned only on an unambiguous (exactly-one) res.country.state match within the resolved country"
+    ],
+    "stakeholders": [
+      "End user entering an address on a partner/company/contact form",
+      "System administrator (enters the Google Places API key in Settings; owns the Google Cloud billing)",
+      "Google (Maps Platform / Places API -- external geocoding provider)"
+    ],
     "strategy": null,
-    "metrics": []
+    "metrics": [
+      "(no own reports; Google-side usage/billing is metered in the Google Cloud console, not in Odoo)"
+    ]
   },
   "classification": {
     "value_model": "support",
     "activity_class": "support",
     "apqc_category": "13.0 Develop and Manage Business Capabilities",
-    "rationale": "google_address_autocomplete: thin support/support module (auto-architect baseline)."
+    "rationale": "google_address_autocomplete is a master-data data-entry utility, not a business object of any value chain/shop/network -- it owns no transactional model (2 _inherit-only models: res.config.settings adds one config-parameter Char, res.partner only overrides _get_view; 0 own security records; ~715 py LOC almost entirely in one controller). It is shared firm IT infrastructure (Porter support activity; Stabell & Fjeldstad 'support'): a thin proxy that fetches address suggestions from Google's Places network and writes them onto the partner master that sale/purchase/account/crm reuse. category Hidden/Tools and auth='public' degrading to internal-only confirm invisible plumbing, not a user-facing app. A value-NETWORK reading was weighed (the module mediates Odoo<->Google Places, gap #7), but, exactly as the sibling partner_autocomplete.metamodel.json reasons, the mediation is incidental egress to an external provider; the module's enterprise substance is improving the quality/completeness of partner address master data -> APQC 13.0 Develop and Manage Business Capabilities (master-/reference-data management, 13.x), the same category as partner_autocomplete. 8.0 Manage IT was rejected (it ships no IT-service plumbing of its own) and 3.0 Market & Sell was rejected (it sells nothing)."
   },
   "fit_to_standard": {
     "standard_capabilities": [
-      "Google Address Autocomplete"
+      "Google-Places-backed address type-ahead on res.partner address fields",
+      "Place prediction (Autocomplete) + structured detail fetch (Details) split across two routes with one billing session token",
+      "Mapping of Google address components to Odoo country/state/city/street/zip with house-number recovery",
+      "System-only Google Places API key configuration in Settings + minimal-input-size config parameter",
+      "Conditional widget injection onto the partner address when base_address_extended is installed"
     ],
-    "typical_fits": [],
-    "common_gaps": [],
+    "typical_fits": [
+      "Speeding up and standardising address entry on contacts/companies/customers/vendors",
+      "Reducing typos / malformed addresses on partner master data used downstream for delivery & invoicing",
+      "Deployments that already hold a Google Maps Platform API key and accept Google as a data sub-processor"
+    ],
+    "common_gaps": [
+      "Requires a paid Google Maps Platform key + outbound HTTPS to maps.googleapis.com; air-gapped or no-Google deployments get no autocomplete",
+      "Coverage/quality is Google's; regions Google maps poorly degrade silently to empty",
+      "Only the partner street field path is wired (via _get_view); other address-bearing models need their own widget wiring",
+      "No local audit/log of lookups or Google spend (metered in Google Cloud, gap #7)",
+      "State is set only on an exact single res.country.state match; ambiguous regions are left blank for the user to pick",
+      "Privacy/compliance: partial address strings are sent to Google -- may need a DPA / regional review"
+    ],
     "drive_hints": [
-      "n/a"
+      "odoo shell: env['ir.config_parameter'].sudo().get_param('google_address_autocomplete.google_places_api_key')  # is a key configured?",
+      "odoo shell: env['ir.config_parameter'].sudo().get_param('google_address_autocomplete.minimal_partial_address_size','5')  # cost-guard threshold",
+      "curl -X POST https://<host>/autocomplete/address -H 'Content-Type: application/json' -d '{\"jsonrpc\":\"2.0\",\"method\":\"call\",\"params\":{\"partial_address\":\"1 Infinite Loop Cup\"}}'  # public route (empty without a key / non-internal user)",
+      "odoo shell: print([m for m in dir(env['res.partner']) if m=='_get_res_city_by_name'])  # city resolver used by the mapper",
+      "Google-side: monitor Places API usage/billing in the Google Cloud console (no Odoo-side meter)"
     ]
   },
   "reverse_eng_confidence": {
@@ -149,14 +246,18 @@
     "strategy": "human"
   },
   "open_questions": [
-    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+    "Exact Google Places Autocomplete/Details request quotas, pricing, and the field-mask cost implications (managed Google-side, gap #7).",
+    "Whether _translate_google_to_standard's self.env usage in the http.Controller resolves a res.city correctly at runtime (would need a live call to confirm the city_id branch).",
+    "Real-world hit/empty ratio and which localizations rely on the base_address_extended-gated widget injection (no runtime data captured)."
   ],
   "provenance": {
     "explorer_facts": "doc/revres/facts/google_address_autocomplete.facts.json",
     "tools": [
-      "extract_module.py",
-      "extract_frontend.py",
-      "gen_thin.py"
+      "code-read (controllers/google_address_autocomplete.py, models/res_partner.py, models/res_config_settings.py, static/src/google_places_session.js, __manifest__.py)",
+      "extract_frontend.py (frontend/google_address_autocomplete.frontend.json)",
+      "extract_module.py (facts/google_address_autocomplete.facts.json)",
+      "Grep",
+      "Read"
     ],
     "odoo_version": "19.0"
   }

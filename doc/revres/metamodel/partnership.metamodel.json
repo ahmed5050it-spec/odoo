@@ -4,6 +4,10 @@
     "manifest": {
       "name": "Partnership / Membership",
       "category": "Sales/CRM",
+      "summary": null,
+      "version": "1.0",
+      "author": "Odoo S.A.",
+      "license": "LGPL-3",
       "depends": [
         "crm",
         "sale"
@@ -15,14 +19,64 @@
       {
         "_name": "res.partner.grade",
         "_description": "Partner Grade",
-        "fields": 7
+        "fields": 7,
+        "relations": [
+          "company_id->res.company (default env.company)",
+          "default_pricelist_id->product.pricelist (pricelist granted to this level)",
+          "partners_label->res.company.partnership_label (related)"
+        ]
+      },
+      {
+        "_name": "res.partner (inherit)",
+        "_description": "Adds grade_id (Partner Level); write() forces the grade's default pricelist onto the partner",
+        "fields": 1,
+        "relations": [
+          "grade_id->res.partner.grade (tracked, group_expand=_read_group_expand_full)"
+        ]
+      },
+      {
+        "_name": "sale.order (inherit)",
+        "_description": "Computes assigned_grade_id from partnership order lines; action_confirm assigns the grade to the customer",
+        "fields": 1,
+        "relations": [
+          "assigned_grade_id->res.partner.grade (compute _compute_partnership, not stored)"
+        ]
+      },
+      {
+        "_name": "product.template (inherit)",
+        "_description": "Adds service_tracking option 'partnership' + grade_id (Assigned Level); makes 'partnership' a saleable tracking type",
+        "fields": 2,
+        "relations": [
+          "grade_id->res.partner.grade (level granted when this product is sold)"
+        ]
+      },
+      {
+        "_name": "product.pricelist (inherit)",
+        "_description": "Adds partners_count (members on this pricelist) + partners_label",
+        "fields": 2,
+        "relations": [
+          "partners_label->res.company.partnership_label (related)"
+        ]
+      },
+      {
+        "_name": "res.company (inherit)",
+        "_description": "Adds partnership_label Char (default 'Members') used to relabel the affiliate vocabulary/menu",
+        "fields": 1,
+        "relations": []
+      },
+      {
+        "_name": "res.config.settings (inherit)",
+        "_description": "Surfaces partnership_label (related); onchange renames the CRM 'Members' menu live",
+        "fields": 1,
+        "relations": []
       }
     ],
     "routes": [],
     "security": {
       "access_rules": 4,
       "record_rules": 0,
-      "groups": 0
+      "groups": 0,
+      "note": "All 4 ACLs target res.partner.grade: read for base.group_user; full CRUD for base.group_system and sales_team.group_sale_manager; create/read/write (no unlink) for sales_team.group_sale_salesman. Grades are managed under CRM > Configuration."
     },
     "views": {
       "form": 1,
@@ -33,7 +87,8 @@
       "pivot": 0,
       "graph": 0,
       "calendar": 0,
-      "activity": 0
+      "activity": 0,
+      "note": "res.partner.grade form/list/search + a stat button (partners_count/partners_label) drilling to grade members; inline view extensions add grade_id to res.partner, grade_id + 'partnership' tracking to product.template, partners_count to product.pricelist, and partnership_label to res.config.settings. The CRM config menu 'crm_menu_partners' is labelled from company.partnership_label."
     },
     "frontend": {
       "present": false,
@@ -58,56 +113,142 @@
     },
     "behavioral_notes": [
       {
-        "element": "thin module",
-        "observation": "1 models, 0 routes, 265 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
-        "source": "ast"
+        "element": "sale.order.action_confirm -> _add_partnership (cross-model side-effect: order confirmation grades the customer)",
+        "observation": "action_confirm() calls super() then _add_partnership(). _add_partnership iterates the orders and, for each whose assigned_grade_id is set, writes so.partner_id.commercial_partner_id.grade_id = so.assigned_grade_id — i.e. confirming a sale that contains a 'Membership / Partnership' product promotes the buying customer's COMMERCIAL (top-level company) partner to that grade. Metadata shows only the assigned_grade_id Many2one; it cannot show that confirmation mutates res.partner on a different record (commercial_partner_id, not necessarily the order's contact). assigned_grade_id itself is computed by _compute_partnership (@api.depends('order_line.product_id')): it filters order_line where service_tracking == 'partnership' and takes the first product_id.grade_id, so a non-partnership order yields an empty grade and _add_partnership is a no-op.",
+        "source": "code-read"
+      },
+      {
+        "element": "res.partner.write (grade assignment forces the grade's default pricelist onto the partner)",
+        "observation": "res.partner overrides write(vals): when vals sets grade_id and that grade has a default_pricelist_id, it injects vals['specific_property_product_pricelist'] = grade.default_pricelist_id.id BEFORE super().write — so grading a partner (whether by the sale.order confirm flow above or a manual edit) silently also re-points the partner's specific pricelist to the level's pricelist. If the same write also tries to set a different specific_property_product_pricelist / property_product_pricelist, it raises UserError('You are trying to assign two different pricelists (one directly and one from grade (%(grade_name)s)).'). Net chain proven by tests/test_partnership.test_sell_basic_partnership: confirm -> partner.grade_id == product.grade_id AND partner.specific_property_product_pricelist == grade.default_pricelist_id. This propagation is pure Python and invisible in field metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "sale.order._constraint_unique_assigned_grade (@api.constrains('order_line'))",
+        "observation": "A constraint blocks any sale.order whose order lines reference products carrying more than one distinct product_id.grade_id (len(set(...)) > 1) with ValidationError('You cannot confirm Sale Order %(sale_order_name)s because there are products assigning different grades.'). This guarantees a single, unambiguous grade can be derived per order before _add_partnership runs — a business rule enforced in code, not expressible as a field/constraint in metadata. Confirmed by tests/test_partnership.test_constrains_uniqueness_partnership_grade.",
+        "source": "code-read"
+      },
+      {
+        "element": "product.template service_tracking 'partnership' + _get_saleable_tracking_types; res.partner.grade._compute_partners_count / product.pricelist._compute_partners_count",
+        "observation": "product.template adds the Selection value ('partnership','Membership / Partnership') to service_tracking (ondelete set default) and grade_id ('Assigned Level'); it overrides _get_saleable_tracking_types() to append 'partnership' so membership/partnership service products pass the saleable-product domain (verified by test_partnership_product_domain). sale.order.line.service_tracking is a related on product_id.service_tracking, which is how _compute_partnership detects partnership lines. Reporting fields are computed via grouped reads metadata can't express: res.partner.grade._compute_partners_count and product.pricelist._compute_partners_count both _read_group res.partner (by grade_id, and by specific_property_product_pricelist respectively) to count affiliated partners; res.config.settings._onchange_partnership_label live-renames the ir.ui.menu 'partnership.crm_menu_partners' to the new label.",
+        "source": "code-read"
+      },
+      {
+        "element": "frontend (OWL/JS)",
+        "observation": "0 JS files, 0 OWL components, 0 registry adds, no asset bundles (gap #3). The module is backend/ORM only: UI is plain XML views (res.partner.grade form/list/search, a stat button, and inline grade_id/pricelist field additions). No client-side widget or service.",
+        "source": "static"
       }
     ]
   },
   "it_architecture": {
-    "application": "partnership (Partnership / Membership)",
+    "application": "partnership (membership/partner-grade program: selling a 'Membership / Partnership' product on a confirmed sale.order grades the customer and grants a grade-based pricelist)",
     "software_services": [],
     "data_objects": [
-      "res.partner.grade"
+      "res.partner.grade",
+      "res.partner (inherit)",
+      "sale.order (inherit)",
+      "product.template (inherit)",
+      "product.pricelist (inherit)",
+      "res.company (inherit)",
+      "res.config.settings (inherit)"
     ],
     "logical_data_erm": [
-      "res.partner.grade -> product.pricelist",
-      "res.partner.grade -> res.company"
+      "res.partner.grade -> product.pricelist (default_pricelist_id granted to the level)",
+      "res.partner.grade -> res.company (company_id; partners_label related to company.partnership_label)",
+      "res.partner -> res.partner.grade (grade_id Partner Level, tracked)",
+      "product.template -> res.partner.grade (grade_id: level a product confers when sold)",
+      "sale.order -> res.partner.grade (assigned_grade_id derived from partnership order lines)",
+      "sale.order -> res.partner (action_confirm writes grade_id on partner_id.commercial_partner_id)",
+      "res.partner -> product.pricelist (specific_property_product_pricelist forced to grade.default_pricelist_id on grade write)"
     ],
     "information_flows": [
-      "depends: crm, sale"
+      "depends: crm, sale (-> product, account, sales_team)",
+      "side-effect: sale.order.action_confirm -> _add_partnership -> res.partner(commercial).grade_id := assigned_grade_id",
+      "side-effect: res.partner.write(grade_id) -> specific_property_product_pricelist := grade.default_pricelist_id (UserError on conflict)",
+      "constraint: sale.order order_line products may not assign >1 grade",
+      "config: res.config.settings.partnership_label -> res.company.partnership_label -> relabels CRM 'Members' menu (crm_menu_partners) and grade/pricelist partners_label"
     ],
     "frontend_components": []
   },
   "business_architecture": {
     "capabilities": [
-      "Partnership / Membership"
+      "Define partner levels/grades (res.partner.grade: Gold/Silver/Bronze by default) each optionally tied to a pricelist",
+      "Sell a Membership / Partnership product that confers a grade on the buying customer",
+      "Assign a partner grade automatically on sale-order confirmation",
+      "Grant a grade-based pricelist to graded partners (and block conflicting pricelist assignment)",
+      "Count and drill into the members holding each grade / pricelist",
+      "Relabel the affiliate vocabulary per company (members / partners / alumni)"
     ],
-    "value_streams": [],
+    "value_streams": [
+      "Sell-Membership-to-Grade: quotation with a 'partnership' product -> action_confirm -> _add_partnership -> customer's commercial partner gets grade_id -> grade's default pricelist applied to the partner",
+      "Configure-Program: create res.partner.grade levels + default_pricelist_id, flag products as service_tracking='partnership' with a grade_id, set company partnership_label"
+    ],
     "information_concepts": [
-      "res.partner.grade"
+      "res.partner.grade (partner level)",
+      "res.partner (graded customer/member)",
+      "sale.order (membership-selling document)",
+      "product.template (membership/partnership product)",
+      "product.pricelist (grade-linked pricelist)"
     ],
-    "organization": [],
-    "products": [],
-    "policies": [],
-    "stakeholders": [],
+    "organization": [
+      "base.group_user (read grades)",
+      "base.group_system (manage grades)",
+      "sales_team.group_sale_manager (manage grades)",
+      "sales_team.group_sale_salesman (create/edit grades, no unlink)"
+    ],
+    "products": [
+      "product.template with service_tracking='partnership' and grade_id (the membership/partnership product sold to confer a level)"
+    ],
+    "policies": [
+      "A sale order may not contain products assigning more than one distinct grade (sale.order._constraint_unique_assigned_grade)",
+      "Grading a partner forces the grade's default pricelist; assigning a different pricelist at the same time is rejected (res.partner.write UserError)",
+      "The grade is written to the commercial (top-level) partner, not the order's contact (_add_partnership uses commercial_partner_id)",
+      "Only on action_confirm (not on quotation) is the grade applied"
+    ],
+    "stakeholders": [
+      "Member / partner (res.partner whose commercial entity is graded)",
+      "Salesperson (sales_team.group_sale_salesman: sells the membership, manages grades)",
+      "Sales Manager (sales_team.group_sale_manager: full grade administration)",
+      "Membership/program administrator (sets levels, pricelists, partnership_label)"
+    ],
     "strategy": null,
-    "metrics": []
+    "metrics": [
+      "partners_count per res.partner.grade (members holding each level)",
+      "partners_count per product.pricelist (members on each grade pricelist)"
+    ]
   },
   "classification": {
     "value_model": "chain",
     "activity_class": "primary",
     "apqc_category": "3.0 Market and Sell Products and Services",
-    "rationale": "partnership: thin chain/primary module (auto-architect baseline)."
+    "rationale": "partnership owns one transactional-adjacent master model (res.partner.grade, the partner level) and otherwise extends the Sales document chain: product.template (a 'Membership / Partnership' service product), sale.order, res.partner and product.pricelist. Its defining behavior is a value-chain primary-activity side-effect, not shared IT plumbing: confirming a sale.order that contains a partnership product (sale.order.action_confirm -> _add_partnership) promotes the buying customer's commercial partner to the product's grade_id, and grading the partner (res.partner.write) grants the grade's default_pricelist_id. So the module rides the Quote-to-Cash flow (Stabell & Fjeldstad 'chain' — sequential value creation through the order document; Porter primary 'Marketing & Sales') to monetise membership and then tier customers. APQC 3.0 'Market and Sell Products and Services' fits because the trigger is selling a membership/partnership product through the order pipeline (depends crm+sale; the grade UI hangs under the CRM Configuration menu, and grade ACLs are keyed to the sales_team salesperson/manager groups). It is NOT 'support'/13.0 master-data management: although the end artefact (partner grade + pricelist) is partner master data, partnership does not merely maintain that data as firm infrastructure — it generates it as the outcome of a confirmed sale, i.e. a sales transaction effect. 9.0 (Manage Customer Service) and 11.0/13.0 were rejected: there is no service-request, finance or pure data-governance object here; the substance is sell-the-membership-then-grade-and-price-the-customer, which is squarely Market & Sell."
   },
   "fit_to_standard": {
     "standard_capabilities": [
-      "Partnership / Membership"
+      "Partner levels/grades (res.partner.grade) with sequence, per-company scope and an optional default pricelist",
+      "Membership/partnership service product (service_tracking='partnership') carrying the grade it confers",
+      "Automatic grade assignment to the commercial partner on sale-order confirmation",
+      "Automatic grade-based pricelist application on the partner (with conflict guard)",
+      "Single-grade-per-order constraint",
+      "Members-per-grade / members-per-pricelist counters with drill-through stat button",
+      "Configurable affiliate label (Members/Partners/Alumni) relabelling the CRM menu"
     ],
-    "typical_fits": [],
-    "common_gaps": [],
+    "typical_fits": [
+      "Selling a yearly membership/partnership SKU and having the buyer auto-promoted to Gold/Silver/Bronze",
+      "Granting tiered pricelists to members purely by selling them the right membership product",
+      "Renaming the affiliate concept per organisation (association 'Members' vs reseller 'Partners')"
+    ],
+    "common_gaps": [
+      "No grade expiry / renewal / downgrade logic — the grade and pricelist persist until manually changed (no time-bound membership lifecycle)",
+      "Grade is applied only on action_confirm; cancelling/refunding the order does not revoke the grade or pricelist",
+      "assigned_grade_id is computed and non-stored, so there is no historical record of which order conferred a grade beyond res.partner grade_id tracking",
+      "No partner-facing portal/website membership purchase flow (backend sale.order only; frontend gap #3 is empty)",
+      "One grade per order and first-match selection — multi-tier or stacked memberships need customisation"
+    ],
     "drive_hints": [
-      "odoo shell: env['res.partner.grade'].search([],limit=3)"
+      "odoo shell: env['res.partner.grade'].search([]).mapped(lambda g: (g.name, g.default_pricelist_id.display_name, g.partners_count))",
+      "odoo shell: p=env['product.product'].create({'name':'Gold Membership','type':'service','service_tracking':'partnership','grade_id':env.ref('partnership.res_partner_grade_data_gold').id}); so=env['sale.order'].create({'partner_id':env['res.partner'].search([],limit=1).id,'order_line':[(0,0,{'product_id':p.id})]}); so.assigned_grade_id  # derived grade before confirm",
+      "odoo shell: so.action_confirm(); so.partner_id.commercial_partner_id.grade_id  # grade now assigned by the confirm side-effect",
+      "odoo shell: so.partner_id.commercial_partner_id.specific_property_product_pricelist  # grade's default pricelist applied"
     ]
   },
   "reverse_eng_confidence": {
@@ -121,14 +262,16 @@
     "strategy": "human"
   },
   "open_questions": [
-    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+    "There is no revocation path: should cancelling/refunding a membership sale.order remove the grade and pricelist, or is the grade intended to be permanent until manually changed?",
+    "Membership lifecycle (expiry, renewal, downgrade between Gold/Silver/Bronze) is not modelled — is it expected to be handled by a complementary module or subscription product?",
+    "default_pricelist_id is optional on a grade; the intended behaviour when a graded partner already has a manually-set specific pricelist is to raise UserError on simultaneous conflict, but ordering/precedence of pre-existing pricelists vs. a later grade change is config-dependent."
   ],
   "provenance": {
     "explorer_facts": "doc/revres/facts/partnership.facts.json",
     "tools": [
       "extract_module.py",
       "extract_frontend.py",
-      "gen_thin.py"
+      "code-read (models/res_partner_grade.py, res_partner.py, sale_order.py, product_template.py, product_pricelist.py, res_company.py, res_config_settings.py, tests/test_partnership.py)"
     ],
     "odoo_version": "19.0"
   }

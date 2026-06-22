@@ -4,6 +4,7 @@
     "manifest": {
       "name": "Product Availability",
       "category": "Website/Website",
+      "summary": "Manage product inventory & availability",
       "depends": [
         "website_sale",
         "sale_stock",
@@ -12,7 +13,86 @@
       "auto_install": true,
       "application": false
     },
-    "models": [],
+    "models": [
+      {
+        "_inherit": "product.template",
+        "_description": "Product (eCommerce availability extension)",
+        "fields": 4,
+        "methods": 4,
+        "relations": []
+      },
+      {
+        "_inherit": "product.product",
+        "_description": "Product Variant (availability + back-in-stock notification extension)",
+        "fields": 1,
+        "methods": 6,
+        "relations": [
+          "stock_notification_partner_ids->res.partner"
+        ]
+      },
+      {
+        "_inherit": "sale.order",
+        "_description": "Sales Order / eCommerce cart (stock-clamp extension)",
+        "fields": 0,
+        "methods": 10,
+        "relations": []
+      },
+      {
+        "_inherit": "sale.order.line",
+        "_description": "Sales Order Line (availability-check extension)",
+        "fields": 0,
+        "methods": 4,
+        "relations": []
+      },
+      {
+        "_inherit": "website",
+        "_description": "Website (shop warehouse + available-qty extension)",
+        "fields": 1,
+        "methods": 1,
+        "relations": [
+          "warehouse_id->stock.warehouse"
+        ]
+      },
+      {
+        "_inherit": "res.config.settings",
+        "_description": "Settings (default availability behaviour + website warehouse)",
+        "fields": 4,
+        "methods": 0,
+        "relations": [
+          "website_warehouse_id->stock.warehouse"
+        ]
+      },
+      {
+        "_inherit": "stock.picking",
+        "_description": "Transfer (website back-link extension)",
+        "fields": 1,
+        "methods": 0,
+        "relations": [
+          "website_id->website (related sale_id.website_id)"
+        ]
+      },
+      {
+        "_inherit": "product.ribbon",
+        "_description": "Product Ribbon (out_of_stock ribbon extension)",
+        "fields": 1,
+        "methods": 1,
+        "relations": []
+      },
+      {
+        "_inherit": "product.combo",
+        "_description": "Product Combo (max-quantity availability extension)",
+        "fields": 0,
+        "methods": 1,
+        "relations": []
+      },
+      {
+        "_inherit": "product.feed",
+        "_description": "Product Feed / GMC (stock-info availability extension)",
+        "fields": 0,
+        "methods": 1,
+        "relations": []
+      }
+    ],
     "routes": [
       {
         "paths": [
@@ -22,26 +102,25 @@
         "type": "jsonrpc"
       },
       {
-        "paths": [],
-        "auth": null,
-        "type": null
+        "paths": [
+          "/website_sale/get_combination_info"
+        ],
+        "auth": "public",
+        "type": "jsonrpc"
       }
     ],
     "security": {
       "access_rules": 0,
       "record_rules": 0,
-      "groups": 0
+      "groups": 0,
+      "note": "No new ir.model.access or ir.rule records; the one new entity (stock_notification_product_partner_rel M2M between product.product and res.partner) and all extension fields reuse the ACLs/record-rules of website_sale, sale_stock and stock. Public storefront access is governed by website_sale's existing ecommerce_access gate; controller writes use sudo()."
     },
     "views": {
       "form": 0,
       "list": 0,
-      "tree": 0,
       "kanban": 0,
       "search": 0,
-      "pivot": 0,
-      "graph": 0,
-      "calendar": 0,
-      "activity": 0
+      "note": "No standalone view records; ~390 XML LOC inherit-extend website_sale/stock views in place (product.template form adds the Sell-when-Out-of-Stock / Show-availability / threshold / out-of-stock-message fields; res.config.settings adds the website defaults + website_warehouse_id; stock.picking list adds website_id; website_sale_stock_templates.xml injects the product_availability QWeb block into the product page). Storefront UX is QWeb + frontend JS, not backend views."
     },
     "frontend": {
       "present": true,
@@ -85,56 +164,152 @@
     },
     "behavioral_notes": [
       {
-        "element": "frontend (OWL/JS)",
-        "observation": "10 JS files, 0 OWL components, 1 registry adds; bundles ['web.assets_frontend', 'web.assets_tests'].",
-        "source": "static"
+        "element": "controllers/main.py /shop/add/stock_notification + variant.py /website_sale/get_combination_info override",
+        "observation": "Two routes. (1) /shop/add/stock_notification (jsonrpc, public, website=True) is the back-in-stock subscription endpoint: it email_re-validates the address, resolves/creates a partner via mail.thread._partner_find_from_emails_single, and if product._has_stock_notification(partner) is False appends it to product.product.stock_notification_partner_ids (sudo M2M stock_notification_product_partner_rel); for the public user it also stashes the product id and email in request.session so the page can show the 'subscribed' state. (2) WebsiteSaleStockVariantController overrides /website_sale/get_combination_info with a bare @route() that does request.update_context(website_sale_stock_get_quantity=True) before super() -- this context flag is the gate that makes product.template._get_additionnal_combination_info emit the live stock payload (free_qty/cart_qty/show_availability/out_of_stock_message) every time the product page recomputes a variant/qty. Side-effects invisible in metadata.",
+        "source": "code-read"
       },
       {
-        "element": "thin module",
-        "observation": "0 models, 2 routes, 1609 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
-        "source": "ast"
+        "element": "product.template availability config fields + _get_additionnal_combination_info / _get_additional_configurator_data",
+        "observation": "product.template adds four storefront-availability config fields: allow_out_of_stock_order (Boolean, default True -- 'Sell when Out-of-Stock'), show_availability (Boolean, default False), available_threshold (Float, default 5.0 -- the qty below which the remaining count is shown), and out_of_stock_message (Html, translatable). _get_additionnal_combination_info (only when context website_sale_stock_get_quantity is set and product is storable) exposes on-hand to the page: it reads website._get_product_available_qty(product) which is product.with_context(warehouse_id=website.warehouse_id.id).free_qty, floor-rounds it (rounding_method='DOWN', precision_digits=0) into res['free_qty'], and -- only when allow_out_of_stock_order is False -- also returns res['cart_qty'] = cart._get_cart_qty(product). It is free_qty (forecast on-hand minus reservations for the website warehouse), NOT virtual_available, that the storefront displays; virtual_available is not used here. _get_additional_configurator_data adds the same free_qty (as product._get_max_quantity) for the modal product configurator. Pure read side-effect, not in metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "sale.order._verify_updated_quantity (cart over-order clamp) + _get_cart_and_free_qty / _get_free_qty",
+        "observation": "THE CART CLAMP. website_sale's add/update routes call the hook sale.order._verify_updated_quantity(order_line, product_id, new_qty, uom_id) (parent default returns (new_qty, '') -- i.e. no clamp). This override, for a storable product whose allow_out_of_stock_order is False, computes (product_qty_in_cart, available_qty) via _get_cart_and_free_qty -> _get_free_qty = product.with_context(warehouse_id=self._get_shop_warehouse_id()).free_qty (the website warehouse, or all warehouses if none set), floor-rounds available_qty, and if available_qty < total_cart_qty returns allowed_line_qty = available_qty - (other-lines cart qty) instead of the requested qty -- so the line is capped to free_qty and the cart can never exceed on-hand. It attaches a sale.order.line.shop_warning ('You ask for X but only Y is available', or a 'not added'/'cart updated' message) for the storefront. When allow_out_of_stock_order is True the override defers to super() and no clamp is applied. Side-effect (silent qty downgrade + warning) invisible in metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "product._is_sold_out + threshold/messaging templates + ribbon/GMC + sale.order._check_cart_is_ready_to_be_paid (confirmation gate)",
+        "observation": "Out-of-stock gating is centred on product.product._is_sold_out(): a product is never sold out if not is_storable or allow_out_of_stock_order, else sold-out iff website._get_product_available_qty(self) <= 0. It drives: _website_show_quick_add (hide Add-to-Cart on grids), the product_availability QWeb (free_qty<=0 -> show out_of_stock_message or 'Out of Stock' badge + 'Get notified when back in stock' form; free_qty<=available_threshold -> warning badge 'N <uom> in stock' with '(n in your cart)'), product.ribbon assign='out_of_stock' (_is_applicable_for shows the ribbon when sold out), product.feed._prepare_gmc_stock_info (forces GMC availability 'out_of_stock'), and product.product._to_markup_data (schema.org InStock/OutOfStock on the page). The order-confirmation side-effect: sale.order._check_cart_is_ready_to_be_paid (called at checkout/payment) runs sale.order.line._check_availability for every line and raises ValidationError joining all shop_warnings if any line's cart_qty exceeds its free_qty -- blocking payment of a cart that drifted out of stock between add and pay. product.product._send_availability_email (the back-in-stock cron) renders website_sale_stock.availability_email_body, mails each subscribed partner via mail.mail, and removes them from stock_notification_partner_ids. All side-effects, not in metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "frontend availability widget (gap #3 static): WebsiteSale.prototype + Product/ProductCard/ProductProduct patches",
+        "observation": "10 JS files, 0 OWL components, 1 registry add (web_tour.tours:website_sale_stock_reorder_from_portal); bundles web.assets_frontend (8) + web.assets_tests (2). The storefront availability UX is delivered by patching website_sale's public-interaction and configurator classes rather than new components: static/src/interactions/website_sale.js patches WebsiteSale.prototype to wire the '#product_stock_notification_message' / form-submit handlers (POST /shop/add/stock_notification) and to re-fetch combination info after add-to-cart so the availability message refreshes; static/src/js/product/product.js patches Product to add a free_qty prop and an isOutOfStock() helper (env.isQuantityAllowed); product_card.js, product_product.js, the combo and product configurator dialogs are patched so the green/red 'in stock' / 'out of stock' / 'all available quantity selected' state and qty caps follow free_qty live. Static assets, not in Python metadata.",
+        "source": "static"
       }
     ]
   },
   "it_architecture": {
-    "application": "website_sale_stock (Product Availability)",
+    "application": "website_sale_stock (eCommerce real-time availability extension; bridges website_sale <-> stock)",
     "software_services": [
-      "/shop/add/stock_notification"
+      "/shop/add/stock_notification (jsonrpc, public: back-in-stock subscription)",
+      "/website_sale/get_combination_info (jsonrpc, public: product-page availability/qty recompute, overridden to inject stock payload)"
     ],
-    "data_objects": [],
-    "logical_data_erm": [],
+    "data_objects": [
+      "product.template (extension)",
+      "product.product (extension)",
+      "sale.order (extension)",
+      "sale.order.line (extension)",
+      "website (extension)",
+      "res.config.settings (extension)",
+      "stock.picking (extension)",
+      "product.ribbon (extension)",
+      "product.combo (extension)",
+      "product.feed (extension)"
+    ],
+    "logical_data_erm": [
+      "product.product -> res.partner (stock_notification_partner_ids, M2M stock_notification_product_partner_rel)",
+      "website -> stock.warehouse (warehouse_id: the shop's source warehouse for availability)",
+      "res.config.settings -> stock.warehouse (website_warehouse_id, related website_id.warehouse_id)",
+      "stock.picking -> website (website_id, related sale_id.website_id, stored)",
+      "product.template.{allow_out_of_stock_order, show_availability, available_threshold, out_of_stock_message} (storefront availability config)"
+    ],
     "information_flows": [
-      "depends: website_sale, sale_stock, stock_delivery"
+      "depends: website_sale, sale_stock, stock_delivery",
+      "read (stock -> storefront): website._get_product_available_qty(product) = product.with_context(warehouse_id=website.warehouse_id.id).free_qty -> product.template._get_additionnal_combination_info -> product page free_qty/cart_qty/availability message",
+      "guard (cart): sale.order._verify_updated_quantity clamps the added line to free_qty - cart_qty when allow_out_of_stock_order is False (no over-ordering vs on-hand)",
+      "guard (confirmation): sale.order._check_cart_is_ready_to_be_paid -> sale.order.line._check_availability raises ValidationError (blocks payment if cart drifted out of stock)",
+      "notify (out-of-stock -> back-in-stock): /shop/add/stock_notification subscribes res.partner; ir.cron _send_availability_email mails subscribers when _is_sold_out becomes False, then clears the M2M",
+      "auto_install: true -> activates whenever website_sale, sale_stock and stock_delivery are all present"
     ],
-    "frontend_components": []
+    "frontend_components": [
+      "WebsiteSale.prototype (patch: stock-notification handlers + post-add availability refresh)",
+      "Product / Product.prototype (patch: free_qty prop, isOutOfStock())",
+      "ProductCard / ProductCard.prototype (patch: 'all available quantity selected')",
+      "ProductProduct.prototype, ProductConfiguratorDialog.prototype, ComboConfiguratorDialog.prototype (patches)"
+    ]
   },
   "business_architecture": {
     "capabilities": [
-      "Product Availability"
+      "Real-Time eCommerce Stock Availability Display (on-hand / free_qty on product page & grid)",
+      "Out-of-Stock Sales Policy (block vs continue selling, per-product and website-default)",
+      "Cart Over-Order Prevention (clamp line qty to available on-hand)",
+      "Low-Stock Threshold Messaging & Out-of-Stock Ribbons/Badges",
+      "Back-in-Stock Email Notification (subscribe + cron-driven alert)",
+      "Shop Warehouse Selection (website-level source-of-availability warehouse)"
     ],
-    "value_streams": [],
-    "information_concepts": [],
+    "value_streams": [
+      "Browse-to-Order (availability leg): shopper sees live free_qty -> add-to-cart clamped to on-hand -> checkout availability re-check gates payment -> confirmed order feeds the sale_stock delivery chain",
+      "Out-of-stock -> back-in-stock re-engagement: sold-out product -> shopper subscribes -> replenishment -> notification email -> return to /shop"
+    ],
+    "information_concepts": [
+      "product.template (storefront availability config)",
+      "product.product (stock-notification subscription)",
+      "sale.order (eCommerce cart, availability-clamped)",
+      "sale.order.line (shop_warning / availability)",
+      "website (shop warehouse)",
+      "stock.picking (eCommerce-tagged delivery)"
+    ],
     "organization": [],
-    "products": [],
-    "policies": [],
-    "stakeholders": [],
+    "products": [
+      "product.template (eCommerce, availability-managed)",
+      "product.product (sellable variant with free_qty)",
+      "product.combo (availability-aware combo)"
+    ],
+    "policies": [
+      "allow_out_of_stock_order (per product.template; website default default_allow_out_of_stock_order) governs whether out-of-stock products can still be ordered",
+      "available_threshold + show_availability govern when/whether the remaining quantity is shown",
+      "automation: _verify_updated_quantity clamps cart qty; _check_cart_is_ready_to_be_paid blocks checkout on shortage; ir.cron _send_availability_email sends back-in-stock mails",
+      "website.warehouse_id selects which warehouse's free_qty is the source of truth (else all warehouses)"
+    ],
+    "stakeholders": [
+      "Online Shopper (res.partner / public visitor)",
+      "eCommerce / Website Manager (sets availability policy & threshold)",
+      "Inventory / Warehouse user (free_qty source)",
+      "Salesperson (website.salesperson_id, sender of back-in-stock mail)"
+    ],
     "strategy": null,
-    "metrics": []
+    "metrics": [
+      "free_qty / available on-hand surfaced per product (storefront availability indicator)",
+      "stock_notification_partner_ids count (latent/back-in-stock demand per product)",
+      "stock.picking.website_id (eCommerce delivery volume dimension)"
+    ]
   },
   "classification": {
     "value_model": "network",
-    "activity_class": "support",
+    "activity_class": "primary",
     "apqc_category": "3.0 Market and Sell Products and Services",
-    "rationale": "website_sale_stock: thin network/support module (auto-architect baseline)."
+    "rationale": "website_sale_stock is an availability extension of the website_sale storefront, so it inherits website_sale's value-configuration: a value NETWORK (Stabell & Fjeldstad) -- the online shop mediates between many anonymous/portal visitors and the catalog over shared channel infrastructure. This module enriches that channel with real-time inventory signalling (free_qty on the product page, low-stock thresholds, out-of-stock badges/ribbons, back-in-stock subscriptions) and with demand-side guard-rails (clamping cart quantity to on-hand and blocking checkout on shortage). Its primary economic activity is therefore selling over the web with accurate availability, i.e. APQC 3.0 Market and Sell Products and Services (3.0=Market and Sell), matching website_sale. It is classified primary (revenue/customer-facing sell-side channel feature), not support: it directly shapes what the shopper can buy. A secondary facet touches APQC 4.x Deliver (4.x=Deliver Physical Products): the availability number it reads is stock free_qty for the website warehouse and a confirmed cart still flows into the sale_stock delivery chain (delivery orders, stock.picking.website_id) -- but website_sale_stock itself only reads stock to gate selling and does not perform fulfilment, so 3.0 is primary and 4.x is only a touchpoint via its sale_stock/stock_delivery dependencies."
   },
   "fit_to_standard": {
     "standard_capabilities": [
-      "Product Availability"
+      "Live product-page availability (free_qty for the website warehouse) with optional 'N in stock' display",
+      "Per-product 'Sell when Out-of-Stock' toggle + website-wide default (res.config.settings)",
+      "Configurable low-stock display threshold (available_threshold) and translatable out-of-stock message",
+      "Cart quantity automatically capped to available on-hand; shop_warning shown to shopper",
+      "Checkout/payment blocked when a cart line is no longer available",
+      "Out-of-stock ribbon (product.ribbon assign='out_of_stock') and schema.org / Google Merchant availability",
+      "Back-in-stock email subscription + cron notification when replenished",
+      "Website-level source warehouse selection for availability checks"
     ],
-    "typical_fits": [],
-    "common_gaps": [],
+    "typical_fits": [
+      "B2C shop that hides/blocks out-of-stock products and shows remaining quantity near zero",
+      "Single-warehouse storefront reading free_qty from the website warehouse",
+      "Continue-selling (backorder) products that ignore stock while still displaying status",
+      "Back-in-stock waitlist capturing latent demand for sold-out variants"
+    ],
+    "common_gaps": [
+      "Multi-warehouse / per-location availability beyond the single website warehouse (handled by website_sale_collect, out of scope here)",
+      "Reservation/allocation of cart stock (cart qty is checked, not reserved, until order confirmation)",
+      "Pre-order / dated-availability / drop-ship lead-time messaging on the storefront",
+      "Bespoke availability rules (e.g. show ATP/virtual_available instead of free_qty, or supplier stock)"
+    ],
     "drive_hints": [
-      "n/a"
+      "odoo shell: env['product.template'].search([('allow_out_of_stock_order','=',False)]).mapped(('name','show_availability','available_threshold'))",
+      "odoo shell: w = env['website'].get_current_website(); p = env['product.product'].search([('is_storable','=',True)], limit=1); print(w._get_product_available_qty(p), p._is_sold_out())",
+      "odoo shell: env['product.product'].search([('stock_notification_partner_ids','!=',False)]).mapped(('name','stock_notification_partner_ids.email'))",
+      "curl jsonrpc http://localhost:8069/shop/add/stock_notification {product_id, email}  # subscribe to back-in-stock (auth=public)"
     ]
   },
   "reverse_eng_confidence": {
@@ -148,13 +323,16 @@
     "strategy": "human"
   },
   "open_questions": [
-    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+    "Exact reservation semantics: cart qty is checked against free_qty at add and at checkout but not reserved in stock, so two concurrent carts can both pass _verify_updated_quantity for the same units -- final arbitration happens only at order confirmation / procurement (sale_stock).",
+    "How website_sale_collect / pickup overrides _get_shop_warehouse_id and _get_free_qty to consider the chosen delivery warehouse rather than website.warehouse_id.",
+    "Whether free_qty (on-hand minus outgoing reservations) vs virtual_available is always the right ATP signal for backorder/MTO products, since the storefront deliberately reads free_qty only."
   ],
   "provenance": {
     "explorer_facts": "doc/revres/facts/website_sale_stock.facts.json",
     "tools": [
-      "extract_module.py",
+      "code-read (controllers/main.py, controllers/variant.py, controllers/website_sale.py, models/product_template.py, models/product_product.py, models/sale_order.py, models/sale_order_line.py, models/website.py, models/product_ribbon.py, models/product_feed.py, models/product_combo.py, models/res_config_settings.py, models/stock_picking.py, static/src/interactions/website_sale.js, static/src/xml/website_sale_stock_product_availability.xml)",
       "extract_frontend.py",
+      "extract_module.py",
       "gen_thin.py"
     ],
     "odoo_version": "19.0"

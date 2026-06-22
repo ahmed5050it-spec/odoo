@@ -15,7 +15,22 @@
       {
         "_name": "sale.edi.xml.ubl_bis3",
         "_description": "Sale BIS Ordering 3.5",
-        "fields": 0
+        "fields": 0,
+        "relations": [
+          "_inherit->account.edi.xml.ubl_bis3"
+        ]
+      },
+      {
+        "_name": "sale.order",
+        "_description": "(extension) UBL order import dispatch + EDI builder registration",
+        "fields": 0,
+        "relations": []
+      },
+      {
+        "_name": "product.product",
+        "_description": "(extension) product retrieval by variant ExtendedID (barcode / default_code)",
+        "fields": 0,
+        "relations": []
       }
     ],
     "routes": [],
@@ -48,36 +63,92 @@
     },
     "behavioral_notes": [
       {
-        "element": "thin module",
-        "observation": "1 models, 0 routes, 589 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
-        "source": "ast"
+        "element": "sale.edi.xml.ubl_bis3._export_order / _get_sale_order_node",
+        "observation": "Outbound SELL-side builder: _export_order(sale_order) assembles a structured document_node via _get_sale_order_node then renders it with dict_to_xml(template=Order, nsmap=...) and returns UTF-8 bytes (etree.tostring, xml_declaration=True). _get_sale_order_node first prepares base lines from sale_order.order_line (non display_type) through account.tax._add_tax_details_in_base_lines / rounding helpers, forces item net prices positive ([BR-27]) and turns 'emptying' taxes into allowance/charge lines, then emits header (CustomizationID 'urn:fdc:peppol.eu:poacc:trns:order:3', ProfileID 'urn:fdc:peppol.eu:poacc:bis:ordering:3', cbc:ID = order name, IssueDate = create_date, OrderTypeCode '220', DocumentCurrencyCode, ValidityPeriod/EndDate = validity_date, OriginatorDocumentReference = client_order_ref), BuyerCustomerParty, SellerSupplierParty, Delivery, PaymentTerms, OrderLine items, AllowanceCharge (incl. early-payment-discount lines), TaxTotal and an AnticipatedMonetaryTotal. This whole Peppol BIS3 Order serialisation is pure Python and invisible in metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "sale.order._get_import_file_type / _get_edi_decoder / _get_edi_builders",
+        "observation": "Inbound dispatch (EXTENDS account/sale): _get_import_file_type sniffs file_data['xml_tree'] for CustomizationID == 'urn:fdc:peppol.eu:poacc:trns:order:3' and returns 'sale.edi.xml.ubl_bis3', else super(). _get_edi_decoder returns {'priority':20, 'decoder': sale.edi.xml.ubl_bis3._import_order_ubl} for that file type. _get_edi_builders appends self.env['sale.edi.xml.ubl_bis3'] to the (empty in core sale) list so the builder is offered on the portal/print 'Download Order' surface. So uploading/pasting a BIS3 order XML (or a PDF with embedded XML) into the sale order list routes it to this builder; the routing is code, not declarative config.",
+        "source": "code-read"
+      },
+      {
+        "element": "sale.edi.xml.ubl_bis3._retrieve_order_vals (inbound XML -> sale.order field vals)",
+        "observation": "Override of the account base: calls super() then pops 'note' (the SO Terms & Conditions take precedence over the PO note), retrieves the BuyerCustomer partner via _import_partner (VAT / Peppol EAS+endpoint matching, create only with vat+name) into partner_id, sets client_order_ref = ID, origin = QuotationDocumentReference/ID, and a Delivery partner into partner_shipping_id. It imports document allowance/charges and lines from './{*}OrderLine/{*}LineItem' (_import_lines, tax_type='sale'), then adapts each line to sale.order.line: drops deferred_start/end_date and any discount, logs 'Could not retrieve the product named: ...' when no product matched, appends allowance/charge lines, and writes order_line as [Command.create(...)]. Returns (order_vals, logs); the parent _import_order_ubl writes them onto the order and posts a chatter note + a to-do activity listing the logs.",
+        "source": "code-read"
+      },
+      {
+        "element": "sale.edi.xml.ubl_bis3._import_order_ubl (price/discount recompute after fill)",
+        "observation": "Override wraps the account base import: after super() fills the order, it takes order.order_line.filtered('product_id') and calls _compute_price_unit() then _compute_discount() on them. Effect: imported lines initially carry the XML-supplied price (discount stripped in _retrieve_order_vals), and this re-derives price_unit and discount from the company's own sale pricelist for matched products -- so the seller's pricing, not the buyer's PO price, governs the resulting quotation. A genuine side-effect chain invisible to metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "sale.edi.xml.ubl_bis3._retrieve_line_vals / _get_product_xpaths + product.product variant search",
+        "observation": "Model-adaptation layer between account.move.line and sale.order.line: _retrieve_line_vals renames the base 'quantity' key to 'product_uom_qty'. _get_product_xpaths adds variant_barcode (Item/StandardItemIdentification/ExtendedID) and variant_default_code (Item/SellersItemIdentification/ExtendedID) so product *variants* can be identified. product.product._get_product_domain_search_order / _get_retrieval_product_search_plan inject ExtendedID lookups (bisect.insort at priorities 12/14: default_code then barcode) so StandardItemIdentification.ID matches product.template.barcode while ExtendedID matches the product.product variant barcode. sale.order._get_line_vals_list builds extra lines at sequence 0 so they sort above the real order lines.",
+        "source": "code-read"
+      },
+      {
+        "element": "frontend (OWL/JS)",
+        "observation": "No OWL components, JS files, XML templates, registry adds or patches, and no asset bundles; extract_frontend reports present:false. The module is a headless EDI builder driven from the existing Sales UI (the sale order list 'Upload'/create-from-attachment flow and the portal/print Download-Order action exposed via _get_edi_builders). It defines no views of its own (views {} in facts).",
+        "source": "static"
       }
     ]
   },
   "it_architecture": {
-    "application": "sale_edi_ubl (Import electronic orders with UBL)",
+    "application": "sale_edi_ubl (Peppol BIS3 order EDI builder/importer for sale.order, extends account_edi_ubl_cii)",
     "software_services": [],
     "data_objects": [
-      "sale.edi.xml.ubl_bis3"
+      "sale.edi.xml.ubl_bis3",
+      "sale.order",
+      "product.product"
     ],
-    "logical_data_erm": [],
+    "logical_data_erm": [
+      "sale.edi.xml.ubl_bis3 -> account.edi.xml.ubl_bis3 (_inherit)",
+      "sale.edi.xml.ubl_bis3 -(reads/writes)-> sale.order + sale.order.line",
+      "sale.edi.xml.ubl_bis3 -(matches)-> res.partner (BuyerCustomer / Delivery) and product.product (variant ExtendedID)"
+    ],
     "information_flows": [
-      "depends: sale, account_edi_ubl_cii"
+      "depends: sale, account_edi_ubl_cii",
+      "side-effect: sale.order._export_order -> Peppol BIS3 Order XML bytes (download on portal/print)",
+      "side-effect: inbound BIS3 order XML/PDF -> _get_import_file_type -> _get_edi_decoder -> _import_order_ubl -> sale.order + sale.order.line (+ retrieve/create res.partner, match product.product)",
+      "side-effect: _import_order_ubl -> _compute_price_unit + _compute_discount re-derive seller pricing on imported lines (PO price discarded)",
+      "side-effect: _retrieve_order_vals drops the imported PO note so the SO Terms & Conditions win, and logs unmatched products as a to-do activity"
     ],
     "frontend_components": []
   },
   "business_architecture": {
     "capabilities": [
-      "Import electronic orders with UBL"
+      "Export a sales order as a Peppol BIS Ordering 3 UBL document",
+      "Import an inbound BIS3 purchase-order XML/PDF into a sale.order (the seller side)",
+      "Retrieve-or-create the buyer and delivery partner from the order XML",
+      "Match ordered products (incl. variants via ExtendedID) to the catalog",
+      "Re-price imported order lines from the seller's own pricelist"
     ],
-    "value_streams": [],
+    "value_streams": [
+      "Outbound: confirmed/draft sale.order -> BIS3 UBL Order XML -> made available to the customer (portal/print download)",
+      "Inbound: customer's BIS3 order XML/PDF -> format detection -> sale.order with buyer/delivery partner, matched products and seller-derived pricing"
+    ],
     "information_concepts": [
-      "sale.edi.xml.ubl_bis3"
+      "sale.order (the order carried/created as a BIS3 UBL document)",
+      "sale.order.line (order line <-> UBL OrderLine/LineItem)",
+      "res.partner (BuyerCustomer / Delivery party on the order)",
+      "product.product (ordered item, matched by ID / ExtendedID)"
     ],
     "organization": [],
-    "products": [],
-    "policies": [],
-    "stakeholders": [],
+    "products": [
+      "product.product (the ordered item matched from StandardItemIdentification / SellersItemIdentification, incl. variant ExtendedID)"
+    ],
+    "policies": [
+      "Order format fixed to Peppol BIS Ordering 3 (CustomizationID urn:fdc:peppol.eu:poacc:trns:order:3); routing keyed on that CustomizationID",
+      "Imported PO note discarded in favour of the SO Terms & Conditions",
+      "Imported line prices/discounts re-derived from the seller pricelist (PO price not trusted)",
+      "Item net price forced non-negative ([BR-27]); EN16931/PINT base-line rounding applied before serialisation"
+    ],
+    "stakeholders": [
+      "Seller / Salesperson (issues the BIS3 order acknowledgement / imports the customer PO)",
+      "Customer / Buyer (sends the BIS3 purchase order)",
+      "Peppol network / e-procurement counterparties"
+    ],
     "strategy": null,
     "metrics": []
   },
@@ -85,16 +156,35 @@
     "value_model": "chain",
     "activity_class": "primary",
     "apqc_category": "3.0 Market and Sell Products and Services",
-    "rationale": "sale_edi_ubl: thin chain/primary module (auto-architect baseline)."
+    "rationale": "sale_edi_ubl is the SELL-side electronic-ordering bridge: it serialises a sale.order into a Peppol BIS Ordering 3 UBL document and, inbound, turns a customer's BIS3 purchase-order XML/PDF into a sale.order (buyer/delivery partner retrieved, products matched, lines re-priced from the seller's pricelist). Unlike its parent account_edi_ubl_cii -- which is a support/compliance engine around account.move and classified 'support' / 9.0 Financial -- this module operates on the SALES ORDER document at order-capture time, advancing the quote-to-cash chain (it depends on 'sale', lives in category Sales/Sales, and reads/writes sale.order + sale.order.line, not invoices). That makes it a primary value-chain activity feeding APQC 3.0 Market and Sell Products and Services (the order-management / 3.5 sales-order leg), specifically electronic order capture and acknowledgement. value_model 'chain' per Stabell & Fjeldstad: it progresses a linear order document rather than running a diagnostic loop (shop) or operating a mediating network. 9.0 Financial was rejected because the artefact is a sales order, not an invoice/ledger entry; the invoice-side EDI remains in account_edi_ubl_cii. It reuses the account_edi_ubl_cii UBL machinery (it _inherit's account.edi.xml.ubl_bis3) but applies it to the sell-side order, so the classification follows the sale order it serves.",
+    "rationale_apqc_number": "3.0 number matches name 'Market and Sell Products and Services'; the invoice-EDI sibling sits at 9.0 Manage Financial Resources, deliberately not chosen here."
   },
   "fit_to_standard": {
     "standard_capabilities": [
-      "Import electronic orders with UBL"
+      "Export a sale.order as Peppol BIS Ordering 3 (UBL Order, OrderTypeCode 220)",
+      "Auto-detect inbound BIS3 order files from CustomizationID and import them into a sale.order",
+      "Retrieve-or-create buyer and delivery partners (VAT / Peppol EAS+endpoint matching)",
+      "Match products by StandardItemIdentification/SellersItemIdentification ID and variant ExtendedID",
+      "Re-derive imported line price_unit and discount from the seller's pricelist",
+      "Preserve the seller's Terms & Conditions over the buyer's PO note; log unmatched products as an activity"
     ],
-    "typical_fits": [],
-    "common_gaps": [],
+    "typical_fits": [
+      "B2B / e-procurement where the customer sends a Peppol BIS3 purchase order and the seller wants it as a sale.order automatically",
+      "Returning a BIS3 order document/acknowledgement to a customer from the portal or print menu",
+      "Catalogs using product variants identified by ExtendedID (variant barcode / default_code)",
+      "Sellers who must re-price an incoming PO against their own pricelist rather than honour the PO price"
+    ],
+    "common_gaps": [
+      "Only Peppol BIS Ordering 3 is supported (no Order-Response, despatch advice, or other order CIUS/formats)",
+      "Actual Peppol Access Point transmission of the order (this module only builds/parses the XML; network delivery is a separate Peppol module)",
+      "Products that fail ID/ExtendedID matching are left without a product_id (logged) and need manual resolution",
+      "Imported PO pricing/discount is overwritten by the seller pricelist -- honouring buyer-agreed prices needs customisation"
+    ],
     "drive_hints": [
-      "odoo shell: env['sale.edi.xml.ubl_bis3'].search([],limit=3)"
+      "odoo shell: so = env['sale.order'].search([('state','!=','draft')], limit=1); xml = env['sale.edi.xml.ubl_bis3']._export_order(so); print(xml[:400])  # BIS3 Order XML head",
+      "odoo shell: print('CustomizationID' in env['sale.edi.xml.ubl_bis3']._export_order(so).decode())  # urn:fdc:peppol.eu:poacc:trns:order:3",
+      "odoo shell: print(env['sale.order']._get_edi_builders())  # includes sale.edi.xml.ubl_bis3",
+      "UI: in the Sales order list use Upload / New-from-file with a BIS3 order XML (or a PDF carrying embedded XML) -> a sale.order is created with partner, lines and seller pricing"
     ]
   },
   "reverse_eng_confidence": {
@@ -108,14 +198,16 @@
     "strategy": "human"
   },
   "open_questions": [
-    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+    "Full set of EN16931/PINT business-rule constraints enforced on the order before serialisation (the export reuses the account.edi.xml.ubl_bis3 constraint layer; exact order-specific subset not enumerated here).",
+    "Precise buyer-vs-delivery partner matching precedence (Peppol EAS+endpoint vs VAT vs name) and the create threshold for a new res.partner on order import.",
+    "How an inbound order with no matched products is meant to be completed by the user (lines are created name-only with a to-do activity)."
   ],
   "provenance": {
     "explorer_facts": "doc/revres/facts/sale_edi_ubl.facts.json",
     "tools": [
-      "extract_module.py",
+      "code-read (models/sale_edi_xml_ubl_bis3.py, models/sale_order.py, models/product_product.py, tests/test_sale_order_edi_gen.py, account_edi_ubl_cii/models/account_edi_xml_ubl_bis3.py, account_edi_ubl_cii/models/account_edi_common.py)",
       "extract_frontend.py",
-      "gen_thin.py"
+      "extract_module.py"
     ],
     "odoo_version": "19.0"
   }

@@ -4,6 +4,10 @@
     "manifest": {
       "name": "Point of Sale UBL",
       "category": "Sales/Point of Sale",
+      "summary": "UBL in the Point of Sale",
+      "version": "1.0",
+      "author": "Odoo S.A.",
+      "license": "LGPL-3",
       "depends": [
         "point_of_sale",
         "account_edi_ubl_cii"
@@ -14,17 +18,33 @@
     "models": [
       {
         "_name": "pos.edi.xml.ubl_21",
+        "_inherit": [
+          "account.edi.xml.ubl_21"
+        ],
         "_description": "PoS Order UBL 2.1 builder",
-        "fields": 0
+        "fields": 0,
+        "methods": 27,
+        "relations": [
+          "_inherit->account.edi.xml.ubl_21 (which _inherit's account.edi.xml.ubl_20 -> account.edi.ubl -> account.edi.common)"
+        ]
       }
     ],
     "routes": [],
     "security": {
       "access_rules": 0,
       "record_rules": 0,
-      "groups": 0
+      "groups": 0,
+      "note": "No own security artefacts (0 ACLs, 0 record rules, 0 groups): the model is an AbstractModel with no table, called in sudo/server context by consumer localisation modules."
     },
-    "views": {},
+    "views": {
+      "form": 0,
+      "list": 0,
+      "kanban": 0,
+      "search": 0,
+      "pivot": 0,
+      "graph": 0,
+      "note": "No views and no XML data files (xml_loc=0): the module is a headless XML-builder library; any UI (download/submit buttons) is added by the consuming localisation (e.g. l10n_jo_edi_pos)."
+    },
     "frontend": {
       "present": false,
       "js_files": 0,
@@ -48,53 +68,112 @@
     },
     "behavioral_notes": [
       {
-        "element": "thin module",
-        "observation": "1 models, 0 routes, 220 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
-        "source": "ast"
+        "element": "pos.edi.xml.ubl_21._export_pos_order(pos_order)",
+        "observation": "The single public entry point. It mirrors account.edi.xml.ubl_20._export_invoice but for a pos.order instead of an account.move: it sets vals['pos_order'] re-contextualised to the customer's lang (pos_order.with_context(lang=pos_order.partner_id.lang)), builds the structured document_node via _get_pos_order_node, evaluates _export_pos_order_constraints into an errors set, picks an Invoice/CreditNote template + cac/cbc/ext nsmap via the inherited _get_document_template / _get_document_nsmap, renders the tree with odoo.addons.account.tools.dict_to_xml, and returns a (xml_bytes, errors_set) tuple. So like its account.move sibling a structurally-invalid order is reported in the second tuple element rather than silently shipped. None of this generation pipeline is visible in field metadata (the model has 0 fields, 27 methods).",
+        "source": "code-read"
+      },
+      {
+        "element": "pos.edi.xml.ubl_21._add_pos_order_config_vals + _add_pos_order_base_lines_vals",
+        "observation": "This is where the POS->UBL mapping diverges from the invoice builder. _add_pos_order_config_vals fixes the EDI parties and journal directly from the order rather than from an account.move: document_type = 'invoice' if pos_order.amount_total >= 0 else 'credit_note'; supplier = pos_order.company_id.partner_id.commercial_partner_id; customer = pos_order.partner_id; journal = pos_order.config_id.invoice_journal_id; currency_id = pos_order.currency_id; and the flags use_company_currency=False, fixed_taxes_as_allowance_charges=True. _add_pos_order_base_lines_vals derives the tax base lines straight from the order via pos_order._prepare_tax_base_line_values(), then calls account.tax._add_tax_details_in_base_lines and _round_base_lines_tax_details so the same EN16931 tax-detail machinery the invoice path uses is reused on raw POS lines. This cross-model adaptation (account.move semantics expressed over a pos.order) is pure Python.",
+        "source": "code-read"
+      },
+      {
+        "element": "pos.edi.xml.ubl_21._add_pos_order_monetary_total_nodes (Prepaid/Payable) + _export_pos_order_constraints",
+        "observation": "Two POS-specific deviations from a normal invoice document. (1) After delegating to the inherited _add_document_monetary_total_nodes, the builder injects cbc:PrepaidAmount = tax_exclusive_amount - pos_order.amount_paid and cbc:PayableAmount = pos_order.amount_paid into the LegalMonetaryTotal node, encoding that a POS sale is already (fully or partly) tendered at the till, unlike a billed-then-paid invoice. (2) _export_pos_order_constraints returns {} -- an empty, intentionally overridable hook: the base POS-UBL builder enforces no business rules itself, leaving country-specific EN16931/clearance constraints (and any AccountingSupplierParty/tax-id requirements) to the localisation subclass. Line items are built one document_node per non-allowance base line via _add_pos_order_line_nodes (allowance/charge lines are emitted as AllowanceCharges, not InvoiceLines), and the item Name/Description falls back to the POS line.name. These value- and constraint-level decisions are not reverse-engineerable from metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "consumer wiring: module defines the builder but never calls it; l10n_jo_edi_pos is the only consumer",
+        "observation": "pos_edi_ubl is a reusable library with no caller of its own -- _export_pos_order is invoked nowhere inside this module (it adds no pos.order extension, no attachment field, no invoice hook). The sole consumer in the codebase is the Jordan localisation l10n_jo_edi_pos (depends ['l10n_jo_edi','pos_edi_ubl']), which subclasses _name='pos.edi.xml.ubl_21.jo' (_inherit pos.edi.xml.ubl_21), and from pos.order._submit_to_jofotara / _compute_l10n_jo_edi_pos_computed_xml calls env['pos.edi.xml.ubl_21.jo']._export_pos_order(order)[0], base64-encodes the bytes, POSTs them to the JoFotara clearance API, and stores the returned XML + EINV_QR as an ir.attachment on the pos.order. So the POS-order->UBL XML attachment and any invoice/e-invoice hooking happen in the localisation, not here; pos_edi_ubl only supplies the format-neutral UBL 2.1 scaffolding that a fiscal localisation specialises. This 'engine vs caller' split is exactly the kind of fact metadata cannot show.",
+        "source": "code-read"
+      },
+      {
+        "element": "frontend (gap #3) -- none",
+        "observation": "frontend_gap3.present = false: 0 JS files, 0 XML templates, 0 OWL components, 0 registry adds, 0 patches, no asset bundles. The module ships only models/pos_edi_ubl_21.py (220 py LOC) and __manifest__/__init__; it is a server-side serialisation library with no client-side footprint and no XML data files. integrations_gap7 is empty (no outbound HTTP / SDK / api-keys) -- the actual network call to a tax authority lives in the consuming localisation (l10n_jo_edi_pos -> JoFotara), not in pos_edi_ubl.",
+        "source": "static"
       }
     ]
   },
   "it_architecture": {
-    "application": "pos_edi_ubl (Point of Sale UBL)",
+    "application": "pos_edi_ubl (headless UBL 2.1 e-invoice builder for Point of Sale orders; an abstract serialisation library extending account_edi_ubl_cii's account.edi.xml.ubl_21 onto pos.order)",
     "software_services": [],
     "data_objects": [
-      "pos.edi.xml.ubl_21"
+      "pos.edi.xml.ubl_21 (AbstractModel, no table)"
     ],
-    "logical_data_erm": [],
+    "logical_data_erm": [
+      "pos.edi.xml.ubl_21 -> account.edi.xml.ubl_21 (_inherit) -> account.edi.xml.ubl_20 -> account.edi.ubl -> account.edi.common",
+      "pos.edi.xml.ubl_21._export_pos_order(pos_order) consumes pos.order (+ pos.order.line base lines, pos.config.invoice_journal_id, res.partner supplier/customer, res.currency, account.tax details)"
+    ],
     "information_flows": [
-      "depends: point_of_sale, account_edi_ubl_cii"
+      "depends: point_of_sale (provides pos.order / pos.config / _prepare_tax_base_line_values), account_edi_ubl_cii (provides account.edi.xml.ubl_21 + the _add_document_* / _get_document_* node builders and dict_to_xml rendering)",
+      "build: pos.order -> _export_pos_order -> document_node dict (header, AccountingSupplierParty=company commercial partner, AccountingCustomerParty=order partner, AllowanceCharge, TaxTotal, LegalMonetaryTotal with Prepaid/PayableAmount, InvoiceLine/CreditNoteLine per product line) -> dict_to_xml -> (UBL 2.1 XML bytes, errors set)",
+      "no own side-effect: this module attaches nothing and posts nowhere; the (xml_bytes, errors) tuple is returned to a caller",
+      "consumer side-effect (l10n_jo_edi_pos): pos.edi.xml.ubl_21.jo._export_pos_order(order) -> base64 -> POST JoFotara -> ir.attachment(res_model='pos.order') + l10n_jo_edi_pos_qr stored on the order"
     ],
     "frontend_components": []
   },
   "business_architecture": {
     "capabilities": [
-      "Point of Sale UBL"
+      "Serialise a POS Order to a UBL 2.1 e-invoice / credit-note document (format scaffolding)",
+      "Reuse Accounting's EN16931 tax-detail / monetary-total machinery over raw POS order lines",
+      "Encode POS tendering in the e-document (PrepaidAmount / PayableAmount from amount_paid)",
+      "Provide an overridable constraints + node-builder framework for country POS e-invoicing localisations"
     ],
-    "value_streams": [],
+    "value_streams": [
+      "Provide-POS-UBL-Builder: a fiscal localisation subclasses pos.edi.xml.ubl_21 -> calls _export_pos_order(pos_order) -> gets a validated UBL 2.1 XML (+ errors) it then clears/attaches to the order (no end-to-end flow within this module itself)"
+    ],
     "information_concepts": [
-      "pos.edi.xml.ubl_21"
+      "pos.edi.xml.ubl_21 (the POS UBL builder)",
+      "pos.order (the document being serialised)",
+      "account.edi.xml.ubl_21 (parent invoice UBL builder being specialised)"
     ],
     "organization": [],
     "products": [],
-    "policies": [],
-    "stakeholders": [],
+    "policies": [
+      "auto_install=false: unlike account_edi_ubl_cii (auto-installs with account), this POS-UBL library is opt-in -- pulled in only by a localisation that needs POS e-invoicing",
+      "document_type is invoice for amount_total>=0 else credit_note (sign-driven, no separate refund object)",
+      "_export_pos_order_constraints returns {} by design: the base builder imposes no business rules; compliance constraints are the localisation's responsibility",
+      "product lines become InvoiceLines/CreditNoteLines; non-product (allowance/charge) lines become AllowanceCharges, not lines"
+    ],
+    "stakeholders": [
+      "Fiscal localisation developer (subclasses the builder for a national POS e-invoicing mandate)",
+      "Accountant / Tax authority (ultimate consumer of the cleared e-invoice produced by the localisation)",
+      "POS Cashier (rings the pos.order that becomes the source document, indirectly)"
+    ],
     "strategy": null,
     "metrics": []
   },
   "classification": {
-    "value_model": "chain",
-    "activity_class": "primary",
-    "apqc_category": "3.0 Market and Sell Products and Services",
-    "rationale": "pos_edi_ubl: thin chain/primary module (auto-architect baseline)."
+    "value_model": "support",
+    "activity_class": "support",
+    "apqc_category": "9.0 Manage Financial Resources",
+    "rationale": "pos_edi_ubl is a support / compliance scaffold, not a sell-flow bridge -- it is deliberately classified like its parent account_edi_ubl_cii (support / 9.0) rather than like the other POS bridges (chain / 3.0). Reasoning from the code: (1) It owns a single AbstractModel with no table, no fields, no routes, no UI, no security and no data files -- it produces no sale, payment, delivery or order state; it only serialises an already-rung pos.order into a legally-structured UBL 2.1 XML document. That is infrastructure for fiscal/e-invoicing compliance, the Stabell & Fjeldstad 'support' pattern (an enabler of the firm's invoicing back-office), not a value chain that converts inputs to a sold output. (2) Its centre of gravity is the EN16931/UBL document model: it reuses account_edi_ubl_cii's _add_document_* tax-detail and LegalMonetaryTotal builders and emits AccountingSupplierParty/TaxTotal/PayableAmount -- pure financial-document machinery, which maps to APQC 9.0 Manage Financial Resources (specifically the 9.x receivables / e-invoice document-exchange family), exactly where account_edi_ubl_cii sits. (3) Decisively, the module performs no selling and is not even invoked in the sell flow: _export_pos_order has no caller inside this module; it is a library specialised by country localisations (only l10n_jo_edi_pos in the tree) that handle the actual fiscal submission. So while the SOURCE document originates from a retail sale (giving it a faint chain flavour, and justifying why one might argue 3.0), the module's own activity is compliance serialisation -- support, not primary. Chain/3.0 was therefore rejected: pos_edi_ubl adds zero primary-chain value and would never appear in a Market-and-Sell value stream except as the downstream regulatory artefact, which is precisely the 9.0/support concern its parent already owns."
   },
   "fit_to_standard": {
     "standard_capabilities": [
-      "Point of Sale UBL"
+      "produce a UBL 2.1 Invoice/CreditNote document_node from a pos.order (header, supplier/customer party, allowance-charges, tax totals, line items)",
+      "reuse Accounting's EN16931 tax-detail and monetary-total computation (account.tax._add_tax_details_in_base_lines / _round_base_lines_tax_details) over POS base lines",
+      "encode already-tendered POS amounts as cbc:PrepaidAmount / cbc:PayableAmount",
+      "return a (xml_bytes, errors) tuple so validation failures are surfaced, not silently shipped",
+      "offer an empty, overridable _export_pos_order_constraints + per-node hooks for localisation-specific business rules"
     ],
-    "typical_fits": [],
-    "common_gaps": [],
+    "typical_fits": [
+      "a country POS e-invoicing localisation that needs UBL 2.1 output for till receipts/orders (e.g. l10n_jo_edi_pos / JoFotara)",
+      "extending POS e-invoicing to a clearance regime by subclassing pos.edi.xml.ubl_21 and overriding the party/header/constraint hooks",
+      "generating a structured e-document for a pos.order without first creating an account.move"
+    ],
+    "common_gaps": [
+      "no end-to-end flow on its own: it neither attaches the XML to the order nor transmits it -- a localisation must call _export_pos_order and persist/submit the result",
+      "no business-rule enforcement by default (_export_pos_order_constraints is empty) -- each mandate must supply its own EN16931/clearance checks",
+      "not auto-installed and not POS-UI wired: no download/send button, no pos.order field -- the consumer adds those",
+      "no CII / Factur-X path here (UBL 2.1 only); CII output would reuse account.edi.xml.cii via a different builder",
+      "PrepaidAmount/PayableAmount assume the till tendering model; partial-payment or deferred-settlement POS scenarios may need localisation overrides"
+    ],
     "drive_hints": [
-      "odoo shell: env['pos.edi.xml.ubl_21'].search([],limit=3)"
+      "odoo shell: order = env['pos.order'].search([('state','in',('paid','done','invoiced'))], limit=1); xml, errs = env['pos.edi.xml.ubl_21']._export_pos_order(order); print(errs); print(xml[:600])",
+      "odoo shell: env['pos.edi.xml.ubl_21']._fields and not env['pos.edi.xml.ubl_21']._table  # AbstractModel: no rows, only methods (27)",
+      "odoo shell (with l10n_jo_edi_pos installed): env['pos.edi.xml.ubl_21.jo']._export_pos_order(order)[0][:400]  # the only concrete consumer",
+      "grep: rg -n '_export_pos_order' addons --glob '!addons/pos_edi_ubl/**'  # shows l10n_jo_edi_pos is the sole caller"
     ]
   },
   "reverse_eng_confidence": {
@@ -105,17 +184,23 @@
     "value_streams": "inferred",
     "policies": "inferred",
     "metrics": "inferred",
+    "stakeholders": "inferred",
     "strategy": "human"
   },
   "open_questions": [
-    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+    "Whether any official Odoo module other than l10n_jo_edi_pos (or third-party localisations) consumes pos.edi.xml.ubl_21, and whether a generic 'attach UBL to pos.order' path is intended upstream.",
+    "Exact tax-category / exemption-reason coverage when POS lines carry taxes not classified for UBL (the base builder inherits account.tax mappings but adds no POS-specific ones).",
+    "How _export_pos_order behaves for a pure refund (amount_total<0 credit_note) versus a mixed-sign order, and whether PrepaidAmount stays consistent.",
+    "Whether the UBLVersionID '2.0' emitted in the header (vs the model's '2.1' naming) is intentional for downstream validators."
   ],
   "provenance": {
     "explorer_facts": "doc/revres/facts/pos_edi_ubl.facts.json",
     "tools": [
-      "extract_module.py",
+      "code-read (addons/pos_edi_ubl/models/pos_edi_ubl_21.py, addons/pos_edi_ubl/__manifest__.py, addons/account_edi_ubl_cii/models/account_edi_xml_ubl_21.py, addons/point_of_sale/models/pos_order.py, addons/l10n_jo_edi_pos/models/pos_order.py + pos_edi_ubl_21_jo.py)",
       "extract_frontend.py",
-      "gen_thin.py"
+      "extract_module.py",
+      "Grep",
+      "Read"
     ],
     "odoo_version": "19.0"
   }

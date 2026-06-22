@@ -12,7 +12,9 @@
     "routes": [
       {
         "paths": [
-          "/hw_proxy/scale_read"
+          "/hw_proxy/scale_read",
+          "/hw_proxy/hello",
+          "/hw_proxy/status_json"
         ],
         "auth": "none",
         "type": "jsonrpc"
@@ -24,6 +26,43 @@
       "groups": 0
     },
     "views": {},
+    "behavioral_notes": [
+      {
+        "element": "Manager._send_all_devices / Manager.run (main.py)",
+        "observation": "Manager (daemon Thread) boots the IoT Box: starts nginx, checks git branch, ensures SSL certificate validity, then POSTs {iot_box: {identifier, mac, ip, token, version}, devices: {...}} to /iot/setup on the configured Odoo server. The response contains a WebSocket channel string used to set up WebsocketClient. Manager then polls every 3 seconds; _get_changes_to_send() detects device list changes, IP address changes, and version changes, and re-POSTs whenever anything changes. Scheduled daily tasks run certificate renewal, log-level reset, and git-branch check.",
+        "source": "code-read"
+      },
+      {
+        "element": "WebsocketClient.on_message — message type dispatch (websocket_client.py)",
+        "observation": "Subscribes to an Odoo Bus channel, then dispatches incoming JSON messages by type: 'iot_action' routes to device.action(payload) on the matching iot_devices[device_identifier] Driver; 'server_clear' calls helpers.disconnect_from_server(); 'server_update' updates the remote_server conf; 'restart_odoo' calls helpers.odoo_restart(); 'webrtc_offer' forwards to webrtc_client.offer(); 'remote_debug' toggles ngrok tunnel; 'test_connection' calls helpers.check_network(); 'bundle_changed' calls upgrade.check_git_branch(). Action results are reported back via send_to_controller() POST to /iot/box/send_websocket.",
+        "source": "code-read"
+      },
+      {
+        "element": "ConnectionManager._call_iot_proxy / _connect_to_server (connection_manager.py)",
+        "observation": "Polls https://iot-proxy.odoo.com/odoo-enterprise/iot/connect-box with an exponentially-backed-off interval (starts 15s, max ~40s) to register the IoT Box and retrieve a pairing code. Once the user scans the pairing code in the Odoo backend, the proxy returns {url, token, db_uuid, enterprise_code}; _connect_to_server saves these to conf, calls manager._send_all_devices(), switches git branch, then restarts Odoo. Pairing code expiry is handled by setting pairing_code_expired=True.",
+        "source": "code-read"
+      },
+      {
+        "element": "Interface.add_device / Driver.__init_subclass__ (interface.py, driver.py)",
+        "observation": "Driver subclasses auto-register via __init_subclass__ into the global drivers list. Interface.run() polls get_devices() every _loop_delay seconds, calls update_iot_devices() which diffs added/removed identifiers against _detected_devices, then calls add_device() which iterates drivers sorted by priority, calls driver.supported(device), and starts the matching Driver thread. Unsupported devices are tracked in unsupported_devices dict and reported to Odoo if allow_unsupported is True.",
+        "source": "code-read"
+      },
+      {
+        "element": "PrinterDriverBase.print_receipt / _actions dispatch (iot_handlers/drivers/printer_driver_base.py)",
+        "observation": "PrinterDriverBase maps action names to methods via self._actions dict: 'print_receipt' decodes base64 receipt image, converts to 1-bit black-and-white via PIL, then calls format_escpos() or format_star() based on receipt_protocol. format_escpos() parses printer name to select raster (GS v 0) vs. column bit image (ESC *) mode, with optional scaling. 'cashbox' sends ESC/POS drawer-kick bytes. Job status is polled every second via _check_job_status(). Duplicate actions are suppressed via an LRU cache of action_unique_id values.",
+        "source": "code-read"
+      },
+      {
+        "element": "tools/certificate.py — download_odoo_certificate / ensure_validity",
+        "observation": "Daily scheduled task: reads the nginx-cert.crt, checks common_name != 'OdooTempIoTBoxCertificate' and expiry > now+10 days. If invalid, POSTs {db_uuid, enterprise_code} to https://www.odoo.com/odoo-enterprise/iot/x509 (with up to 5 retries) to retrieve a Let's Encrypt-style x509_pem + private_key_pem. Writes to /etc/ssl/certs/nginx-cert.crt and restarts nginx. Informs the Odoo database via POST to /iot/box/update_certificate_status.",
+        "source": "code-read"
+      },
+      {
+        "element": "frontend (OWL/JS — IoT Box local web UI)",
+        "observation": "20 JS files, 0 XML templates, 16 OWL components rendered on the IoT Box local HTTPS homepage (iot_drivers.assets bundle). Components include Homepage, StatusPage, WifiDialog, ServerDialog, UpdateDialog, CredentialDialog, DeviceDialog, HandlerDialog, RemoteDebugDialog, SixDialog (SIX payment), TimeDialog. No Odoo backend OWL; this is a standalone SPA served from the IoT Box itself.",
+        "source": "static"
+      }
+    ],
     "frontend": {
       "present": true,
       "js_files": 20,
@@ -87,101 +126,149 @@
     "runtime": {
       "models_with_data": 0,
       "top": []
-    },
-    "behavioral_notes": [
-      {
-        "element": "frontend (OWL/JS)",
-        "observation": "20 JS files, 16 OWL components, 0 registry adds; bundles ['iot_drivers.assets'].",
-        "source": "static"
-      },
-      {
-        "element": "external integrations",
-        "observation": "17 HTTP call sites; SDKs ['requests']; api_keys=True.",
-        "source": "static"
-      },
-      {
-        "element": "thin module",
-        "observation": "0 models, 1 routes, 5873 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
-        "source": "ast"
-      }
-    ]
+    }
   },
   "it_architecture": {
-    "application": "iot_drivers (Hardware Proxy)",
+    "application": "iot_drivers (IoT Box firmware runtime — hardware peripheral abstraction and Odoo connectivity layer)",
     "software_services": [
-      "/hw_proxy/scale_read"
+      "/hw_proxy/hello (ping)",
+      "/hw_proxy/status_json (proxy driver status)",
+      "/hw_proxy/scale_read (serial scale weight via JSON-RPC)",
+      "Odoo Bus WebSocket subscription (channel from /iot/setup response)",
+      "Outbound: POST /iot/setup, POST /iot/box/send_websocket, POST /iot/box/update_certificate_status"
     ],
-    "data_objects": [],
-    "logical_data_erm": [],
+    "data_objects": [
+      "iot_devices dict: {identifier -> Driver instance}",
+      "unsupported_devices dict: {identifier -> {name, type, connection}}",
+      "drivers list: [Driver subclass, ...]",
+      "interfaces dict: {class_name -> Interface subclass}",
+      "IoT Box conf file: server_url, token, db_uuid, enterprise_code, wifi_ssid, etc."
+    ],
+    "logical_data_erm": [
+      "Driver -> device (hardware object)",
+      "Interface -> Driver (1:N, matched by connection_type + supported())",
+      "Manager -> WebsocketClient (1:1)",
+      "ConnectionManager -> iot-proxy.odoo.com (pairing)",
+      "WebsocketClient -> Odoo Bus channel (subscribe/receive)"
+    ],
     "information_flows": [
-      "depends: "
+      "depends: (none — runs standalone on IoT Box, not as a standard Odoo addon)",
+      "Odoo server -> WebSocket -> IoT Box: iot_action, server_clear, server_update, restart_odoo, remote_debug, test_connection, bundle_changed, webrtc_offer",
+      "IoT Box -> Odoo: POST /iot/setup (registration), POST /iot/box/send_websocket (action results), POST /iot/box/update_certificate_status",
+      "IoT Box -> iot-proxy.odoo.com: pairing-code registration + polling",
+      "IoT Box -> www.odoo.com/odoo-enterprise/iot/x509: SSL certificate provisioning"
     ],
     "frontend_components": [
-      "BootstrapDialog",
+      "Homepage",
+      "StatusPage",
+      "WifiDialog",
+      "ServerDialog",
+      "UpdateDialog",
       "CredentialDialog",
       "DeviceDialog",
-      "FooterButtons",
       "HandlerDialog",
-      "Homepage",
-      "IconButton",
-      "LoadingFullScreen",
       "RemoteDebugDialog",
-      "ServerDialog",
-      "SingleData",
       "SixDialog",
-      "StatusPage",
       "TimeDialog",
-      "UpdateDialog"
+      "BootstrapDialog",
+      "LoadingFullScreen",
+      "SingleData",
+      "FooterButtons",
+      "IconButton"
     ]
   },
   "business_architecture": {
     "capabilities": [
-      "Hardware Proxy"
+      "Hardware peripheral discovery and driver matching (USB, serial, network printers, scales, payment terminals, displays, keyboards)",
+      "Real-time bidirectional communication between Odoo and IoT Box via WebSocket",
+      "IoT Box provisioning: cloud pairing, SSL certificate management, Wi-Fi configuration",
+      "Receipt printing (ESC/POS and Star protocols, raster and column image modes)",
+      "Cash drawer control",
+      "Remote debug access via ngrok tunnel",
+      "Firmware self-update via git branch switching",
+      "Local IoT Box web UI (OWL SPA for status, devices, configuration)"
     ],
-    "value_streams": [],
-    "information_concepts": [],
+    "value_streams": [
+      "IoT Box boot-to-ready: power on -> connect Wi-Fi -> pair with Odoo -> download handlers -> start interfaces -> register devices",
+      "POS hardware action: Odoo sends iot_action via WebSocket -> Driver.action() dispatches -> device responds -> EventManager.device_changed() reports result back"
+    ],
+    "information_concepts": [
+      "IoT Box (identifier, MAC, IP, token, version)",
+      "Device (identifier, name, type, manufacturer, connection, subtype)",
+      "Driver (connection_type, priority, _actions)",
+      "Interface (connection_type, _loop_delay)",
+      "Pairing code / pairing UUID",
+      "SSL certificate (x509_pem, private_key_pem, expiry)"
+    ],
     "organization": [],
     "products": [],
-    "policies": [],
-    "stakeholders": [],
+    "policies": [
+      "Drivers auto-register via __init_subclass__; priority determines selection order when multiple drivers support a device",
+      "Actions are deduplicated via LRU cache on action_unique_id (256 entries)",
+      "toggleable decorator allows devtools conf to disable specific actions or longpolling for testing",
+      "require_db decorator prevents any outbound Odoo call if server URL or IP is not configured",
+      "Certificate renewed daily if it is a temp cert or expires within 10 days"
+    ],
+    "stakeholders": [
+      "Retail/POS operator (uses peripherals driven by IoT Box)",
+      "Odoo system administrator (configures IoT Box, manages drivers)",
+      "Odoo server (sends actions, receives device events)",
+      "Odoo.com / iot-proxy.odoo.com (SSL cert provisioning, pairing)"
+    ],
     "strategy": null,
     "metrics": []
   },
   "classification": {
     "value_model": "support",
     "activity_class": "support",
-    "apqc_category": "13.0 Develop and Manage Business Capabilities",
-    "rationale": "iot_drivers: thin support/support module (auto-architect baseline)."
+    "apqc_category": "8.0 Manage Information Technology",
+    "rationale": "iot_drivers is a firmware/runtime infrastructure module that runs on a Raspberry Pi or Windows IoT Box. It has no business-process models (0 ORM models), no business logic, and no user-facing transactional flow. Its sole purpose is to bridge physical hardware peripherals to the Odoo server via WebSocket and HTTP, a pure IT infrastructure capability. APQC 8.0 Manage Information Technology is the correct category. The baseline 13.0 was incorrect."
   },
   "fit_to_standard": {
     "standard_capabilities": [
-      "Hardware Proxy"
+      "Plugin driver framework (Driver + Interface base classes with auto-registration)",
+      "ESC/POS and Star receipt printing with raster and column image modes",
+      "WebSocket-based real-time action dispatch from Odoo to IoT hardware",
+      "Cloud pairing via iot-proxy.odoo.com (no local network configuration needed)",
+      "Automatic SSL certificate provisioning from www.odoo.com"
     ],
-    "typical_fits": [],
-    "common_gaps": [],
+    "typical_fits": [
+      "Odoo POS hardware (receipt printers, cash drawers, payment terminals, barcode scanners, scales)",
+      "Standard pairing flow: scan QR code in Odoo backend -> IoT Box auto-connects",
+      "Firmware updates via git branch switching (nightly.odoo.com SHA1SUMS check)"
+    ],
+    "common_gaps": [
+      "Custom/proprietary hardware requires a new Driver + Interface subclass not included in this module",
+      "Windows IoT is a supported but secondary path (IS_WINDOWS guards scattered throughout)",
+      "WebRTC (webrtc_client) appears wired in but is a newer capability with unknown production coverage"
+    ],
     "drive_hints": [
-      "n/a"
+      "curl http://<iot-box-ip>/hw_proxy/hello to confirm the box is reachable",
+      "curl http://<iot-box-ip>/hw_proxy/status_json to see connected proxy driver statuses",
+      "IoT Box local UI at https://<iot-box-ip> shows StatusPage / DeviceDialog components"
     ]
   },
   "reverse_eng_confidence": {
-    "information_concepts": "auto",
+    "information_concepts": "inferred",
     "organization": "auto",
     "products": "auto",
     "capabilities": "inferred",
     "value_streams": "inferred",
     "policies": "inferred",
-    "metrics": "inferred",
+    "metrics": "auto",
     "strategy": "human"
   },
   "open_questions": [
-    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+    "Which concrete driver modules are expected alongside iot_drivers (iot_scale, iot_printer, iot_payment, etc.) and do they inherit PrinterDriverBase or define their own?",
+    "What is the full WebRTC capability (webrtc_client.py) — is it production-ready for display mirroring or still experimental?",
+    "How does the server_logger.py 'close_server_log_sender_handler' integrate with the Odoo server logging pipeline on server_clear messages?"
   ],
   "provenance": {
     "explorer_facts": "doc/revres/facts/iot_drivers.facts.json",
     "tools": [
-      "extract_module.py",
+      "code-read",
       "extract_frontend.py",
-      "gen_thin.py"
+      "extract_module.py"
     ],
     "odoo_version": "19.0"
   }

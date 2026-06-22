@@ -4,36 +4,71 @@
     "manifest": {
       "name": "Units of measure",
       "category": "Sales/Sales",
+      "summary": null,
       "depends": [
         "base"
       ],
       "auto_install": false,
-      "application": false
+      "application": false,
+      "version": "1.0",
+      "license": "LGPL-3",
+      "author": "Odoo S.A.",
+      "data_files": 4,
+      "demo_files": 0
     },
     "models": [
       {
         "_name": "uom.uom",
         "_description": "Product Unit of Measure",
-        "fields": 9
+        "_inherit": null,
+        "fields": 9,
+        "methods": 16,
+        "relations": [
+          "relative_uom_id->uom.uom (Reference Unit; _parent_name, _parent_store)",
+          "related_uom_ids->uom.uom (inverse of relative_uom_id)"
+        ]
       }
     ],
     "routes": [],
     "security": {
       "access_rules": 2,
       "record_rules": 0,
-      "groups": 1
+      "groups": 1,
+      "note": "1 own group base-named 'group_uom' (Manage Multiple Units of Measure) - a UI capability flag, NOT a data ACL. The 2 ir.model.access rows give base.group_user read-only on uom.uom and base.group_system full CRUD; ordinary users cannot create/edit units. Master data is therefore admin-curated and read-shared system-wide. Deletion of seeded/protected units is further blocked in Python (_unlink_except_master_data)."
     },
     "views": {
       "form": 1,
       "list": 1,
-      "tree": 0,
-      "kanban": 0,
       "search": 1,
-      "pivot": 0,
-      "graph": 0,
-      "calendar": 0,
-      "activity": 0
+      "note": "A single uom.uom form/list/search (Settings > Technical > Units of Measure). There is no uom.category screen because, in 19.0, categories no longer exist as a model - grouping is implicit via the relative_uom_id reference tree."
     },
+    "behavioral_notes": [
+      {
+        "element": "uom.uom v19 data model: relative_factor + relative_uom_id (_parent_store) -> computed absolute factor",
+        "observation": "This is the 19.0 REFACTOR and differs from older Odoo: there is NO uom.category model, NO factor_inv, NO uom_type (reference/bigger/smaller). Instead each uom.uom optionally points at a Reference Unit via relative_uom_id (_parent_name='relative_uom_id', _parent_store=True, so parent_path is maintained), and relative_factor ('Contains', digits=0 NUMERIC) says how many of the reference this unit holds. The stored Float factor ('Absolute Quantity') is COMPUTED recursively by _compute_factor: factor = relative_factor * relative_uom_id.factor, or just relative_factor at the root. So a unit's factor is its size expressed in its category's implicit base unit (the root of its reference chain). A category is whatever set of units share a common root - made explicit only by _has_common_reference comparing parent_path prefixes. Constraint _check_factor (api.constrains) forces a root unit's relative_factor to be exactly 1.0 ('Reference unit of measure is missing.'), and the _factor_gt_zero SQL CHECK forbids relative_factor==0.",
+        "source": "code-read"
+      },
+      {
+        "element": "uom.uom._compute_quantity (the unit-conversion math; the metadata gap)",
+        "observation": "_compute_quantity(qty, to_unit, round=True, rounding_method='UP', raise_if_failure=True) is the core conversion. It returns qty unchanged when self is empty/qty is 0 or self==to_unit; otherwise amount = qty * self.factor / to_unit.factor - i.e. it converts BOTH operands into the shared absolute base (factor) and rescales. When round and to_unit, it float_rounds to to_unit.rounding with the given rounding_method (default 'UP', so package/shipping math rounds up). NOTE: in this 19.0 body the method does NOT itself call _has_common_reference or raise on a category mismatch despite the raise_if_failure docstring - cross-category guarding is left to callers (e.g. product/stock) and to _has_common_reference; the bare math just divides factors. _compute_price(price, to_unit) is the INVERSE ratio: amount = price * to_unit.factor / self.factor (a smaller selling unit costs proportionally less), with no rounding. This conversion math is the classic metadata-invisible behavior.",
+        "source": "code-read"
+      },
+      {
+        "element": "uom.uom.rounding now computed from decimal.precision 'Product Unit' (not a stored per-unit field)",
+        "observation": "rounding is a NON-stored compute (_compute_rounding): every unit returns 10 ** -precision where precision = decimal.precision.precision_get('Product Unit') (seeded to 2 digits by data/uom_data.xml decimal_product_uom). So ALL units share ONE system-wide rounding precision rather than per-unit rounding as in older versions; the field is kept only 'for compatibility with previous calls to uom.rounding'. The helper methods round(value, rounding_method='HALF-UP'), compare(v1, v2) and is_zero(value) all delegate to tools.float_round / float_compare / float_is_zero using that same 'Product Unit' precision - they are the supported public API for quantity arithmetic.",
+        "source": "code-read"
+      },
+      {
+        "element": "uom.uom protected-master-data guards (_filter_protected_uoms / _unlink_except_master_data / _onchange_critical_fields)",
+        "observation": "Seeded units are protected. _filter_protected_uoms looks up ir.model.data for module='uom' on these records, EXCLUDING the _unprotected_uom_xml_ids allowlist (product_uom_hour, product_uom_dozen, product_uom_pack_6), and returns the locked subset. _unlink_except_master_data (api.ondelete, at_uninstall=False) raises UserError listing locked units ('...used by the system and cannot be deleted... You can archive them instead.') so core units can only be archived (active=False), never deleted. _onchange_critical_fields warns when editing relative_factor on a protected unit older than a day ('existing data WON'T be updated by this change... changing core units of measure in a running database is not recommended') because changing a factor does NOT retro-convert stored quantities. _has_common_reference(other) walks both parent_path strings and returns True iff they share a non-empty prefix - the real 'same category?' test.",
+        "source": "code-read"
+      },
+      {
+        "element": "frontend (OWL/JS)",
+        "observation": "2 JS files, 1 OWL component (Many2OneUomField), 2 registry adds (fields:many2one_uom, fields:many2many_uom_tags), 0 patches, 2 services-ish field helpers (product_field, quantity_field); bundle ['web.assets_backend' (1)]. Many2OneUomField is a specialised many2one widget so quantity fields render their unit inline (and the many2many_uom_tags widget renders UoM tag pickers); it surfaces the unit next to a quantity rather than defining any new screen. Pure UI sugar over the uom.uom master data.",
+        "source": "static"
+      }
+    ],
     "frontend": {
       "present": true,
       "js_files": 2,
@@ -64,31 +99,24 @@
     "runtime": {
       "models_with_data": 0,
       "top": []
-    },
-    "behavioral_notes": [
-      {
-        "element": "frontend (OWL/JS)",
-        "observation": "2 JS files, 1 OWL components, 2 registry adds; bundles ['web.assets_backend'].",
-        "source": "static"
-      },
-      {
-        "element": "thin module",
-        "observation": "1 models, 0 routes, 349 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
-        "source": "ast"
-      }
-    ]
+    }
   },
   "it_architecture": {
-    "application": "uom (Units of measure)",
+    "application": "uom (Units of Measure - the reference-unit + conversion-factor master data that quantity-bearing models convert through)",
     "software_services": [],
     "data_objects": [
       "uom.uom"
     ],
     "logical_data_erm": [
-      "uom.uom -> uom.uom"
+      "uom.uom -> uom.uom (relative_uom_id: each unit points at its Reference Unit; self-referential _parent_store tree)",
+      "uom.uom -> uom.uom (related_uom_ids: inverse one2many, the units measured against this one)",
+      "uom.uom -> decimal.precision 'Product Unit' (shared rounding precision, computed not stored)"
     ],
     "information_flows": [
-      "depends: base"
+      "depends: base",
+      "internal: relative_factor + relative_uom_id -> _compute_factor -> stored absolute factor (recursive over the reference chain)",
+      "service: _compute_quantity / _compute_price expose unit<->unit conversion consumed by product, stock, sale, purchase, mrp, account downstream (uom is auto_install=False but a hard dependency of product)",
+      "guard: ir.model.data(module='uom') + _filter_protected_uoms gate unlink/critical-field edits on seeded units"
     ],
     "frontend_components": [
       "Many2OneUomField"
@@ -96,33 +124,82 @@
   },
   "business_architecture": {
     "capabilities": [
-      "Units of measure"
+      "Maintain unit-of-measure master data (reference units + conversion factors)",
+      "Convert quantities between compatible units (_compute_quantity)",
+      "Convert prices between units (_compute_price)",
+      "Provide a shared, configurable quantity-rounding precision ('Product Unit')",
+      "Protect core/seeded units from deletion or unsafe edits",
+      "Test unit compatibility via a common reference (_has_common_reference)"
     ],
-    "value_streams": [],
+    "value_streams": [
+      "Define-Unit: create a reference unit (relative_factor=1.0) then derived units (relative_factor vs reference) -> _compute_factor materialises the absolute factor",
+      "Convert-Quantity: qty in unit A -> _compute_quantity(qty, B) = qty * A.factor / B.factor (round UP to precision) -> qty in unit B consumed by stock/sale/purchase"
+    ],
     "information_concepts": [
-      "uom.uom"
+      "uom.uom (unit of measure, with relative_factor + computed absolute factor)",
+      "the implicit category = a set of units sharing a reference-chain root (parent_path)",
+      "decimal.precision 'Product Unit' (system-wide quantity rounding)"
     ],
-    "organization": [],
+    "organization": [
+      "base.group_system (curates/edits units)",
+      "base.group_user (read-only consumption)",
+      "group_uom 'Manage Multiple Units of Measure' (UI capability toggle, not a data ACL)"
+    ],
     "products": [],
-    "policies": [],
-    "stakeholders": [],
+    "policies": [
+      "Reference-unit invariant: a unit with no relative_uom_id must have relative_factor==1.0 (_check_factor)",
+      "Non-zero factor: SQL CHECK relative_factor!=0 (_factor_gt_zero)",
+      "Master-data protection: seeded units (except hour/dozen/pack_6) cannot be unlinked, only archived (_unlink_except_master_data)",
+      "Safe-edit warning: changing relative_factor on an old protected unit warns that stored data is NOT retro-converted",
+      "Single shared rounding: all units round to decimal.precision 'Product Unit', not per-unit"
+    ],
+    "stakeholders": [
+      "System administrator / product manager (defines and curates units)",
+      "Every quantity-bearing module (product, stock, sale, purchase, mrp, account) — the conversion consumer",
+      "End user (reads units inline on quantity fields)"
+    ],
     "strategy": null,
-    "metrics": []
+    "metrics": [
+      "count of active vs archived uom.uom records",
+      "decimal.precision 'Product Unit' digits (the rounding precision in force)",
+      "reference-chain depth / number of derived units per root (data-quality signal)"
+    ]
   },
   "classification": {
     "value_model": "support",
     "activity_class": "support",
     "apqc_category": "2.0 Develop and Manage Products and Services",
-    "rationale": "uom: thin support/support module (auto-architect baseline)."
+    "rationale": "uom is master-data FOUNDATION (Stabell & Fjeldstad 'support'; Porter firm infrastructure). It owns a single tiny model (uom.uom, 9 fields, 0 routes) whose job is to define units and the math to convert quantities/prices between them - a reference data service that product depends on directly and that the whole value chain (stock, sale, purchase, mrp, account) and shop/network (services, pos) reuse for every quantity. It runs no operational document flow of its own and transforms no demand; it is shared reference data feeding every primary activity. APQC 2.0 'Develop and Manage Products and Services' is the standard home because UoM is part of the product/master-data definition layer that product itself sits in (the product record carries uom_id), and uom is a build-time dependency of product. The numbering 2.0 = 'Develop and Manage Products and Services' matches the name. A 13.0 'Develop and Manage Business Capabilities' (generic master/reference-data management) reading is defensible, but 2.0 is preferred because UoM is specifically product/quantity reference data tightly coupled to the product catalogue rather than enterprise-wide reference data."
   },
   "fit_to_standard": {
     "standard_capabilities": [
-      "Units of measure"
+      "Define units of measure as a reference-unit tree (relative_uom_id) with per-unit conversion factors (relative_factor)",
+      "Computed absolute factor per unit (recursive over the reference chain)",
+      "Quantity conversion (_compute_quantity, default round UP) and price conversion (_compute_price)",
+      "System-wide quantity rounding via decimal.precision 'Product Unit' + round/compare/is_zero helpers",
+      "Common-reference compatibility test (_has_common_reference via parent_path)",
+      "Seeded units for count/time/length/surface/volume/weight; protection of core units (archive-not-delete)",
+      "group_uom toggle to expose multi-UoM in the UI; inline UoM widgets on quantity fields"
     ],
-    "typical_fits": [],
-    "common_gaps": [],
+    "typical_fits": [
+      "Selling/stocking a product in one unit while purchasing in another (e.g. buy in Dozens, stock in Units)",
+      "Defining packaging multiples (Pack of 6) and working-time units (Days = 8 Hours)",
+      "Tuning the global quantity decimal precision via decimal.precision 'Product Unit'",
+      "Hiding multi-UoM entirely by leaving group_uom off (single-unit deployments)"
+    ],
+    "common_gaps": [
+      "No per-unit rounding any more - all units share one 'Product Unit' precision (behaviour change vs pre-19 factor_inv/rounding model)",
+      "_compute_quantity does not itself raise on cross-category conversion in 19.0; callers must guard compatibility",
+      "Changing a unit's factor on a live DB does not retro-convert already-stored quantities (only a warning)",
+      "No UI for bulk-defining custom unit hierarchies beyond the technical form",
+      "Categories are implicit (shared reference root) - there is no explicit uom.category record to group/report on"
+    ],
     "drive_hints": [
-      "odoo shell: env['uom.uom'].search([],limit=3)"
+      "odoo shell: u=env.ref('uom.product_uom_dozen'); u.factor, u.relative_factor, u.relative_uom_id.name  # 12 units per dozen",
+      "odoo shell: dz=env.ref('uom.product_uom_dozen'); unit=env.ref('uom.product_uom_unit'); dz._compute_quantity(1, unit)  # -> 12.0",
+      "odoo shell: env.ref('uom.product_uom_unit')._compute_price(120.0, env.ref('uom.product_uom_dozen'))  # price per dozen",
+      "odoo shell: env['decimal.precision'].precision_get('Product Unit')  # the shared rounding precision",
+      "odoo shell: env.ref('uom.product_uom_day')._has_common_reference(env.ref('uom.product_uom_hour'))  # True (same root)"
     ]
   },
   "reverse_eng_confidence": {
@@ -136,14 +213,16 @@
     "strategy": "human"
   },
   "open_questions": [
-    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+    "Which downstream callers (product/stock/sale) still rely on the raise-on-mismatch semantics that _compute_quantity's raise_if_failure docstring implies but the 19.0 body no longer enforces - the guarding moved out of uom.",
+    "Migration impact of the 19.0 refactor (drop of uom.category/factor_inv/rounding-per-unit) on databases upgraded from <=18 - not visible in this module.",
+    "Runtime distribution of custom vs seeded units and how deeply reference chains nest in practice (models empty at capture)."
   ],
   "provenance": {
     "explorer_facts": "doc/revres/facts/uom.facts.json",
     "tools": [
-      "extract_module.py",
+      "code-read (models/uom_uom.py, data/uom_data.xml, security/uom_security.xml, security/ir.model.access.csv, views/uom_uom_views.xml)",
       "extract_frontend.py",
-      "gen_thin.py"
+      "extract_module.py"
     ],
     "odoo_version": "19.0"
   }

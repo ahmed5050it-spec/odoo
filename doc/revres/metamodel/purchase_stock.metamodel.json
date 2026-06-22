@@ -4,6 +4,10 @@
     "manifest": {
       "name": "Purchase Stock",
       "category": "Supply Chain/Purchase",
+      "summary": "Purchase Orders, Receipts, Vendor Bills for Stock",
+      "version": "1.2",
+      "author": "Odoo S.A.",
+      "license": "LGPL-3",
       "depends": [
         "stock_account",
         "purchase"
@@ -15,26 +19,148 @@
       {
         "_name": "vendor.delay.report",
         "_description": "Vendor Delay Report",
-        "fields": 7
+        "fields": 7,
+        "relations": [
+          "partner_id->res.partner",
+          "product_id->product.product",
+          "category_id->product.category"
+        ]
+      },
+      {
+        "_inherit": "stock.rule",
+        "_description": "Stock Rule (extension) — the 'buy' procurement action",
+        "fields": 1,
+        "methods": 18,
+        "relations": []
+      },
+      {
+        "_inherit": "purchase.order",
+        "_description": "Purchase Order (extension) — receipt picking + dates",
+        "fields": 11,
+        "methods": 37,
+        "relations": [
+          "picking_ids->stock.picking",
+          "picking_type_id->stock.picking.type",
+          "dest_address_id->res.partner",
+          "reference_ids->stock.reference"
+        ]
+      },
+      {
+        "_inherit": "purchase.order.line",
+        "_description": "Purchase Order Line (extension) — qty_received from moves",
+        "fields": 9,
+        "methods": 26,
+        "relations": [
+          "move_ids->stock.move",
+          "move_dest_ids->stock.move",
+          "orderpoint_id->stock.warehouse.orderpoint",
+          "location_final_id->stock.location"
+        ]
+      },
+      {
+        "_inherit": "stock.move",
+        "_description": "Stock Move (extension) — PO link + valuation from bill",
+        "fields": 2,
+        "methods": 22,
+        "relations": [
+          "purchase_line_id->purchase.order.line",
+          "created_purchase_line_ids->purchase.order.line"
+        ]
+      },
+      {
+        "_inherit": "stock.picking",
+        "_description": "Transfer (extension) — receipt <-> PO link",
+        "fields": 3,
+        "methods": 5,
+        "relations": [
+          "purchase_id->purchase.order"
+        ]
+      },
+      {
+        "_inherit": "stock.warehouse",
+        "_description": "Warehouse (extension) — Buy resupply route + buy_pull rule",
+        "fields": 2,
+        "methods": 8,
+        "relations": [
+          "buy_pull_id->stock.rule"
+        ]
+      },
+      {
+        "_inherit": "stock.warehouse.orderpoint",
+        "_description": "Reordering Rule (extension) — vendor selection for buy route",
+        "fields": 6,
+        "methods": 20,
+        "relations": [
+          "supplier_id->product.supplierinfo",
+          "effective_vendor_id->res.partner"
+        ]
+      },
+      {
+        "_inherit": "account.move",
+        "_description": "Journal Entry (extension) — anglo-saxon price-difference lines on vendor bill",
+        "fields": 0,
+        "methods": 5,
+        "relations": []
+      },
+      {
+        "_inherit": "stock.lot",
+        "_description": "Lot/Serial (extension) — traceability back to purchase order",
+        "fields": 2,
+        "methods": 2,
+        "relations": [
+          "purchase_order_ids->purchase.order"
+        ]
       }
     ],
     "routes": [],
     "security": {
       "access_rules": 14,
       "record_rules": 0,
-      "groups": 0
+      "groups": 0,
+      "note": "14 ir.model.access rows cross-granting stock<->purchase (e.g. stock.picking/stock.move to purchase.group_purchase_user/_manager and purchase.order(.line) to stock.group_stock_user) + the vendor.delay.report read access; no new groups or record rules."
     },
     "views": {
       "form": 0,
       "list": 0,
-      "tree": 0,
       "kanban": 0,
-      "search": 0,
       "pivot": 0,
       "graph": 0,
       "calendar": 0,
-      "activity": 0
+      "activity": 0,
+      "note": "no new view records; extends purchase & stock views in-place (xml_loc ~2035) — purchase_views, stock_picking/rule/orderpoint/reference views, res_config_settings, product, replenish wizard."
     },
+    "behavioral_notes": [
+      {
+        "element": "stock.rule._run_buy (action 'buy') + stock.warehouse.buy_pull_id / _generate_global_route_rules_values",
+        "observation": "THE BUY BACKBONE: stock.rule.action gains a 'buy' option, and each stock.warehouse gets a buy_pull_id rule on the 'purchase_stock.route_warehouse0_buy' route (created in _generate_global_route_rules_values, gated by buy_to_resupply). When a procurement hits a buy rule, _run_buy turns demand into purchasing: _get_matching_supplier picks a product.supplierinfo (orderpoint.supplier_id / supplierinfo_id / product._select_seller; if none and from_orderpoint it raises ProcurementException, else the dest move falls back to make_to_stock and _notify_responsible fires), groups procurements by _make_po_get_domain (partner/state=draft/picking_type/company/user/currency, plus partner.group_rfq day/week windowing), searches an existing draft purchase.order or creates one via _prepare_purchase_order as SUPERUSER_ID with_company, then merges procurements and either writes onto a candidate purchase.order.line (_update_purchase_order_line) or batch-creates new lines via _prepare_purchase_order_line_from_procurement, advancing po.date_order back by the supplier delay. _get_lead_days adds the vendor lead time + company.days_to_purchase to the cumulative replenishment delay (365-day penalty when no vendor). This whole reordering-rule/MTO -> RFQ pull is pure Python, invisible in metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "purchase.order.button_approve -> _create_picking / button_cancel",
+        "observation": "FORWARD DOCUMENT SIDE-EFFECT (PO -> receipt): button_approve calls super then _create_picking, which for each state='purchase' order with a consu product builds a stock.picking (vendor location -> _get_destination_location) via _prepare_picking as SUPERUSER_ID, generates moves from the lines (order_line._create_stock_moves -> purchase.order.line._prepare_stock_moves -> stock.move with purchase_line_id set), _action_confirm()/_action_assign() them, confirms forward push pickings (_get_impacted_pickings) and posts a mail.message_origin_link from the receipt back to the PO. picking_ids is a STORED compute from order_line.move_ids.picking_id; receipt_status/effective_date/is_shipped derive from picking states. button_cancel cascades: it cancels non-done moves & pickings, switches MTO destination moves to make_to_stock and recomputes their state, and logs a note on already-done receipts. None of this is declarative.",
+        "source": "code-read"
+      },
+      {
+        "element": "purchase.order.line.qty_received (_compute_qty_received_method / _prepare_qty_received) + move-driven create/write",
+        "observation": "BACKWARD DOCUMENT SIDE-EFFECT (receipt -> billing control): _compute_qty_received_method flips qty_received_method to 'stock_moves' for consu products (selection_add), so _prepare_qty_received computes qty_received by summing DONE stock.move quantities on move_ids (UoM-converted HALF-UP), subtracting purchase returns and skipping double-counted dropship returns; this drives qty_to_invoice / invoice_status on the 'received quantities' billing policy. On a confirmed PO (state='purchase'), purchase.order.line.create and write re-run _create_or_update_picking (attaching/creating receipt moves to match the new ordered qty), write also re-prices non-done moves and triggers move._set_value() valuation when price_unit/product_qty/product_uom change, and decreasing an already-invoiced qty schedules a 'ask for a refund' activity on the vendor bill. Compute chain + side-effects invisible in metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "account.move._post -> _stock_account_prepare_anglo_saxon_in_lines_vals + stock.move._get_value_from_account_move",
+        "observation": "ANGLO-SAXON VALUATION HOOK (receipt <-> accounting): posting a vendor bill (account.move._post) creates extra COGS account.move.line price-difference entries via _stock_account_prepare_anglo_saxon_in_lines_vals for storable / standard-cost products already delivered, booking the gap between the PO/bill price and product standard_price to the category's property_price_difference_account_id; _stock_account_get_last_step_stock_moves links the bill to its done supplier-location stock.move records so valuation knows which receipts to value. Conversely the received stock.move values itself from the bill: stock.move._get_value_from_account_move walks purchase_line_id.invoice_lines (posted in_invoice minus in_refund) to value the layer, falling back before billing to _get_value_from_quotation using purchase.order.line._get_stock_move_price_unit. This closes the receipt->valuation->bill loop and is entirely code, not metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "stock.move._action_synch_order + stock.picking.purchase_id / _action_done",
+        "observation": "RECEIPT RECONCILIATION LINK: stock.picking.purchase_id is a related field on move_ids.purchase_line_id.order_id, and stock.picking._action_done calls purchase_id.action_acknowledge() to signal receipt back to the PO. stock.move._action_synch_order auto-creates a zero-product_qty purchase.order.line (with qty_received set from the move and bypass_move_update context) for any picked product received on a PO-linked receipt that is not yet on the order, mirroring sale_stock's reverse back-fill; stock.lot._compute_purchase_order_ids traces a lot/serial to its originating purchase.order via done supplier moves. The load-bearing key is stock.move.purchase_line_id (indexed btree_not_null). All side-effects, invisible in metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "frontend (OWL/JS)",
+        "observation": "12 JS files, 0 OWL components, 1 registry add (fields:time_period_selection); patches PurchaseAdditionalTourSteps.prototype, PurchaseProductCatalogKanbanRenderer, purchaseProductCatalogKanbanView and StockValuationReport.prototype; bundles ['web.assets_backend', 'web.assets_tests', 'web.assets_unit_tests']. The product-catalog 'suggest replenishment' kanban and the forecast/valuation report extensions are static assets not in Python metadata.",
+        "source": "static"
+      }
+    ],
     "frontend": {
       "present": true,
       "js_files": 12,
@@ -68,65 +194,119 @@
     "runtime": {
       "models_with_data": 0,
       "top": []
-    },
-    "behavioral_notes": [
-      {
-        "element": "frontend (OWL/JS)",
-        "observation": "12 JS files, 0 OWL components, 1 registry adds; bundles ['web.assets_backend', 'web.assets_tests', 'web.assets_unit_tests'].",
-        "source": "static"
-      },
-      {
-        "element": "thin module",
-        "observation": "1 models, 0 routes, 12997 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
-        "source": "ast"
-      }
-    ]
+    }
   },
   "it_architecture": {
-    "application": "purchase_stock (Purchase Stock)",
+    "application": "purchase_stock (Purchase<->Inventory procurement bridge application component)",
     "software_services": [],
     "data_objects": [
-      "vendor.delay.report"
+      "vendor.delay.report",
+      "stock.rule (extension)",
+      "purchase.order (extension)",
+      "purchase.order.line (extension)",
+      "stock.move (extension)",
+      "stock.picking (extension)",
+      "stock.warehouse (extension)",
+      "stock.warehouse.orderpoint (extension)"
     ],
     "logical_data_erm": [
-      "vendor.delay.report -> product.category",
-      "vendor.delay.report -> product.product",
-      "vendor.delay.report -> res.partner"
+      "purchase.order.line -> stock.move (move_ids)",
+      "stock.move -> purchase.order.line (purchase_line_id, indexed)",
+      "stock.picking -> purchase.order (purchase_id, related)",
+      "purchase.order -> stock.picking (picking_ids, stored compute)",
+      "purchase.order -> stock.picking.type (picking_type_id)",
+      "stock.warehouse -> stock.rule (buy_pull_id)",
+      "stock.warehouse.orderpoint -> product.supplierinfo (supplier_id)",
+      "stock.lot -> purchase.order (purchase_order_ids)",
+      "vendor.delay.report -> res.partner / product.product / product.category"
     ],
     "information_flows": [
-      "depends: stock_account, purchase"
+      "depends: stock_account, purchase",
+      "side-effect (procurement/pull): orderpoint or MTO demand -> stock.rule._run_buy ('buy' action on route_warehouse0_buy) -> purchase.order(.line) created/updated",
+      "side-effect (forward): purchase.order.button_approve -> _create_picking -> stock.picking + stock.move (purchase_line_id) -> _action_confirm/_assign",
+      "side-effect (backward): done stock.move.quantity -> purchase.order.line.qty_received (qty_received_method='stock_moves') -> qty_to_invoice / invoice_status",
+      "side-effect (valuation): vendor bill account.move._post -> anglo-saxon COGS price-diff account.move.line; received stock.move values from purchase_line_id.invoice_lines (or PO price before billing)",
+      "auto_install: true -> activates whenever both stock_account and purchase are installed"
     ],
     "frontend_components": []
   },
   "business_architecture": {
     "capabilities": [
-      "Purchase Stock"
+      "Buy-to-Resupply Procurement (reordering-rule / MTO -> RFQ via the buy route)",
+      "Goods Receipt from Purchase Orders (PO -> incoming picking)",
+      "Received-Quantity & Receipt-Status Tracking (move-driven qty_received)",
+      "Vendor Lead-Time & Delivery-Date / On-Time Computation",
+      "Purchase Stock Valuation (anglo-saxon price difference, receipt-to-bill)",
+      "Vendor Performance Analysis (vendor delay report)"
     ],
-    "value_streams": [],
+    "value_streams": [
+      "Replenishment: reordering rule / demand -> _run_buy -> RFQ/PO -> approve -> receipt -> qty_received -> vendor bill -> valuation",
+      "Procure-to-Pay (receipt leg): confirmed PO -> incoming picking -> goods received -> billing control on received quantities -> anglo-saxon valuation"
+    ],
     "information_concepts": [
-      "vendor.delay.report"
+      "purchase.order / purchase.order.line (the order, extended with receipts & qty_received)",
+      "stock.picking (incoming receipt)",
+      "stock.move (receipt move, valued)",
+      "stock.rule (the 'buy' procurement rule)",
+      "stock.warehouse.orderpoint (reordering rule with vendor)",
+      "product.supplierinfo (vendor price list driving supplier selection)",
+      "vendor.delay.report (on-time KPI)"
     ],
     "organization": [],
     "products": [],
-    "policies": [],
-    "stakeholders": [],
+    "policies": [
+      "14 cross-granting access rules wiring stock and purchase groups (no new groups / record rules)",
+      "automation: button_approve creates the receipt; create/write on confirmed PO lines re-sync receipt moves; receipt validation back-fills qty_received & acknowledges the PO",
+      "buy_to_resupply toggles the warehouse buy route; reception_steps governs propagate_cancel on the buy rule",
+      "anglo_saxon_accounting gates the price-difference COGS entries on vendor-bill posting; days_to_purchase shifts the procurement order deadline"
+    ],
+    "stakeholders": [
+      "Buyer / Purchase User (RFQ -> PO)",
+      "Warehouse / Inventory user (receives goods, validates picking)",
+      "Accountant (vendor bill, stock valuation)",
+      "Vendor / Supplier (res.partner, product.supplierinfo)"
+    ],
     "strategy": null,
-    "metrics": []
+    "metrics": [
+      "vendor.delay.report (qty_total / qty_on_time / on_time_rate)",
+      "purchase.order.on_time_rate, effective_date, receipt_status (receipt KPIs)",
+      "purchase.report extended with picking_type_id (warehouse) + effective_date + days_to_arrival"
+    ]
   },
   "classification": {
     "value_model": "support",
     "activity_class": "support",
     "apqc_category": "4.2 Procure Materials and Services",
-    "rationale": "purchase_stock: thin support/support module (auto-architect baseline)."
+    "rationale": "purchase_stock is the procurement<->inventory bridge that makes purchase's abstract document chain physical: it owns one read-only SQL view (vendor.delay.report) and otherwise extends 27 stock/purchase/account models to wire them together. It realizes three legs of Procure-to-Pay — pull procurement (stock.rule._run_buy turns reordering-rule/MTO demand into RFQs on the warehouse 'buy' route), goods receipt (button_approve -> _create_picking creates the incoming stock.picking/stock.move), and billing-control/valuation (move-driven qty_received gates invoicing, and anglo-saxon entries value the receipt against the vendor bill). It is classified support / APQC 4.2 Procure Materials and Services (activity refs 4.2.3 schedule/order replenishment via _run_buy and the buy route, and 4.2.5 receive/inspect/store materials via _create_picking and qty_received): it provisions and accounts for physical inputs so the primary value-chain activities (stock, mrp, sale) can run, rather than producing or selling itself. value_model 'support' per Stabell & Fjeldstad — an inbound-logistics / firm-infrastructure enabler. (It depends stock_account + purchase and auto-installs, confirming its bridge role rather than a standalone capability.)"
   },
   "fit_to_standard": {
     "standard_capabilities": [
-      "Purchase Stock"
+      "buy procurement route: reordering rules & make-to-order generate RFQs/POs automatically (_run_buy)",
+      "automatic incoming receipt (stock.picking) creation on PO approval",
+      "received quantity computed from done stock moves (invoice control on received qty)",
+      "vendor lead time + days-to-purchase folded into replenishment scheduling",
+      "PO grouping by vendor / day / week (group_rfq) when creating purchase orders",
+      "anglo-saxon stock valuation: receipt valued from the vendor bill, price-difference COGS entries on posting",
+      "drop-ship destination handling, MTO move chaining & cancel propagation",
+      "lot/serial traceability back to the purchase order; vendor on-time delay report"
     ],
-    "typical_fits": [],
-    "common_gaps": [],
+    "typical_fits": [
+      "standard reordering-rule -> RFQ -> PO -> receipt -> bill replenishment",
+      "make-to-order purchase resupply from a confirmed sale/manufacturing demand",
+      "single- vs multi-step receptions (reception_steps) with backorders",
+      "anglo-saxon vs continental valuation toggled by company accounting setting"
+    ],
+    "common_gaps": [
+      "drop-shipping route variations (module_stock_dropshipping)",
+      "advanced 3-way match / billing-on-received tuning beyond the bundled policy",
+      "custom procurement/route rules or vendor-scoring beyond _get_matching_supplier",
+      "industry-specific receipt inspection / quality-control steps (separate quality module)"
+    ],
     "drive_hints": [
-      "odoo shell: env['vendor.delay.report'].search([],limit=3)"
+      "odoo shell: po = env['purchase.order'].search([('state','=','purchase')], limit=1); po.button_approve(); print(po.picking_ids.mapped(('name','state')), po.receipt_status)",
+      "odoo shell: env['purchase.order.line'].search([('move_ids','!=',False)], limit=5).mapped(('order_id.name','qty_received','qty_to_invoice'))",
+      "odoo shell: op = env['stock.warehouse.orderpoint'].search([], limit=1); op.action_replenish(); env['purchase.order'].search([('origin','like',op.name)])  # buy route -> RFQ",
+      "odoo shell: env['vendor.delay.report'].read_group([], ['qty_total:sum','qty_on_time:sum'], ['partner_id'])"
     ]
   },
   "reverse_eng_confidence": {
@@ -140,14 +320,16 @@
     "strategy": "human"
   },
   "open_questions": [
-    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+    "Exact merge/candidate logic in _run_buy when multiple orderpoints/MTO demands target the same vendor/domain (_get_procurements_to_merge vs _find_candidate on existing PO lines).",
+    "Full anglo-saxon valuation precedence between _get_value_from_account_move (bill), _get_value_from_quotation (PO price) and the standard-cost price-difference path across FIFO/AVCO/standard cost methods.",
+    "How returns (stock.return.picking with supplier location) feed negative qty_received and re-value the layer via purchase_line_id."
   ],
   "provenance": {
     "explorer_facts": "doc/revres/facts/purchase_stock.facts.json",
     "tools": [
-      "extract_module.py",
+      "code-read (models/stock_rule.py, purchase_order.py, purchase_order_line.py, stock_move.py, stock.py, account_invoice.py, account_move_line.py; report/vendor_delay_report.py; data/purchase_stock_data.xml; security/ir.model.access.csv)",
       "extract_frontend.py",
-      "gen_thin.py"
+      "extract_module.py"
     ],
     "odoo_version": "19.0"
   }

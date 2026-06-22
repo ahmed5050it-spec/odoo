@@ -4,6 +4,7 @@
     "manifest": {
       "name": "Website Mail",
       "category": "Website/Website",
+      "summary": "Website Module for Mail",
       "depends": [
         "website",
         "mail"
@@ -11,39 +12,85 @@
       "auto_install": true,
       "application": false
     },
-    "models": [],
+    "models": [
+      {
+        "_name": "ir.http",
+        "_inherit": "ir.http",
+        "_description": "(inherit-only) adds 'mail' to the website frontend translation modules so the follow widget's mail terms are translated client-side",
+        "fields": 0,
+        "methods": 1,
+        "relations": []
+      },
+      {
+        "_name": "publisher_warranty.contract",
+        "_inherit": "publisher_warranty.contract",
+        "_description": "(inherit-only) flags website=True in the publisher-warranty _get_message ping so Odoo registers the DB as website-enabled",
+        "fields": 0,
+        "methods": 1,
+        "relations": []
+      }
+    ],
     "routes": [
       {
         "paths": [
           "/website_mail/follow"
         ],
         "auth": "public",
-        "type": "jsonrpc"
+        "type": "jsonrpc",
+        "note": "website=True; toggle a partner as follower (message_subscribe / message_unsubscribe) of any mail.thread record from the website follow widget; recaptcha-guarded find-or-create of the partner for public visitors"
       },
       {
         "paths": [
           "/website_mail/is_follower"
         ],
         "auth": "public",
-        "type": "jsonrpc"
+        "type": "jsonrpc",
+        "note": "website=True, readonly=True; given {model:[res_ids]} returns which res_ids the current visitor/user already follows plus {is_user, email}, used by the widget to render Follow vs Unfollow state"
       }
     ],
     "security": {
       "access_rules": 0,
       "record_rules": 0,
-      "groups": 0
+      "groups": 0,
+      "note": "Module declares no ir.model.access, no record rules and no res.groups; the routes operate sudo() on mail.followers / the target record after an explicit record.check_access('read') gate, so visibility is governed by the underlying mail.thread model's ACLs, not by this module."
     },
     "views": {
       "form": 0,
       "list": 0,
-      "tree": 0,
-      "kanban": 0,
       "search": 0,
       "pivot": 0,
       "graph": 0,
       "calendar": 0,
-      "activity": 0
+      "activity": 0,
+      "note": "No backend act_window views. Ships a single QWeb template website_mail.follow (the input-group follow widget: email field + Follow/Unfollow or Subscribe/Unsubscribe buttons) injected into website pages; 31 XML LOC total."
     },
+    "behavioral_notes": [
+      {
+        "element": "WebsiteMail.website_message_subscribe (POST /website_mail/follow) -> mail.thread.message_subscribe / message_unsubscribe",
+        "observation": "The jsonrpc /website_mail/follow is the follow widget's toggle endpoint. It browses request.env[object].browse(int(id)).exists() (object is the model name + id passed from the widget's data-object/data-id), returns False if the record is gone, then enforces record.check_access('read') -- so a visitor can only follow a record they may read. Partner resolution branches on identity: a logged-in non-public user uses request.env.user.partner_id; a public visitor's typed email is run through record.sudo()._partner_find_from_emails_single([email], no_create=...) where no_create is driven by the recaptcha result (see next note) -- i.e. a successful captcha allows find-OR-create of a res.partner from the email, a failed/absent captcha only finds an existing one. The message_is_follower flag inverts the action: if already follower it calls record.sudo().message_unsubscribe(partner_ids) and returns False; otherwise it stashes partner_ids[0] into request.session['partner_id'] and calls record.sudo().message_subscribe(partner_ids) returning True. So one public route both subscribes and unsubscribes a partner against any mail.thread record's mail.followers, the create-side-effect being a new res.partner for an unknown captcha-verified email.",
+        "source": "code-read"
+      },
+      {
+        "element": "recaptcha gate inside /website_mail/follow (_verify_request_recaptcha_token('website_mail_follow'))",
+        "observation": "For a public (website) visitor the controller wraps self.env['ir.http']._verify_request_recaptcha_token('website_mail_follow') in try/except: on any exception no_create=True, on success no_create=False, and that boolean is forwarded to _partner_find_from_emails_single. This means the captcha does not block the follow outright -- it only decides whether an unrecognized email is allowed to mint a brand-new res.partner (anti-spam: bots that fail the captcha can still toggle following of an already-known partner but cannot create partner records). The action token name 'website_mail_follow' is the same string the front-end Follow interaction passes to recaptcha.getToken(...), so server and client agree on the captcha action. This find-or-create-vs-find-only branching is invisible to metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "WebsiteMail.is_follower (GET /website_mail/is_follower, readonly) -> mail.followers _read_group + session partner",
+        "observation": "is_follower resolves the acting partner without authentication: a non-public user -> request.env.user.partner_id; a public user -> request.env['res.partner'].sudo().browse(request.session['partner_id']) IF a previous /website_mail/follow stored that session key (this is how an anonymous follower is remembered across the page after subscribing). For each requested model it sudo()._read_group's mail.followers filtered by res_model / res_id in the given ids / partner_id == the resolved partner, and collects the matched res_ids; _read_group naturally drops non-matching rows. It returns a two-element list: [{'is_user': user != public_user, 'email': partner.email or ''}, {model: [followed_res_ids]}]. The route is readonly=True (no write side-effects) and is what lets the widget pre-render Follow vs Unfollow and pre-fill the email box on load.",
+        "source": "code-read"
+      },
+      {
+        "element": "publisher_warranty.contract._get_message website flag + ir.http frontend translations",
+        "observation": "Two tiny inherit-only side-effects beyond the routes: publisher_warranty.contract._get_message() super-extends the periodic Odoo publisher-warranty/update ping payload with msg['website']=True, so Odoo's update server learns this database runs a website (telemetry-style flag, not a runtime behavior of the widget). Separately ir.http._get_translation_frontend_modules_name() appends 'mail' to the list of modules whose terms are exported to the website (frontend) translation bundle -- without it the follow widget's mail-owned strings would not be translatable on public pages. Neither is expressible as a field/route in metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "frontend (OWL/JS public.interactions follow widget) -- metadata gap #3",
+        "observation": "From frontend/website_mail.frontend.json: present=true, 2 JS files, 0 XML templates, 0 OWL components, registry_adds ['public.interactions.edit:website_mail.follow','public.interactions:website_mail.follow'], no patches/services, bundles {web.assets_frontend:2, web.assets_inside_builder_iframe:1}. The Follow public.interaction (static/src/interactions/follow.js) binds to #wrapwrap[.js_follow], on load RPCs /website_mail/is_follower to set isUser + toggle each .js_follow block, validates the email regex client-side, fetches a google_recaptcha token for action 'website_mail_follow' (and a turnstile_captcha hidden input if present), then RPCs /website_mail/follow with id/object/message_is_follower/email/token and flips the DOM to subscribed. follow.edit.js is the website-builder (edit-mode) variant. The interactive subscribe/unsubscribe UX, email validation and captcha handshake live entirely in static/src, outside Python metadata.",
+        "source": "static"
+      }
+    ],
     "frontend": {
       "present": true,
       "js_files": 2,
@@ -70,60 +117,114 @@
     "runtime": {
       "models_with_data": 0,
       "top": []
-    },
-    "behavioral_notes": [
-      {
-        "element": "frontend (OWL/JS)",
-        "observation": "2 JS files, 0 OWL components, 2 registry adds; bundles ['web.assets_frontend', 'web.assets_inside_builder_iframe'].",
-        "source": "static"
-      },
-      {
-        "element": "thin module",
-        "observation": "0 models, 2 routes, 150 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
-        "source": "ast"
-      }
-    ]
+    }
   },
   "it_architecture": {
-    "application": "website_mail (Website Mail)",
+    "application": "website_mail (Website Mail -- public follow/unfollow widget bridging website visitors to any mail.thread record's followers)",
     "software_services": [
-      "/website_mail/follow",
-      "/website_mail/is_follower"
+      "/website_mail/follow (jsonrpc, public, website: subscribe or unsubscribe a partner as follower of a mail.thread record; recaptcha-gated partner find-or-create)",
+      "/website_mail/is_follower (jsonrpc, public, readonly: report which of the given records the current visitor/user follows + their email)"
     ],
-    "data_objects": [],
-    "logical_data_erm": [],
+    "data_objects": [
+      "ir.http (inherited)",
+      "publisher_warranty.contract (inherited)",
+      "mail.followers (operated, from mail)",
+      "res.partner (find-or-create target, from base)",
+      "<any mail.thread model> (the followed record)"
+    ],
+    "logical_data_erm": [
+      "mail.followers -> res.partner (partner_id) + (res_model,res_id) -> target mail.thread record",
+      "/website_mail/follow -> res.partner (find-or-create from email via _partner_find_from_emails_single)",
+      "request.session['partner_id'] -> res.partner (anonymous follower memory across page)",
+      "follow widget QWeb (website_mail.follow) -> object._name / object.id / object.message_is_follower"
+    ],
     "information_flows": [
-      "depends: website, mail"
+      "depends: website, mail",
+      "side-effect: POST /website_mail/follow -> check_access('read') -> (public) recaptcha 'website_mail_follow' -> _partner_find_from_emails_single (create iff captcha ok) -> message_subscribe / message_unsubscribe on the target record's mail.followers",
+      "side-effect: POST /website_mail/follow -> request.session['partner_id'] set so the anonymous follower is remembered",
+      "flow: GET /website_mail/is_follower -> mail.followers _read_group (sudo) -> followed res_ids + {is_user,email} -> widget renders Follow/Unfollow",
+      "side-effect: publisher_warranty.contract._get_message -> msg['website']=True (update-server telemetry)",
+      "side-effect: ir.http._get_translation_frontend_modules_name -> +'mail' (frontend translation export of mail terms)"
     ],
-    "frontend_components": []
+    "frontend_components": [
+      "Follow (public.interaction: load-time is_follower fetch, email validation, recaptcha/turnstile handshake, follow/unfollow toggle on .js_follow)",
+      "Follow edit variant (public.interactions.edit: website-builder edit-mode behavior of the widget)"
+    ],
+    "external_integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "endpoints": [],
+      "notes": "No outbound HTTP/SDK/API keys of its own. google_recaptcha (surfaced through website) verifies the follow token server-side; all other coupling is internal Odoo (mail.followers, res.partner, website session/request)."
+    }
   },
   "business_architecture": {
     "capabilities": [
-      "Website Mail"
+      "Let Website Visitors Follow a Published Record (self-service subscribe/unsubscribe to its updates)",
+      "Capture Visitor Email as a Contact on Follow (recaptcha-gated res.partner creation)",
+      "Show Per-Visitor Follow State on Public Pages",
+      "Remember Anonymous Followers Across the Session"
     ],
-    "value_streams": [],
-    "information_concepts": [],
-    "organization": [],
+    "value_streams": [
+      "Follow-on-Website: visitor sees follow widget on a published mail.thread record -> enters email (captcha) -> partner found/created -> message_subscribe adds them to mail.followers -> future record posts notify them; toggling again message_unsubscribe removes them"
+    ],
+    "information_concepts": [
+      "mail.followers (follower link, from mail)",
+      "res.partner (the follower / captured contact)",
+      "the followed mail.thread record (any published business document)"
+    ],
+    "organization": [
+      "(none) module defines no res.groups; access governed by the target record's own ACLs via check_access('read')"
+    ],
     "products": [],
-    "policies": [],
-    "stakeholders": [],
+    "policies": [
+      "A visitor may only follow a record they can read (record.check_access('read') before any subscribe)",
+      "Public visitors: recaptcha 'website_mail_follow' success required to mint a new res.partner from an unknown email; failure -> find-only (no_create)",
+      "Anonymous follower identity persisted in request.session['partner_id'] (no login required)",
+      "All follower reads/writes done sudo() after the access gate (mail.followers is otherwise privileged)"
+    ],
+    "stakeholders": [
+      "Website visitor (anonymous or logged-in follower)",
+      "Website designer/editor (drops the follow widget on a page via the edit-mode interaction)",
+      "Record owner / publisher (gains followers who receive the record's mail.thread notifications)"
+    ],
     "strategy": null,
-    "metrics": []
+    "metrics": [
+      "follower count per record (mail.followers rows)",
+      "is_subscriber / is_user state surfaced to the widget (engagement signal)"
+    ]
   },
   "classification": {
     "value_model": "network",
     "activity_class": "primary",
     "apqc_category": "3.0 Market and Sell Products and Services",
-    "rationale": "website_mail: thin network/primary module (auto-architect baseline)."
+    "rationale": "website_mail is a thin mediating-technology (Stabell & Fjeldstad value network) layer on the website platform: it connects an open population of web visitors to a published business record by letting them self-subscribe as followers and, in doing so, captures each visitor's email as a res.partner contact. Like its parents website and mass_mailing (both network / 3.0 in this corpus) its worth grows with participants -- more visitors following more published records -- rather than via a sequential transformation (chain) or a diagnostic problem-solving cycle (shop). activity_class is primary because the follow widget is a demand-side audience-capture/engagement service the public website delivers, not a back-office support function; it turns anonymous traffic into addressable, opted-in contacts on the firm's mail.thread records. apqc_category 3.0 Market and Sell Products and Services (3.4 Develop and manage marketing communications / lead-and-contact capture) fits because the artifact is a marketing/audience-relationship channel -- subscribing visitors to a record's updates and harvesting contact emails -- i.e. demand-side relationship building, mirroring website_links and mass_mailing in this set. The underlying mail notification engine is itself support infrastructure, but website_mail is the public-facing operational tool that recruits the audience, hence primary here."
   },
   "fit_to_standard": {
     "standard_capabilities": [
-      "Website Mail"
+      "Drop-in website Follow widget (QWeb template website_mail.follow) on any page bound to a mail.thread record",
+      "Public subscribe/unsubscribe toggle of a partner against the record's followers (one jsonrpc route)",
+      "Per-visitor follow-state lookup for a batch of records (readonly route) to render Follow vs Unfollow",
+      "recaptcha-gated find-or-create of a res.partner from the visitor's email (anti-spam contact capture)",
+      "Anonymous follower memory via session partner_id (no login required)",
+      "mail terms exported to the website translation bundle; DB flagged website-enabled in the warranty ping"
     ],
-    "typical_fits": [],
-    "common_gaps": [],
+    "typical_fits": [
+      "Newsletter/'follow this page' style opt-in on blog posts, products, events or any published document",
+      "Turning website visitors into followers who receive the record's chatter notifications",
+      "Lightweight email capture into res.partner without a full registration form"
+    ],
+    "common_gaps": [
+      "No double opt-in / confirmation email flow -- a single click (post captcha) subscribes immediately",
+      "No dedicated unsubscribe landing page or audit of who followed when (relies on raw mail.followers)",
+      "Captcha only gates partner creation, not the follow action itself, so an existing partner can be toggled by a bot that fails the captcha",
+      "No segmentation/list semantics here (that is mass_mailing); a follow is per-record, not per-mailing-list",
+      "Anonymous follower identity is session-bound and lost if the session/cookie is cleared"
+    ],
     "drive_hints": [
-      "n/a"
+      "curl jsonrpc: POST /website_mail/is_follower {records:{'res.partner':[1]}} (auth=public) -> [{is_user,email},{...}]",
+      "curl jsonrpc: POST /website_mail/follow {id:<id>,object:'<model>',message_is_follower:'off',email:'visitor@example.com'} (needs a valid recaptcha token for partner creation)",
+      "odoo shell: env['mail.followers'].search_count([('res_model','=','<model>')])  # follower rows created via the widget",
+      "odoo shell: rec = env['<mail.thread model>'].browse(<id>); rec.message_subscribe(env.user.partner_id.ids); rec.message_partner_ids  # what the route does under the hood"
     ]
   },
   "reverse_eng_confidence": {
@@ -134,17 +235,22 @@
     "value_streams": "inferred",
     "policies": "inferred",
     "metrics": "inferred",
+    "stakeholders": "inferred",
     "strategy": "human"
   },
   "open_questions": [
-    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+    "Live row counts for mail.followers created via the public widget were not captured (runtime models_with_data=0).",
+    "Whether google_recaptcha (and/or website_cf_turnstile) is actually configured in the target deployment -- without it the no_create branch always wins and unknown emails never create a partner.",
+    "Which website templates in downstream modules embed the website_mail.follow snippet (blog/product/event) is resolvable only with those modules installed."
   ],
   "provenance": {
     "explorer_facts": "doc/revres/facts/website_mail.facts.json",
     "tools": [
-      "extract_module.py",
+      "code-read (controllers/main.py, models/ir_http.py, models/update.py, views/website_mail_templates.xml, static/src/interactions/follow.js; cross-ref addons/mail mail.thread message_subscribe/_partner_find_from_emails_single)",
       "extract_frontend.py",
-      "gen_thin.py"
+      "extract_module.py",
+      "Grep",
+      "Read"
     ],
     "odoo_version": "19.0"
   }

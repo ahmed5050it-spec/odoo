@@ -4,21 +4,48 @@
     "manifest": {
       "name": "Payment Provider: Buckaroo",
       "category": "Accounting/Payment Providers",
+      "summary": "A Dutch payment provider covering several countries in Europe.",
+      "version": "2.0",
+      "author": "Odoo S.A.",
+      "license": "LGPL-3",
       "depends": [
         "payment"
       ],
       "auto_install": false,
       "application": false
     },
-    "models": [],
+    "models": [
+      {
+        "_name": "payment.provider (inherit)",
+        "_description": "Payment Provider (Buckaroo credentials: website key / secret key)",
+        "fields": 3,
+        "relations": [
+          "code (Selection selection_add 'buckaroo', ondelete set default)",
+          "buckaroo_website_key (Char, required_if_provider=buckaroo, copy=False)",
+          "buckaroo_secret_key (Char, required_if_provider=buckaroo, copy=False, groups=base.group_system)"
+        ]
+      },
+      {
+        "_name": "payment.transaction (inherit)",
+        "_description": "Payment Transaction (Buckaroo BPE hosted-redirect HTML gateway flow; no direct API, no tokenization)",
+        "fields": 0,
+        "relations": [
+          "no new fields; 4 methods overriding payment's rendering/notification hooks"
+        ]
+      }
+    ],
     "routes": [
       {
-        "paths": [],
+        "paths": [
+          "/payment/buckaroo/return"
+        ],
         "auth": "public",
         "type": "http"
       },
       {
-        "paths": [],
+        "paths": [
+          "/payment/buckaroo/webhook"
+        ],
         "auth": "public",
         "type": "http"
       }
@@ -26,19 +53,55 @@
     "security": {
       "access_rules": 0,
       "record_rules": 0,
-      "groups": 0
+      "groups": 0,
+      "note": "No own ACL/rules; relies on payment's security and on the base.group_system field group guarding buckaroo_secret_key (the website key is left ungrouped)."
     },
     "views": {
       "form": 1,
       "list": 0,
-      "tree": 0,
       "kanban": 0,
       "search": 0,
       "pivot": 0,
       "graph": 0,
-      "calendar": 0,
-      "activity": 0
+      "note": "xml_loc=47: payment.provider form inheritance (payment_provider_views.xml: Buckaroo website key + secret key, shown only when code=='buckaroo', secret key password-masked) + the QWeb redirect-form template payment_buckaroo_templates.xml (auto-submit POST form to the Buckaroo HTML gateway with Brq_websitekey/Brq_amount/Brq_currency/Brq_invoicenumber/Brq_signature[/Brq_culture]/Brq_return/Brq_returncancel/Brq_returnerror/Brq_returnreject), plus data/payment_provider_data.xml wiring redirect_form_view_id. No own model views."
     },
+    "behavioral_notes": [
+      {
+        "element": "payment.transaction._get_specific_rendering_values -> hidden-field POST redirect to the Buckaroo BPE HTML gateway (https://checkout.buckaroo.nl/html/ ; sandbox https://testcheckout.buckaroo.nl/html/)",
+        "observation": "Buckaroo is a pure hosted-redirect acquirer: there is NO server-to-server payment API call. _get_specific_rendering_values builds the BPE gateway payload (Brq_websitekey=buckaroo_website_key, Brq_amount=tx.amount, Brq_currency=currency.name, Brq_invoicenumber=tx.reference, and ALL FOUR result URLs Brq_return/Brq_returncancel/Brq_returnerror/Brq_returnreject set to the same base_url+/payment/buckaroo/return -- they are included separately because each participates in the signature; plus Brq_culture=partner_lang with '_'->'-' when a partner lang is set). It then signs the dict via provider._buckaroo_generate_digital_sign(rendering_values, incoming=False) into Brq_signature and adds api_url=provider._buckaroo_get_api_url() (live checkout.buckaroo.nl vs sandbox testcheckout.buckaroo.nl by provider.state). These values feed the redirect_form QWeb template whose hidden inputs auto-POST the browser to Buckaroo's hosted HTML gateway. The acquirer endpoint and the signed-form handoff are invisible to Python model/field metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "payment.provider._buckaroo_generate_digital_sign -> SHA-1 signing over prefix-filtered, lowercase-sorted key=value pairs + shared secret",
+        "observation": "_buckaroo_generate_digital_sign implements Buckaroo's BPE scheme: it keeps ONLY items whose key (case-insensitively) starts with 'add_', 'brq_' or 'cust_'; for INCOMING data it first URL-decodes each value (urls.url_unquote_plus) and EXCLUDES the 'brq_signature' key itself; it sorts the surviving pairs by lower-cased key (the comment notes lower-case is required because ord('A') < ord('_') < ord('a')); concatenates them as 'key=value' (empty value -> '') with no separator; appends buckaroo_secret_key; and returns hashlib.sha1(sign_string.encode('utf-8')).hexdigest(). The digest is fixed at SHA-1 (not configurable, not an HMAC) and the same routine serves both directions via the incoming flag (outgoing skips the URL-decode/exclusion). This prefix-filtered, lowercase-sorted, secret-appended SHA-1 is pure code semantics, not derivable from metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "BuckarooController.buckaroo_return_from_checkout (/payment/buckaroo/return, POST) + buckaroo_webhook (/payment/buckaroo/webhook, POST) -> _normalize_data_keys + _verify_signature(incoming) BEFORE _process; reference via _extract_reference -> brq_invoicenumber",
+        "observation": "Both public, csrf=False POST routes share the same guarded pattern. Each first calls _normalize_data_keys (lower-cases every key, since Buckaroo param names are case-insensitive), extracts received_signature=data['brq_signature'], then _search_by_reference('buckaroo', data) (via _extract_reference -> data['brq_invoicenumber']) locates the tx. _verify_signature is called BEFORE _process and, on the RAW (un-normalized) data, recomputes the signature with incoming=True; it rejects with werkzeug Forbidden (HTTP 403) when received_signature is missing or when hmac.compare_digest(received, expected) fails -- a constant-time compare. The return route additionally carries save_session=False (so a SameSite-less session cookie is not lost on the cross-site POST) and redirects to /payment/status; the webhook returns '' to acknowledge. Both then call tx_sudo._process('buckaroo', normalized data), which validates the amount (via _extract_amount_data) then runs _apply_updates. Both routes are thus authenticated and authoritative -- Buckaroo needs no separate verification GET.",
+        "source": "code-read"
+      },
+      {
+        "element": "payment.transaction._apply_updates -> Buckaroo BRQ_STATUSCODE -> payment state mapping",
+        "observation": "_apply_updates reads brq_transactions, which may be a comma-separated list of Buckaroo transaction keys; it sets provider_reference to the FIRST key (split(',')[0]) and _set_error's ('missing transaction keys') if absent. It resolves the payment method from brq_payment_method via payment.method._get_from_code(..., mapping=const.PAYMENT_METHODS_MAPPING) (falling back to the current method), then maps int(brq_statuscode) through const.STATUS_CODES_MAPPING into payment's guarded transitions: 790/791/792/793 -> _set_pending; 190 -> _set_done; 890/891 -> _set_canceled; 690 -> _set_error('payment refused'); 490/491/492 -> _set_error('error during processing'); any other code -> _set_error('Unknown status code'). _extract_amount_data reads brq_amount and brq_currency for the engine's amount cross-check. This inbound numeric-status->state translation (including the distinct refused vs error vs cancel buckets) is pure code, not visible in metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "payment.provider._get_supported_currencies -> Buckaroo currency allow-list (8 currencies)",
+        "observation": "_get_supported_currencies overrides payment to filter the engine's currencies down to const.SUPPORTED_CURRENCIES for code=='buckaroo' -- exactly EUR, GBP, PLN, DKK, NOK, SEK, CHF, USD (the eight Buckaroo supports). _get_default_payment_method_codes returns const.DEFAULT_PAYMENT_METHOD_CODES (card + ideal + visa/mastercard/amex/discover) when Buckaroo is activated; note const.PAYMENT_METHODS_MAPPING maps the generic 'card' code to Buckaroo's 'mastercard' service and covers European methods (iDEAL, Bancontact, Belfius, KBC, SOFORT, Przelewy24, EPS, Trustly, Klarna, in3/Capayable, SEPA Direct Debit, ...). This currency bounding + method mapping is enforced in code, not visible as plain field metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "external integration surface (gap #7) -- endpoints, secret key (no transport API key)",
+        "observation": "Static gap-#7 facts (extract_frontend.py): uses_api_keys=true (because of the pre-shared buckaroo_secret_key), but there is NO outbound REST client: the only declared endpoints are the Buckaroo BPE HTML gateways -- https://checkout.buckaroo.nl/html/ (live) and https://testcheckout.buckaroo.nl/html/ (sandbox) -- selected by provider.state in models/payment_provider.py (_buckaroo_get_api_url). Buckaroo is reached purely by the browser POSTing the signed hidden-field form to the HTML gateway, and Buckaroo returns to Odoo's /payment/buckaroo/return + pushes to /payment/buckaroo/webhook. The 'API key' is the pre-shared secret used ONLY to compute/verify the SHA-1 signature (buckaroo_secret_key), not a bearer token on any HTTP call -- so unlike Stripe/Xendit there is no authenticated S2S endpoint here. This redirect-only acquirer link is the canonical metadata gap #7.",
+        "source": "static"
+      },
+      {
+        "element": "frontend (static) -- no JS, no OWL (gap #3)",
+        "observation": "0 JS files, 0 OWL components, 0 registry adds, 0 patches (gap #3). payment_buckaroo ships no client-side code: the entire buyer interaction is the server-rendered redirect_form QWeb template (payment_buckaroo_templates.xml) whose hidden inputs auto-submit to the Buckaroo HTML gateway. There is no browser SDK and no inline card form -- card/iDEAL/wallet data are collected on Buckaroo's hosted page, never in Odoo. The only browser-visible artifact is the auto-POST redirect form (plain server-rendered HTML, no gap-#3 JS surface).",
+        "source": "static"
+      }
+    ],
     "frontend": {
       "present": false,
       "js_files": 0,
@@ -64,52 +127,125 @@
     "runtime": {
       "models_with_data": 0,
       "top": []
-    },
-    "behavioral_notes": [
-      {
-        "element": "thin module",
-        "observation": "0 models, 2 routes, 600 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
-        "source": "ast"
-      }
-    ]
+    }
   },
   "it_architecture": {
-    "application": "payment_buckaroo (Payment Provider: Buckaroo)",
-    "software_services": [],
-    "data_objects": [],
-    "logical_data_erm": [],
-    "information_flows": [
-      "depends: payment"
+    "application": "payment_buckaroo (Buckaroo acquirer adapter for the payment engine; _inherit-only, no own models/views)",
+    "software_services": [
+      "/payment/buckaroo/return (redirect-return, http POST, csrf=False, save_session=False: signature-verified, processes, then /payment/status)",
+      "/payment/buckaroo/webhook (async push notification, http POST, csrf=False: signature-verified, processes, returns '')"
     ],
-    "frontend_components": []
+    "data_objects": [
+      "payment.provider (+buckaroo_website_key, buckaroo_secret_key)",
+      "payment.transaction (Buckaroo BPE hosted-redirect HTML gateway flow; no new fields; 4 override methods)"
+    ],
+    "logical_data_erm": [
+      "payment.transaction -> payment.provider (provider_id; provider_code=='buckaroo' gates every override)",
+      "payment.provider.code selection_add 'buckaroo'",
+      "external: payment.transaction.reference == Buckaroo Brq_invoicenumber/brq_invoicenumber (cross-system key for return/webhook lookup via _extract_reference)",
+      "external: payment.transaction.provider_reference == Buckaroo transaction key (first of brq_transactions)"
+    ],
+    "information_flows": [
+      "depends: payment (inherits the provider/transaction engine + redirect-form rendering + _process state machine)",
+      "outbound (redirect): _get_specific_rendering_values -> signed hidden-field POST form -> browser auto-submit to https://checkout.buckaroo.nl/html/ (sandbox testcheckout.buckaroo.nl) -- no server-to-server API call",
+      "inbound (return): Buckaroo -> POST /payment/buckaroo/return -> _normalize_data_keys -> _verify_signature (SHA-1 over raw data, constant-time compare) -> _process -> /payment/status",
+      "inbound (webhook/push): Buckaroo -> POST /payment/buckaroo/webhook -> _normalize_data_keys -> _verify_signature -> _process -> payment state machine",
+      "no tokenization / no refund / no capture / no void flows in this module"
+    ],
+    "frontend_components": [
+      "redirect_form QWeb template (payment_buckaroo_templates.xml; server-rendered hidden-field auto-POST form to the Buckaroo HTML gateway; no JS/OWL)"
+    ],
+    "external_integrations": {
+      "sdk": "none (no python SDK and no browser SDK; card/iDEAL/wallet data entered on Buckaroo's hosted HTML gateway, never in Odoo)",
+      "uses_api_keys": true,
+      "endpoints": [
+        "https://checkout.buckaroo.nl/html/ (live)",
+        "https://testcheckout.buckaroo.nl/html/ (sandbox)"
+      ],
+      "auth": "no transport bearer token; the pre-shared buckaroo_secret_key is used ONLY to compute/verify the SHA-1 signature (Brq_signature outgoing, brq_signature incoming) over the prefix-filtered, lowercase-sorted key=value payload",
+      "files": [
+        "const.py",
+        "models/payment_provider.py",
+        "models/payment_transaction.py",
+        "controllers/main.py"
+      ],
+      "pattern": "Concrete realization of metadata gap #7: a real external acquirer integration in its hosted-redirect form. Although uses_api_keys=true, there is NO authenticated S2S endpoint -- the secret key is purely a signing pre-shared secret. The browser POSTs a server-signed hidden-field form to Buckaroo's BPE HTML gateway (live or sandbox by provider.state), the buyer pays on Buckaroo, and Buckaroo returns the signed feedback to /payment/buckaroo/return and pushes to /payment/buckaroo/webhook, both verified by recomputing the SHA-1 signature. The base 'payment' engine ships no live acquirer; this module is that override, contrasting with Stripe/Xendit by being redirect-only (no S2S API, no tokenization).",
+      "note": "Gap-#7 example where uses_api_keys=true is misleading: the 'key' is a signing secret, not a transport credential. None of the Buckaroo HTML-gateway endpoints, the prefix-filtered SHA-1 signing, or the numeric BRQ_STATUSCODE->state mapping are derivable from Python model/field metadata; they were established only by reading const.py + payment_provider.py + payment_transaction.py + controllers/main.py."
+    }
   },
   "business_architecture": {
     "capabilities": [
-      "Payment Provider: Buckaroo"
+      "Accept Card and iDEAL payments via Buckaroo's hosted HTML gateway across the Netherlands and Europe",
+      "Accept European local payment methods (iDEAL, Bancontact, Belfius, KBC, SOFORT, Przelewy24, EPS, Trustly, Klarna, in3, SEPA Direct Debit, PayPal, ...) mapped to Buckaroo service names",
+      "Signed-redirect settlement (SHA-1 over prefix-filtered payload + secret key) with no card data in Odoo",
+      "Multi-currency acceptance bounded to Buckaroo's 8 supported currencies (EUR/GBP/PLN/DKK/NOK/SEK/CHF/USD)"
     ],
-    "value_streams": [],
-    "information_concepts": [],
-    "organization": [],
+    "value_streams": [
+      "Collect-Payment (redirect): initiate tx -> _get_specific_rendering_values builds the signed BPE form -> browser auto-POST to the Buckaroo HTML gateway -> buyer pays on Buckaroo -> POST /payment/buckaroo/return (signature-verified) AND/OR async push POST /payment/buckaroo/webhook -> _process -> state machine pending/done/cancel/error",
+      "Settle: BRQ_STATUSCODE 190 -> _set_done -> downstream post-process settlement (account_payment / sale)"
+    ],
+    "information_concepts": [
+      "payment.provider (Buckaroo credentials: website key, secret key)",
+      "payment.transaction (mapped to a Buckaroo BPE order; keyed by brq_invoicenumber=reference, provider_reference=first brq_transactions key)"
+    ],
+    "organization": [
+      "(no module-owned res.groups; buckaroo_secret_key is restricted to base.group_system; the website key and everything else inherit payment's groups/record rules)"
+    ],
     "products": [],
-    "policies": [],
-    "stakeholders": [],
+    "policies": [
+      "Inbound authenticity: return and webhook data must pass _verify_signature (SHA-1 over the prefix-filtered, lowercase-sorted payload + secret key, constant-time hmac.compare_digest) or are rejected with HTTP 403 Forbidden",
+      "Outbound redirect-form integrity: the form is signed into Brq_signature before the browser POSTs it to Buckaroo",
+      "Signature scope is restricted to keys prefixed add_/brq_/cust_ (case-insensitive); the brq_signature key itself is excluded and values URL-decoded on incoming",
+      "Supported currencies bounded to const.SUPPORTED_CURRENCIES (EUR/GBP/PLN/DKK/NOK/SEK/CHF/USD); others filtered out by _get_supported_currencies",
+      "All four result URLs (return/cancel/error/reject) are sent and signed even though they share one value",
+      "Secret key gated by base.group_system field group"
+    ],
+    "stakeholders": [
+      "Payer / Cardholder / iDEAL user (res.partner)",
+      "Merchant / Company (res.company, holds the Buckaroo website key & secret key)",
+      "Buckaroo (external acquirer / PSP, Netherlands, covering several European countries)",
+      "Accountant (consumes settled payments via account_payment downstream)"
+    ],
     "strategy": null,
-    "metrics": []
+    "metrics": [
+      "(no own reports; transaction volumes/amounts/state surfaced by the parent payment.transaction pivot/graph)"
+    ]
   },
   "classification": {
     "value_model": "network",
     "activity_class": "support",
-    "apqc_category": "9.0 Manage Financial Resources",
-    "rationale": "payment_buckaroo: thin network/support module (auto-architect baseline)."
+    "apqc_category": "9.0 Manage Financial Resources (9.5 process payments / collect cash; manage external payment provider)",
+    "rationale": "payment_buckaroo is a value-NETWORK (Stabell & Fjeldstad mediating-technology) component: a concrete acquirer adapter whose purpose is to interconnect two parties who would not otherwise transact directly -- the European cardholder/iDEAL user and the merchant -- by linking the merchant to Buckaroo's payment network. It exhibits the mediating-technology activities: network promotion & contract management (website key + signing secret-key management, per-method and supported-currency enablement), service provisioning (building and signing the per-transaction BPE redirect and confirming the signed return/push feedback), and infrastructure operation (the hosted-redirect handoff to the Buckaroo HTML gateway plus the signature-verified return/webhook settlement loop). It does not transform inputs into outputs (chain) nor solve a bespoke customer problem (shop). It inherits the parent 'payment' engine's value_model exactly: the engine is the generic mediator and this module is its Buckaroo realization. activity_class is 'support' because, from the enterprise value-chain perspective, payment acceptance is an infrastructure/finance support function (category Accounting/Payment Providers, application=False, no end-user app) sitting under 9.0 Manage Financial Resources -- specifically 9.5 process payments / collect cash, with the side of 'manage an external payment provider'. So value_model=network (its own internal logic is mediation, an acquirer integration -- gap #7), activity_class=support (its place on the enterprise value chain). This mirrors the sibling payment_stripe / payment_xendit metamodels (network/support) and the parent payment engine; like APS and AsiaPay, Buckaroo is a redirect-only acquirer (no S2S API, no tokenization), here with a fuller pending/done/cancel/refused/error status model and a SHA-1 prefix-filtered signature."
   },
   "fit_to_standard": {
     "standard_capabilities": [
-      "Payment Provider: Buckaroo"
+      "hosted-redirect payment via the Buckaroo BPE HTML gateway (live checkout.buckaroo.nl vs sandbox testcheckout.buckaroo.nl by provider.state)",
+      "European local payment-method routing (iDEAL / Bancontact / Belfius / KBC / SOFORT / Przelewy24 / EPS / Trustly / Klarna / in3 / SEPA Direct Debit / PayPal / ... mapped to Buckaroo service names)",
+      "signed-redirect integrity and signature-verified settlement via a SHA-1 hash over the prefix-filtered payload + secret key",
+      "asynchronous settlement via a signature-verified push webhook plus an (also signature-verified, POST) redirect-return route",
+      "multi-currency acceptance bounded to 8 currencies (EUR/GBP/PLN/DKK/NOK/SEK/CHF/USD)"
     ],
-    "typical_fits": [],
-    "common_gaps": [],
+    "typical_fits": [
+      "online shop / portal checkout collecting card or iDEAL/European-method payments through Buckaroo",
+      "send-a-payment-link or pay-an-invoice-online collection (with account_payment / sale downstream)",
+      "merchants needing card/iDEAL acceptance without holding card data (Buckaroo-hosted gateway, nothing entered in Odoo)",
+      "Benelux / European checkouts dominated by iDEAL, Bancontact, SOFORT, Klarna and SEPA Direct Debit"
+    ],
+    "common_gaps": [
+      "no server-to-server API: only the hosted-redirect BPE flow is implemented (no direct/S2S charge, no inline form); the 'secret key' is a signing secret, not a transport credential",
+      "no tokenization / saved cards (no _extract_token_values, no off-session recurring) -- every payment is a fresh redirect",
+      "no manual capture / authorize-then-capture, no void, and no in-module refund operation",
+      "signature pinned to SHA-1 (not configurable); the public-URL requirement for the return/push means local/dev instances need a tunnel; without the secret key set, verification has no secret to compare against",
+      "currency support bounded to const.SUPPORTED_CURRENCIES (8 currencies); other currencies are filtered out",
+      "bespoke reconciliation / settlement document chains live downstream (account_payment, sale), not here"
+    ],
     "drive_hints": [
-      "n/a"
+      "odoo shell: env['payment.provider'].search([('code','=','buckaroo')]).mapped(('name','state','buckaroo_website_key'))",
+      "odoo shell: p=env['payment.provider'].search([('code','=','buckaroo')],limit=1); print(p._buckaroo_get_api_url(), p._get_supported_currencies().mapped('name'))",
+      "odoo shell: tx=env['payment.transaction'].search([('provider_code','=','buckaroo')],limit=1); print(tx.reference, tx.state, tx.provider_reference)",
+      "odoo shell: print([m for m in dir(env['payment.transaction']) if '_buckaroo' in m])",
+      "curl -X POST https://<host>/payment/buckaroo/webhook (csrf=False, auth=public) with a missing/invalid 'brq_signature' field -> expect HTTP 403 Forbidden from _verify_signature",
+      "Buckaroo sandbox: provider in 'test' state targets https://testcheckout.buckaroo.nl/html/ (Buckaroo test website key + secret)"
     ]
   },
   "reverse_eng_confidence": {
@@ -123,14 +259,20 @@
     "strategy": "human"
   },
   "open_questions": [
-    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+    "Exact Buckaroo BPE gateway request and push/return field sets beyond those built in _get_specific_rendering_values / read in _apply_updates (brq_invoicenumber, brq_amount, brq_currency, brq_transactions, brq_payment_method, brq_statuscode, brq_signature).",
+    "Real-world distribution of Buckaroo transaction states (pending/done/cancel/refused/error) and method mix (card vs iDEAL vs other European methods) -- no runtime row counts captured.",
+    "How refunds / chargebacks are handled operationally given no in-module refund override (likely via the Buckaroo Plaza dashboard or a downstream module).",
+    "Whether instances reliably register the push webhook vs rely on the (also signed) POST return route, and whether both can fire for the same transaction."
   ],
   "provenance": {
     "explorer_facts": "doc/revres/facts/payment_buckaroo.facts.json",
     "tools": [
-      "extract_module.py",
-      "extract_frontend.py",
-      "gen_thin.py"
+      "apqc_odoo_map.tsv",
+      "code-read (const.py, models/payment_provider.py, models/payment_transaction.py, controllers/main.py, __manifest__.py)",
+      "extract_frontend.py (frontend/payment_buckaroo.frontend.json)",
+      "extract_module.py (facts/payment_buckaroo.facts.json)",
+      "Grep",
+      "Read"
     ],
     "odoo_version": "19.0"
   }

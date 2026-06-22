@@ -3,7 +3,11 @@
   "evidence": {
     "manifest": {
       "name": "POS Self Order Pine Labs",
+      "version": "1.0",
       "category": "Sales/Point Of Sale",
+      "summary": "An addon for the Self Order App (KIOSK) that allows customers to pay using the Pine Labs POS Terminal.",
+      "author": "Odoo IN Pvt Ltd",
+      "license": "LGPL-3",
       "depends": [
         "pos_pine_labs",
         "pos_self_order"
@@ -11,29 +15,29 @@
       "auto_install": true,
       "application": false
     },
-    "models": [],
-    "routes": [
+    "models": [
       {
-        "paths": [
-          "/pos-self-order/pine-labs-fetch-payment-status/"
+        "_name": "pos.payment.method",
+        "_inherit": "pos.payment.method",
+        "_description": "Point of Sale Payment Methods (Pine Labs self-order/kiosk bridge)",
+        "fields": 0,
+        "relations": [
+          "config_ids->pos.config (inherited)",
+          "journal_id->account.journal (inherited)"
         ],
-        "auth": "public",
-        "type": "jsonrpc"
-      },
-      {
-        "paths": [
-          "/pos-self-order/pine-labs-cancel-transaction/"
-        ],
-        "auth": "public",
-        "type": "jsonrpc"
+        "added_fields": [],
+        "added_methods": [
+          "_payment_request_from_kiosk(order) (override)",
+          "_load_pos_self_data_domain(data, config) (override, @api.model)"
+        ]
       }
     ],
-    "security": {
-      "access_rules": 0,
-      "record_rules": 0,
-      "groups": 0
-    },
-    "views": {},
+    "routes": [
+      {"paths": ["/pos-self-order/pine-labs-fetch-payment-status/"], "auth": "public", "type": "jsonrpc"},
+      {"paths": ["/pos-self-order/pine-labs-cancel-transaction/"], "auth": "public", "type": "jsonrpc"}
+    ],
+    "security": {"access_rules": 0, "record_rules": 0, "groups": 0, "note": "no module-owned access rules/groups; reuses point_of_sale POS groups and the pos_self_order public access-token gate (_verify_pos_config)"},
+    "views": {"form": 0, "list": 0, "kanban": 0, "search": 0, "note": "no views; pure JS/controller bridge, 0 XML LOC. Pine Labs credential fields live on the parent pos_pine_labs payment-method form."},
     "frontend": {
       "present": true,
       "js_files": 3,
@@ -45,9 +49,7 @@
         "SelfOrder.prototype"
       ],
       "services": [],
-      "asset_bundles": {
-        "pos_self_order.assets": 1
-      }
+      "asset_bundles": {"pos_self_order.assets": 1}
     },
     "integrations": {
       "http_call_sites": 0,
@@ -56,63 +58,129 @@
       "endpoints": [],
       "files": []
     },
-    "runtime": {
-      "models_with_data": 0,
-      "top": []
-    },
+    "runtime": {"models_with_data": 0, "top": []},
     "behavioral_notes": [
       {
-        "element": "frontend (OWL/JS)",
-        "observation": "3 JS files, 0 OWL components, 0 registry adds; bundles ['pos_self_order.assets'].",
-        "source": "static"
+        "element": "models/pos_payment_method.py: pos.payment.method._payment_request_from_kiosk(order) + _load_pos_self_data_domain(data, config)",
+        "observation": "The bridge wires Pine Labs into the self-order kiosk via two pos.payment.method overrides and adds no fields. _payment_request_from_kiosk is the override of pos_self_order's no-op hook: it returns super() unless self.use_payment_terminal == 'pine_labs', otherwise it builds a Pine Labs request dict (amount = order.amount_total * 100 because Pine Labs bills in paisa, 1 INR = 100 paisa; transactionNumber = '<config-name>/Order/<order.id>/<uuid4>'; sequenceNumber '1'), calls the parent module's payment_method.pine_labs_make_payment_request(data) (which POSTs UploadBilledTransaction to the Pine Labs cloud and returns the plutusTransactionReferenceID), stamps payment_ref_no = transactionNumber onto the response and returns it to the caller (/kiosk/payment). _load_pos_self_data_domain (@api.model) OR-extends pos_self_order's data-load domain so that, when data['pos.config'][0]['self_ordering_mode'] == 'kiosk', the Pine Labs payment methods on config.payment_method_ids are shipped down to the public kiosk OWL client (they are otherwise excluded by the base [('id','=',False)] domain). This terminal-enabling config gate is invisible to field metadata.",
+        "source": "code-read"
       },
       {
-        "element": "thin module",
-        "observation": "0 models, 2 routes, 108 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
-        "source": "ast"
+        "element": "kiosk handshake: pos_self_order /kiosk/payment/<pos_config_id>/kiosk -> _payment_request_from_kiosk -> pine_labs_make_payment_request",
+        "observation": "The two module routes are NOT the payment trigger -- the trigger is pos_self_order's own /kiosk/payment/<pos_config_id>/kiosk (jsonrpc, public), which the JS PineLabs.processPayment posts the serialized order to. That base route runs process_order (creating the pos.order in the open pos.session via sync_from_ui), browses the chosen pos.payment.method, calls payment_method_sudo._payment_request_from_kiosk(order_sudo) -- dispatching into this module's Pine Labs override -- and returns {'order': _load_pos_self_data_read(...), 'payment_status': status}. So this bridge plugs the terminal handshake into an existing pos_self_order extension point: the kiosk creates the order and fires the Pine Labs UploadBilledTransaction in one server round-trip, then the client begins polling. Access on every call is gated by _verify_pos_config(access_token), which resolves the pos.config by access_token and drops privileges to its self_ordering_default_user_id.",
+        "source": "code-read"
+      },
+      {
+        "element": "controllers/orders.py: PosSelfOrderPineLabsController.pine_labs_fetch_payment_status + pine_labs_cancel_transaction -> order.add_payment / action_pos_order_paid / _send_payment_result",
+        "observation": "The two new public jsonrpc routes are the polling/cancel surface for the asynchronous terminal result, both subclassing PosSelfOrderController. /pos-self-order/pine-labs-fetch-payment-status/ verifies the config (_verify_pos_config), re-checks order.config_id.id == pos_config.id (NotFound otherwise), and calls payment_method.pine_labs_fetch_payment_status(payment_data) (parent GetCloudBasedTxnStatus poll keyed by plutusTransactionReferenceID). On status == 'TXN APPROVED' it reads the formatted TransactionData and writes a pos.payment via order.add_payment({amount: order.amount_total, payment_method_id, cardholder_name, transaction_id=TransactionLogId, payment_method_authcode=ApprovalCode, card_brand=Card Type, payment_method_issuer_bank=Acquirer Name, card_no=last 4, payment_ref_no, pine_labs_plutus_transaction_ref=plutusTransactionReferenceID, ...}), then order.action_pos_order_paid() and order._send_payment_result('Success') -- which fires the config._notify('PAYMENT_STATUS') bus message and sends the receipt + kitchen order. /pos-self-order/pine-labs-cancel-transaction/ calls pine_labs_cancel_payment_request(payment_data) (parent CancelTransactionForced) and returns its result. The status/cancel poll is the ONLY way the asynchronous terminal outcome becomes a paid order; nothing here is in metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "frontend (OWL self-order kiosk PaymentPage/SelfOrder Pine Labs handler) -- gap #3",
+        "observation": "The client side is plain JS on the pos_self_order public OWL app (3 JS files, 0 OWL components, bundle pos_self_order.assets): a non-OWL PineLabs class (static/src/app/pine_labs.js) plus patches of PaymentPage.prototype (static/src/app/pages/payment_page.js) and SelfOrder.prototype (static/src/app/services/self_order_service.js). PaymentPage.startPayment delegates to selfOrder.pineLabs.startPayment when the selected method's use_payment_terminal === 'pine_labs'; SelfOrder.setup instantiates PineLabs if a pine_labs method is loaded and SelfOrder.filterPaymentMethods force-includes pine_labs methods on the kiosk payment screen. PineLabs.startPayment posts to /kiosk/payment to create the order + start the terminal, then paymentPolling() calls /pos-self-order/pine-labs-fetch-payment-status/ every REQUEST_TIMEOUT (5s), stashing plutusTransactionReferenceID/paymentRefNo in localStorage; a 110s inactivity timer (stopInactivePayment, 90s comment) flips paymentStopped and auto-fires /pos-self-order/pine-labs-cancel-transaction/. This poll loop, the localStorage correlation keys and the PineLabsError notification flow are client logic not reverse-engineerable from Python.",
+        "source": "static"
       }
     ]
   },
   "it_architecture": {
-    "application": "pos_self_order_pine_labs (POS Self Order Pine Labs)",
+    "application": "pos_self_order_pine_labs (thin auto-installed bridge: wires the Pine Labs POS terminal -- from pos_pine_labs -- into the pos_self_order kiosk self-payment flow via a pos.payment.method override + two public poll/cancel routes + OWL kiosk patches)",
     "software_services": [
-      "/pos-self-order/pine-labs-cancel-transaction/",
-      "/pos-self-order/pine-labs-fetch-payment-status/"
+      "/pos-self-order/pine-labs-fetch-payment-status/ (public jsonrpc; poll Pine Labs txn status, settle pos.payment on TXN APPROVED)",
+      "/pos-self-order/pine-labs-cancel-transaction/ (public jsonrpc; force-cancel the in-flight Pine Labs transaction)",
+      "(reused from pos_self_order) /kiosk/payment/<pos_config_id>/kiosk -> _payment_request_from_kiosk (start the Pine Labs payment)"
     ],
-    "data_objects": [],
-    "logical_data_erm": [],
+    "data_objects": [
+      "pos.payment.method (inherited; +_payment_request_from_kiosk, +_load_pos_self_data_domain for pine_labs)"
+    ],
+    "logical_data_erm": [
+      "pos.payment.method -> pos.config (config_ids; kiosk configs whose payment_method_ids include the Pine Labs method)",
+      "pos.payment.method -> pos.payment (the tender written by order.add_payment, base POS model)",
+      "pos.order -> pos.session (order created in the open session by /kiosk/payment process_order, base pos_self_order)"
+    ],
     "information_flows": [
-      "depends: pos_pine_labs, pos_self_order"
+      "depends: pos_self_order (kiosk app, /kiosk/payment, _payment_request_from_kiosk hook, _send_payment_result bus) + pos_pine_labs (use_payment_terminal='pine_labs', pine_labs_make/fetch/cancel terminal methods, INR/paisa)",
+      "client->server: kiosk PaymentPage -> SelfOrder.pineLabs.startPayment -> /kiosk/payment/<config>/kiosk -> _payment_request_from_kiosk -> pine_labs_make_payment_request (UploadBilledTransaction) -> plutusTransactionReferenceID",
+      "polling: PineLabs.paymentPolling (every 5s) -> /pos-self-order/pine-labs-fetch-payment-status/ -> pine_labs_fetch_payment_status (GetCloudBasedTxnStatus)",
+      "settlement: on 'TXN APPROVED' -> order.add_payment (pos.payment) -> action_pos_order_paid -> _send_payment_result('Success') -> config._notify('PAYMENT_STATUS') + receipt + kitchen order",
+      "cancel: inactivity (110s) or error -> /pos-self-order/pine-labs-cancel-transaction/ -> pine_labs_cancel_payment_request (CancelTransactionForced)",
+      "indirect outbound: the actual HTTPS calls to the Pine Labs cloud (call_pine_labs) live in pos_pine_labs, not in this bridge"
     ],
-    "frontend_components": []
+    "frontend_components": [
+      "PineLabs (plain JS terminal handler, static/src/app/pine_labs.js)",
+      "PaymentPage.prototype (patch; route pine_labs payments to PineLabs.startPayment)",
+      "SelfOrder.prototype (patch; instantiate PineLabs, force-include pine_labs methods, PineLabsError notifications)"
+    ]
   },
   "business_architecture": {
     "capabilities": [
-      "POS Self Order Pine Labs"
+      "Accept Self-Service Kiosk Card/UPI Payment via the Pine Labs POS Terminal",
+      "Settle an Approved Pine Labs Transaction into the Kiosk Order (pos.payment)",
+      "Cancel an In-Flight Kiosk Terminal Transaction on Timeout/Error",
+      "Expose the Pine Labs Payment Method to the Kiosk Self-Order Client (kiosk-mode only)"
     ],
-    "value_streams": [],
-    "information_concepts": [],
-    "organization": [],
+    "value_streams": [
+      "Kiosk-self-pay-by-Pine-Labs: diner confirms order at the kiosk -> /kiosk/payment creates the pos.order + sends UploadBilledTransaction to the Pine Labs terminal -> customer taps card/UPI on the terminal -> kiosk polls GetCloudBasedTxnStatus -> on TXN APPROVED a pos.payment is written, the order is marked paid, and a PAYMENT_STATUS bus message + receipt/kitchen order are emitted"
+    ],
+    "information_concepts": [
+      "pos.payment.method (Pine Labs terminal, kiosk-enabled)",
+      "pos.payment (base; tender line written on approval)",
+      "pos.order (base; kiosk order being paid)",
+      "pos.config (base; kiosk config exposing the terminal)"
+    ],
+    "organization": [
+      "(no module-owned res.groups; reuses point_of_sale POS groups and the pos_self_order self_ordering_default_user_id public actor)"
+    ],
     "products": [],
-    "policies": [],
-    "stakeholders": [],
+    "policies": [
+      "_payment_request_from_kiosk only acts when use_payment_terminal == 'pine_labs' (else delegates to super)",
+      "amounts are sent to Pine Labs in paisa (order.amount_total * 100); parent pos_pine_labs constrains the terminal to INR currency",
+      "Pine Labs methods are loaded to the public kiosk client only when self_ordering_mode == 'kiosk' (_load_pos_self_data_domain OR-extension)",
+      "every route re-verifies the pos.config by access_token (_verify_pos_config) and that the order belongs to that config (NotFound otherwise)",
+      "a paid order is only produced on a polled 'TXN APPROVED'; inactivity (110s) auto-cancels the terminal transaction"
+    ],
+    "stakeholders": [
+      "Customer / diner (taps card/UPI on the Pine Labs terminal at the kiosk)",
+      "Pine Labs POS Terminal + Pine Labs cloud (external payment device/provider, via pos_pine_labs)",
+      "Restaurant / Store Manager (configures the Pine Labs method on the kiosk pos.config)",
+      "Accountant (consumes the resulting pos.payment via the base POS session closing entry)"
+    ],
     "strategy": null,
-    "metrics": []
+    "metrics": [
+      "Pine Labs kiosk tender amounts roll up via base pos.payment / report.pos.order (no module-specific report)"
+    ]
   },
   "classification": {
     "value_model": "chain",
     "activity_class": "primary",
     "apqc_category": "3.0 Market and Sell Products and Services",
-    "rationale": "pos_self_order_pine_labs: thin chain/primary module (auto-architect baseline)."
+    "rationale": "pos_self_order_pine_labs is a thin payment-terminal bridge sitting inside the in-store self-service checkout: its sole act is collecting the customer's tender on the Pine Labs terminal and completing a pos.payment on the kiosk pos.order so the order can be marked paid. That places it on the retail Sell/checkout primary activity of the value chain (Stabell & Fjeldstad chain / transform), inherited from its point_of_sale -> pos_self_order lineage, and maps to APQC 3.0 (Market and Sell Products and Services) because the operation it adds -- capturing payment to close the kiosk sale -- is part of selling/closing the counter transaction, not treasury/AR (APQC 9.0), which is realized downstream by the base POS session closing entry. It carries a 'network' overtone (it mediates between the diner and the Pine Labs cloud terminal through public poll/cancel routes), but, like its pos_safaricom / pos_online_payment siblings, the value logic it actually completes is the chain sell transaction, so it is classified chain. (Note: the host pos_self_order is itself classed 'network' as the mediating self-order channel; this child does not add a new channel -- it only adds a tender device to that channel's kiosk mode -- so it is read with the underlying POS sell rather than the channel mediation.)"
   },
   "fit_to_standard": {
     "standard_capabilities": [
-      "POS Self Order Pine Labs"
+      "pay a self-service kiosk order with the Pine Labs POS terminal (use_payment_terminal = 'pine_labs')",
+      "automatic kiosk order creation + terminal payment request in one /kiosk/payment round-trip",
+      "client-side status polling (5s) of the Pine Labs cloud until TXN APPROVED, then automatic pos.payment + order-paid",
+      "auto-cancel of the terminal transaction on ~90-110s inactivity",
+      "Pine Labs method auto-exposed to the kiosk client only in kiosk self-ordering mode"
     ],
-    "typical_fits": [],
-    "common_gaps": [],
+    "typical_fits": [
+      "Indian (INR) quick-service / retail self-order kiosks taking card/UPI on a Pine Labs terminal",
+      "a Pine Labs method configured on the kiosk pos.config.payment_method_ids (credentials on the pos_pine_labs method)",
+      "kiosk pay-each flow where the diner settles at the kiosk before the order goes to the kitchen"
+    ],
+    "common_gaps": [
+      "INR-only (parent pos_pine_labs currency constraint) -- not usable for non-INR kiosks",
+      "completion depends on client polling staying alive; a closed kiosk tab mid-poll leaves the terminal txn to the inactivity cancel",
+      "no module-specific reconciliation/reporting beyond the base pos.payment line",
+      "refunds/partial captures from the kiosk are not part of this bridge (forward-only collect)",
+      "depends on pos_pine_labs reaching the Pine Labs cloud (UploadBilledTransaction / GetCloudBasedTxnStatus); endpoint/SDK changes need edits there"
+    ],
     "drive_hints": [
-      "n/a"
+      "odoo shell: env['pos.payment.method'].search([('use_payment_terminal','=','pine_labs')]).mapped(('name','pine_labs_merchant','pine_labs_test_mode','config_ids.self_ordering_mode'))",
+      "odoo shell: env['pos.config'].search([('self_ordering_mode','=','kiosk')]).mapped(lambda c: (c.name, c.payment_method_ids.filtered(lambda p: p.use_payment_terminal=='pine_labs').mapped('name')))",
+      "curl jsonrpc /pos-self-order/pine-labs-fetch-payment-status/ with {'access_token':cfg.access_token,'order_id':...,'payment_data':{...},'payment_method_id':...} (expect Unauthorized/NotFound without a valid token/order)",
+      "open a kiosk POS (self_ordering_mode='kiosk') with a Pine Labs method and place an order to trigger PaymentPage.startPayment -> PineLabs.startPayment",
+      "odoo shell: env['pos.order'].search([('source','=','kiosk'),('payment_ids.payment_method_id.use_payment_terminal','=','pine_labs')], limit=5).mapped(('name','state','amount_total'))"
     ]
   },
   "reverse_eng_confidence": {
@@ -123,17 +191,21 @@
     "value_streams": "inferred",
     "policies": "inferred",
     "metrics": "inferred",
+    "stakeholders": "inferred",
     "strategy": "human"
   },
   "open_questions": [
-    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+    "Exact OWL correlation: how the kiosk PaymentPage maps the PAYMENT_STATUS bus notification back to the in-progress payment screen after the server already wrote the pos.payment on the poll.",
+    "Behavior when the diner abandons the kiosk mid-payment but the terminal still approves (the polling tab is gone -- does the inactivity cancel race the approval?).",
+    "Whether the K-prefixed tracking_number / kiosk receipt path differs for a Pine Labs tender vs other kiosk terminals.",
+    "Idempotency of repeated /pos-self-order/pine-labs-fetch-payment-status/ calls returning TXN APPROVED (double add_payment guard relies on action_pos_order_paid state)."
   ],
   "provenance": {
     "explorer_facts": "doc/revres/facts/pos_self_order_pine_labs.facts.json",
     "tools": [
-      "extract_module.py",
+      "code-read (controllers/orders.py, models/pos_payment_method.py, static/src/app/pine_labs.js, static/src/app/pages/payment_page.js, static/src/app/services/self_order_service.js, __manifest__.py; cross-read pos_self_order/controllers/orders.py + models/pos_order.py + models/pos_payment_method.py and pos_pine_labs/models/pos_payment_method.py)",
       "extract_frontend.py",
-      "gen_thin.py"
+      "extract_module.py"
     ],
     "odoo_version": "19.0"
   }

@@ -4,6 +4,10 @@
     "manifest": {
       "name": "Remote Work with calendar",
       "category": "Human Resources/Remote Work",
+      "summary": null,
+      "version": "1.0",
+      "author": "Odoo S.A.",
+      "license": "LGPL-3",
       "depends": [
         "hr_homeworking",
         "calendar"
@@ -14,17 +18,55 @@
     "models": [
       {
         "_name": "homework.location.wizard",
-        "_description": "Set Homework Location Wizard",
-        "fields": 8
+        "_description": "Set Homework Location Wizard (TransientModel)",
+        "fields": 8,
+        "relations": [
+          "work_location_id->hr.work.location (required, string 'Location')",
+          "work_location_name->Char related work_location_id.name",
+          "work_location_type->Selection related work_location_id.location_type",
+          "employee_id->hr.employee (required, ondelete=cascade, default=self.env.user.employee_id)",
+          "employee_name->Char related employee_id.name",
+          "weekly->Boolean (default False; True = set the recurring weekday default, False = a one-day exception)",
+          "date->Date (the day being edited)",
+          "day_week_string->Char compute _compute_day_week_string (EEEE label of date, '' when no date)"
+        ]
+      },
+      {
+        "_name": "hr.employee (inherit)",
+        "_description": "Adds _get_worklocation(start_date,end_date): builds the per-employee calendar payload merging the 7 weekly defaults + dated hr.employee.location exceptions",
+        "fields": 0,
+        "relations": [
+          "reads hr.employee DAYS fields + hr.employee.location (search_read of exceptions in the date window)"
+        ]
+      },
+      {
+        "_name": "res.partner (inherit)",
+        "_description": "Adds get_worklocation(start_date,end_date): partner-side entry point the OWL calendar RPC-calls; resolves employees from work_contact_id then delegates to hr.employee._get_worklocation",
+        "fields": 0,
+        "relations": [
+          "res.partner -> hr.employee (via work_contact_id, scoped to env.company)"
+        ]
       }
     ],
     "routes": [],
     "security": {
       "access_rules": 1,
       "record_rules": 2,
-      "groups": 0
+      "groups": 0,
+      "note": "ir.model.access.csv: homework.location.wizard is read/write/create/unlink for base.group_user. security.xml ir.rule: homeworking_location_wizard_own_rule restricts base.group_user to ('employee_id','=',user.employee_id.id) (a user can only run the wizard for themselves); homeworking_location_wizard_admin_rule gives hr.group_hr_user the full (1=1) domain. No module-owned res.groups. The hr.employee.location rows the wizard creates are governed by hr_homeworking's own ir.rule."
     },
-    "views": {},
+    "views": {
+      "form": 0,
+      "list": 0,
+      "tree": 0,
+      "kanban": 0,
+      "search": 0,
+      "pivot": 0,
+      "graph": 0,
+      "calendar": 0,
+      "activity": 0,
+      "note": "xml_loc=187. wizard/homework_location_wizard.xml declares the wizard form (date / weekly toggle / 'Repeat every <weekday>' / work_location_id + a 'Set Location' button calling set_employee_location) and a window action set_location_wizard_action (target='new', binding_model_id=homework.location.wizard). No new model views; the schedule itself is rendered by patching the calendar module's AttendeeCalendar in JS, not by XML."
+    },
     "frontend": {
       "present": true,
       "js_files": 5,
@@ -62,63 +104,132 @@
     },
     "behavioral_notes": [
       {
-        "element": "frontend (OWL/JS)",
-        "observation": "5 JS files, 0 OWL components, 0 registry adds; bundles ['web.assets_backend', 'web.assets_unit_tests'].",
-        "source": "static"
+        "element": "homework.location.wizard.set_employee_location — the create/update/delete-exception engine (the module's core write path)",
+        "observation": "This TransientModel method is where every calendar edit lands; it is the substance of the add-on and is invisible to metadata. ensure_one(); returns early if no date. It resolves the target employee from self.employee_id or context default_employee_id (fallback env.user.employee_id), then searches the existing hr.employee.location for (date, employee). weekday = self.date.weekday(); default_location_for_current_date = DAYS[weekday]. Branch A (self.weekly=True): it deletes any dated exception on that date, then writes the weekday default through the USER record — employee_id.sudo().user_id.write({DAYS[weekday]: work_location_id}) — i.e. 'weekly/recurring' means setting the day-of-week default (related-synced to hr.employee), NOT creating a calendar.event. Branch B (one-off): if the chosen work_location_id equals the employee's existing weekday default it UNLINKS the exception (no redundant exception row); elif an exception already exists it WRITEs it; else it CREATEs a new hr.employee.location row for that date. So the wizard is the single place that reconciles the two-layer model and prunes exceptions that match the default. None of this branching/pruning is expressible in metadata.",
+        "source": "code-read"
       },
       {
-        "element": "thin module",
-        "observation": "1 models, 0 routes, 336 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
-        "source": "ast"
+        "element": "hr.employee._get_worklocation(start_date, end_date) — the calendar feed assembling weekly defaults + exceptions",
+        "observation": "The OWL calendar's data source. For each employee it seeds a dict with user_id, employee_id, partner_id (user_partner_id or work_contact_id), employee_name, then for every day in DAYS emits {location_type, location_name, work_location_id} from that weekday's default m2o (employee[day]). It then search_reads hr.employee.location for that employee set within [start_date, end_date] and folds each dated row into an 'exceptions'[date] sub-dict keyed by DEFAULT_SERVER_DATE_FORMAT date string, carrying hr_employee_location_id so the front end can tell a real exception row (editable/deletable) from a synthesised weekly-default 'ghost'. res.partner.get_worklocation is the public entry the JS RPC-calls: it search()es hr.employee by ('work_contact_id','in',partner_ids) scoped to env.company and delegates here. This server-built merge of recurring + exceptional locations into a calendar payload is pure Python.",
+        "source": "code-read"
+      },
+      {
+        "element": "calendar integration is a VIEW overlay, not calendar.event rows (AttendeeCalendarModel / Controller JS patches)",
+        "observation": "Despite depends=['calendar'], this module creates NO calendar.event records (grep confirms calendar.event appears only in a test mock). Instead static/src/calendar/common/* PATCHES the calendar app: AttendeeCalendarModel.prototype.updateData/loadWorkLocations calls res.partner.get_worklocation and synthesises virtual day-cells — createHomeworkingRecordAt builds records with resModel:'hr.employee.location', homeworking:true, and a ghostRecord flag (id 'default-location-<emp>-<ms>' when there is no hr_employee_location_id, i.e. the cell is just the weekly default). AttendeeCalendarController.prototype.editRecord routes a click on a homeworking cell to action hr_homeworking_calendar.set_location_wizard_action (passing default_date/default_work_location_id); deleteRecord, for a ghostRecord, writes res.users.<weekday>_location_id = False (clearing the weekly default), otherwise orm.unlink('hr.employee.location', id) (removing just that exception). So the 'calendar' is the standard attendee calendar repainted with work-location ghosts, and edits flow back through the wizard / direct ORM — a behavior only the JS reveals.",
+        "source": "code-read"
+      },
+      {
+        "element": "homework.location.wizard._compute_day_week_string + wizard form binding (UX semantics of the 'weekly' toggle)",
+        "observation": "_compute_day_week_string (@api.depends('date')) renders the date's weekday name via tools.format_date(..., 'EEEE') or '' when no date, which the wizard form (wizard/homework_location_wizard.xml) interpolates into the 'Repeat every <day_week_string>' label next to the weekly checkbox — so ticking 'weekly' visibly promises 'every <Monday>' before set_employee_location runs Branch A. The action set_location_wizard_action is target='new' and bound (binding_model_id) so it opens as a dialog; the JS passes default_date and default_work_location_id into its context, which the wizard fields default from. This date->weekday-label coupling and the context-driven defaulting are behavioral glue not shown by field metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "frontend (static) — patched attendee calendar (renderers, year view, popover)",
+        "observation": "5 JS files, 0 OWL components, 0 registry adds, 6 prototype patches (gap #3). Beyond the model/controller above, calendar_common_renderer.js / calendar_year_renderer.js patch AttendeeCalendarCommonRenderer / AttendeeCalendarYearRenderer to draw the work-location ghost cells, and popover/calendar_common_popover.js patches AttendeeCalendarCommonPopover to show location details + the edit/delete affordances. The 'services' date/weekday/weekly reported by extract are template/prop hooks, not Odoo registry services. Bundles: web.assets_backend, web.assets_unit_tests. The whole work-location calendar UX lives in these patches over the calendar module and is unreachable from Python metadata (gap #3).",
+        "source": "static"
       }
     ]
   },
   "it_architecture": {
-    "application": "hr_homeworking_calendar (Remote Work with calendar)",
+    "application": "hr_homeworking_calendar (calendar visualisation + edit dialog for the hr_homeworking schedule: a wizard that writes weekly defaults or dated hr.employee.location exceptions, surfaced by patching the attendee calendar)",
     "software_services": [],
     "data_objects": [
-      "homework.location.wizard"
+      "homework.location.wizard",
+      "hr.employee (inherit)",
+      "res.partner (inherit)"
     ],
     "logical_data_erm": [
-      "homework.location.wizard -> hr.employee",
-      "homework.location.wizard -> hr.work.location"
+      "homework.location.wizard -> hr.work.location (work_location_id) + hr.employee (employee_id, ondelete=cascade); TransientModel (no persistent table)",
+      "set_employee_location -> writes hr.employee.location (create/write/unlink) OR res.users.<weekday>_location_id (weekly branch, via employee.user_id)",
+      "hr.employee._get_worklocation -> reads hr.employee (7 DAYS m2o) + hr.employee.location (dated exceptions)",
+      "res.partner.get_worklocation -> hr.employee (via work_contact_id, env.company scope)"
     ],
     "information_flows": [
-      "depends: hr_homeworking, calendar"
+      "depends: hr_homeworking (the hr.employee.location model + 7 weekday default fields) and calendar (the AttendeeCalendar views being patched)",
+      "feed: OWL AttendeeCalendarModel.loadWorkLocations -> RPC res.partner.get_worklocation -> hr.employee._get_worklocation -> {weekly defaults + exceptions[date]} payload",
+      "edit: click homeworking cell -> AttendeeCalendarController.editRecord -> action set_location_wizard_action -> homework.location.wizard.set_employee_location",
+      "write (weekly): wizard Branch A -> employee.sudo().user_id.write({DAYS[weekday]: location}) (+ delete any same-date exception)",
+      "write (one-off): wizard Branch B -> create/write/unlink hr.employee.location (unlink when chosen == weekday default)",
+      "delete: ghost cell -> res.users.<weekday>_location_id=False; real exception -> orm.unlink('hr.employee.location')",
+      "no calendar.event is ever created (verified); the schedule is a view overlay, not calendar data"
     ],
-    "frontend_components": []
+    "frontend_components": [
+      "AttendeeCalendarModel.prototype (loadWorkLocations/createHomeworkingRecordAt: builds work-location ghost + exception cells)",
+      "AttendeeCalendarController.prototype (editRecord->wizard, deleteRecord->clear weekly default or unlink exception, openWorkLocationWizard)",
+      "AttendeeCalendarCommonRenderer.prototype / AttendeeCalendarYearRenderer / AttendeeCalendarCommonPopover (render + popover for work-location cells)"
+    ]
   },
   "business_architecture": {
     "capabilities": [
-      "Remote Work with calendar"
+      "Visualise each employee's remote-work schedule on the attendee calendar (weekly defaults + dated exceptions)",
+      "Edit the schedule from the calendar via a single dialog (homework.location.wizard)",
+      "Set a recurring weekday default ('weekly') or a one-day exception from the same dialog",
+      "Prune redundant exceptions automatically (an exception equal to the weekday default is removed)",
+      "Delete a day's location (clear the weekly default or remove just the exception)"
     ],
-    "value_streams": [],
+    "value_streams": [
+      "Calendar-Edit-to-Schedule: user clicks a day on the attendee calendar -> set_location_wizard_action -> set_employee_location -> hr.employee.location exception or res.users weekday default written -> calendar reloads",
+      "Schedule-to-Calendar-View: get_worklocation merges 7 weekly defaults + dated exceptions -> AttendeeCalendarModel paints work-location ghost/exception cells per employee/day"
+    ],
     "information_concepts": [
-      "homework.location.wizard"
+      "homework.location.wizard (transient edit intent: date, weekly?, location, employee)",
+      "hr.employee.location (dated exception, owned by hr_homeworking)",
+      "Weekly default work location (7 day-of-week fields, owned by hr_homeworking)",
+      "Attendee calendar work-location cell (virtual, resModel hr.employee.location, ghost vs real)"
     ],
-    "organization": [],
+    "organization": [
+      "(no module-owned res.groups; base.group_user runs the wizard for self, hr.group_hr_user for anyone)"
+    ],
     "products": [],
     "policies": [
-      "2 record rules"
+      "A user may run the wizard only for their own employee (ir.rule homeworking_location_wizard_own_rule); hr.group_hr_user for all",
+      "'weekly' sets the recurring weekday default and deletes any conflicting same-date exception; one-off creates/updates an exception",
+      "An exception equal to that weekday's default is not stored (set_employee_location unlinks it) — exceptions are only deviations",
+      "Deleting a ghost (default) cell clears the weekly default field; deleting a real cell unlinks only that hr.employee.location row",
+      "No calendar.event records are created — the schedule is never duplicated into calendar data"
     ],
-    "stakeholders": [],
+    "stakeholders": [
+      "Employee (manages own remote-work calendar)",
+      "HR officer / manager (hr.group_hr_user: edits anyone's schedule from the calendar)",
+      "Colleagues (see the multi-attendee work-location calendar)"
+    ],
     "strategy": null,
-    "metrics": []
+    "metrics": [
+      "(no own reports/KPIs; the value is the calendar visualisation itself)"
+    ]
   },
   "classification": {
     "value_model": "support",
     "activity_class": "support",
     "apqc_category": "7.0 Develop and Manage Human Capital",
-    "rationale": "hr_homeworking_calendar: thin support/support module (auto-architect baseline)."
+    "rationale": "hr_homeworking_calendar is a thin UX/integration layer on top of hr_homeworking, so it inherits the same classification. It owns no persistent business object — its only declared model is a TransientModel (homework.location.wizard, 8 fields) plus two _inherit-only models adding the calendar-feed methods; 0 routes, 1 ACL + 2 ir.rule, ~336 py LOC, auto_install=true, application=false, category Human Resources/Remote Work. By Stabell & Fjeldstad it is a SUPPORT activity (workforce administration; it produces no product, solves no client problem, brokers no network) and a Porter HR/infrastructure support activity. APQC 7.0 Develop and Manage Human Capital fits for the same reason as its parent: it captures and presents where employees work (the 7.x employee-information / workforce-management nuance), here adding a calendar view and an edit dialog over that schedule. Notably the 'calendar' dependency is purely the attendee-calendar UI being patched (no calendar.event is created), so this is not a scheduling/event-management capability in its own right. 8.0 Manage IT was rejected (no IT-service plumbing, no routes, no external calls); it is the presentation/editing tier of an HR people-data feature, hence 7.0."
   },
   "fit_to_standard": {
     "standard_capabilities": [
-      "Remote Work with calendar"
+      "Attendee-calendar rendering of the per-employee remote-work schedule (multi-employee, year + common views)",
+      "homework.location.wizard dialog to set a weekly default or a dated exception from the calendar",
+      "Automatic pruning of exceptions that match the weekday default",
+      "Delete affordances: clear the weekly default (ghost cell) or remove a single exception",
+      "Server-side merge of weekly defaults + exceptions into one calendar feed (get_worklocation)"
     ],
-    "typical_fits": [],
-    "common_gaps": [],
+    "typical_fits": [
+      "Teams that want to see and edit hybrid/remote days on the same calendar they use for meetings",
+      "Letting employees self-schedule remote days by clicking the calendar (self-only via ir.rule)",
+      "HR adjusting many employees' office/home days visually"
+    ],
+    "common_gaps": [
+      "No calendar.event is created, so the schedule does NOT appear in external/synced calendars (Google/Outlook) or block meeting availability",
+      "Inherits hr_homeworking's one-location-per-day limit (the wizard writes a single hr.employee.location per date)",
+      "Editing is dialog-based per day; there is no drag-to-recur or range edit",
+      "All UX lives in JS patches over the calendar module, so a future calendar-app refactor can break it (tight coupling, gap #3)",
+      "No approval/notification when a remote day is set"
+    ],
     "drive_hints": [
-      "odoo shell: env['homework.location.wizard'].search([],limit=3)"
+      "odoo shell: p = env.user.partner_id; env['res.partner'].get_worklocation(serialized_start, serialized_end)  # the calendar feed (weekly defaults + exceptions)",
+      "odoo shell: w = env['homework.location.wizard'].create({'employee_id': env.user.employee_id.id, 'date': fields.Date.today(), 'work_location_id': env['hr.work.location'].search([],limit=1).id, 'weekly': False}); w.set_employee_location()  # create today's exception",
+      "odoo shell: w2 = env['homework.location.wizard'].create({'employee_id': env.user.employee_id.id, 'date': fields.Date.today(), 'work_location_id': loc.id, 'weekly': True}); w2.set_employee_location()  # set the recurring weekday default via user_id",
+      "odoo shell: env['hr.employee'].browse(env.user.employee_id.id)._get_worklocation(fields.Date.today(), fields.Date.today())  # inspect the merged payload incl. exceptions[date]",
+      "grep: rg 'calendar.event' addons/hr_homeworking_calendar  # confirms no calendar.event rows are created (test mock only)"
     ]
   },
   "reverse_eng_confidence": {
@@ -132,14 +243,18 @@
     "strategy": "human"
   },
   "open_questions": [
-    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+    "No runtime data captured (homework.location.wizard is transient; runtime.models_with_data=0): real exception vs weekly-default edit mix is unknown.",
+    "The reported frontend 'services' (date/weekday/weekly) are template/prop hooks rather than Odoo registry services; their exact role would need the calendar XML templates traced to confirm.",
+    "Behaviour when an employee has no linked user_id: the weekly ('weekly=True') branch writes through employee.user_id, so setting a recurring default for a user-less employee may be a no-op (not exercised here)."
   ],
   "provenance": {
     "explorer_facts": "doc/revres/facts/hr_homeworking_calendar.facts.json",
     "tools": [
-      "extract_module.py",
-      "extract_frontend.py",
-      "gen_thin.py"
+      "code-read (wizard/homework_location_wizard.py, wizard/homework_location_wizard.xml, models/hr_employee.py, models/res_partner.py, security/security.xml, security/ir.model.access.csv, static/src/calendar/common/calendar_model.js, static/src/calendar/common/hr_homeworking_calendar_controller.js, __manifest__.py)",
+      "extract_frontend.py (frontend/hr_homeworking_calendar.frontend.json)",
+      "extract_module.py (facts/hr_homeworking_calendar.facts.json)",
+      "Grep",
+      "Read"
     ],
     "odoo_version": "19.0"
   }

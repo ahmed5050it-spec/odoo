@@ -4,21 +4,51 @@
     "manifest": {
       "name": "Payment Provider: Worldline",
       "category": "Accounting/Payment Providers",
+      "summary": "A French payment provider covering several European countries.",
+      "version": "1.0",
+      "author": "Odoo S.A.",
+      "license": "LGPL-3",
       "depends": [
         "payment"
       ],
       "auto_install": false,
       "application": false
     },
-    "models": [],
+    "models": [
+      {
+        "_name": "payment.provider (inherit)",
+        "_description": "Payment Provider (Worldline credentials: PSPID / API key + secret / webhook key + secret)",
+        "fields": 6,
+        "relations": [
+          "code (Selection selection_add 'worldline', ondelete set default)",
+          "worldline_pspid (Char, required_if_provider=worldline, copy=False)",
+          "worldline_api_key (Char, required_if_provider=worldline, copy=False)",
+          "worldline_api_secret (Char, required_if_provider=worldline, copy=False)",
+          "worldline_webhook_key (Char, required_if_provider=worldline, copy=False)",
+          "worldline_webhook_secret (Char, required_if_provider=worldline, copy=False)"
+        ]
+      },
+      {
+        "_name": "payment.transaction (inherit)",
+        "_description": "Payment Transaction (Worldline Direct hosted-checkout redirect flow + S2S payments/token flow; tokenization)",
+        "fields": 0,
+        "relations": [
+          "no new fields; 10 methods overriding payment's reference/processing/rendering/request/notification/token hooks"
+        ]
+      }
+    ],
     "routes": [
       {
-        "paths": [],
+        "paths": [
+          "/payment/worldline/return"
+        ],
         "auth": "public",
         "type": "http"
       },
       {
-        "paths": [],
+        "paths": [
+          "/payment/worldline/webhook"
+        ],
         "auth": "public",
         "type": "http"
       }
@@ -26,19 +56,60 @@
     "security": {
       "access_rules": 0,
       "record_rules": 0,
-      "groups": 0
+      "groups": 0,
+      "note": "No own ACL/rules; relies on payment's security. None of the five Worldline credential fields carry a field-level groups= attribute (unlike most sibling acquirers, the api/webhook secrets are NOT pinned to base.group_system in the field definition -- they are only password-masked in the form view); everything else inherits payment's groups/record rules."
     },
     "views": {
       "form": 1,
       "list": 0,
-      "tree": 0,
       "kanban": 0,
       "search": 0,
       "pivot": 0,
       "graph": 0,
-      "calendar": 0,
-      "activity": 0
+      "note": "xml_loc=61: payment.provider form inheritance (payment_provider_views.xml: Worldline PSPID / API key / API secret / webhook key / webhook secret, shown only when code=='worldline'; the two secrets password-masked) + the (deliberately empty) QWeb redirect-form template payment_worldline_templates.xml (just <form t-att-action=\"api_url\"/> -- it posts the browser to the Worldline-hosted checkout redirectUrl, no hidden fields), plus data/payment_provider_data.xml wiring redirect_form_view_id and allow_tokenization=True. No own model views. Module also declares post_init_hook / uninstall_hook (inherited payment install hooks)."
     },
+    "behavioral_notes": [
+      {
+        "element": "payment.transaction._get_specific_rendering_values -> _worldline_create_checkout_session -> S2S POST hostedcheckouts (Worldline Direct), browser redirected to the returned redirectUrl",
+        "observation": "Unlike redirect-only acquirers, Worldline mints the redirect target via a real server-to-server call. _get_specific_rendering_values calls _worldline_create_checkout_session, which POSTs a 'hostedcheckouts' payload through the engine's _send_api_request('POST','hostedcheckouts',json=payload) and returns {'api_url': checkout_session_data['redirectUrl']} -- so api_url is a Worldline-hosted checkout URL, NOT a static endpoint, and the (empty) redirect_form QWeb template simply auto-POSTs the browser to it. The payload carries hostedCheckoutSpecificInput (locale, returnUrl=/payment/worldline/return?provider_id=<id>, showResultPage=False), order.amountOfMoney (to_minor_currency_units + currency.name), a full order.customer block (billingAddress, contactDetails, personalInformation.name split via split_partner_name) and order.references (descriptor + merchantReference = tx.reference). For methods in const.REDIRECT_PAYMENT_METHODS it adds redirectPaymentMethodSpecificInput (paymentProductId from const.PAYMENT_METHODS_MAPPING, requiresApproval=False to force capture); otherwise it adds cardPaymentMethodSpecificInput (authorizationMode='SALE' to force capture, tokenize=self.tokenize) and either pins a card paymentProductId or restricts the hosted checkout to the 'cards' product group. The S2S hostedcheckouts creation and the dynamic redirectUrl are invisible to Python model/field metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "payment.provider._build_request_url / _build_request_headers / _worldline_calculate_signature -> Worldline GCS v1HMAC auth (HMAC-SHA256 over a canonical request string) on every S2S call",
+        "observation": "Worldline overrides the engine's request hooks (it does NOT use _build_request_auth/HTTP Basic). _build_request_url targets f'{_worldline_get_api_url()}/v2/{worldline_pspid}/{endpoint}' (live https://payment.direct.worldline-solutions.com vs preprod https://payment.preprod.direct.worldline-solutions.com by provider.state). _build_request_headers sets Content-Type='application/json; charset=utf-8' for POST, a Date in locale-independent RFC1123 (wsgiref format_date_time), and Authorization='GCS v1HMAC:'+worldline_api_key+':'+signature, adding X-GCS-Idempotence-Key for POSTs that pass an idempotency_key. _worldline_calculate_signature builds the canonical signing string by '\\n'-joining [HTTP method, content_type, date, optional 'x-gcs-idempotence-key:<key>', '/v2/<pspid>/<endpoint>'] (trailing newline), then HMAC-SHA256s it with worldline_api_secret and Base64-encodes the digest. _parse_response_error joins response.json()['errors'][*]['message']. So every server-to-server request to the Worldline Direct API is authenticated by this GCS-style HMAC-SHA256 over method/content-type/date/idempotence/path -- a custom Authorization header, not a bearer token or Basic auth. The actual HTTP is delegated to payment.provider._send_api_request. This signing scheme and the custom GCS header are pure code semantics, invisible to metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "payment.transaction._send_payment_request -> S2S POST payments (token / merchant-initiated flow) with idempotency key",
+        "observation": "For the direct (non-redirect) token flow, _send_payment_request POSTs a 'payments' request via _send_api_request('POST','payments',json=payload, idempotency_key=generate_idempotency_key(self, scope='payment_request_token')). The payload carries cardPaymentMethodSpecificInput {authorizationMode='SALE' (force capture), token=self.token_id.provider_ref, unscheduledCardOnFileRequestor='merchantInitiated', unscheduledCardOnFileSequenceIndicator='subsequent'} plus order.amountOfMoney and order.references.merchantReference=reference. On ValidationError it _set_error(str(e)); otherwise it folds the response into the state machine via _process('worldline', response_content). The idempotency-keyed merchant-initiated unscheduled-card-on-file charge against a saved Worldline token is pure code, not visible in metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "WorldlineController.worldline_return_from_checkout (/payment/worldline/return, GET) -> S2S GET hostedcheckouts/{id}; worldline_webhook (/payment/worldline/webhook, POST, csrf=False) -> X-GCS-Signature verify BEFORE _process",
+        "observation": "The two routes verify very differently. The return GET first validates that data['provider_id'] resolves to an existing provider with code=='worldline' (else werkzeug Forbidden / HTTP 403), then makes its OWN S2S call provider._send_api_request('GET', f'hostedcheckouts/{data[\"hostedCheckoutId\"]}') to fetch the authoritative result, pulls createdPaymentOutput, and _process('worldline', payment_data) -- i.e. it does NOT trust the browser-supplied data, it re-fetches from Worldline; on ValidationError it just logs and skips. It then redirects to /payment/status. The webhook POST reads request.get_json_data(), locates the tx with _search_by_reference('worldline', data), and -- only if found -- calls _verify_signature(raw_body, request.httprequest.headers['X-GCS-Signature'], tx_sudo) BEFORE _process. _verify_signature recomputes Base64(HMAC-SHA256(worldline_webhook_secret, raw request body)) and rejects with Forbidden (HTTP 403) when the header is missing or hmac.compare_digest fails -- so the webhook is authenticated by a webhook-secret HMAC over the raw payload (distinct from the api-secret GCS auth used on outbound calls), while the return route is authenticated by a fresh S2S re-fetch. This dual verification model is pure code, not visible in metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "payment.transaction._apply_updates / _get_specific_processing_values -> Worldline status -> state mapping, incl. the 3DS-fallback reset of the token flow to redirect",
+        "observation": "_apply_updates unwraps payment_data (handling the failed-payment 'paymentResult' envelope), sets provider_reference = payment['id'].rsplit('_',1)[0] (stripping Worldline's trailing _<seq>), resolves the payment method from the cardPaymentMethodSpecificOutput/redirectPaymentMethodSpecificOutput paymentProductId via payment.method._get_from_code(mapping=const.PAYMENT_METHODS_MAPPING), then maps payment['status'] through const.PAYMENT_STATUS_MAPPING: CREATED/REDIRECTED/AUTHORIZATION_REQUESTED/PENDING_CAPTURE/CAPTURE_REQUESTED -> _set_pending (with two special cases: AUTHORIZATION_REQUESTED on an online_token/offline op -> _set_error(status); a validation op reaching PENDING_CAPTURE/CAPTURE_REQUESTED with token data -> _set_done); CAPTURED -> _set_done; CANCELLED -> _set_canceled (with errorCode); REJECTED/REJECTED_CAPTURE -> _set_error (declined, with errorCode); missing/other status -> _set_error. The AUTHORIZATION_REQUESTED->error on a token charge is then caught by _get_specific_processing_values, which (for operation=='online_token', state=='error', state_message ending 'AUTHORIZATION_REQUESTED') resets the tx to draft, switches operation to 'online_redirect', and returns {'force_flow':'redirect'} -- forcing the buyer through the hosted-checkout redirect so 3-D Secure can be completed. This nuanced status model and the token->redirect 3DS fallback are pure code, not visible in metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "payment.transaction._extract_token_values + provider._compute_feature_support_fields -> tokenization (saved Worldline card token)",
+        "observation": "support_tokenization is force-enabled for code=='worldline' in _compute_feature_support_fields (and data/payment_provider_data.xml sets allow_tokenization=True). When tx.tokenize is set and a charge succeeds, payment's engine calls _extract_token_values: it reads the cardPaymentMethodSpecificOutput/redirectPaymentMethodSpecificOutput block, returns {} if there is no 'token', else vaults provider_ref = payment_method_data['token'] and payment_details = last 4 of card.cardNumber (Worldline pads with '*'). Subsequent off-session charges re-use that token via _send_payment_request (token=token_id.provider_ref, merchant-initiated unscheduled CoF). The hosted-checkout creation requests the token via cardPaymentMethodSpecificInput.tokenize. This vaulting and token re-use are pure code, not visible as plain field metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "external integration surface (gap #7) -- endpoints, GCS HMAC auth keys, webhook secret",
+        "observation": "Static gap-#7 facts (extract_frontend.py): uses_api_keys=true; the declared endpoints are the Worldline Direct API hosts -- https://payment.direct.worldline-solutions.com (live) and https://payment.preprod.direct.worldline-solutions.com (preprod) -- selected by provider.state in models/payment_provider.py (_worldline_get_api_url), with concrete paths /v2/<pspid>/hostedcheckouts, /v2/<pspid>/hostedcheckouts/<id> and /v2/<pspid>/payments built in _build_request_url. This is a REAL outbound REST integration (unlike the pure-redirect acquirers): HTTP is delegated to payment.provider._send_api_request, which Worldline configures via _build_request_url / _build_request_headers / _parse_response_error -- authenticating every call with a GCS v1HMAC Authorization header (HMAC-SHA256 over method/content-type/date/idempotence/path using worldline_api_secret, keyed by worldline_api_key). Inbound webhooks are independently authenticated by an X-GCS-Signature HMAC-SHA256 over the raw body using a SEPARATE worldline_webhook_secret (+ worldline_webhook_key id). No python SDK is imported. This server-to-server + hosted-redirect + signed-webhook link is the canonical metadata gap #7: none of the Worldline endpoints, the GCS HMAC request signing, or the webhook-secret verification are reachable from model/field metadata.",
+        "source": "static"
+      },
+      {
+        "element": "frontend (static) -- PaymentForm.prototype patch (1 JS, no OWL) (gap #3)",
+        "observation": "1 JS file, 0 OWL components, 0 registry adds, 1 patch (gap #3). static/src/interactions/payment_form.js patches PaymentForm.prototype._processTokenFlow: when providerCode==='worldline' and the server returned processingValues.force_flow==='redirect' (set by _get_specific_processing_values after a token charge hit AUTHORIZATION_REQUESTED), it deletes force_flow and calls _processRedirectFlow instead of the normal token flow -- i.e. it transparently switches a saved-card payment to the hosted-checkout redirect so 3-D Secure can be completed (the docstring still references the legacy 'Ogone' token flow). Assets load into web.assets_frontend. There is no inline card form and no browser SDK -- card entry happens on Worldline's hosted checkout page. This client-side flow-switch is invisible to Python metadata (gap #3).",
+        "source": "static"
+      }
+    ],
     "frontend": {
       "present": true,
       "js_files": 1,
@@ -68,57 +139,138 @@
     "runtime": {
       "models_with_data": 0,
       "top": []
-    },
-    "behavioral_notes": [
-      {
-        "element": "frontend (OWL/JS)",
-        "observation": "1 JS files, 0 OWL components, 0 registry adds; bundles ['web.assets_frontend'].",
-        "source": "static"
-      },
-      {
-        "element": "thin module",
-        "observation": "0 models, 2 routes, 1012 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
-        "source": "ast"
-      }
-    ]
+    }
   },
   "it_architecture": {
-    "application": "payment_worldline (Payment Provider: Worldline)",
-    "software_services": [],
-    "data_objects": [],
-    "logical_data_erm": [],
-    "information_flows": [
-      "depends: payment"
+    "application": "payment_worldline (Worldline Direct acquirer adapter for the payment engine; _inherit-only, no own models/views)",
+    "software_services": [
+      "/payment/worldline/return (redirect-return, http GET: validates provider_id, RE-FETCHES the result via S2S GET hostedcheckouts/{id}, processes createdPaymentOutput, then /payment/status)",
+      "/payment/worldline/webhook (async notification, http POST, csrf=False: X-GCS-Signature HMAC verified against worldline_webhook_secret, processes, returns empty JSON)"
     ],
-    "frontend_components": []
+    "data_objects": [
+      "payment.provider (+worldline_pspid, worldline_api_key, worldline_api_secret, worldline_webhook_key, worldline_webhook_secret)",
+      "payment.transaction (Worldline hosted-checkout redirect flow + S2S payments/token flow; no new fields; 10 override methods)"
+    ],
+    "logical_data_erm": [
+      "payment.transaction -> payment.provider (provider_id; provider_code=='worldline' gates every override)",
+      "payment.transaction -> payment.token (token_id; off-session charges read token.provider_ref = Worldline card token)",
+      "payment.provider.code selection_add 'worldline'",
+      "external: payment.transaction.reference == Worldline order.references.merchantReference (<=30 chars; cross-system key for webhook lookup via _extract_reference)",
+      "external: payment.transaction.provider_reference == Worldline payment id minus trailing _<seq> (payment['id'].rsplit('_',1)[0])",
+      "external: payment.token.provider_ref == Worldline card token"
+    ],
+    "information_flows": [
+      "depends: payment (inherits the provider/transaction/token engine + _send_api_request + redirect-form rendering + _process state machine)",
+      "outbound (redirect setup): _get_specific_rendering_values -> _worldline_create_checkout_session -> S2S POST /v2/<pspid>/hostedcheckouts (GCS v1HMAC auth) -> returned redirectUrl -> browser auto-POST to the Worldline-hosted checkout",
+      "outbound (direct/token): _send_payment_request -> S2S POST /v2/<pspid>/payments (GCS v1HMAC auth, idempotency-keyed, merchant-initiated unscheduled CoF) -> _process",
+      "inbound (return): Worldline -> GET /payment/worldline/return -> validate provider_id -> S2S GET /v2/<pspid>/hostedcheckouts/{id} (re-fetch authoritative result) -> _process -> /payment/status",
+      "inbound (webhook): Worldline -> POST /payment/worldline/webhook -> _verify_signature (X-GCS-Signature HMAC-SHA256 over raw body with worldline_webhook_secret, constant-time compare) -> _process -> payment state machine",
+      "fallback: token charge hits AUTHORIZATION_REQUESTED -> _set_error -> _get_specific_processing_values resets tx to draft + force_flow='redirect' -> PaymentForm._processTokenFlow patch redirects to hosted checkout for 3-D Secure",
+      "side-effect: successful charge + tx.tokenize -> _extract_token_values -> payment.token vault (Worldline token + last4)"
+    ],
+    "frontend_components": [
+      "PaymentForm.prototype (patch of _processTokenFlow; when force_flow=='redirect' for worldline, switches a saved-card payment to the hosted-checkout redirect for 3-D Secure)",
+      "redirect_form QWeb template (payment_worldline_templates.xml; empty server-rendered <form t-att-action=\"api_url\"/> that auto-POSTs the browser to the Worldline-hosted checkout redirectUrl; no hidden fields)"
+    ],
+    "external_integrations": {
+      "sdk": "none (no python SDK; HTTP via payment.provider._send_api_request configured by Worldline's _build_request_url/_build_request_headers overrides; no browser SDK -- card entry on the Worldline-hosted checkout page)",
+      "uses_api_keys": true,
+      "endpoints": [
+        "https://payment.direct.worldline-solutions.com (live) -- /v2/<pspid>/hostedcheckouts, /v2/<pspid>/hostedcheckouts/<id>, /v2/<pspid>/payments",
+        "https://payment.preprod.direct.worldline-solutions.com (preprod)"
+      ],
+      "auth": "Outbound: GCS v1HMAC Authorization header -- 'GCS v1HMAC:'+worldline_api_key+':'+Base64(HMAC-SHA256(worldline_api_secret, canonical method/content-type/RFC1123-date/[x-gcs-idempotence-key]/path)); POSTs may carry X-GCS-Idempotence-Key. Inbound webhook: X-GCS-Signature = Base64(HMAC-SHA256(worldline_webhook_secret, raw body)), verified with hmac.compare_digest. The return route uses no signature -- it re-fetches the result via an authenticated S2S GET.",
+      "files": [
+        "const.py",
+        "models/payment_provider.py",
+        "models/payment_transaction.py",
+        "controllers/main.py"
+      ],
+      "pattern": "Concrete realization of metadata gap #7: a real external acquirer integration with a genuine outbound REST channel (unlike the pure-redirect APS/Buckaroo/Redsys). Outbound server-to-server REST to the Worldline Direct API (/v2/<pspid>/hostedcheckouts to mint the hosted-checkout redirectUrl, /v2/<pspid>/payments for the direct/token flow) authenticated by a GCS v1HMAC HMAC-SHA256 request signature (worldline_api_key/secret); a hosted-checkout browser redirect for card entry; and inbound settlement via a webhook authenticated by a SEPARATE worldline_webhook_secret HMAC (X-GCS-Signature) plus a redirect-return route that re-fetches the authoritative result via S2S. The base 'payment' engine flags uses_api_keys but ships no live acquirer -- this module is exactly that override, sitting between Stripe/Xendit (full S2S) and APS/Buckaroo/Redsys (redirect-only).",
+      "note": "Prime gap-#7 example: none of the Worldline Direct endpoints, the GCS v1HMAC request signing, the separate webhook-secret X-GCS-Signature verification, the S2S re-fetch on return, or the browser token->redirect 3DS fallback are derivable from Python model/field metadata; they were established only by reading const.py + models/payment_provider.py + models/payment_transaction.py + controllers/main.py + static/src/interactions/payment_form.js."
+    }
   },
   "business_architecture": {
     "capabilities": [
-      "Payment Provider: Worldline"
+      "Accept Card payments via Worldline Direct hosted checkout (Visa, Mastercard, Amex, Discover; SALE/force-capture)",
+      "Accept European / international redirect methods via Worldline (iDEAL, Bancontact, EPS, P24, Klarna, PayPal, TWINT, MB WAY, Multibanco, Bizum, PostFinance Pay, Alipay+, WeChat Pay, FLOA, ...) mapped to Worldline paymentProductId",
+      "Tokenization / Saved Cards (vault Worldline card token; off-session merchant-initiated unscheduled card-on-file recharges)",
+      "3-D Secure with automatic fallback: a token charge that triggers AUTHORIZATION_REQUESTED is transparently re-routed through the hosted checkout",
+      "Multi-currency acceptance (amounts in minor units; currency from the transaction, no module-side allow-list)"
     ],
-    "value_streams": [],
-    "information_concepts": [],
-    "organization": [],
+    "value_streams": [
+      "Collect-Payment (redirect): initiate tx -> _worldline_create_checkout_session S2S POST hostedcheckouts -> browser redirect to the hosted checkout redirectUrl -> buyer pays/authenticates on Worldline -> GET /payment/worldline/return (S2S re-fetch GET hostedcheckouts/{id}) AND/OR async POST /payment/worldline/webhook (X-GCS-Signature) -> _process -> state machine pending/done/cancel/declined/error",
+      "Collect-Payment (token/direct): off-session -> _send_payment_request S2S POST payments (token, merchant-initiated, idempotency-keyed) -> _process; on AUTHORIZATION_REQUESTED, fall back to the hosted-checkout redirect for 3-D Secure",
+      "Tokenize-and-Recharge: hosted-checkout charge with tokenize -> _extract_token_values vault payment.token (Worldline token + last4) -> later off-session _send_payment_request(token)",
+      "Settle: status CAPTURED -> _set_done -> downstream post-process settlement (account_payment / sale)"
+    ],
+    "information_concepts": [
+      "payment.provider (Worldline credentials: PSPID, API key, API secret, webhook key, webhook secret)",
+      "payment.transaction (mapped to a Worldline hosted checkout or payment; keyed by merchantReference=reference, provider_reference=payment id w/o trailing _seq)",
+      "payment.token (saved Worldline card: token + last4)"
+    ],
+    "organization": [
+      "(no module-owned res.groups; notably the five Worldline credential fields are NOT pinned to base.group_system at the field level -- the api/webhook secrets are only password-masked in the form view; everything else inherits payment's groups/record rules)"
+    ],
     "products": [],
-    "policies": [],
-    "stakeholders": [],
+    "policies": [
+      "Webhook authenticity: webhook data must pass _verify_signature (X-GCS-Signature HMAC-SHA256 over the raw body with worldline_webhook_secret, constant-time hmac.compare_digest) or are rejected with HTTP 403 Forbidden",
+      "Return-route authenticity: the GET return validates provider_id resolves to a worldline provider (else 403) and re-fetches the authoritative result via an authenticated S2S GET rather than trusting the browser-supplied data",
+      "Outbound request authenticity: every S2S call is signed with a GCS v1HMAC HMAC-SHA256 over a canonical request string using worldline_api_secret (keyed by worldline_api_key); POSTs carry an idempotency key (X-GCS-Idempotence-Key)",
+      "Captures are forced (authorizationMode='SALE' for cards, requiresApproval=False for redirect methods) -- no separate manual-capture step",
+      "References are constrained to <=30 chars (Worldline merchantReference limit) via _compute_reference (a singularized 'WL' prefix fallback)",
+      "Tokenized payments that require 3-D Secure are auto-redirected to the hosted checkout (force_flow='redirect') instead of failing",
+      "Amounts sent in minor currency units (to_minor_currency_units), currency by name"
+    ],
+    "stakeholders": [
+      "Payer / Cardholder / European-method user (res.partner)",
+      "Merchant / Company (res.company, holds the Worldline PSPID, API key/secret & webhook key/secret)",
+      "Worldline (external acquirer / PSP; French, covering several European countries via the Worldline Direct / Global Collect platform)",
+      "Accountant (consumes settled payments via account_payment downstream)"
+    ],
     "strategy": null,
-    "metrics": []
+    "metrics": [
+      "(no own reports; transaction volumes/amounts/state surfaced by the parent payment.transaction pivot/graph)"
+    ]
   },
   "classification": {
     "value_model": "network",
     "activity_class": "support",
-    "apqc_category": "9.0 Manage Financial Resources",
-    "rationale": "payment_worldline: thin network/support module (auto-architect baseline)."
+    "apqc_category": "9.0 Manage Financial Resources (9.5 process payments / collect cash; manage external payment provider)",
+    "rationale": "payment_worldline is a value-NETWORK (Stabell & Fjeldstad mediating-technology) component: a concrete acquirer adapter whose purpose is to interconnect two parties who would not otherwise transact directly -- the European cardholder / local-method user and the merchant -- by linking the merchant to Worldline's card and European-payment-method network (the Worldline Direct / Global Collect platform). It exhibits the mediating-technology activities: network promotion & contract management (PSPID + API key/secret + webhook key/secret management, per-method paymentProductId enablement), service provisioning (creating the hosted-checkout session or the direct/token payment per transaction and confirming it), and infrastructure operation (the server-to-server GCS-HMAC-authenticated link to the Worldline Direct API, the hosted-checkout browser redirect, and the webhook-secret-verified settlement loop with a S2S re-fetch on return). It does not transform inputs into outputs (chain) nor solve a bespoke customer problem (shop). It inherits the parent 'payment' engine's value_model exactly: the engine is the generic mediator and this module is its Worldline realization. activity_class is 'support' because, from the enterprise value-chain perspective, payment acceptance is an infrastructure/finance support function (category Accounting/Payment Providers, application=False, no end-user app) sitting under 9.0 Manage Financial Resources -- specifically 9.5 process payments / collect cash, with the side of 'manage an external payment provider'. So value_model=network (its own internal logic is mediation, an acquirer integration -- gap #7), activity_class=support (its place on the enterprise value chain). This mirrors the sibling payment_stripe / payment_xendit metamodels (network/support) and the parent payment engine; Worldline is a richer variant than APS/Buckaroo/Redsys -- a genuine S2S API (GCS v1HMAC) plus hosted-checkout redirect and tokenization, like Xendit's dual server-to-server + redirect shape."
   },
   "fit_to_standard": {
     "standard_capabilities": [
-      "Payment Provider: Worldline"
+      "hosted-checkout redirect card payment minted via a S2S POST hostedcheckouts on the Worldline Direct API (live vs preprod by provider.state)",
+      "European / international redirect-method routing (iDEAL / Bancontact / EPS / P24 / Klarna / PayPal / TWINT / MB WAY / Multibanco / Bizum / PostFinance Pay / Alipay+ / WeChat Pay / FLOA ...) via Worldline paymentProductId",
+      "direct server-to-server token payments (POST payments) for off-session merchant-initiated unscheduled card-on-file charges, idempotency-keyed",
+      "tokenization / saved cards (Worldline card token), with 3-D Secure fallback that re-routes a token charge through the hosted checkout",
+      "asynchronous settlement via a webhook authenticated by a worldline_webhook_secret HMAC (X-GCS-Signature) plus a redirect-return route that re-fetches the authoritative result via S2S",
+      "multi-currency acceptance (minor-unit amounts; currency from the transaction, no module-side allow-list)"
     ],
-    "typical_fits": [],
-    "common_gaps": [],
+    "typical_fits": [
+      "online shop / portal checkout collecting card or European-method payments through Worldline across France and Europe",
+      "card save-for-later and merchant-initiated recurring/subscription charges (unscheduled card-on-file via POST payments)",
+      "local-method collection (iDEAL, Bancontact, Klarna, PayPal, TWINT, Bizum, ...) via the hosted checkout",
+      "send-a-payment-link or pay-an-invoice-online collection (with account_payment / sale downstream)"
+    ],
+    "common_gaps": [
+      "no manual capture / authorize-then-capture and no void operation -- captures are forced (SALE / requiresApproval=False)",
+      "no in-module refund operation (no _send_refund_request override here)",
+      "no merchant self-onboarding -- PSPID, API key/secret and webhook key/secret are entered manually on the provider form",
+      "the five credential fields are NOT field-group-restricted to base.group_system (only password-masked in the view), so anyone with write access to the provider form can read/edit the api/webhook secrets unless restricted elsewhere",
+      "the public-URL requirement for the return/webhook means local/dev instances need a tunnel; without the webhook secret set the X-GCS-Signature verification has no secret to compare against",
+      "webhook verification is skipped when no transaction matches the reference (it only runs inside `if tx_sudo`), though it always precedes processing for a found tx",
+      "bespoke reconciliation / settlement document chains live downstream (account_payment, sale), not here"
+    ],
     "drive_hints": [
-      "n/a"
+      "odoo shell: env['payment.provider'].search([('code','=','worldline')]).mapped(('name','state','worldline_pspid'))",
+      "odoo shell: p=env['payment.provider'].search([('code','=','worldline')],limit=1); print(p._worldline_get_api_url(), p.support_tokenization)",
+      "odoo shell: p=env['payment.provider'].search([('code','=','worldline')],limit=1); print(p._build_request_url('hostedcheckouts'))",
+      "odoo shell: tx=env['payment.transaction'].search([('provider_code','=','worldline')],limit=1); print(tx.reference, tx.state, tx.provider_reference, tx.token_id.provider_ref)",
+      "odoo shell: print([m for m in dir(env['payment.transaction']) if '_worldline' in m] + [m for m in dir(env['payment.provider']) if '_worldline' in m])",
+      "curl -X POST https://<host>/payment/worldline/webhook (csrf=False, auth=public) with a body whose merchantReference matches a tx but a missing/invalid X-GCS-Signature header -> expect HTTP 403 Forbidden from _verify_signature",
+      "Worldline preprod: provider in 'test' state targets https://payment.preprod.direct.worldline-solutions.com (Worldline test PSPID + api/webhook credentials)"
     ]
   },
   "reverse_eng_confidence": {
@@ -132,14 +284,21 @@
     "strategy": "human"
   },
   "open_questions": [
-    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+    "Exact Worldline Direct hostedcheckouts / payments request and response payloads beyond the fields built in _worldline_create_checkout_session / _send_payment_request and read in _apply_updates / _extract_token_values.",
+    "Real-world distribution of Worldline transaction states (pending/done/cancel/declined) and method mix (card vs the many redirect methods), and tokenization usage -- no runtime row counts captured.",
+    "How refunds / chargebacks are handled operationally given no in-module refund override (likely via the Worldline back office or a downstream module).",
+    "Whether the unrestricted (non-base.group_system) credential fields are an intentional choice or are expected to be locked down by the deploying instance.",
+    "Whether instances rely on the webhook (X-GCS-Signature) vs the S2S-re-fetching return route, and how the AUTHORIZATION_REQUESTED->redirect 3DS fallback behaves in practice for saved cards."
   ],
   "provenance": {
     "explorer_facts": "doc/revres/facts/payment_worldline.facts.json",
     "tools": [
-      "extract_module.py",
-      "extract_frontend.py",
-      "gen_thin.py"
+      "apqc_odoo_map.tsv",
+      "code-read (const.py, models/payment_provider.py, models/payment_transaction.py, controllers/main.py, __manifest__.py)",
+      "extract_frontend.py (frontend/payment_worldline.frontend.json)",
+      "extract_module.py (facts/payment_worldline.facts.json)",
+      "Grep",
+      "Read"
     ],
     "odoo_version": "19.0"
   }

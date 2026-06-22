@@ -4,21 +4,50 @@
     "manifest": {
       "name": "Payment Provider: Amazon Payment Services",
       "category": "Accounting/Payment Providers",
+      "summary": "An Amazon payment provider covering the MENA region.",
+      "version": "1.0",
+      "author": "Odoo S.A.",
+      "license": "LGPL-3",
       "depends": [
         "payment"
       ],
       "auto_install": false,
       "application": false
     },
-    "models": [],
+    "models": [
+      {
+        "_name": "payment.provider (inherit)",
+        "_description": "Payment Provider (APS / PayFort credentials: merchant identifier / access code / SHA request & response phrases)",
+        "fields": 5,
+        "relations": [
+          "code (Selection selection_add 'aps', ondelete set default)",
+          "aps_merchant_identifier (Char, required_if_provider=aps, copy=False)",
+          "aps_access_code (Char, required_if_provider=aps, copy=False, groups=base.group_system)",
+          "aps_sha_request (Char, required_if_provider=aps, copy=False, groups=base.group_system)",
+          "aps_sha_response (Char, required_if_provider=aps, copy=False, groups=base.group_system)"
+        ]
+      },
+      {
+        "_name": "payment.transaction (inherit)",
+        "_description": "Payment Transaction (APS hosted-redirect PURCHASE flow via the PayFort payment page; no direct API, no tokenization)",
+        "fields": 0,
+        "relations": [
+          "no new fields; 5 methods overriding payment's reference/rendering/notification hooks"
+        ]
+      }
+    ],
     "routes": [
       {
-        "paths": [],
+        "paths": [
+          "/payment/aps/return"
+        ],
         "auth": "public",
         "type": "http"
       },
       {
-        "paths": [],
+        "paths": [
+          "/payment/aps/webhook"
+        ],
         "auth": "public",
         "type": "http"
       }
@@ -26,19 +55,50 @@
     "security": {
       "access_rules": 0,
       "record_rules": 0,
-      "groups": 0
+      "groups": 0,
+      "note": "No own ACL/rules; relies on payment's security and on base.group_system field groups guarding aps_access_code / aps_sha_request / aps_sha_response (the merchant identifier is left ungrouped)."
     },
     "views": {
       "form": 1,
       "list": 0,
-      "tree": 0,
       "kanban": 0,
       "search": 0,
       "pivot": 0,
       "graph": 0,
-      "calendar": 0,
-      "activity": 0
+      "note": "xml_loc=60: payment.provider form inheritance (APS merchant identifier / access code / SHA request & response phrases) + the QWeb redirect-form template payment_aps_templates.xml (auto-submit POST form to the PayFort payment page carrying command/access_code/merchant_identifier/merchant_reference/amount/currency/language/customer_email/signature[/payment_option]/return_url), plus data/payment_provider_data.xml wiring redirect_form_view_id. No own model views."
     },
+    "behavioral_notes": [
+      {
+        "element": "payment.transaction._get_specific_rendering_values -> hidden-field POST redirect to the PayFort payment page (https://checkout.payfort.com/FortAPI/paymentPage / sandbox https://sbcheckout.payfort.com/FortAPI/paymentPage)",
+        "observation": "APS is a pure hosted-redirect acquirer: there is NO server-to-server payment API call. _get_specific_rendering_values builds a PURCHASE command payload (command='PURCHASE', access_code=aps_access_code, merchant_identifier=aps_merchant_identifier, merchant_reference=tx.reference, amount=to_minor_currency_units(amount,currency) as a string, currency=currency.name, language=partner_lang[:2], customer_email=partner.email_normalized, return_url=base_url+/payment/aps/return) and, for non-'card' methods, a payment_option mapped by utils.get_payment_option (the card brand upper-cased, e.g. VISA; 'card' is omitted so the buyer picks the brand on the PayFort page). It then signs the whole dict via provider._aps_calculate_signature(rendering_values, incoming=False) and adds api_url=provider._aps_get_api_url() (live vs sandbox by provider.state). These values feed the redirect_form QWeb template whose hidden inputs auto-POST the browser to PayFort's hosted payment page. The acquirer endpoint, the PURCHASE command, and the signed-form handoff are invisible to Python model/field metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "payment.provider._aps_calculate_signature -> SHA-256 signing with separate request/response phrases",
+        "observation": "_aps_calculate_signature implements PayFort's signature scheme: it concatenates 'key=value' for every data item EXCEPT 'signature', sorted by key, with no separator, then sandwiches that string between the SHA phrase on both sides (signing_string = phrase + sorted_pairs + phrase) and returns hashlib.sha256(signing_string).hexdigest(). The phrase is direction-dependent: aps_sha_request for OUTGOING (Odoo->APS, incoming=False, used when building the redirect form) and aps_sha_response for INCOMING (APS->Odoo, incoming=True, used in the controller to verify the return/webhook). This dual-phrase, sandwich-style SHA-256 (not an HMAC) is pure code semantics, not derivable from metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "APSController.aps_return_from_checkout (/payment/aps/return, POST) + aps_webhook (/payment/aps/webhook, POST) -> _verify_signature(incoming) BEFORE _process; reference via _extract_reference -> merchant_reference",
+        "observation": "Both public, csrf=False POST routes follow the identical guarded pattern: _search_by_reference('aps', data) (routing through _extract_reference -> data['merchant_reference']) locates the tx, then _verify_signature is called BEFORE _process. _verify_signature reads data['signature'] and rejects with werkzeug Forbidden (HTTP 403) when it is missing or when hmac.compare_digest(received, provider._aps_calculate_signature(data, incoming=True)) fails -- a constant-time compare against the SHA-256 recomputed with the response phrase. The return route additionally carries save_session=False (so a SameSite-less session cookie is not lost on the cross-site POST) and redirects to /payment/status; the webhook returns '' to acknowledge. Both ultimately call tx_sudo._process('aps', data), which validates the amount (via _extract_amount_data) then runs _apply_updates. Unlike most acquirers the return route here is itself authenticated and authoritative (it is a POST carrying the signed feedback), so APS does not depend on a separate verification GET.",
+        "source": "code-read"
+      },
+      {
+        "element": "payment.transaction._apply_updates -> APS status -> payment state mapping",
+        "observation": "_apply_updates stamps provider_reference = payment_data['fort_id'], resolves the payment method from payment_data['payment_option'].lower() via payment.method._get_from_code (falling back to the current method), then maps APS' numeric status through const.PAYMENT_STATUS_MAPPING into payment's guarded transitions: '19' -> _set_pending; '14' -> _set_done; a missing status -> _set_error('missing payment state'); any other status -> _set_error carrying payment_data['response_message']. There is no _set_canceled branch -- cancellations surface as the error fallback. _extract_amount_data converts payment_data['amount'] back from minor units via to_major_currency_units and returns currency_code=payment_data['currency'] for the engine's amount cross-check. This inbound status->state translation is pure code, not visible in metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "external integration surface (gap #7) -- endpoints, signing phrases, no API key",
+        "observation": "Static gap-#7 facts (extract_frontend.py): uses_api_keys=false; the only declared endpoints are the two PayFort hosted payment pages -- https://checkout.payfort.com/FortAPI/paymentPage (live) and https://sbcheckout.payfort.com/FortAPI/paymentPage (sandbox) -- selected by provider.state in models/payment_provider.py (_aps_get_api_url). There is NO outbound REST client and NO bearer/api-key auth here: APS is reached purely by the browser POSTing the signed hidden-field form to the hosted page, and APS returns to Odoo's /payment/aps/return + /payment/aps/webhook. Authenticity rests entirely on the SHA-256 request/response phrases (aps_sha_request / aps_sha_response) + access code, not on a transport-level key. This redirect-only acquirer link is the canonical metadata gap #7: none of the PayFort endpoints, the PURCHASE command, or the phrase-based signing are reachable from model/field metadata.",
+        "source": "static"
+      },
+      {
+        "element": "frontend (static) -- no JS, no OWL (gap #3)",
+        "observation": "0 JS files, 0 OWL components, 0 registry adds, 0 patches (gap #3). payment_aps ships no client-side code: the entire buyer interaction is the server-rendered redirect_form QWeb template (payment_aps_templates.xml) whose hidden inputs auto-submit to PayFort. There is therefore no browser SDK and no inline card form -- the card data is collected on PayFort's hosted page, never in Odoo. The only browser-visible artifact is the auto-POST redirect form, which is itself plain server-rendered HTML (no gap-#3 JS surface).",
+        "source": "static"
+      }
+    ],
     "frontend": {
       "present": false,
       "js_files": 0,
@@ -64,52 +124,125 @@
     "runtime": {
       "models_with_data": 0,
       "top": []
-    },
-    "behavioral_notes": [
-      {
-        "element": "thin module",
-        "observation": "0 models, 2 routes, 569 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
-        "source": "ast"
-      }
-    ]
+    }
   },
   "it_architecture": {
-    "application": "payment_aps (Payment Provider: Amazon Payment Services)",
-    "software_services": [],
-    "data_objects": [],
-    "logical_data_erm": [],
-    "information_flows": [
-      "depends: payment"
+    "application": "payment_aps (Amazon Payment Services / PayFort acquirer adapter for the payment engine; _inherit-only, no own models/views)",
+    "software_services": [
+      "/payment/aps/return (redirect-return, http POST, csrf=False, save_session=False: signature-verified, processes the signed feedback, then /payment/status)",
+      "/payment/aps/webhook (async notification, http POST, csrf=False: signature-verified, processes, returns '')"
     ],
-    "frontend_components": []
+    "data_objects": [
+      "payment.provider (+aps_merchant_identifier, aps_access_code, aps_sha_request, aps_sha_response)",
+      "payment.transaction (APS hosted-redirect PURCHASE flow; no new fields; 5 override methods)"
+    ],
+    "logical_data_erm": [
+      "payment.transaction -> payment.provider (provider_id; provider_code=='aps' gates every override)",
+      "payment.provider.code selection_add 'aps'",
+      "external: payment.transaction.reference == APS merchant_reference (cross-system key for return/webhook lookup via _extract_reference)",
+      "external: payment.transaction.provider_reference == APS fort_id (data['fort_id'])"
+    ],
+    "information_flows": [
+      "depends: payment (inherits the provider/transaction engine + redirect-form rendering + _process state machine)",
+      "outbound (redirect): _get_specific_rendering_values -> signed hidden-field POST form -> browser auto-submit to https://checkout.payfort.com/FortAPI/paymentPage (sandbox sbcheckout.payfort.com) -- no server-to-server API call",
+      "inbound (return): APS -> POST /payment/aps/return -> _verify_signature (SHA-256 response phrase, constant-time compare) -> _process -> /payment/status",
+      "inbound (webhook): APS -> POST /payment/aps/webhook -> _verify_signature -> _process -> payment state machine",
+      "no tokenization / no refund / no capture / no void flows in this module"
+    ],
+    "frontend_components": [
+      "redirect_form QWeb template (payment_aps_templates.xml; server-rendered hidden-field auto-POST form to the PayFort payment page; no JS/OWL)"
+    ],
+    "external_integrations": {
+      "sdk": "none (no python SDK and no browser SDK; card data entered on PayFort's hosted page, never in Odoo)",
+      "uses_api_keys": false,
+      "endpoints": [
+        "https://checkout.payfort.com/FortAPI/paymentPage (live)",
+        "https://sbcheckout.payfort.com/FortAPI/paymentPage (sandbox)"
+      ],
+      "auth": "no transport key; authenticity via SHA-256 sandwich signature with direction-specific phrases -- aps_sha_request (outgoing) / aps_sha_response (incoming) -- plus aps_access_code & aps_merchant_identifier in the signed payload",
+      "files": [
+        "models/payment_provider.py",
+        "models/payment_transaction.py",
+        "controllers/main.py",
+        "const.py",
+        "utils.py"
+      ],
+      "pattern": "Concrete realization of metadata gap #7: a real external acquirer integration, but in its simplest hosted-redirect form. There is NO outbound REST/API-key channel -- the browser POSTs a server-signed hidden-field form to PayFort's hosted payment page (live or sandbox by provider.state), the buyer pays on PayFort, and APS returns the signed feedback to /payment/aps/return and /payment/aps/webhook, both verified by recomputing the SHA-256 signature with the response phrase. The base 'payment' engine ships no live acquirer; this module is exactly that override, contrasting with Stripe/Xendit by being redirect-only (no S2S API, no tokenization).",
+      "note": "Gap-#7 example with no API key: none of the PayFort endpoints, the PURCHASE command, or the dual-phrase SHA-256 signing are derivable from Python model/field metadata; they were established only by reading payment_provider.py + payment_transaction.py + controllers/main.py + const.py + utils.py."
+    }
   },
   "business_architecture": {
     "capabilities": [
-      "Payment Provider: Amazon Payment Services"
+      "Accept Card payments via Amazon Payment Services (PayFort) hosted redirect across the MENA region",
+      "Accept specific card brands (Visa, Mastercard, Amex, Discover) -- mapped to APS payment_option, or let the buyer choose the brand on the hosted page",
+      "Signed-redirect settlement (SHA-256 request/response phrases) with no card data ever touching Odoo",
+      "Multi-currency acceptance (no module-side currency allow-list; bounded by the payment.method/PayFort account configuration)"
     ],
-    "value_streams": [],
-    "information_concepts": [],
-    "organization": [],
+    "value_streams": [
+      "Collect-Payment (redirect): initiate tx -> _get_specific_rendering_values builds the signed PURCHASE form -> browser auto-POST to the PayFort payment page -> buyer pays on PayFort -> POST /payment/aps/return (signature-verified) AND/OR async POST /payment/aps/webhook -> _process -> state machine pending/done/error",
+      "Settle: status '14' -> _set_done -> downstream post-process settlement (account_payment / sale)"
+    ],
+    "information_concepts": [
+      "payment.provider (APS/PayFort credentials: merchant identifier, access code, SHA request phrase, SHA response phrase)",
+      "payment.transaction (mapped to an APS PURCHASE; keyed by merchant_reference=reference, provider_reference=fort_id)"
+    ],
+    "organization": [
+      "(no module-owned res.groups; aps_access_code / aps_sha_request / aps_sha_response are restricted to base.group_system; aps_merchant_identifier and everything else inherit payment's groups/record rules)"
+    ],
     "products": [],
-    "policies": [],
-    "stakeholders": [],
+    "policies": [
+      "Inbound authenticity: return and webhook data must pass _verify_signature (SHA-256 sandwich with aps_sha_response, constant-time hmac.compare_digest) or are rejected with HTTP 403 Forbidden",
+      "Outbound redirect-form integrity: the form is signed with aps_sha_request before the browser POSTs it to PayFort",
+      "References are forced to a singularized 'tx'-prefixed token (_compute_reference) so document names (e.g. INV/2020/...) never leak disallowed characters into APS' merchant_reference",
+      "Amounts are sent in minor currency units (to_minor_currency_units) and read back via to_major_currency_units",
+      "Access code / SHA phrases gated by base.group_system field groups"
+    ],
+    "stakeholders": [
+      "Payer / Cardholder (res.partner)",
+      "Merchant / Company (res.company, holds the APS/PayFort merchant account, access code & SHA phrases)",
+      "Amazon Payment Services / PayFort (external acquirer / PSP for the MENA region)",
+      "Accountant (consumes settled payments via account_payment downstream)"
+    ],
     "strategy": null,
-    "metrics": []
+    "metrics": [
+      "(no own reports; transaction volumes/amounts/state surfaced by the parent payment.transaction pivot/graph)"
+    ]
   },
   "classification": {
     "value_model": "network",
     "activity_class": "support",
-    "apqc_category": "9.0 Manage Financial Resources",
-    "rationale": "payment_aps: thin network/support module (auto-architect baseline)."
+    "apqc_category": "9.0 Manage Financial Resources (9.5 process payments / collect cash; manage external payment provider)",
+    "rationale": "payment_aps is a value-NETWORK (Stabell & Fjeldstad mediating-technology) component: a concrete acquirer adapter whose purpose is to interconnect two parties who would not otherwise transact directly -- the MENA-region cardholder/payer and the merchant -- by linking the merchant to Amazon Payment Services' (PayFort's) card network. It exhibits the mediating-technology activities: network promotion & contract management (merchant identifier, access code, and SHA request/response phrase management; per-brand payment-method enablement), service provisioning (building and signing the per-transaction PURCHASE redirect and confirming the signed feedback), and infrastructure operation (the hosted-redirect handoff to the PayFort payment page plus the signature-verified return/webhook settlement loop). It does not transform inputs into outputs (chain) nor solve a bespoke customer problem (shop). It inherits the parent 'payment' engine's value_model exactly: the engine is the generic mediator and this module is its APS realization. activity_class is 'support' because, from the enterprise value-chain perspective, payment acceptance is an infrastructure/finance support function (category Accounting/Payment Providers, application=False, no end-user app) sitting under 9.0 Manage Financial Resources -- specifically 9.5 process payments / collect cash, with the side of 'manage an external payment provider'. So value_model=network (its own internal logic is mediation, an acquirer integration -- gap #7), activity_class=support (its place on the enterprise value chain). This mirrors the sibling payment_stripe / payment_xendit metamodels (network/support) and the parent payment engine; APS is the thinnest variant -- a redirect-only acquirer with no server-to-server API and no tokenization."
   },
   "fit_to_standard": {
     "standard_capabilities": [
-      "Payment Provider: Amazon Payment Services"
+      "hosted-redirect card payment via the Amazon Payment Services (PayFort) payment page (PURCHASE command, live vs sandbox by provider.state)",
+      "per-brand payment-method routing (Visa / Mastercard / Amex / Discover) via the APS payment_option, or buyer brand-choice on the hosted page",
+      "signed-redirect integrity and signature-verified settlement via SHA-256 request/response phrases",
+      "asynchronous settlement via a signature-verified webhook plus an (also signature-verified, POST) redirect-return route",
+      "multi-currency acceptance (minor-unit amounts; currency from the transaction, no module-side allow-list)"
     ],
-    "typical_fits": [],
-    "common_gaps": [],
+    "typical_fits": [
+      "online shop / portal checkout collecting card payments in the MENA region via Amazon Payment Services / PayFort",
+      "send-a-payment-link or pay-an-invoice-online collection (with account_payment / sale downstream)",
+      "merchants needing card acceptance without holding card data (SAQ-A: PayFort-hosted page, nothing entered in Odoo)",
+      "brand-specific routing where the merchant pre-selects Visa/Mastercard/Amex/Discover as activatable methods"
+    ],
+    "common_gaps": [
+      "no server-to-server API: only the hosted-redirect PURCHASE flow is implemented (no direct/S2S charge, no inline form)",
+      "no tokenization / saved cards (no _extract_token_values, no off-session recurring) -- every payment is a fresh redirect",
+      "no manual capture / authorize-then-capture, no void, and no in-module refund operation (no _send_capture/void/refund_request override)",
+      "no explicit cancel state mapping (only '19'->pending and '14'->done; everything else, including cancellations, falls through to _set_error)",
+      "the public-URL requirement for the return/webhook means local/dev instances need a tunnel; without the SHA response phrase set, signature verification has no secret to compare against",
+      "bespoke reconciliation / settlement document chains live downstream (account_payment, sale), not here"
+    ],
     "drive_hints": [
-      "n/a"
+      "odoo shell: env['payment.provider'].search([('code','=','aps')]).mapped(('name','state','aps_merchant_identifier'))",
+      "odoo shell: p=env['payment.provider'].search([('code','=','aps')],limit=1); print(p._aps_get_api_url(), p.support_tokenization, p.support_refund)",
+      "odoo shell: tx=env['payment.transaction'].search([('provider_code','=','aps')],limit=1); print(tx.reference, tx.state, tx.provider_reference)",
+      "odoo shell: print([m for m in dir(env['payment.transaction']) if '_aps' in m])",
+      "curl -X POST https://<host>/payment/aps/webhook (csrf=False, auth=public) with a missing/invalid 'signature' field -> expect HTTP 403 Forbidden from _verify_signature",
+      "APS/PayFort sandbox: provider in 'test' state targets https://sbcheckout.payfort.com/FortAPI/paymentPage (PayFort test merchant + test cards)"
     ]
   },
   "reverse_eng_confidence": {
@@ -123,14 +256,20 @@
     "strategy": "human"
   },
   "open_questions": [
-    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+    "Exact APS / PayFort hosted-page request and transaction-feedback field sets beyond those built in _get_specific_rendering_values / read in _apply_updates (fort_id, status, payment_option, response_message, amount, currency).",
+    "Real-world distribution of APS transaction states and brand mix (card vs Visa/Mastercard/Amex/Discover) -- no runtime row counts captured.",
+    "How refunds / cancellations are handled operationally given no in-module refund override and no cancel-state mapping (likely via the PayFort dashboard or a downstream module).",
+    "Whether instances reliably register the webhook vs rely on the (also signed) POST return route, and whether both can fire for the same transaction."
   ],
   "provenance": {
     "explorer_facts": "doc/revres/facts/payment_aps.facts.json",
     "tools": [
-      "extract_module.py",
-      "extract_frontend.py",
-      "gen_thin.py"
+      "apqc_odoo_map.tsv",
+      "code-read (const.py, models/payment_provider.py, models/payment_transaction.py, controllers/main.py, __manifest__.py, utils.py)",
+      "extract_frontend.py (frontend/payment_aps.frontend.json)",
+      "extract_module.py (facts/payment_aps.facts.json)",
+      "Grep",
+      "Read"
     ],
     "odoo_version": "19.0"
   }

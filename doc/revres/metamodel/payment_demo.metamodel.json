@@ -4,16 +4,47 @@
     "manifest": {
       "name": "Payment Provider: Demo",
       "category": "Accounting/Accounting",
+      "summary": "A payment provider for running fake payment flows for demo purposes.",
+      "version": "2.0",
+      "author": "Odoo S.A.",
+      "license": "LGPL-3",
       "depends": [
         "payment"
       ],
       "auto_install": false,
       "application": false
     },
-    "models": [],
+    "models": [
+      {
+        "_name": "payment.provider (inherit)",
+        "_description": "Payment Provider (Demo: code selection_add + all feature flags enabled + live-state constraint)",
+        "fields": 1,
+        "relations": [
+          "code (Selection selection_add 'demo', ondelete set default)"
+        ]
+      },
+      {
+        "_name": "payment.token (inherit)",
+        "_description": "Payment Token (demo_simulated_state: per-token outcome selector for off-session charges)",
+        "fields": 1,
+        "relations": [
+          "demo_simulated_state (Selection: pending/done/cancel/error)"
+        ]
+      },
+      {
+        "_name": "payment.transaction (inherit)",
+        "_description": "Payment Transaction (capture_manually related + full simulation of all payment lifecycle hooks)",
+        "fields": 1,
+        "relations": [
+          "capture_manually (Boolean, related=provider_id.capture_manually)"
+        ]
+      }
+    ],
     "routes": [
       {
-        "paths": [],
+        "paths": [
+          "/payment/demo/simulate_payment"
+        ],
         "auth": "public",
         "type": "jsonrpc"
       }
@@ -21,19 +52,45 @@
     "security": {
       "access_rules": 0,
       "record_rules": 0,
-      "groups": 0
+      "groups": 0,
+      "note": "No own ACL/rules; relies on payment's security. Demo provider is permanently blocked from 'enabled' state by an @api.constrains check in payment_provider.py."
     },
     "views": {
       "form": 0,
       "list": 0,
-      "tree": 0,
       "kanban": 0,
       "search": 0,
       "pivot": 0,
       "graph": 0,
-      "calendar": 0,
-      "activity": 0
+      "note": "xml_loc=324: QWeb templates in payment_demo_templates.xml: inline_form (customer_input + simulated_payment_state dropdown), token_inline_form (shows outcome warning per demo_simulated_state), express_checkout_form (modal with submit button), express_inline_form (shipping fields), payment_details (shared input fragment). Also payment_provider_views.xml, payment_token_views.xml (demo_simulated_state on token form), payment_transaction_views.xml (manual capture action button). No own model list/kanban/graph views."
     },
+    "behavioral_notes": [
+      {
+        "element": "payment.provider._compute_feature_support_fields + @api.constrains('state','code') -- Demo declares full feature support but is permanently blocked from going live",
+        "observation": "payment_provider.py _compute_feature_support_fields forces support_express_checkout=True, support_manual_capture='partial', support_refund='partial', support_tokenization=True for code=='demo' -- the Demo provider announces every optional feature the payment engine can exercise, making it the canonical test bed for all payment flows. Simultaneously @api.constrains('state','code') raises UserError if the Demo provider's state is set to anything other than 'test' or 'disabled', making it impossible to activate it to 'enabled' (live). This safety rail lets Demo exercise all code paths in staging but can never process real payments even if an admin tries.",
+        "source": "code-read"
+      },
+      {
+        "element": "payment.transaction._apply_updates -- simulation hub: manual-capture split, refund self-triggering cron, and per-state dispatch",
+        "observation": "_apply_updates (payment_transaction.py) is the core simulation dispatch. It sets provider_reference = f'demo-{self.reference}', optionally calls self._tokenize(payment_data) when self.tokenize is set, then dispatches on payment_data['simulated_state']: 'pending' -> _set_pending(); 'done' AND capture_manually AND NOT payment_data.get('manual_capture') -> _set_authorized() (two-step authorize-then-capture path); 'done' in all other cases -> _set_done(), and if self.operation=='refund' immediately fires env.ref('payment.cron_post_process_payment_tx')._trigger() to process the refund downstream without waiting for the next scheduled cron run; 'cancel' -> _set_canceled(); any other value -> _set_error(). The capture_manually two-step path and the inline cron trigger for refund post-processing are invisible to model/field metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "payment.transaction._send_payment_request -- off-session simulation reads token.demo_simulated_state for deterministic recurring-charge outcomes",
+        "observation": "_send_payment_request (payment_transaction.py) overrides the engine's off-session hook: for code=='demo' it reads simulated_state = self.token_id.demo_simulated_state and immediately calls self._process('demo', {'reference': self.reference, 'simulated_state': simulated_state}). There is no HTTP call; the entire off-session payment lifecycle is driven by the per-token Selection field added to payment.token. A QA engineer can pre-configure a saved Demo token to always succeed, always fail, always stay pending, or always cancel -- enabling deterministic test coverage of subscription / auto-renewal code paths without any gateway account.",
+        "source": "code-read"
+      },
+      {
+        "element": "JS frontend (payment_demo_mixin.js + payment_form.js + express_checkout.js) -- browser reads dropdown, posts to simulate_payment, handles express checkout shipping modal",
+        "observation": "payment_form.js patches PaymentForm._prepareInlineForm to force 'direct' flow for demo (bypassing redirect) and patches _processDirectFlow to delegate to paymentDemoMixin.processDemoPayment(). The mixin (payment_demo_mixin.js) reads customerInput and simulatedPaymentState from the DOM and calls rpc('/payment/demo/simulate_payment', {reference, payment_details, simulated_state}) then redirects to /payment/status. express_checkout.js patches ExpressCheckout.initiateExpressPayment to additionally collect shipping fields from a modal (name/email/street/street2/zip/city/country), call the shippingAddressUpdateRoute RPC to resolve delivery methods, set the first available delivery method via /shop/set_delivery_method, then call processDemoPayment -- exercising the full Express Checkout (Apple/Google Pay-equivalent) flow in software. These DOM-driven simulation mechanics are invisible to Python metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "payment.transaction._extract_token_values -- tokenization stores simulated_state on payment.token; double-tokenization guard coordinates with _apply_updates",
+        "observation": "_extract_token_values (payment_transaction.py) is called by the payment engine after a tokenize transaction. For 'demo' it returns {'payment_details': payment_data['payment_details'], 'provider_ref': 'fake provider reference', 'demo_simulated_state': state}. The customer_input text from the form becomes token.payment_details and the chosen simulated_payment_state becomes the permanent token.demo_simulated_state for future off-session charges. However, _apply_updates already calls self._tokenize(payment_data) inline in the 'done'/'authorized' branch. To prevent double-tokenization, _extract_token_values opens with 'if self.state in (done, authorized): return {}' -- a guard that only makes sense if you have read both methods and understand their sequencing.",
+        "source": "code-read"
+      }
+    ],
     "frontend": {
       "present": true,
       "js_files": 3,
@@ -59,57 +116,128 @@
     "runtime": {
       "models_with_data": 0,
       "top": []
-    },
-    "behavioral_notes": [
-      {
-        "element": "frontend (OWL/JS)",
-        "observation": "3 JS files, 0 OWL components, 0 registry adds; bundles ['web.assets_frontend'].",
-        "source": "static"
-      },
-      {
-        "element": "thin module",
-        "observation": "0 models, 1 routes, 464 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
-        "source": "ast"
-      }
-    ]
+    }
   },
   "it_architecture": {
-    "application": "payment_demo (Payment Provider: Demo)",
-    "software_services": [],
-    "data_objects": [],
-    "logical_data_erm": [],
-    "information_flows": [
-      "depends: payment"
+    "application": "payment_demo (Fake/test payment acquirer adapter; _inherit-only on provider/token/transaction; simulates all payment flows in-process without any external gateway calls)",
+    "software_services": [
+      "/payment/demo/simulate_payment (jsonrpc, auth=public: receives {reference, payment_details, simulated_state} from the browser; calls payment.transaction.sudo()._process('demo', data))"
     ],
-    "frontend_components": []
+    "data_objects": [
+      "payment.provider (+code='demo'; support_express_checkout=True, support_manual_capture='partial', support_refund='partial', support_tokenization=True; never state='enabled' by constraint)",
+      "payment.token (+demo_simulated_state Selection: pending/done/cancel/error -- controls off-session payment outcome per saved token)",
+      "payment.transaction (+capture_manually Boolean related=provider_id.capture_manually)"
+    ],
+    "logical_data_erm": [
+      "payment.transaction -> payment.provider (provider_id; provider_code=='demo' gates every override)",
+      "payment.transaction -> payment.token (token_id; token.demo_simulated_state drives _send_payment_request outcome)",
+      "payment.provider.code selection_add 'demo'",
+      "payment.token.demo_simulated_state (new field; per-token outcome selector for off-session charges)",
+      "internal: payment_data['simulated_state'] (pending/done/cancel/error) is the simulation wire protocol between browser, controller, and _apply_updates"
+    ],
+    "information_flows": [
+      "depends: payment (inherits the full provider/transaction/token/payment-method engine)",
+      "browser (direct flow): user selects simulated_payment_state + enters customer_input -> PaymentForm._processDirectFlow -> paymentDemoMixin.processDemoPayment -> rpc /payment/demo/simulate_payment -> payment.transaction._process('demo', data) -> _apply_updates -> state machine",
+      "browser (express checkout): ExpressCheckout.initiateExpressPayment -> modal collects shipping info -> rpc shippingAddressUpdateRoute -> rpc /shop/set_delivery_method -> rpc transactionRoute -> paymentDemoMixin.processDemoPayment -> same simulation path",
+      "off-session (token): payment engine calls _send_payment_request -> reads token.demo_simulated_state -> _process('demo', data) directly in-process (no HTTP, no controller)",
+      "side-effect (tokenize): _apply_updates calls _tokenize(payment_data) inline -> vaults payment_details + 'fake provider reference' + demo_simulated_state on payment.token",
+      "side-effect (refund post-process): _apply_updates on operation=='refund' + state=='done' immediately fires payment.cron_post_process_payment_tx._trigger()",
+      "side-effect (manual capture): _apply_updates with capture_manually=True and no manual_capture flag -> _set_authorized() instead of _set_done()",
+      "no outbound HTTP to any external service; all simulation is in-process"
+    ],
+    "frontend_components": [
+      "PaymentForm.prototype (patch: _prepareInlineForm forces 'direct' flow; _processDirectFlow delegates to paymentDemoMixin)",
+      "ExpressCheckout.prototype (patch: initiateExpressPayment collects shipping modal, resolves delivery method, then calls paymentDemoMixin)",
+      "paymentDemoMixin (shared JS module: reads DOM customer_input + simulated_payment_state, calls rpc /payment/demo/simulate_payment, redirects to /payment/status)",
+      "QWeb inline_form / payment_details templates (customer_input free-text + simulated_payment_state dropdown: done/pending/cancel/error)",
+      "QWeb token_inline_form template (shows outcome warning text based on demo_simulated_state)",
+      "QWeb express_checkout_form template (Bootstrap modal with shipping address fields + Pay submit button)"
+    ],
+    "external_integrations": {
+      "sdk": "none",
+      "uses_api_keys": false,
+      "endpoints": [],
+      "auth": "none -- no outbound HTTP; simulation is entirely in-process",
+      "files": [],
+      "pattern": "Intentionally zero external integration: payment_demo exists to exercise the full Odoo payment engine in-process without any live gateway. All responses are synthesized from user-selected simulated_payment_state or from per-token demo_simulated_state. This is the canonical reference implementation and test harness for payment module development."
+    }
   },
   "business_architecture": {
     "capabilities": [
-      "Payment Provider: Demo"
+      "Simulate a successful, pending, cancelled, or errored payment via the standard checkout form (user selects outcome from dropdown)",
+      "Simulate Express Checkout (Apple/Google Pay-equivalent) with shipping address collection and delivery method selection via modal",
+      "Simulate authorize-then-capture (two-step manual capture) flow",
+      "Simulate partial and full refunds with immediate cron post-processing trigger",
+      "Simulate tokenization / saved-payment-method creation with configurable off-session outcomes (demo_simulated_state on token)",
+      "Simulate off-session recurring / subscription charges using per-token outcome selector",
+      "Enforce that Demo can never be set to 'enabled' (live) state -- UserError constraint in _check_provider_state"
     ],
-    "value_streams": [],
-    "information_concepts": [],
-    "organization": [],
+    "value_streams": [
+      "Demo-Checkout: user selects demo payment -> PaymentForm forces 'direct' flow -> inline form (customer_input + outcome dropdown) -> paymentDemoMixin rpc /payment/demo/simulate_payment -> _process('demo') -> _apply_updates -> state machine -> /payment/status",
+      "Demo-ExpressCheckout: ExpressCheckout modal collects shipping -> sets delivery method via RPC -> processDemoPayment -> same simulation path as above",
+      "Demo-Tokenize: checkout with tokenize=True -> _apply_updates calls _tokenize inline -> payment.token created with demo_simulated_state + payment_details from customer_input",
+      "Demo-OffSession: engine calls _send_payment_request -> reads token.demo_simulated_state -> _process in-process (no HTTP) -> state machine (subscription / auto-payment test path)",
+      "Demo-ManualCapture: checkout with capture_manually provider -> _apply_updates -> _set_authorized(); then action_demo_set_done -> _process with manual_capture=True -> _set_done()",
+      "Demo-Refund: engine calls _send_refund_request -> simulates done -> _apply_updates + operation=='refund' -> _set_done + immediate cron trigger for downstream account entries"
+    ],
+    "information_concepts": [
+      "payment.provider (Demo configuration: code='demo', all feature flags, blocked from live state)",
+      "payment.token (saved demo payment method: demo_simulated_state controls future off-session outcome)",
+      "payment.transaction (simulation record: simulated_state drives the lifecycle; provider_reference='demo-{reference}')"
+    ],
+    "organization": [
+      "(no module-owned res.groups; inherits payment's groups; no API credentials required)"
+    ],
     "products": [],
-    "policies": [],
-    "stakeholders": [],
+    "policies": [
+      "Demo provider MUST NOT be set to 'enabled': @api.constrains('state','code') raises UserError if state not in ('test','disabled') for code=='demo'",
+      "All four simulated outcomes (pending/done/cancel/error) available via simulated_payment_state dropdown -- QA can force any branch",
+      "Manual capture: _apply_updates withholds _set_done() and calls _set_authorized() when capture_manually=True and manual_capture flag is absent",
+      "Refund post-processing: a completed refund simulation immediately self-triggers the post-process cron so downstream effects complete without waiting for the scheduler",
+      "Double-tokenization prevention: _extract_token_values returns {} if tx already in done/authorized state (because _apply_updates already tokenized inline)"
+    ],
+    "stakeholders": [
+      "Developer / QA Engineer (exercises all payment engine code paths without a live gateway account)",
+      "Demo / Presales User (demonstrates Odoo checkout UX to prospects in a safe sandbox)",
+      "Odoo S.A. (ships Demo as reference implementation and test harness for payment module developers)"
+    ],
     "strategy": null,
-    "metrics": []
+    "metrics": [
+      "(no own reports; inherits payment engine tx pivot/graph; no meaningful business metrics since all transactions are simulated)"
+    ]
   },
   "classification": {
     "value_model": "network",
     "activity_class": "support",
-    "apqc_category": "9.0 Manage Financial Resources",
-    "rationale": "payment_demo: thin network/support module (auto-architect baseline)."
+    "apqc_category": "9.0 Manage Financial Resources (9.5 process payments; payment testing infrastructure)",
+    "rationale": "payment_demo is classified value-NETWORK following the same Stabell & Fjeldstad logic as all payment acquirer adapters: its structural role is to mediate between payer and merchant within the payment engine's network topology. Unlike a real acquirer it makes no outbound connections -- all simulation is in-process -- but it is still classified 'network' because (a) it inherits the payment engine's network position, (b) it exists to test the full network-mediating behavior of real acquirers, and (c) its value is in mediation simulation rather than data transformation (chain) or bespoke problem-solving (shop). activity_class='support': payment infrastructure is a support function under APQC 9.0 Manage Financial Resources, and Demo specifically is development/QA support infrastructure with application=False."
   },
   "fit_to_standard": {
     "standard_capabilities": [
-      "Payment Provider: Demo"
+      "simulated direct payment with user-selectable outcome (done/pending/cancel/error) via inline form",
+      "simulated Express Checkout with shipping address collection, delivery method resolution via modal",
+      "simulated manual authorize-then-capture (two-step) flow",
+      "simulated partial/full refund with immediate cron post-processing",
+      "simulated tokenization with per-token configurable off-session outcome (demo_simulated_state)",
+      "hard constraint blocking Demo from entering 'enabled' (live) state"
     ],
-    "typical_fits": [],
-    "common_gaps": [],
+    "typical_fits": [
+      "developer testing of all payment engine flows (direct/redirect/token/refund/capture/express) without a live gateway account",
+      "presales demo of Odoo checkout UX to prospects without requiring payment credentials",
+      "CI/automated test suites exercising payment state machine transitions (tests/test_processing_flows.py, tests/test_payment_transaction.py)",
+      "onboarding new payment module developers by showing how all payment engine hooks should be overridden"
+    ],
+    "common_gaps": [
+      "cannot test network-level failure modes (timeouts, HTTP 5xx from gateway, malformed XML/JSON responses) -- simulation is always clean in-process",
+      "no webhook simulation (no inbound HTTP notification path; all state changes driven from browser or directly from engine)",
+      "not suitable for load/performance testing of payment flows",
+      "demo_simulated_state on token cannot be changed after token creation through the standard portal UI"
+    ],
     "drive_hints": [
-      "n/a"
+      "odoo shell: env['payment.provider'].search([('code','=','demo')]).mapped(lambda p: (p.name, p.state, p.support_tokenization, p.support_manual_capture))",
+      "odoo shell: env['payment.token'].search([('provider_code','=','demo')]).mapped(lambda t: (t.name, t.demo_simulated_state))",
+      "curl -X POST https://<host>/payment/demo/simulate_payment -H 'Content-Type: application/json' -d '{\"jsonrpc\":\"2.0\",\"method\":\"call\",\"params\":{\"reference\":\"SO001\",\"payment_details\":\"test\",\"simulated_state\":\"done\"}}'",
+      "odoo shell: p=env['payment.provider'].search([('code','=','demo')],limit=1); p.state='enabled' -> should raise UserError from _check_provider_state"
     ]
   },
   "reverse_eng_confidence": {
@@ -123,14 +251,20 @@
     "strategy": "human"
   },
   "open_questions": [
-    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+    "Does the post_init_hook do anything beyond what data/payment_provider_data.xml seeds (e.g. setting demo_simulated_state defaults)?",
+    "The express_checkout.js uses a hardcoded billing address ('Demo User', 'demo@test.com', 'Rue des Bourlottes 9', BE/Ramillies/1367) -- intentional isolation or an oversight that could affect delivery method resolution in edge cases?",
+    "How does controllers/portal.py _create_transaction compatibility check interact with the Demo state constraint -- can a test-mode Demo still be excluded from compatible providers via _get_compatible_providers?",
+    "Are there test cases covering the double-tokenization guard coordination between _apply_updates._tokenize() and _extract_token_values() state check?"
   ],
   "provenance": {
     "explorer_facts": "doc/revres/facts/payment_demo.facts.json",
     "tools": [
-      "extract_module.py",
-      "extract_frontend.py",
-      "gen_thin.py"
+      "apqc_odoo_map.tsv",
+      "code-read (models/payment_provider.py, models/payment_transaction.py, models/payment_token.py, controllers/main.py, controllers/portal.py, const.py, __manifest__.py, static/src/interactions/payment_form.js, static/src/interactions/express_checkout.js, static/src/interactions/payment_demo_mixin.js, views/payment_demo_templates.xml)",
+      "extract_frontend.py (frontend/payment_demo.frontend.json)",
+      "extract_module.py (facts/payment_demo.facts.json)",
+      "Glob",
+      "Read"
     ],
     "odoo_version": "19.0"
   }

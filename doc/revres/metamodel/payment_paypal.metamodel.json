@@ -4,21 +4,53 @@
     "manifest": {
       "name": "Payment Provider: Paypal",
       "category": "Accounting/Payment Providers",
+      "summary": "An American payment provider for online payments all over the world.",
+      "version": "2.0",
+      "author": "Odoo S.A.",
+      "license": "LGPL-3",
       "depends": [
         "payment"
       ],
       "auto_install": false,
       "application": false
     },
-    "models": [],
+    "models": [
+      {
+        "_name": "payment.provider (inherit)",
+        "_description": "Payment Provider (PayPal credentials: business email / client id / client secret / OAuth access token + expiry / webhook id)",
+        "fields": 7,
+        "relations": [
+          "code (Selection selection_add 'paypal', ondelete set default)",
+          "paypal_email_account (Char, required_if_provider=paypal, default=company.email, copy=False)",
+          "paypal_client_id (Char, required_if_provider=paypal, copy=False)",
+          "paypal_client_secret (Char, copy=False, groups=base.group_system)",
+          "paypal_access_token (Char, copy=False, groups=base.group_system)",
+          "paypal_access_token_expiry (Datetime, default 1970-01-01, copy=False, groups=base.group_system)",
+          "paypal_webhook_id (Char, copy=False)"
+        ]
+      },
+      {
+        "_name": "payment.transaction (inherit)",
+        "_description": "Payment Transaction (PayPal Orders v2 CAPTURE flow: server-side create order + client-side PayPal JS SDK Buttons approval + server-side capture; no tokenization)",
+        "fields": 1,
+        "relations": [
+          "paypal_type (Char, PayPal transaction type -- debug only, shown under base.group_no_one)",
+          "5 methods overriding payment's processing/notification hooks"
+        ]
+      }
+    ],
     "routes": [
       {
-        "paths": [],
+        "paths": [
+          "/payment/paypal/complete_order"
+        ],
         "auth": "public",
         "type": "jsonrpc"
       },
       {
-        "paths": [],
+        "paths": [
+          "/payment/paypal/webhook/"
+        ],
         "auth": "public",
         "type": "http"
       }
@@ -26,19 +58,55 @@
     "security": {
       "access_rules": 0,
       "record_rules": 0,
-      "groups": 0
+      "groups": 0,
+      "note": "No own ACL/rules; relies on payment's security and on base.group_system field groups guarding paypal_client_secret / paypal_access_token / paypal_access_token_expiry (the business email, client id and webhook id are left ungrouped; the client secret is additionally password-masked on the form)."
     },
     "views": {
-      "form": 0,
+      "form": 1,
       "list": 0,
-      "tree": 0,
       "kanban": 0,
       "search": 0,
       "pivot": 0,
       "graph": 0,
-      "calendar": 0,
-      "activity": 0
+      "note": "xml_loc=103: payment.provider form inheritance (payment_provider_views.xml: PayPal email + client id/secret shown when code=='paypal', plus a Webhook ID field with a 'Generate your webhook' button calling action_paypal_create_webhook and a documentation_link widget); a payment.transaction form inheritance (payment_transaction_views.xml: read-only paypal_type under base.group_no_one); and TWO inline-form QWeb templates (payment_form_templates.xml: payment.method_form patch carrying data-paypal-inline-form-values via _paypal_get_inline_form_values, and payment.submit_button patch injecting the o_paypal_button_container where the PayPal JS SDK renders its Buttons). No own model views beyond the transaction debug field. There is NO redirect-form template -- PayPal uses a direct/inline flow, not a hosted redirect."
     },
+    "behavioral_notes": [
+      {
+        "element": "payment.transaction._get_specific_processing_values -> server-to-server POST /v2/checkout/orders (intent=CAPTURE) then client-side PayPal JS SDK Buttons approval",
+        "observation": "PayPal is a direct/inline (non-redirect) flow. _get_specific_processing_values builds the Orders v2 payload via _paypal_prepare_order_payload (intent='CAPTURE'; purchase_units[0] with reference_id=tx.reference, description '<company>: <reference>', amount={currency_code, value=tx.amount}, payee.email_address=paypal_email_account + brand_name, and a shipping address from paypal_utils.format_shipping_address when a sale/invoice address is complete; payment_source.paypal with given_name/surname and the partner's invoice address via paypal_utils.format_partner_address; shipping_preference SET_PROVIDED_ADDRESS vs NO_SHIPPING) and POSTs it to '/v2/checkout/orders' via the parent engine's _send_api_request with a payment_request_order idempotency key. It returns {'order_id': order_data['id']} to the browser. The PaymentForm patch then hands that order_id to the PayPal JS SDK (paypal.Buttons createOrder), and the SDK renders the PayPal button and runs the buyer approval popup client-side. On ValidationError the tx is _set_error and an empty dict returned. None of this S2S order creation nor the client-side SDK approval is visible in Python field/model metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "PaypalController.paypal_complete_order (/payment/paypal/complete_order, jsonrpc) -> server-to-server POST /v2/checkout/orders/{id}/capture then _process",
+        "observation": "After the buyer approves in the PayPal SDK popup (onApprove), the browser calls the public jsonrpc route /payment/paypal/complete_order with {order_id, reference}. The controller locates the tx via _search_by_reference('paypal', {'reference_id': reference}), generates a payment_request_controller idempotency key, and makes the capturing call itself: tx_sudo._send_api_request('POST', '/v2/checkout/orders/{order_id}/capture'). It then _normalize_paypal_data(response) (projecting purchase_units[0] -> reference_id + the first captures[] entry with txn_type='CAPTURE') and runs tx_sudo._process('paypal', normalized_response). So the authoritative settlement is this server-initiated capture triggered by the SDK approval, NOT a hosted-redirect return; there is no /payment/paypal/return route. The capture endpoint, the idempotency keys, and the SDK->jsonrpc->capture handoff are pure code, invisible to metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "PaypalController.paypal_webhook (/payment/paypal/webhook/) -> _verify_notification_origin by RE-POSTing to PayPal /v1/notifications/verify-webhook-signature BEFORE _process",
+        "observation": "The public, csrf=False POST webhook reads request.get_json_data(); it only acts on event_type in const.HANDLED_WEBHOOK_EVENTS (CHECKOUT.ORDER.COMPLETED / CHECKOUT.ORDER.APPROVED / CHECKOUT.PAYMENT-APPROVAL.REVERSED). It _normalize_paypal_data(resource, from_webhook=True) (carrying reference_id, the purchase_unit, txn_type=intent, id, status), locates the tx via _search_by_reference, then calls _verify_notification_origin BEFORE _process. Unlike HMAC-style acquirers, PayPal authenticity is verified by RE-POSTING back to PayPal: _verify_notification_origin collects the PAYPAL-TRANSMISSION-ID / -TIME / -CERT-URL / -AUTH-ALGO / -TRANSMISSION-SIG request headers plus webhook_id=provider.paypal_webhook_id and the raw webhook_event, and POSTs them to '/v1/notifications/verify-webhook-signature'; it raises werkzeug Forbidden (HTTP 403) unless the response verification_status == 'SUCCESS' (a ValidationError instead _set_error's 'Unable to verify the payment data'). This server-side callback verification (not a local signature recompute) is the canonical authenticity scheme here and is invisible to metadata. The webhook always returns make_json_response('').",
+        "source": "code-read"
+      },
+      {
+        "element": "payment.transaction._apply_updates / _extract_amount_data -> PayPal status -> payment state mapping",
+        "observation": "_apply_updates handles three cases: empty payment_data -> _set_canceled('The customer left the payment page.'); missing id or txn_type -> _set_error; otherwise it stamps provider_reference=payment_data['id'], paypal_type=txn_type, forces payment_method_id to the 'paypal' payment.method when present, then maps payment_data['status'] through const.PAYMENT_STATUS_MAPPING into payment's guarded transitions: PENDING/CREATED/APPROVED -> _set_pending (with pending_reason); COMPLETED/CAPTURED -> _set_done; DECLINED/DENIED/VOIDED -> _set_canceled; FAILED (and any unknown status) -> _set_error. _extract_amount_data reads payment_data['amount']['value'] and ['currency_code'] for the engine's amount cross-check. This inbound status->state translation (including the distinct cancel vs error buckets and the 'customer left' empty-data case) is pure code, not visible in metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "payment.provider OAuth2 auth + webhook registration -> /v1/oauth2/token (Basic client_id:client_secret) and /v1/notifications/webhooks over api-m[.sandbox].paypal.com",
+        "observation": "models/payment_provider.py wires PayPal's outbound auth onto the parent engine: _build_request_url targets _paypal_get_api_url()+endpoint (https://api-m.paypal.com live vs https://api-m.sandbox.paypal.com sandbox by provider.state), _build_request_headers sets Content-Type, a fixed PayPal-Partner-Attribution-Id='OdooInc_SP_EC', an optional PayPal-Request-Id idempotency header, and Authorization: Bearer <access token>; _build_request_auth returns (paypal_client_id, paypal_client_secret) for the refresh-token request only -- i.e. HTTP Basic on the token endpoint. _paypal_fetch_access_token POSTs grant_type=client_credentials to '/v1/oauth2/token' and CACHES the token in paypal_access_token / paypal_access_token_expiry, refreshing only when within 5 minutes of expiry. action_paypal_create_webhook POSTs {url=/payment/paypal/webhook/, event_types=HANDLED_WEBHOOK_EVENTS} to '/v1/notifications/webhooks' and stores the returned id in paypal_webhook_id (refusing on localhost base URLs). _get_supported_currencies filters the engine's currencies to const.SUPPORTED_CURRENCIES (24 ISO codes; CNY deliberately excluded). _parse_response_error pulls response.json()['message']. This OAuth client-credentials scheme, the cached bearer, and the self-service webhook registration are pure code, invisible to metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "external integration surface (gap #7) -- endpoints, OAuth keys, PayPal JS SDK",
+        "observation": "Static gap-#7 facts (extract_frontend.py): uses_api_keys=true; two declared endpoints -- https://api-m.paypal.com (live) and https://api-m.sandbox.paypal.com (sandbox) -- selected by provider.state in models/payment_provider.py (_paypal_get_api_url). Concrete endpoints reached server-to-server: /v1/oauth2/token (OAuth client-credentials, HTTP Basic with client id/secret), /v2/checkout/orders (create order), /v2/checkout/orders/{id}/capture (capture), /v1/notifications/webhooks (register webhook), /v1/notifications/verify-webhook-signature (verify webhook origin). On the browser side the PayPal JS SDK is loaded from https://www.paypal.com/sdk/js?client-id=...&components=buttons&currency=...&intent=capture to render the PayPal Buttons and run the buyer approval popup -- a second, client-side channel to PayPal (data-partner-attribution-id=OdooInc_SP_EC). There is no python SDK import: HTTP is delegated to payment.provider._send_api_request, configured via _build_request_url / _build_request_headers / _build_request_auth / _parse_response_error overrides. This dual server-to-server + client-side acquirer link is the canonical metadata gap #7: none of it is reachable from model/field metadata.",
+        "source": "static"
+      },
+      {
+        "element": "frontend (static) -- PayPal JS SDK Buttons + PaymentForm & PaymentButton patches",
+        "observation": "2 JS files, 0 OWL components, 0 registry adds (gap #3). The module patches PaymentForm.prototype (static/src/interactions/payment_form.js) to set the 'direct' flow, lazily load the PayPal JS SDK (loadJS) and render paypal.Buttons whose createOrder returns the server order_id (via submitForm -> _processDirectFlow storing processingValues.order_id) and whose onApprove calls the /payment/paypal/complete_order jsonrpc route then redirects to /payment/status; and patches PaymentButton.prototype (static/src/interactions/payment_button.js) to swap the disabled/enabled PayPal buttons (the SDK has no post-render disable, so two button sets are rendered). Two inline-form QWeb templates feed it: payment.method_form (data-paypal-inline-form-values from _paypal_get_inline_form_values) and payment.submit_button (the o_paypal_button_container). Assets load into web.assets_frontend (manifest glob payment_paypal/static/src/**/*). These browser interactions and the PayPal JS SDK are invisible to Python metadata (gap #3).",
+        "source": "static"
+      }
+    ],
     "frontend": {
       "present": true,
       "js_files": 2,
@@ -69,57 +137,137 @@
     "runtime": {
       "models_with_data": 0,
       "top": []
-    },
-    "behavioral_notes": [
-      {
-        "element": "frontend (OWL/JS)",
-        "observation": "2 JS files, 0 OWL components, 0 registry adds; bundles ['web.assets_frontend'].",
-        "source": "static"
-      },
-      {
-        "element": "thin module",
-        "observation": "0 models, 2 routes, 887 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
-        "source": "ast"
-      }
-    ]
+    }
   },
   "it_architecture": {
-    "application": "payment_paypal (Payment Provider: Paypal)",
-    "software_services": [],
-    "data_objects": [],
-    "logical_data_erm": [],
-    "information_flows": [
-      "depends: payment"
+    "application": "payment_paypal (PayPal acquirer adapter for the payment engine; _inherit-only, no own models; one debug tx field)",
+    "software_services": [
+      "/payment/paypal/complete_order (jsonrpc: after SDK approval, server-side captures /v2/checkout/orders/{id}/capture then _process)",
+      "/payment/paypal/webhook/ (async notifications, http POST, csrf=False, origin verified by re-POST to PayPal verify-webhook-signature)"
     ],
-    "frontend_components": []
+    "data_objects": [
+      "payment.provider (+paypal_email_account, paypal_client_id, paypal_client_secret, paypal_access_token, paypal_access_token_expiry, paypal_webhook_id)",
+      "payment.transaction (PayPal Orders v2 CAPTURE flow; +paypal_type debug field; 5 override methods)"
+    ],
+    "logical_data_erm": [
+      "payment.transaction -> payment.provider (provider_id; provider_code=='paypal' gates every override)",
+      "payment.provider.code selection_add 'paypal'",
+      "external: payment.transaction.reference == PayPal purchase_units[].reference_id (cross-system key for capture/webhook lookup via _extract_reference)",
+      "external: payment.transaction.provider_reference == PayPal order/capture id (payment_data['id'])",
+      "external: payment.provider.paypal_webhook_id == the registered PayPal webhook id (used in verify-webhook-signature)"
+    ],
+    "information_flows": [
+      "depends: payment (inherits the provider/transaction engine + _send_api_request + inline-form rendering + _process state machine)",
+      "outbound (auth): _paypal_fetch_access_token -> POST /v1/oauth2/token (HTTP Basic client_id:client_secret, grant_type=client_credentials) -> cached bearer in paypal_access_token",
+      "outbound (create): _get_specific_processing_values -> POST /v2/checkout/orders (intent=CAPTURE) -> order_id returned to the browser",
+      "client-side: PayPal JS SDK (paypal.Buttons) loaded from www.paypal.com/sdk/js; createOrder = the server order_id, onApprove -> /payment/paypal/complete_order",
+      "outbound (capture): /payment/paypal/complete_order -> POST /v2/checkout/orders/{id}/capture -> _normalize_paypal_data -> _process",
+      "outbound (register): action_paypal_create_webhook -> POST /v1/notifications/webhooks -> paypal_webhook_id",
+      "inbound (webhook): PayPal -> POST /payment/paypal/webhook/ -> _verify_notification_origin (re-POST to /v1/notifications/verify-webhook-signature, requires verification_status==SUCCESS) -> _process -> payment state machine",
+      "no tokenization / no refund / no separate authorize+capture (capture is immediate via intent=CAPTURE on order completion)"
+    ],
+    "frontend_components": [
+      "PaymentForm.prototype (patch; sets the 'direct' flow, loads the PayPal JS SDK and renders paypal.Buttons; onApprove calls /payment/paypal/complete_order)",
+      "PaymentButton.prototype (patch; swaps disabled vs enabled PayPal Buttons since the SDK has no post-render disable)",
+      "inline-form QWeb templates (payment.method_form data-paypal-inline-form-values + payment.submit_button o_paypal_button_container)",
+      "PayPal JS SDK (loaded from www.paypal.com/sdk/js; client-side Buttons + buyer approval popup)"
+    ],
+    "external_integrations": {
+      "sdk": "PayPal JS SDK (browser paypal.Buttons checkout); server side uses no python SDK -- HTTP via payment.provider._send_api_request",
+      "uses_api_keys": true,
+      "endpoints": [
+        "https://api-m.paypal.com (live) / https://api-m.sandbox.paypal.com (sandbox)",
+        "/v1/oauth2/token (OAuth client-credentials)",
+        "/v2/checkout/orders (create) + /v2/checkout/orders/{id}/capture (capture)",
+        "/v1/notifications/webhooks (register) + /v1/notifications/verify-webhook-signature (verify)"
+      ],
+      "auth": "OAuth2 client-credentials -- _build_request_auth returns (paypal_client_id, paypal_client_secret) for the token request (HTTP Basic), then Authorization: Bearer <cached access token> for all other calls; webhook authenticity is established by re-POSTing the PAYPAL-* transmission headers + paypal_webhook_id to verify-webhook-signature (no local HMAC)",
+      "files": [
+        "const.py",
+        "models/payment_provider.py",
+        "models/payment_transaction.py",
+        "controllers/main.py",
+        "utils.py"
+      ],
+      "pattern": "Concrete realization of metadata gap #7: a real external acquirer integration. Outbound server-to-server REST to api-m[.sandbox].paypal.com (Orders v2 create + capture, OAuth token, webhook register/verify) authenticated with OAuth2 client-credentials (HTTP Basic to mint, then Bearer); a parallel client-side PayPal JS SDK Buttons channel that runs the buyer approval popup and calls back into the /payment/paypal/complete_order jsonrpc route to trigger the server capture; and inbound settlement via a webhook whose origin is verified by re-POSTing to PayPal's verify-webhook-signature endpoint. The base 'payment' engine flags uses_api_keys but ships no live acquirer -- this module is exactly that override.",
+      "note": "Prime gap-#7 example: none of the PayPal endpoints, the OAuth client-credentials auth, the SDK-driven capture handoff, or the re-POST webhook-origin verification are derivable from Python model/field metadata; they were established only by reading payment_provider.py + payment_transaction.py + controllers/main.py + const.py + utils.py + the static/src JS."
+    }
   },
   "business_architecture": {
     "capabilities": [
-      "Payment Provider: Paypal"
+      "Accept PayPal-wallet payments worldwide via the PayPal JS SDK Buttons (direct/inline flow, Orders v2 CAPTURE)",
+      "Server-side order creation + client-side buyer approval + server-side immediate capture",
+      "Self-service webhook registration (action_paypal_create_webhook) and re-POST webhook-origin verification",
+      "Multi-currency acceptance across 24 PayPal-supported ISO currencies (CNY deliberately excluded)"
     ],
-    "value_streams": [],
-    "information_concepts": [],
-    "organization": [],
+    "value_streams": [
+      "Collect-Payment (direct): initiate tx -> _get_specific_processing_values POSTs /v2/checkout/orders (S2S) -> order_id -> PayPal JS SDK Buttons render -> buyer approves in the SDK popup -> /payment/paypal/complete_order jsonrpc -> server POST /v2/checkout/orders/{id}/capture -> _normalize_paypal_data -> _process -> state machine pending/done/cancel/error",
+      "Register-Webhook: action_paypal_create_webhook -> POST /v1/notifications/webhooks -> store paypal_webhook_id (used later to verify webhook origin)",
+      "Settle: status COMPLETED/CAPTURED -> _set_done -> downstream post-process settlement (account_payment / sale); webhook (origin-verified) reconciles asynchronously"
+    ],
+    "information_concepts": [
+      "payment.provider (PayPal credentials: business email, client id, client secret, OAuth access token + expiry, webhook id)",
+      "payment.transaction (mapped to a PayPal Orders v2 order/capture; keyed by reference_id=reference, provider_reference=order/capture id; +paypal_type debug)"
+    ],
+    "organization": [
+      "(no module-owned res.groups; paypal_client_secret / paypal_access_token / paypal_access_token_expiry are restricted to base.group_system; the business email, client id, webhook id and everything else inherit payment's groups/record rules)"
+    ],
     "products": [],
-    "policies": [],
-    "stakeholders": [],
+    "policies": [
+      "Webhook authenticity: notifications must pass _verify_notification_origin (re-POST of the PAYPAL-* transmission headers + paypal_webhook_id to /v1/notifications/verify-webhook-signature, requiring verification_status==SUCCESS) or are rejected with HTTP 403 Forbidden",
+      "Only HANDLED_WEBHOOK_EVENTS (CHECKOUT.ORDER.COMPLETED / APPROVED / PAYMENT-APPROVAL.REVERSED) are acted upon; other events are ignored",
+      "Empty payment data on return is treated as a cancellation ('The customer left the payment page.')",
+      "Supported currencies bounded to const.SUPPORTED_CURRENCIES (24 ISO codes; CNY excluded) via _get_supported_currencies",
+      "Outbound auth is OAuth2 client-credentials; the access token is cached in paypal_access_token and refreshed only within 5 minutes of expiry; idempotency keys (PayPal-Request-Id) guard the create and capture calls",
+      "intent=CAPTURE -> the order is captured immediately on completion (no separate authorize/capture step)",
+      "Client secret / access token / token expiry gated by base.group_system field groups"
+    ],
+    "stakeholders": [
+      "Payer / PayPal account holder (res.partner)",
+      "Merchant / Company (res.company, holds the PayPal business email, client id/secret and webhook id)",
+      "PayPal (external acquirer / PSP, worldwide)",
+      "Accountant (consumes settled payments via account_payment downstream)"
+    ],
     "strategy": null,
-    "metrics": []
+    "metrics": [
+      "(no own reports; transaction volumes/amounts/state surfaced by the parent payment.transaction pivot/graph; paypal_type retained for debugging only)"
+    ]
   },
   "classification": {
     "value_model": "network",
     "activity_class": "support",
-    "apqc_category": "9.0 Manage Financial Resources",
-    "rationale": "payment_paypal: thin network/support module (auto-architect baseline)."
+    "apqc_category": "9.0 Manage Financial Resources (9.5 process payments / collect cash; manage external payment provider)",
+    "rationale": "payment_paypal is a value-NETWORK (Stabell & Fjeldstad mediating-technology) component: a concrete acquirer adapter whose purpose is to interconnect two parties who would not otherwise transact directly -- the PayPal account holder / payer and the merchant -- by linking the merchant to PayPal's worldwide payment network. It exhibits the mediating-technology activities: network promotion & contract management (business email + client id/secret + webhook-id management, OAuth credential lifecycle, supported-currency enablement, self-service webhook registration), service provisioning (creating the Orders v2 order, rendering the PayPal Buttons, and capturing on buyer approval per transaction), and infrastructure operation (the server-to-server api-m.paypal.com link, the client-side PayPal JS SDK channel, and the verify-webhook-signature settlement loop). It does not transform inputs into outputs (chain) nor solve a bespoke customer problem (shop). It inherits the parent 'payment' engine's value_model exactly: the engine is the generic mediator and this module is its PayPal realization. activity_class is 'support' because, from the enterprise value-chain perspective, payment acceptance is an infrastructure/finance support function (category Accounting/Payment Providers, application=False, no end-user app) sitting under 9.0 Manage Financial Resources -- specifically 9.5 process payments / collect cash, with the side of 'manage an external payment provider'. So value_model=network (its own internal logic is mediation, an acquirer integration -- gap #7), activity_class=support (its place on the enterprise value chain). This mirrors the sibling payment_stripe / payment_xendit metamodels (network/support) and the parent payment engine; like Xendit, PayPal is a hybrid S2S-plus-client-SDK acquirer (not a hosted redirect like APS/Buckaroo), but distinctively verifies webhook origin by re-POSTing back to PayPal rather than by a local HMAC/signature recompute."
   },
   "fit_to_standard": {
     "standard_capabilities": [
-      "Payment Provider: Paypal"
+      "direct/inline PayPal-wallet payment via the PayPal JS SDK Buttons backed by Orders v2 (server create order + client approval + server capture)",
+      "immediate capture on buyer approval (intent=CAPTURE; no separate authorize/capture step)",
+      "asynchronous settlement via a webhook whose origin is verified by re-POSTing to PayPal's verify-webhook-signature endpoint",
+      "self-service webhook registration from the provider form (action_paypal_create_webhook)",
+      "multi-currency acceptance across 24 PayPal-supported ISO currencies (CNY excluded)"
     ],
-    "typical_fits": [],
-    "common_gaps": [],
+    "typical_fits": [
+      "online shop / portal checkout offering a PayPal button worldwide",
+      "send-a-payment-link or pay-an-invoice-online collection (with account_payment / sale downstream)",
+      "merchants wanting a PayPal-branded inline button without holding card data (the buyer authenticates in PayPal's own popup)",
+      "cross-border / multi-currency checkouts within PayPal's supported currency set"
+    ],
+    "common_gaps": [
+      "no tokenization / saved PayPal accounts (no _extract_token_values, no off-session recurring) -- every payment is a fresh order",
+      "no separate manual capture / authorize-then-capture and no void operation (intent is fixed to CAPTURE)",
+      "no in-module refund operation (no _send_refund_request override here) despite PayPal supporting refunds via API -- refunds are handled out of band",
+      "webhook origin verification requires a registered paypal_webhook_id and a public HTTPS URL (action_paypal_create_webhook refuses on localhost); the verify call is itself an extra round-trip to PayPal",
+      "currency support bounded to const.SUPPORTED_CURRENCIES (24 codes; CNY excluded); other currencies are filtered out",
+      "bespoke reconciliation / settlement document chains live downstream (account_payment, sale), not here"
+    ],
     "drive_hints": [
-      "n/a"
+      "odoo shell: env['payment.provider'].search([('code','=','paypal')]).mapped(('name','state','paypal_email_account'))",
+      "odoo shell: p=env['payment.provider'].search([('code','=','paypal')],limit=1); print(p._paypal_get_api_url(), p.paypal_webhook_id, p._get_supported_currencies().mapped('name'))",
+      "odoo shell: tx=env['payment.transaction'].search([('provider_code','=','paypal')],limit=1); print(tx.reference, tx.state, tx.provider_reference, tx.paypal_type)",
+      "odoo shell: print([m for m in dir(env['payment.transaction']) if '_paypal' in m])",
+      "curl -X POST https://<host>/payment/paypal/webhook/ (csrf=False, auth=public) with a handled event_type but forged/missing PAYPAL-TRANSMISSION-* headers -> verify-webhook-signature fails -> expect HTTP 403 Forbidden from _verify_notification_origin",
+      "PayPal sandbox: provider in 'test' state targets https://api-m.sandbox.paypal.com (sandbox client id/secret + sandbox buyer account)"
     ]
   },
   "reverse_eng_confidence": {
@@ -133,14 +281,20 @@
     "strategy": "human"
   },
   "open_questions": [
-    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+    "Exact PayPal Orders v2 create/capture and webhook resource payloads beyond the fields built in _paypal_prepare_order_payload / read in _normalize_paypal_data + _apply_updates (id, status, intent, reference_id, amount.value/currency_code, captures[]).",
+    "Real-world distribution of PayPal transaction states (pending/done/cancel/error) and currency mix -- no runtime row counts captured.",
+    "How refunds / chargebacks are handled operationally given no in-module refund override despite PayPal's refund API (likely via the PayPal dashboard or a downstream module).",
+    "Whether instances reliably register the webhook (paypal_webhook_id set) -- without it, _verify_notification_origin cannot validate, so settlement leans on the synchronous complete_order capture path."
   ],
   "provenance": {
     "explorer_facts": "doc/revres/facts/payment_paypal.facts.json",
     "tools": [
-      "extract_module.py",
-      "extract_frontend.py",
-      "gen_thin.py"
+      "apqc_odoo_map.tsv",
+      "code-read (const.py, models/payment_provider.py, models/payment_transaction.py, controllers/main.py, __manifest__.py, utils.py)",
+      "extract_frontend.py (frontend/payment_paypal.frontend.json)",
+      "extract_module.py (facts/payment_paypal.facts.json)",
+      "Grep",
+      "Read"
     ],
     "odoo_version": "19.0"
   }

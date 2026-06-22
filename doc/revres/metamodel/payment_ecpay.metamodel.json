@@ -4,21 +4,49 @@
     "manifest": {
       "name": "Payment Provider: ECPay",
       "category": "Accounting/Payment Providers",
+      "summary": "A payment provider covering the Taiwanese market.",
+      "version": null,
+      "author": "Odoo S.A.",
+      "license": "LGPL-3",
       "depends": [
         "payment"
       ],
       "auto_install": false,
       "application": false
     },
-    "models": [],
+    "models": [
+      {
+        "_name": "payment.provider (inherit)",
+        "_description": "Payment Provider (ECPay credentials: merchant-id / hash-key / hash-iv)",
+        "fields": 4,
+        "relations": [
+          "code (Selection selection_add 'ecpay', ondelete set default)",
+          "ecpay_merchant_id (Char, required_if_provider=ecpay, copy=False) -- not group-restricted (it is only the account identifier, sent in clear in the redirect form)",
+          "ecpay_hash_key (Char, required_if_provider=ecpay, groups=base.group_system, copy=False)",
+          "ecpay_hash_iv (Char, required_if_provider=ecpay, groups=base.group_system, copy=False)"
+        ]
+      },
+      {
+        "_name": "payment.transaction (inherit)",
+        "_description": "Payment Transaction (ECPay AioCheckOut hosted-redirect flow; no direct API; no new fields)",
+        "fields": 0,
+        "relations": [
+          "no new fields; 5 methods overriding payment's reference/rendering/notification hooks (_compute_reference, _get_specific_rendering_values, _extract_reference, _extract_amount_data, _apply_updates)"
+        ]
+      }
+    ],
     "routes": [
       {
-        "paths": [],
+        "paths": [
+          "/payment/ecpay/return"
+        ],
         "auth": "public",
         "type": "http"
       },
       {
-        "paths": [],
+        "paths": [
+          "/payment/ecpay/webhook"
+        ],
         "auth": "public",
         "type": "http"
       }
@@ -26,19 +54,45 @@
     "security": {
       "access_rules": 0,
       "record_rules": 0,
-      "groups": 0
+      "groups": 0,
+      "note": "No own ACL/rules; relies on payment's security and on base.group_system field groups guarding ecpay_hash_key / ecpay_hash_iv (the secret hash material). ecpay_merchant_id is NOT group-restricted because it is only the public account identifier echoed in the redirect form."
     },
     "views": {
       "form": 1,
       "list": 0,
-      "tree": 0,
       "kanban": 0,
       "search": 0,
       "pivot": 0,
       "graph": 0,
-      "calendar": 0,
-      "activity": 0
+      "note": "xml_loc=64: payment.provider form inheritance (ECPay Merchant ID + Secure Hash Key/IV, password=True), a QWeb redirect-form template (payment_ecpay_templates.xml id=redirect_form -- an auto-submit POST <form action=api_url> carrying MerchantID/MerchantTradeNo/TotalAmount/CheckMacValue... to the ECPay AioCheckOut cashier), plus payment_provider_data.xml wiring redirect_form_view_id. No own model views."
     },
+    "behavioral_notes": [
+      {
+        "element": "payment.transaction._get_specific_rendering_values -> browser-redirect POST form to https://payment.ecpay.com.tw/Cashier/AioCheckOut/V5 (hosted AioCheckOut flow; NO server-to-server call)",
+        "observation": "ECPay is a PURE hosted-redirect acquirer: there is no outbound HTTP from the server at all (no `requests` import, no _send_api_request call anywhere in the module). For code=='ecpay', _get_specific_rendering_values builds the AioCheckOut field set -- MerchantID=ecpay_merchant_id, MerchantTradeNo=self.reference, MerchantTradeDate (create_date converted UTC->Asia/Taipei, '%Y/%m/%d %H:%M:%S'), PaymentType='aio', TotalAmount=int(self.amount), ItemName/TradeDesc, ReturnURL=urljoin(base_url, const.WEBHOOK_ROUTE) (the server-to-server webhook), ClientBackURL & OrderResultURL=urljoin(base_url, const.PAYMENT_RETURN_ROUTE) (the browser return), ChoosePayment='ALL', EncryptType='1', and IgnorePayment built by diffing const.PAYMENT_METHODS_MAPPING against the selected payment_method_code so only the chosen ECPay method set (Credit / WeiXin / CVS+BARCODE / ATM+WebATM / DigitalPayment / TWQR) is offered. It then signs the whole dict with self.provider_id._ecpay_calculate_signature(...) -> CheckMacValue and adds api_url=self.provider_id._ecpay_get_api_url() (production AioCheckOut/V5 when state=='enabled', payment-stage.ecpay.com.tw otherwise). The returned dict feeds the QWeb redirect_form, which the browser auto-submits as an HTTP POST to ECPay's hosted cashier. None of this hosted-redirect handoff nor the field signing is visible in Python field/model metadata. References are pre-sanitized by _compute_reference: ECPay caps the MerchantTradeNo at 20 chars and forbids special characters, so the prefix is singularized with no separator (payment_utils.singularize_reference_prefix(separator='', max_length=20)).",
+        "source": "code-read"
+      },
+      {
+        "element": "payment.provider._ecpay_calculate_signature -> CheckMacValue = SHA256(URLEncode(HashKey + sorted-Data + HashIV)).upper(); EcpayController._verify_signature uses it with consteq on BOTH the webhook and the return route",
+        "observation": "Authenticity is a CheckMacValue HMAC-style hash, NOT an HTTP auth header. _ecpay_calculate_signature(data): sort the data dict case-insensitively (OrderedDict by key.lower()), build the string 'HashKey=<ecpay_hash_key>&' + '<k>=<v>&...' + 'HashIV=<ecpay_hash_iv>', URL-encode it with quote_plus (safe='-_.!*()') then .lower(), SHA-256 it and uppercase the hex digest. EcpayController._verify_signature(payment_data, tx_sudo) is a staticmethod called BEFORE tx_sudo._process('ecpay', data) on EVERY inbound message: it pops 'CheckMacValue' from the data, raises werkzeug Forbidden if it is missing, recomputes the expected CheckMacValue over the remaining fields via tx_sudo.provider_id._ecpay_calculate_signature(payment_data), and rejects with Forbidden unless odoo.tools.consteq(received, expected) (constant-time compare) holds. The merchant's hash_key/hash_iv (base.group_system-gated) are the shared secret; no asymmetric key, no bearer token. This local hash verification and constant-time compare are invisible to metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "EcpayController.ecpay_webhook (/payment/ecpay/webhook, POST) and ecpay_return_from_checkout (/payment/ecpay/return, GET+POST) -> _search_by_reference -> _verify_signature -> _process; _apply_updates maps RtnCode to done/error",
+        "observation": "Two public, csrf=False, save_session=False routes share the same verify-then-process pipeline. The webhook (POST only) is ECPay's authoritative server-to-server callback (the AioCheckOut ReturnURL): it only processes a message when data.get('SimulatePaid')=='0' (a real, non-simulated payment) -- ECPay's test/simulation pings are logged and skipped -- then looks up the tx with payment.transaction._search_by_reference('ecpay', data) (routed through the ecpay override of _extract_reference -> data['MerchantTradeNo']), verifies the CheckMacValue, calls _process, and replies with the literal '1|OK' acknowledgement string ECPay requires. The return route handles the browser coming back (ClientBackURL/OrderResultURL): it only does work on a POST that carries data (a plain GET 'Return to merchant store' after a CVS/Barcode flow has no payload and is NOT treated as a failure), otherwise it just redirect()s to /payment/status. _apply_updates writes provider_reference=data['TradeNo'], remaps the response PaymentType through const.PAYMENT_METHODS_RESPONSE_MAPPING (CVS_OK->ok_mart, CVS_HILIFE->hi_life, CVS_FAMILY->family_mart, DigitalPayment_IPASS->ipass_money) to refine the brand payment.method, then maps the status: RtnCode in const.SUCCESS_CODE_MAPPING['done'] = ('1','2','10100073') -> _set_done(); a missing RtnCode or any other code -> _set_error(RtnMsg). ECPay has NO pending and NO cancel state in this module -- it is strictly done-or-error. _extract_amount_data reads amount=float(data['TradeAmt']) (currency forced to the tx currency, always TWD). The verify-before-process trust boundary and the done/error transitions are invisible to metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "external integration surface (gap #7) -- endpoints, hashing, NO outbound HTTP / NO SDK / NO api keys",
+        "observation": "Static gap-#7 facts (extract_frontend.py): uses_api_keys=FALSE and http_call_sites=0 -- ECPay is unusual among acquirers in that it makes NO server-to-server API call. The only declared endpoints, https://payment.ecpay.com.tw/Cashier/AioCheckOut/V5 and the stage host https://payment-stage.ecpay.com.tw/Cashier/AioCheckOut/V5 (in models/payment_provider.py _ecpay_get_api_url), are reached by the customer's BROWSER as the action of an auto-submitted POST form, not by Odoo. There is no `requests` import and no payment SDK; the parent payment.provider._send_api_request is never invoked. The merchant<->ECPay link is therefore: (1) outbound = a signed (CheckMacValue) hosted-redirect form POST submitted client-side to ECPay's AioCheckOut cashier, and (2) inbound = ECPay's signed server-to-server webhook (ReturnURL) plus the browser return (ClientBackURL/OrderResultURL). Authenticity rests entirely on the shared Secure Hash Key + Hash IV (base.group_system) via SHA-256 CheckMacValue. This redirect-only, no-API integration is the canonical metadata gap #7: none of the endpoints, the hash scheme, or the webhook trust are reachable from model/field metadata.",
+        "source": "static"
+      },
+      {
+        "element": "frontend (static) -- no JS / no OWL; the redirect is a server-rendered QWeb form (gap #3)",
+        "observation": "frontend.present=false: 0 JS files, 0 OWL components, 0 registry adds, 0 patches, no asset bundles. Unlike client-tokenizing acquirers (e.g. Xendit's Xendit.js), ECPay ships NO browser code. The entire client interaction is the server-rendered QWeb redirect_form template (payment_ecpay_templates.xml) that the standard payment page auto-submits to ECPay's hosted AioCheckOut cashier; card/CVS/ATM/wallet data is entered on ECPay's pages, never in Odoo (no client-side PCI surface here). There is consequently no gap-#3 JS behavior to capture beyond the QWeb redirect form itself.",
+        "source": "static"
+      }
+    ],
     "frontend": {
       "present": false,
       "js_files": 0,
@@ -64,52 +118,129 @@
     "runtime": {
       "models_with_data": 0,
       "top": []
-    },
-    "behavioral_notes": [
-      {
-        "element": "thin module",
-        "observation": "0 models, 2 routes, 669 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
-        "source": "ast"
-      }
-    ]
+    }
   },
   "it_architecture": {
-    "application": "payment_ecpay (Payment Provider: ECPay)",
-    "software_services": [],
-    "data_objects": [],
-    "logical_data_erm": [],
-    "information_flows": [
-      "depends: payment"
+    "application": "payment_ecpay (ECPay acquirer adapter for the payment engine; _inherit-only, no own models/views; pure hosted-redirect, no outbound API)",
+    "software_services": [
+      "/payment/ecpay/webhook (http POST, csrf=False: ECPay's authoritative server-to-server AioCheckOut ReturnURL callback; CheckMacValue verified; replies '1|OK')",
+      "/payment/ecpay/return (http GET+POST, csrf=False: browser ClientBackURL/OrderResultURL return; processes a POST payload, plain GET only redirects to /payment/status)"
     ],
-    "frontend_components": []
+    "data_objects": [
+      "payment.provider (+ecpay_merchant_id, ecpay_hash_key, ecpay_hash_iv)",
+      "payment.transaction (ECPay AioCheckOut hosted-redirect flow; no new fields, no direct/token flow)"
+    ],
+    "logical_data_erm": [
+      "payment.transaction -> payment.provider (provider_id; provider_code=='ecpay' gates every override)",
+      "payment.provider.code selection_add 'ecpay'",
+      "external: payment.transaction.reference == ECPay MerchantTradeNo (cross-system reference key; <=20 chars, alphanumeric, set in _get_specific_rendering_values, read back in _extract_reference)",
+      "external: payment.transaction.provider_reference == ECPay TradeNo (data['TradeNo'] written in _apply_updates)",
+      "(no payment.token relation -- tokenization is not supported by this module)"
+    ],
+    "information_flows": [
+      "depends: payment (inherits the provider/transaction engine; reuses _process / _search_by_reference / _validate_amount but NOT _send_api_request)",
+      "outbound (redirect, client-side): _get_specific_rendering_values -> signed (CheckMacValue) QWeb redirect_form -> browser auto-submits POST to https://payment.ecpay.com.tw/Cashier/AioCheckOut/V5 (or payment-stage host)",
+      "inbound (webhook): ECPay -> POST /payment/ecpay/webhook -> _verify_signature (CheckMacValue consteq) -> _process -> payment state machine -> '1|OK'",
+      "inbound (return): ECPay -> GET/POST /payment/ecpay/return -> (POST+data) _verify_signature -> _process -> redirect /payment/status",
+      "no server-to-server outbound API call and no client-side SDK channel (unlike most acquirers)"
+    ],
+    "frontend_components": [
+      "QWeb redirect_form (server-rendered auto-submit POST form to ECPay AioCheckOut; no JS/OWL component; no client-side tokenization)"
+    ],
+    "external_integrations": {
+      "sdk": "none (no python SDK and no browser SDK; payment.provider._send_api_request is never called)",
+      "uses_api_keys": false,
+      "endpoints": [
+        "https://payment.ecpay.com.tw/Cashier/AioCheckOut/V5 (production AioCheckOut V5 cashier)",
+        "https://payment-stage.ecpay.com.tw/Cashier/AioCheckOut/V5 (stage cashier)"
+      ],
+      "auth": "No HTTP auth header. Message integrity via CheckMacValue = SHA256(URLEncode(HashKey + sorted-data + HashIV)).upper() using the shared ecpay_hash_key + ecpay_hash_iv (base.group_system); verified inbound with consteq (_ecpay_calculate_signature / _verify_signature)",
+      "files": [
+        "models/payment_provider.py",
+        "models/payment_transaction.py",
+        "controllers/main.py",
+        "const.py"
+      ],
+      "pattern": "Concrete realization of metadata gap #7, hosted-redirect variant: the acquirer link is a signed AioCheckOut form POST submitted by the customer's browser (no Odoo->ECPay HTTP at all, uses_api_keys=false, 0 http_call_sites) plus ECPay's signed server-to-server webhook (ReturnURL) and a browser return (ClientBackURL/OrderResultURL). Integrity is a SHA-256 CheckMacValue over the sorted fields wrapped by the Secure Hash Key/IV, checked constant-time before processing. The base 'payment' engine ships no live acquirer; this module is the ECPay (Taiwan, TWD-only) override.",
+      "note": "Prime gap-#7 example: none of the AioCheckOut endpoints, the CheckMacValue SHA-256 scheme, the HashKey/HashIV shared secret, or the webhook '1|OK' trust loop are derivable from Python model/field metadata; they were established only by reading payment_provider.py + payment_transaction.py + controllers/main.py + const.py. Distinctively, there is no outbound API and no client SDK here."
+    }
   },
   "business_architecture": {
     "capabilities": [
-      "Payment Provider: ECPay"
+      "Accept Taiwanese payments via ECPay's hosted AioCheckOut cashier (single hosted page offering the enabled method set)",
+      "Accept Card / credit (Credit), WeChat Pay (WeiXin), convenience-store cash (CVS, BARCODE -- OK Mart, Hi-Life, FamilyMart), bank transfer (ATM, WebATM), mobile wallet / digital payment (DigitalPayment, iPASS MONEY) and TWQR via ECPay",
+      "Restrict the hosted cashier to the chosen method via IgnorePayment (diff of PAYMENT_METHODS_MAPPING)",
+      "TWD-only acceptance (single supported currency, enforced by constraint)",
+      "Asynchronous settlement via ECPay's CheckMacValue-signed webhook plus a browser return route"
     ],
-    "value_streams": [],
-    "information_concepts": [],
-    "organization": [],
+    "value_streams": [
+      "Collect-Payment (hosted redirect): _get_specific_rendering_values -> CheckMacValue-signed redirect_form -> browser POST to ECPay AioCheckOut -> customer pays on ECPay -> async POST /payment/ecpay/webhook -> _verify_signature -> _process -> _set_done/_set_error",
+      "Confirm-on-return: browser returns via ClientBackURL/OrderResultURL -> /payment/ecpay/return -> (POST+data) _verify_signature -> _process -> /payment/status (a plain GET return after CVS/Barcode is a no-op, not a failure)",
+      "Settle: RtnCode in ('1','2','10100073') -> _set_done -> downstream post-process settlement (account_payment / sale)"
+    ],
+    "information_concepts": [
+      "payment.provider (ECPay credentials: Merchant ID + Secure Hash Key + Secure Hash IV)",
+      "payment.transaction (mapped to an ECPay AioCheckOut order; keyed by MerchantTradeNo==reference, provider_reference==TradeNo)"
+    ],
+    "organization": [
+      "(no module-owned res.groups; ecpay_hash_key / ecpay_hash_iv are restricted to base.group_system; ecpay_merchant_id is unrestricted; everything else inherits payment's groups/record rules)"
+    ],
     "products": [],
-    "policies": [],
-    "stakeholders": [],
+    "policies": [
+      "Inbound authenticity: every webhook/return-POST must pass _verify_signature (CheckMacValue recomputed and consteq-compared against the shared HashKey/HashIV) or is rejected with HTTP 403 Forbidden",
+      "Simulation guard: webhook messages with SimulatePaid != '0' (ECPay test/simulation pings) are logged and skipped, not processed",
+      "Reference policy: MerchantTradeNo must be <=20 chars, alphanumeric only, no special characters -- enforced by _compute_reference (singularize_reference_prefix max_length=20, no separator)",
+      "Single-currency policy: ECPay supports only TWD (const.SUPPORTED_CURRENCY); available_currency_ids is constrained (_check_currency_is_supported raises 'ECPay only supports TWD.')",
+      "State policy: ECPay transactions resolve strictly to done or error (no pending, no cancel state in this module)",
+      "Secret hash material (HashKey/HashIV) gated by base.group_system field groups"
+    ],
+    "stakeholders": [
+      "Payer / Cardholder / Convenience-store payer (res.partner)",
+      "Merchant / Company (res.company, holds the ECPay Merchant ID & Secure Hash Key/IV)",
+      "ECPay (external acquirer / PSP for the Taiwanese market)",
+      "Accountant (consumes settled payments via account_payment downstream)"
+    ],
     "strategy": null,
-    "metrics": []
+    "metrics": [
+      "(no own reports; transaction volumes/amounts/state surfaced by the parent payment.transaction pivot/graph)"
+    ]
   },
   "classification": {
     "value_model": "network",
     "activity_class": "support",
-    "apqc_category": "9.0 Manage Financial Resources",
-    "rationale": "payment_ecpay: thin network/support module (auto-architect baseline)."
+    "apqc_category": "9.0 Manage Financial Resources (9.5 process payments / collect cash; manage external payment provider)",
+    "rationale": "payment_ecpay is a value-NETWORK (Stabell & Fjeldstad mediating-technology) component: a concrete acquirer adapter whose purpose is to interconnect two parties who would not otherwise transact directly -- the Taiwanese payer (cardholder / convenience-store / wallet user) and the merchant -- by linking the merchant to ECPay's AioCheckOut payment network. It exhibits the mediating-technology activities: network promotion & contract management (Merchant ID + Secure Hash Key/IV management, payment-method enablement via IgnorePayment, TWD enablement), service provisioning (rendering and signing the per-transaction AioCheckOut order and confirming it), and infrastructure operation (the client-submitted hosted-redirect link to payment.ecpay.com.tw and the CheckMacValue-verified webhook settlement loop). It does not transform inputs into outputs (chain) nor solve a bespoke customer problem (shop). It inherits the parent 'payment' engine's value_model exactly: the engine is the generic mediator and this module is its ECPay realization. activity_class is 'support' because, from the enterprise value-chain perspective, payment acceptance is an infrastructure/finance support function (category Accounting/Payment Providers, application=False, no end-user app) sitting under 9.0 Manage Financial Resources -- specifically 9.5 process payments / collect cash, with the side of 'manage an external payment provider'. So value_model=network (its own internal logic is mediation, an acquirer integration -- gap #7), activity_class=support (its place on the enterprise value chain). This mirrors the sibling payment_xendit / payment_stripe records (network/support) and the parent payment engine; ECPay is distinctive only in being a redirect-ONLY mediator (no server-to-server API)."
   },
   "fit_to_standard": {
     "standard_capabilities": [
-      "Payment Provider: ECPay"
+      "hosted-redirect acceptance via the ECPay AioCheckOut V5 cashier (CheckMacValue-signed redirect form)",
+      "multi-method acceptance: Card/Credit, WeChat Pay, CVS+Barcode convenience-store cash, ATM/WebATM bank transfer, DigitalPayment mobile wallet (incl. iPASS MONEY), TWQR; method gating via IgnorePayment",
+      "brand payment-method refinement from the response (CVS_OK/CVS_HILIFE/CVS_FAMILY/DigitalPayment_IPASS via PAYMENT_METHODS_RESPONSE_MAPPING)",
+      "asynchronous settlement via a CheckMacValue-verified webhook ('1|OK' ack) plus a browser-return confirmation route",
+      "TWD-only single-currency acceptance with a hard currency constraint"
     ],
-    "typical_fits": [],
-    "common_gaps": [],
+    "typical_fits": [
+      "online shop / portal checkout collecting TWD payments in Taiwan via ECPay",
+      "convenience-store (CVS) and barcode offline-cash collection (OK Mart / Hi-Life / FamilyMart)",
+      "ATM / WebATM bank-transfer collection and TWQR / mobile-wallet collection",
+      "send-a-payment-link or pay-an-invoice-online collection (with account_payment / sale downstream)"
+    ],
+    "common_gaps": [
+      "no tokenization / saved cards (no _compute_feature_support_fields override; payment.token never created; card data lives only on ECPay's hosted page)",
+      "no in-module refund operation (no _send_refund_request override) -- refunds are handled out-of-band (ECPay merchant dashboard / downstream)",
+      "no manual capture / authorize-then-capture and no void operation (charge is immediate; only done/error states)",
+      "no server-to-server API at all -- everything depends on the customer's browser submitting the redirect form and on ECPay reaching the public webhook URL (local/dev instances need a public tunnel; without ecpay_hash_key/iv the CheckMacValue verification has no secret)",
+      "single currency only -- anything other than TWD is rejected by _check_currency_is_supported",
+      "no merchant self-onboarding -- Merchant ID and Hash Key/IV are entered manually on the provider form",
+      "bespoke reconciliation / settlement document chains live downstream (account_payment, sale), not here"
+    ],
     "drive_hints": [
-      "n/a"
+      "odoo shell: env['payment.provider'].search([('code','=','ecpay')]).mapped(('name','state','ecpay_merchant_id'))",
+      "odoo shell: p=env['payment.provider'].search([('code','=','ecpay')],limit=1); print(p._get_supported_currencies().mapped('name'))  # expect ['TWD']",
+      "odoo shell: tx=env['payment.transaction'].search([('provider_code','=','ecpay')],limit=1); print(tx.reference, tx.state, tx.provider_reference)  # reference<=20 alnum chars",
+      "odoo shell: print([m for m in dir(env['payment.transaction']) if '_ecpay' in m] + [m for m in dir(env['payment.provider']) if '_ecpay' in m])",
+      "curl -X POST https://<host>/payment/ecpay/webhook (csrf=False, auth=public) with a missing or wrong CheckMacValue -> expect HTTP 403 Forbidden from _verify_signature; a valid signed payload with SimulatePaid='0' returns '1|OK'",
+      "ECPay stage cashier: https://payment-stage.ecpay.com.tw/Cashier/AioCheckOut/V5 (state='test'); production https://payment.ecpay.com.tw/Cashier/AioCheckOut/V5 (state='enabled')"
     ]
   },
   "reverse_eng_confidence": {
@@ -123,14 +254,20 @@
     "strategy": "human"
   },
   "open_questions": [
-    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+    "Exact ECPay AioCheckOut request/response field set beyond what _get_specific_rendering_values builds and _apply_updates reads (e.g. handling of CVS/Barcode payment-info notifications that precede final settlement).",
+    "Real-world distribution of ECPay transaction states and method mix (card vs CVS vs ATM vs wallet vs TWQR) -- no runtime row counts captured.",
+    "How refunds/chargebacks are handled operationally given no in-module refund override (likely manual via the ECPay merchant dashboard or a downstream module).",
+    "Whether instances reliably expose the public webhook URL (ReturnURL) -- the browser return route alone processes only POSTs that carry data and never compensates for a missed webhook."
   ],
   "provenance": {
     "explorer_facts": "doc/revres/facts/payment_ecpay.facts.json",
     "tools": [
-      "extract_module.py",
-      "extract_frontend.py",
-      "gen_thin.py"
+      "apqc_odoo_map.tsv",
+      "code-read (const.py, models/payment_provider.py, models/payment_transaction.py, controllers/main.py, __manifest__.py)",
+      "extract_frontend.py (frontend/payment_ecpay.frontend.json)",
+      "extract_module.py (facts/payment_ecpay.facts.json)",
+      "Grep",
+      "Read"
     ],
     "odoo_version": "19.0"
   }

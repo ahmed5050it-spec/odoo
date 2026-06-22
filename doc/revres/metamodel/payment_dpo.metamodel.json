@@ -4,36 +4,82 @@
     "manifest": {
       "name": "Payment Provider: DPO",
       "category": "Accounting/Payment Providers",
+      "summary": "A Kenyan payment provider covering several African countries.",
+      "author": "Odoo S.A.",
+      "license": "LGPL-3",
       "depends": [
         "payment"
       ],
       "auto_install": false,
       "application": false
     },
-    "models": [],
+    "models": [
+      {
+        "_name": "payment.provider (inherit)",
+        "_description": "Payment Provider (DPO credentials: dpo_service_ref + dpo_company_token; XML API helpers)",
+        "fields": 3,
+        "relations": [
+          "code (Selection selection_add 'dpo', ondelete set default)",
+          "dpo_service_ref (Char, required_if_provider=dpo, copy=False)",
+          "dpo_company_token (Char, required_if_provider=dpo, copy=False, groups=base.group_system)"
+        ]
+      },
+      {
+        "_name": "payment.transaction (inherit)",
+        "_description": "Payment Transaction (DPO two-stage createToken/verifyToken XML flow; no new fields)",
+        "fields": 0,
+        "relations": [
+          "no new fields; 5 methods overriding payment's request/rendering/notification hooks"
+        ]
+      }
+    ],
     "routes": [
       {
-        "paths": [],
+        "paths": [
+          "/payment/dpo/return"
+        ],
         "auth": "public",
-        "type": "http"
+        "type": "http",
+        "methods": ["GET"]
       }
     ],
     "security": {
       "access_rules": 0,
       "record_rules": 0,
-      "groups": 0
+      "groups": 0,
+      "note": "No own ACL/rules; relies on payment's security. dpo_company_token is restricted to base.group_system."
     },
     "views": {
       "form": 1,
       "list": 0,
-      "tree": 0,
       "kanban": 0,
       "search": 0,
       "pivot": 0,
       "graph": 0,
-      "calendar": 0,
-      "activity": 0
+      "note": "xml_loc=44: payment.provider form inheritance (payment_provider_views.xml: dpo_service_ref + dpo_company_token fields). QWeb redirect-form template in payment_dpo_templates.xml (auto-submit GET to payv2.php?ID={transaction_token}). No own model views."
     },
+    "behavioral_notes": [
+      {
+        "element": "payment.transaction._get_specific_rendering_values -> _dpo_create_token -> POST https://secure.3gdirectpay.com/API/v6/ (XML createToken) -> redirect to payv2.php?ID={token}",
+        "observation": "_get_specific_rendering_values (payment_transaction.py) calls _dpo_create_token(), which builds an XML payload using Python f-strings: <API3G><CompanyToken>{dpo_company_token}</CompanyToken><Request>createToken</Request><Transaction> block with PaymentAmount, PaymentCurrency, CompanyRef=self.reference, RedirectURL and BackURL both pointing to /payment/dpo/return, customerEmail, customerFirstName (split via payment_utils.split_partner_name), customerLastName, customerCity, customerCountry (country code), customerZip </Transaction><Services><Service><ServiceType>{dpo_service_ref}</ServiceType><ServiceDescription>{reference}</ServiceDescription><ServiceDate>{create_date formatted %Y/%m/%d %H:%M}</ServiceDate></Service></Services></API3G>. It sends this via self._send_api_request('POST', '', data=payload) (the empty string endpoint is resolved by _build_request_url to the fixed API base). On success, it extracts transaction_data.get('TransToken') from the parsed XML response and returns {'api_url': f'https://secure.3gdirectpay.com/payv2.php?ID={transaction_token}'}. The QWeb redirect template auto-submits the browser to that URL. If _send_api_request raises ValidationError, _set_error is called and None is returned. The XML construction, the two-field credentials (service_ref + company_token), and the redirect-URL building are invisible to model/field metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "DPOController.dpo_return_from_checkout (/payment/dpo/return GET) -> _verify_and_process -> verifyToken XML call -> _process",
+        "observation": "controllers/main.py DPOController._return_url='/payment/dpo/return' handles the GET redirect from the DPO hosted page. It calls _verify_and_process(data) where data is the GET query string. _verify_and_process first locates the transaction with payment.transaction.sudo()._search_by_reference('dpo', data) (which routes through _extract_reference -> data.get('CompanyRef')). It then POSTs a second XML request to the API with <Request>verifyToken</Request> and <TransactionToken>{data.get('TransID')}</TransactionToken>, merges the XML response dict into data via data.update(verified_data), and calls tx_sudo._process('dpo', data). The two-stage design (createToken on checkout start, verifyToken on return) means DPO's transaction state is never trusted from the redirect URL query string alone -- the return handler always re-validates against the DPO API before updating the Odoo transaction state. This server-side verify-before-process pattern and its ValidationError guard ('Unable to verify the payment data') are invisible to metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "payment.provider._build_request_url + _build_request_headers + _parse_response_content -- XML-over-HTTP API adapter",
+        "observation": "payment_provider.py overrides three parent engine hooks to configure the DPO API channel: _build_request_url returns the fixed string 'https://secure.3gdirectpay.com/API/v6/' for every call (ignoring the endpoint argument entirely -- there is only one API endpoint), _build_request_headers returns {'Content-Type': 'application/xml; charset=utf-8'} (DPO uses XML, not JSON), and _parse_response_content parses response.content.decode('utf-8') via xml.etree.ElementTree.fromstring() and flattens all child elements into a plain dict {element.tag: element.text}. This means the parent engine's _send_api_request (which calls these hooks) transparently posts XML and returns a flat Python dict -- callers in payment_transaction.py work with this dict directly (e.g. transaction_data.get('TransToken'), payment_data.get('Result'), payment_data.get('TransID')). The XML wire format, the single-endpoint URL, and the stdlib ET parsing are invisible to model/field metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "payment.transaction._apply_updates -- DPO Result code mapping to Odoo state machine via const.PAYMENT_STATUS_MAPPING",
+        "observation": "_apply_updates (payment_transaction.py) sets self.provider_reference = payment_data.get('TransID') then dispatches on payment_data.get('Result') against const.PAYMENT_STATUS_MAPPING: pending=('003','007') -> _set_pending(); authorized=('001','005') or done=('000','002') -> _set_done() (both authorized and done collapse to done, no two-step capture implemented); cancel=('900'-'904','950') -> _set_canceled(); error=('801'-'804') -> _set_error() with a human-readable message built from ResultExplanation; any unknown code -> _set_error('Unknown status code'). _extract_amount_data extracts TransactionAmount (float) and TransactionCurrency (string) for the engine's amount cross-check. _extract_reference returns data.get('CompanyRef') to match the Odoo tx by reference. The full status-code table is defined in const.py with a pointer to https://docs.dpopay.com/api/index.html#tag/Basic-Transaction-Operations/operation/verifyToken. None of these status codes, the ResultExplanation field, or the authorized+done collapse are visible from metadata.",
+        "source": "code-read"
+      }
+    ],
     "frontend": {
       "present": false,
       "js_files": 0,
@@ -60,52 +106,124 @@
     "runtime": {
       "models_with_data": 0,
       "top": []
-    },
-    "behavioral_notes": [
-      {
-        "element": "thin module",
-        "observation": "0 models, 1 routes, 397 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
-        "source": "ast"
-      }
-    ]
+    }
   },
   "it_architecture": {
-    "application": "payment_dpo (Payment Provider: DPO)",
-    "software_services": [],
-    "data_objects": [],
-    "logical_data_erm": [],
-    "information_flows": [
-      "depends: payment"
+    "application": "payment_dpo (DPO Group acquirer adapter for the payment engine; _inherit-only on provider/transaction; XML API createToken/verifyToken two-stage redirect flow)",
+    "software_services": [
+      "/payment/dpo/return (http GET, auth=public: redirect-return from DPO hosted page; calls _verify_and_process -> verifyToken XML -> _process -> /payment/status)"
     ],
-    "frontend_components": []
+    "data_objects": [
+      "payment.provider (+dpo_service_ref Char, +dpo_company_token Char groups=base.group_system)",
+      "payment.transaction (DPO two-stage XML flow; no new fields; provider_reference=TransID)"
+    ],
+    "logical_data_erm": [
+      "payment.transaction -> payment.provider (provider_id; provider_code=='dpo' gates every override)",
+      "payment.provider.code selection_add 'dpo'",
+      "external: payment.transaction.reference == DPO XML CompanyRef (cross-system reference key for return-URL lookup)",
+      "external: payment.transaction.provider_reference == DPO TransID (set in _apply_updates from verifyToken response)",
+      "external: DPO TransToken (temporary session token: created by createToken, consumed by payv2.php redirect and verifyToken)"
+    ],
+    "information_flows": [
+      "depends: payment (inherits the provider/transaction/token engine + _send_api_request)",
+      "outbound (createToken): _get_specific_rendering_values -> _dpo_create_token -> POST https://secure.3gdirectpay.com/API/v6/ (XML, Content-Type: application/xml; charset=utf-8, auth=dpo_company_token embedded in payload) -> parse XML response -> extract TransToken",
+      "outbound (browser redirect): QWeb template auto-submits GET to https://secure.3gdirectpay.com/payv2.php?ID={TransToken} -> DPO hosted payment page",
+      "inbound (return): DPO -> GET /payment/dpo/return?CompanyRef=...&TransID=... -> _verify_and_process",
+      "outbound (verifyToken): _verify_and_process -> POST https://secure.3gdirectpay.com/API/v6/ (XML verifyToken with TransID) -> parse XML response -> data.update(verified_data)",
+      "inbound (process): merged data -> tx._process('dpo', data) -> _apply_updates -> state machine (_set_pending/_set_done/_set_canceled/_set_error based on Result code)",
+      "no client-side JS or SDK; no webhook/IPN (single redirect-return + server-side verify pattern)"
+    ],
+    "frontend_components": [
+      "QWeb redirect-form template (payment_dpo_templates.xml: auto-submit GET to payv2.php?ID={transaction_token}; no JS patches or OWL components)"
+    ],
+    "external_integrations": {
+      "sdk": "none (no Python SDK; uses stdlib xml.etree.ElementTree for XML and payment engine's _send_api_request for HTTP)",
+      "uses_api_keys": false,
+      "endpoints": [
+        "https://secure.3gdirectpay.com/API/v6/ (XML API: createToken and verifyToken operations)",
+        "https://secure.3gdirectpay.com/payv2.php?ID={transaction_token} (hosted payment page redirect)"
+      ],
+      "auth": "Company token embedded in XML request body (<CompanyToken>{dpo_company_token}</CompanyToken>); no HTTP auth headers",
+      "files": [
+        "models/payment_provider.py",
+        "models/payment_transaction.py",
+        "controllers/main.py",
+        "const.py"
+      ],
+      "pattern": "Two-stage XML redirect: (1) server-side createToken POST to API produces a TransToken; (2) browser is redirected to payv2.php?ID={TransToken} for hosted card entry; (3) on return, server immediately calls verifyToken POST to validate the outcome before updating the Odoo transaction state. The company token travels in the XML body, not in HTTP headers. Uses no webhook/IPN -- the single return-redirect plus server-side verify is the authoritative settlement path."
+    }
   },
   "business_architecture": {
     "capabilities": [
-      "Payment Provider: DPO"
+      "Accept card and mobile-money payments across African markets via DPO Group hosted checkout (redirect flow)",
+      "Create a DPO transaction token server-side (createToken API) with full customer and service details embedded",
+      "Redirect payer to the DPO hosted payment page (payv2.php) with the transaction token",
+      "Verify the payment outcome server-side on return (verifyToken API) before updating Odoo transaction state",
+      "Map DPO Result codes to Odoo payment states (pending / done / canceled / error) with human-readable ResultExplanation on error",
+      "Restrict DPO company token to system administrators (base.group_system)"
     ],
-    "value_streams": [],
-    "information_concepts": [],
-    "organization": [],
+    "value_streams": [
+      "Collect-Payment (redirect): _get_specific_rendering_values -> _dpo_create_token -> POST createToken XML -> TransToken -> browser redirect to payv2.php?ID={token} -> payer completes on DPO hosted page -> GET /payment/dpo/return -> _verify_and_process -> POST verifyToken XML -> _process('dpo', merged_data) -> _apply_updates -> _set_done/_set_canceled/_set_error -> redirect /payment/status",
+      "Settle: Result=000/002 -> _set_done -> downstream post-process (account_payment / sale)"
+    ],
+    "information_concepts": [
+      "payment.provider (DPO credentials: dpo_service_ref + dpo_company_token)",
+      "payment.transaction (DPO session: CompanyRef=reference for lookup, TransID=provider_reference, TransToken=ephemeral redirect key)"
+    ],
+    "organization": [
+      "(no module-owned res.groups; dpo_company_token restricted to base.group_system; everything else inherits payment's groups)"
+    ],
     "products": [],
-    "policies": [],
-    "stakeholders": [],
+    "policies": [
+      "Server-side verify-before-process: return route never trusts query-string parameters alone; always calls verifyToken API before calling _process, preventing replay or tampered-redirect attacks",
+      "Company token travels in XML body only (never in URL or HTTP headers); restricted to base.group_system field group",
+      "Authorized and Done DPO codes (001/005 and 000/002) both map to _set_done() -- no two-step capture; all charges are immediate settle",
+      "On createToken API error (ValidationError), tx is set to error state and no redirect token is produced",
+      "Unknown Result codes are logged as warnings and mapped to _set_error('Unknown status code')"
+    ],
+    "stakeholders": [
+      "Payer / Customer (res.partner; pays via DPO hosted page in supported African countries)",
+      "Merchant / Company (res.company; holds DPO Service ID and Company Token)",
+      "DPO Group (Direct Pay Online; African payment processor and acquirer network)",
+      "Accountant (consumes settled payments via account_payment downstream)"
+    ],
     "strategy": null,
-    "metrics": []
+    "metrics": [
+      "(no own reports; transaction volumes/amounts/states surfaced by the parent payment.transaction pivot/graph)"
+    ]
   },
   "classification": {
     "value_model": "network",
     "activity_class": "support",
-    "apqc_category": "9.0 Manage Financial Resources",
-    "rationale": "payment_dpo: thin network/support module (auto-architect baseline)."
+    "apqc_category": "9.0 Manage Financial Resources (9.5 process payments / collect cash; manage external payment provider)",
+    "rationale": "payment_dpo is a value-NETWORK (Stabell & Fjeldstad mediating-technology) component: a concrete acquirer adapter connecting payers in African markets to the merchant via the DPO Group payment network. It exhibits the canonical mediating-technology activities: network promotion/contract management (DPO Service ID and Company Token configuration), service provisioning (createToken + verifyToken per transaction), and infrastructure operation (the XML API link to secure.3gdirectpay.com and the hosted-redirect payment page). It inherits the parent 'payment' engine's network position exactly. activity_class='support': payment acceptance is a finance/infrastructure support function under APQC 9.0 Manage Financial Resources (category Accounting/Payment Providers, application=False)."
   },
   "fit_to_standard": {
     "standard_capabilities": [
-      "Payment Provider: DPO"
+      "hosted-redirect card and mobile-money payment acceptance via DPO Group across African markets",
+      "server-side createToken (XML) to obtain a session token before redirecting",
+      "server-side verifyToken (XML) on return to authenticate the outcome before state update",
+      "DPO Result code -> Odoo state mapping (pending/done/canceled/error) with ResultExplanation on error",
+      "dpo_company_token restricted to base.group_system"
     ],
-    "typical_fits": [],
-    "common_gaps": [],
+    "typical_fits": [
+      "e-commerce / portal checkout for customers in Kenya, Nigeria, South Africa, Ghana, Uganda, and other DPO-covered African markets",
+      "invoice payment online via DPO hosted checkout (account_payment / sale downstream)",
+      "multi-currency African payment acceptance (DPO supports local currencies per market)"
+    ],
+    "common_gaps": [
+      "no tokenization / saved card support (no _extract_token_values override; DPO hosted page does not expose a re-usable card token to Odoo)",
+      "no in-module refund operation (no _send_refund_request override; refunds must be done via DPO dashboard)",
+      "no webhook/IPN path -- relies entirely on the redirect-return GET; if the customer closes the browser before the return redirect, the transaction stays in draft",
+      "no manual authorize-then-capture (authorized and done codes both collapse to _set_done()); immediate settlement only",
+      "no Express Checkout / wallet-pay support (redirect-only, no JS integration)",
+      "local/dev instances need a public URL for the /payment/dpo/return redirect to work"
+    ],
     "drive_hints": [
-      "n/a"
+      "odoo shell: env['payment.provider'].search([('code','=','dpo')]).mapped(lambda p: (p.name, p.state, p.dpo_service_ref))",
+      "odoo shell: tx=env['payment.transaction'].search([('provider_code','=','dpo')],limit=1); print(tx.reference, tx.state, tx.provider_reference)",
+      "odoo shell: print([m for m in dir(env['payment.transaction']) if '_dpo' in m or 'dpo' in m])",
+      "curl -X POST https://secure.3gdirectpay.com/API/v6/ -H 'Content-Type: application/xml' -d '<API3G><CompanyToken>TEST</CompanyToken><Request>createToken</Request>...</API3G>' (DPO sandbox; see https://docs.dpopay.com/)"
     ]
   },
   "reverse_eng_confidence": {
@@ -119,14 +237,20 @@
     "strategy": "human"
   },
   "open_questions": [
-    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+    "What happens if the customer closes the browser before the return redirect fires -- is there any scheduled job or webhook fallback to settle the transaction?",
+    "Does DPO provide a test/sandbox environment with known CompanyToken and ServiceID values for automated testing?",
+    "The authorized Result codes (001/005) collapse to _set_done() -- does DPO actually send these codes in practice, and does the merchant need a separate capture step outside Odoo?",
+    "What African currencies and payment methods are supported at the payv2.php hosted page -- are they configurable from the Odoo provider settings or purely from the DPO merchant account?"
   ],
   "provenance": {
     "explorer_facts": "doc/revres/facts/payment_dpo.facts.json",
     "tools": [
-      "extract_module.py",
-      "extract_frontend.py",
-      "gen_thin.py"
+      "apqc_odoo_map.tsv",
+      "code-read (models/payment_provider.py, models/payment_transaction.py, controllers/main.py, const.py, __manifest__.py)",
+      "extract_frontend.py (frontend/payment_dpo.frontend.json)",
+      "extract_module.py (facts/payment_dpo.facts.json)",
+      "Glob",
+      "Read"
     ],
     "odoo_version": "19.0"
   }

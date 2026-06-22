@@ -3,36 +3,79 @@
   "evidence": {
     "manifest": {
       "name": "To-Do",
+      "version": "1.0",
       "category": "Productivity/To-Do",
+      "summary": "Organize your work with memos and to-do lists",
       "depends": [
         "project"
       ],
       "auto_install": true,
-      "application": true
+      "application": true,
+      "license": "LGPL-3",
+      "author": "Odoo S.A.",
+      "post_init_hook": "_todo_post_init"
     },
     "models": [
       {
         "_name": "mail.activity.todo.create",
         "_description": "Create activity and todo at the same time",
-        "fields": 4
+        "kind": "TransientModel (wizard)",
+        "file": "wizard/mail_activity_todo_create.py",
+        "fields": 4,
+        "field_names": [
+          "summary",
+          "date_deadline",
+          "user_id",
+          "note"
+        ],
+        "relations": [
+          "user_id->res.users"
+        ],
+        "methods": [
+          "create_todo_activity"
+        ]
+      },
+      {
+        "_inherit": "project.task",
+        "_description": "Task (inherit; turns project.task into the To-Do object when project_id is empty)",
+        "file": "models/project_task.py",
+        "fields": 0,
+        "relations": [],
+        "methods": [
+          "create",
+          "action_convert_to_task",
+          "get_todo_views_id"
+        ],
+        "note": "Adds no fields - a To-Do is simply a project.task with project_id=False, parent_id=False, assigned to the user. Overrides create() for auto-naming and adds the convert-to-task action and the To-Do view-id lookup."
+      },
+      {
+        "_inherit": "res.users",
+        "_description": "User (inherit; splits to-do vs task activities in the systray and seeds onboarding to-dos)",
+        "file": "models/res_users.py",
+        "fields": 0,
+        "relations": [],
+        "methods": [
+          "_get_activity_groups",
+          "_onboard_users_into_project",
+          "_generate_onboarding_todo"
+        ]
       }
     ],
     "routes": [],
     "security": {
       "access_rules": 4,
       "record_rules": 1,
-      "groups": 0
+      "groups": 0,
+      "note": "4 ir.model.access rows grant base.group_user CRUD on project.task.type, project.task (access_task_on_partner), project.tags, and read/write/create on the mail.activity.todo.create wizard (no unlink). The single ir.rule task_edition_rule_internal (noupdate, on project.model_project_task, group base.group_user) is the privacy gate: domain [('project_id','=',False),('user_ids','in',user.id),('parent_id','=',False)] - i.e. every internal user has FULL access to their own private, top-level, project-less tasks (to-dos), making to-dos personal by default. Defines no new groups; reuses project's."
     },
     "views": {
       "form": 3,
       "list": 1,
-      "tree": 0,
       "kanban": 1,
-      "search": 1,
-      "pivot": 0,
-      "graph": 0,
       "calendar": 1,
-      "activity": 1
+      "activity": 1,
+      "search": 1,
+      "note": "All views are on project.task (or the wizard). Distinct js_class views: project_task_view_todo_kanban (default_group_by personal_stage_type_id, quick_create), project_task_view_todo_tree (todo_list, editable bottom, todo_done_checkmark), project_task_view_todo_form (todo_form, breadcrumb name edit + todo_chatter_panel), a quick-create form (parses #tags/@user/! priority shortcuts), project_task_view_todo_conversion_form (todo_conversion_form, project_id required). The main act_window project_task_action_todo hard-codes domain [('user_ids','in',[uid]),('project_id','=',False),('parent_id','=',False)] and context default_project_id=False, path 'to-do'. A second act_window project_task_action_convert_todo_to_task opens the conversion form target=new."
     },
     "frontend": {
       "present": true,
@@ -72,28 +115,63 @@
     },
     "behavioral_notes": [
       {
-        "element": "frontend (OWL/JS)",
-        "observation": "14 JS files, 1 OWL components, 6 registry adds; bundles ['web.assets_backend', 'web.assets_tests', 'web.assets_unit_tests'].",
-        "source": "static"
+        "element": "project.task.create (auto-naming of project-less to-dos)",
+        "observation": "Overrides @api.model_create_multi create(). For any vals with NO name AND NO project_id AND NO parent_id (i.e. a bare private to-do), it derives a title from the description: html2plaintext(description), strip, drop '*', take the first line (partition('\\n')[0]), truncate to 97 chars + '...' if over 100; if there is no description it falls back to _('Untitled to-do'). So a to-do typed straight into the description editor gets its breadcrumb name auto-generated - a behaviour no metadata exposes, and one that is scoped precisely to the project-less/parentless to-do case so real project tasks are unaffected.",
+        "source": "code-read"
       },
       {
-        "element": "thin module",
-        "observation": "1 models, 0 routes, 589 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
-        "source": "ast"
+        "element": "project.task.action_convert_to_task (private to-do -> shared project task)",
+        "observation": "The promotion path. ensure_one(); sets self.company_id = self.project_id.company_id then returns an ir.actions.act_window opening the same record (res_id=self.id) in form view. The to-do becomes a normal project task simply because the conversion form (project_task_view_todo_conversion_form, opened by the TodoFormController 'Convert to Task' cog item only when the user has project.group_project_user and the record has no project_id yet) makes project_id required - once a project_id is written, the task leaves the to-do domain ([('project_id','=',False)]) and gains its project stage/company. No data copy or new record: conversion is an in-place re-scoping of one project.task from personal to project-owned.",
+        "source": "code-read"
+      },
+      {
+        "element": "res.users._get_activity_groups (systray To-Do/Task split via raw SQL)",
+        "observation": "Overrides the activity systray builder. It removes the single aggregated project.task activity group, then runs a raw SQL CTE over mail_activity JOIN project_task for the current user that buckets each task by BOOL(t.project_id) AS is_task (True = real task, False = to-do) and by today/overdue/planned (computed from MIN(date_deadline) vs today), counting max one activity per task. It then rebuilds TWO systray groups - 'To-Do' (is_todo=True, icon from the project_todo manifest) and 'Task' (icon from project) - each with total/today/overdue/planned counts and a domain ['activity_ids.res_id','in', res_ids]. This is why the activity menu shows To-Do and Task as separate stacks though both are project.task; the split is SQL-driven and invisible to metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "res.users._generate_onboarding_todo / _todo_post_init (onboarding seeding)",
+        "observation": "The module's post_init_hook _todo_post_init calls env['res.users'].search([('share','=',False)])._generate_onboarding_todo(), and _onboard_users_into_project is overridden so newly onboarded users also get one. _generate_onboarding_todo renders the QWeb template 'project_todo.todo_user_onboarding' per user (in the user's lang), titles it _('Welcome %s!', user.name), and creates a project.task with_user(SUPERUSER_ID) and context mail_auto_subscribe_no_notify=True carrying user_ids=user.ids, description=rendered body, name=title - i.e. every non-portal user is seeded a private welcome to-do on install/onboarding, silently (no notification). A pure side-effect of install, not a field.",
+        "source": "code-read"
+      },
+      {
+        "element": "mail.activity.todo.create.create_todo_activity (to-do + activity in one shot)",
+        "observation": "The 'Add a To-Do' wizard (4 fields: summary, required date_deadline default today, user_id default current user readonly, Html note). create_todo_activity() creates a project.task (name=summary, description=note, date_deadline, user_ids=user_id) AND a mail.activity on that task (res_model_id=project.task, summary, user_id, date_deadline, activity_type_id = the model's default activity type), then returns a display_notification 'Your to-do has been successfully added to your pipeline.' So one wizard submit yields both a private to-do record and a scheduled activity pointing at it - dual side-effect not derivable from the 4 transient fields.",
+        "source": "code-read"
+      },
+      {
+        "element": "frontend (OWL/JS) - personal-stage kanban + ActivityMenu patch",
+        "observation": "14 JS files, 1 OWL widget (TodoChatterPanel - a toggleable side chatter driven by a 'TODO:TOGGLE_CHATTER' bus event), 6 registry adds, and one patch ActivityMenu.prototype. The ActivityMenu patch adds an 'Add a To-Do' command (hotkey alt+shift+t) that ORM-creates the mail.activity.todo.create wizard and opens it in a FormViewDialog, and routes is_todo systray groups to To-Do-specific views fetched via project.task.get_todo_views_id (kanban/list/form/calendar/activity xml_ids). The to-do kanban/list/calendar group by personal_stage_type_id (project's per-user project.task.stage.personal relation) rather than a project stage_id - the mechanism that lets project-less to-dos still have draggable columns. The todo_done_checkmark field widget and todo_form/todo_list/todo_conversion_form js_class views complete the dedicated To-Do UI; the conversion form controller just autofocuses the project field.",
+        "source": "static"
       }
     ]
   },
   "it_architecture": {
-    "application": "project_todo (To-Do)",
+    "application": "project_todo (personal To-Do app; auto-installed productivity layer on top of project, reusing project.task)",
     "software_services": [],
     "data_objects": [
-      "mail.activity.todo.create"
+      "project.task",
+      "mail.activity.todo.create",
+      "res.users",
+      "mail.activity (created)",
+      "project.task.stage.personal (personal stages, from project)"
     ],
     "logical_data_erm": [
-      "mail.activity.todo.create -> res.users"
+      "project.task (project_id=False) == a To-Do",
+      "project.task -> res.users (user_ids; to-do owner/assignees)",
+      "project.task -> project.task.type via project.task.stage.personal (personal_stage_type_id, per-user kanban stage)",
+      "mail.activity.todo.create -> res.users (user_id, assignee)",
+      "mail.activity.todo.create -> project.task (creates) -> mail.activity (creates, res_id=task)",
+      "ir.rule task_edition_rule_internal -> project.task (own private project-less top-level tasks)"
     ],
     "information_flows": [
-      "depends: project"
+      "depends: project (inherits project.task, personal stages, activity mixin, chatter)",
+      "side-effect: create project.task with no name/project/parent -> name auto-derived from description first line (or 'Untitled to-do')",
+      "side-effect: action_convert_to_task -> set company from chosen project, write project_id (required in conversion form) -> task exits the to-do domain and becomes a project task",
+      "side-effect: res.users._get_activity_groups -> raw SQL splits mail_activity on project.task into To-Do (no project) vs Task systray stacks",
+      "side-effect: mail.activity.todo.create.create_todo_activity -> creates one project.task + one mail.activity",
+      "install/onboarding: _todo_post_init / _generate_onboarding_todo -> seeds a 'Welcome' private to-do per non-share user (SUPERUSER_ID, no notify)",
+      "frontend: ActivityMenu patch -> 'Add a To-Do' command + to-do-specific systray views via get_todo_views_id"
     ],
     "frontend_components": [
       "TodoChatterPanel"
@@ -101,35 +179,81 @@
   },
   "business_architecture": {
     "capabilities": [
-      "To-Do"
+      "Capture Personal To-Dos / Memos (private by default)",
+      "Auto-title a To-Do from its content",
+      "Track To-Dos through Personal Kanban Stages",
+      "Split To-Do vs Task Activities in the Systray",
+      "Create a To-Do together with a scheduled Activity",
+      "Promote (Convert) a Private To-Do into a shared Project Task",
+      "Onboard new users with a starter To-Do"
     ],
-    "value_streams": [],
+    "value_streams": [
+      "Personal-task lifecycle: capture a private to-do (type/quick-create/wizard) -> auto-name + assign to self -> organise by personal stage / deadline / tags -> mark done (todo_done_checkmark) or, when it becomes collaborative, convert into a project task and hand off to Project delivery"
+    ],
     "information_concepts": [
-      "mail.activity.todo.create"
+      "project.task (as a private To-Do when project_id is empty)",
+      "project.task.stage.personal / personal_stage_type_id (per-user stage)",
+      "mail.activity (the scheduled reminder on a to-do)",
+      "mail.activity.todo.create (the capture wizard)",
+      "res.users (to-do owner / assignee)"
     ],
-    "organization": [],
+    "organization": [
+      "base.group_user (every internal user - to-dos are a universal personal feature, no dedicated group)"
+    ],
     "products": [],
     "policies": [
-      "1 record rules"
+      "Privacy policy (ir.rule task_edition_rule_internal): a user has full access only to their own project-less, top-level tasks; to-dos are private by default and shared by adding assignees",
+      "To-Do identity policy: project_id=False AND parent_id=False defines a to-do (vs a project task); writing a project_id converts it",
+      "Auto-naming policy: nameless project-less to-dos are titled from the description or 'Untitled to-do'",
+      "Onboarding policy: non-share users are seeded a Welcome to-do on install/onboarding (silently, as superuser)"
     ],
-    "stakeholders": [],
+    "stakeholders": [
+      "Internal user / employee (owns and works their personal to-dos)",
+      "Assignee (additional res.users a to-do is shared with)",
+      "Project member (recipient when a to-do is converted to a project task)"
+    ],
     "strategy": null,
-    "metrics": []
+    "metrics": [
+      "systray to-do counts: total_count / today_count / overdue_count / planned_count (from _get_activity_groups)",
+      "personal-stage distribution (kanban progressbar over activity_state)",
+      "open vs closed to-dos (is_closed filters in the to-do search view)"
+    ]
   },
   "classification": {
     "value_model": "shop",
-    "activity_class": "primary",
-    "apqc_category": "5.0 Deliver Services",
-    "rationale": "project_todo: thin shop/primary module (auto-architect baseline)."
+    "activity_class": "support",
+    "apqc_category": "5.0 Deliver Services (personal task / to-do management layered on the Project value shop; a private project.task reused for personal-productivity / workforce enablement)",
+    "rationale": "project_todo inherits Project's value-SHOP DNA (it literally reuses project.task, personal kanban stages, the activity mixin and chatter - the same intensive-technology, organise-resources-around-each-problem model). A to-do is just a project.task with no project_id, moved through personal stages and optionally promoted into a real project task (action_convert_to_task), so the value-model is shop by inheritance. Activity class, however, is SUPPORT, not primary: this is a personal-productivity / self-organisation utility for the workforce, not a customer-facing delivery engine - it generates no revenue document, has no portal/customer surface, and is auto_install + universal (base.group_user). It enables employees to organise their own work (capture, remind via mail.activity, track, then hand off to Project), which is firm-infrastructure/workforce enablement. APQC maps to 5.0 Deliver Services, consistent with its parent project and the whole project_* family (all shop / 5.0): the concrete object IS a project.task moving through (personal) stages - the same intensive-technology service engine applied to an individual's own work. A 7.0 Develop and Manage Human Capital reading (personal task & productivity management for staff) and a 13.0 Develop & Manage Business Capabilities reading (the generic 'productivity tooling' bucket) were both weighed, but rejected in favour of inheriting Project's 5.0 anchor: project_todo adds no HR-function nor capability-building of its own - it is Project's task engine reused for private to-dos. Hence shop / support / 5.0."
   },
   "fit_to_standard": {
     "standard_capabilities": [
-      "To-Do"
+      "private personal to-dos backed by project.task (project_id=False), private-by-default via record rule",
+      "quick-create with #tags/@user/! priority shortcuts; auto-naming from description",
+      "personal kanban / list / calendar / activity views grouped by per-user personal stage",
+      "mark-as-done checkmark widget and version history on the to-do description",
+      "'Add a To-Do' wizard that also schedules a mail.activity; systray To-Do/Task split",
+      "convert a to-do into a shared project task (sets project + company)",
+      "starter to-do seeded for new users on install/onboarding"
     ],
-    "typical_fits": [],
-    "common_gaps": [],
+    "typical_fits": [
+      "employees keeping a personal task/memo list inside Odoo instead of a separate app",
+      "turning a self-note into team work by converting it to a project task once it needs collaboration",
+      "reminder-style activities created alongside the to-do (deadline + assignee)",
+      "any internal user (auto-installed, no configuration, no extra group)"
+    ],
+    "common_gaps": [
+      "no own reporting/analytics (pivot/graph) on to-dos - it borrows project's task analytics only after conversion",
+      "to-do is single-level (parent_id must be False) - no subtask hierarchy on personal to-dos",
+      "sharing is all-or-nothing via assignees; no granular per-collaborator permissions like project portal sharing",
+      "conversion is one-way and in-place (no template/recurrence applied on convert); onboarding to-do template is fixed",
+      "depends entirely on project being installed (auto_install) - cannot run standalone"
+    ],
     "drive_hints": [
-      "odoo shell: env['mail.activity.todo.create'].search([],limit=3)"
+      "odoo shell: t = env['project.task'].create({'description': '<p>Buy milk</p>'}); (t.name, t.project_id, t.user_ids.ids)  # auto-named 'Buy milk', private to-do",
+      "odoo shell: w = env['mail.activity.todo.create'].create({'summary':'Call back','date_deadline': fields.Date.today()}); w.create_todo_activity(); env['project.task'].search([('name','=','Call back')]).activity_ids",
+      "odoo shell: env.user._get_activity_groups()  # see the To-Do vs Task systray split",
+      "odoo shell: t.action_convert_to_task()  # then write a project_id to promote it",
+      "UI: To-Do app menu (act_window project_task_action_todo, path '/odoo/to-do')"
     ]
   },
   "reverse_eng_confidence": {
@@ -143,14 +267,16 @@
     "strategy": "human"
   },
   "open_questions": [
-    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+    "Exact definition of personal_stage_type_id / project.task.stage.personal default stages a new to-do lands in (logic lives in project, not here).",
+    "Whether converting a to-do with existing assignees/tags merges cleanly with the target project's tag domain (conversion form scopes tags by project_id).",
+    "How get_todo_views_id view ids interact with the standard project.task systray when both project and project_todo activities exist for the same user."
   ],
   "provenance": {
     "explorer_facts": "doc/revres/facts/project_todo.facts.json",
     "tools": [
+      "code-read (models/project_task.py, models/res_users.py, wizard/mail_activity_todo_create.py, __init__.py, views/project_task_views.xml, security/project_todo_security.xml + ir.model.access.csv, static/src/web/activity/activity_menu_patch.js, static/src/views/todo_form/todo_form_controller.js, static/src/views/todo_conversion_form/todo_conversion_form_controller.js, static/src/components/todo_chatter_panel/todo_chatter_panel.js, project/models/project_task_stage_personal.py)",
       "extract_module.py",
-      "extract_frontend.py",
-      "gen_thin.py"
+      "extract_frontend.py"
     ],
     "odoo_version": "19.0"
   }

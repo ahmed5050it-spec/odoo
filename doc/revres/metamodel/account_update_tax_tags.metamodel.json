@@ -14,7 +14,10 @@
       {
         "_name": "account.update.tax.tags.wizard",
         "_description": "Update Tax Tags Wizard",
-        "fields": 3
+        "fields": 3,
+        "relations": [
+          "company_id->res.company"
+        ]
       }
     ],
     "routes": [],
@@ -24,16 +27,41 @@
       "groups": 0
     },
     "views": {
-      "form": 0,
+      "form": 1,
       "list": 0,
-      "tree": 0,
       "kanban": 0,
-      "search": 0,
       "pivot": 0,
       "graph": 0,
       "calendar": 0,
       "activity": 0
     },
+    "behavioral_notes": [
+      {
+        "element": "account.update.tax.tags.wizard._modify_tag_to_aml_relation",
+        "observation": "Executes a single multi-CTE SQL statement directly on the database (env.cr.execute). The query handles three scenarios in one pass: (a) base lines — joins account_move_line through account_move_line_account_tax_rel, account_tax_filiation_rel (for child/group taxes), and account_tax_repartition_line to find the correct repartition line based on document_type ('invoice' or 'refund') and move_type; (b) tax lines — joins via aml.tax_repartition_line_id directly; (c) fuses both, DELETEs all existing tags from account_account_tag_account_move_line_rel for those amls, then INSERTs the current tags from account_account_tag_account_tax_repartition_line_rel. Calls env.flush_all() before and env.invalidate_all() after to keep the ORM cache consistent. Returns the array of impacted aml ids.",
+        "source": "code-read"
+      },
+      {
+        "element": "account.update.tax.tags.wizard._modify_tag_to_aml_relation (entry-type move handling)",
+        "observation": "For 'entry' move type (general journal entries, not invoices/refunds), the SQL determines document_type by sign of balance and tax type: sale tax + balance<=0 -> 'invoice', sale tax + balance>0 -> 'refund'; purchase tax + balance>=0 -> 'invoice', purchase tax + balance<0 -> 'refund'. This logic mirrors the original tagging algorithm and is entirely within the SQL CTE — invisible from the model schema.",
+        "source": "code-read"
+      },
+      {
+        "element": "account.update.tax.tags.wizard.update_amls_tax_tags (child/group tax guard)",
+        "observation": "Before calling _modify_tag_to_aml_relation, searches for account.tax records with children_tax_ids set (group taxes). Collects all child tax ids and raises UserError if any child tax appears under more than one parent (len(children_taxes) > len(parent_taxes.children_tax_ids.ids)), because the SQL join through account_tax_filiation_rel would produce duplicate rows in that case. This is an explicit unsupported-scenario guard.",
+        "source": "code-read"
+      },
+      {
+        "element": "account.update.tax.tags.wizard._compute_date_from / _compute_display_lock_date_warning",
+        "observation": "date_from defaults to company.tax_lock_date + 1 day if a tax lock date exists, otherwise to context_today. The display_lock_date_warning Boolean fires if the user manually sets date_from to a date before company.tax_lock_date — shown as a warning banner in the wizard form but does not block execution, making this a non-enforced advisory.",
+        "source": "code-read"
+      },
+      {
+        "element": "res_config_settings_views.xml (entry point)",
+        "observation": "The wizard is surfaced inside res.config.settings under the 'default_taxes_setting_container' block, gated to groups='base.group_no_one' (technical/developer mode only). This means the feature is intentionally hidden from regular accounting users — it is an expert/admin tool exposed only in developer mode, not via a menu item.",
+        "source": "code-read"
+      }
+    ],
     "frontend": {
       "present": false,
       "js_files": 0,
@@ -54,41 +82,65 @@
     "runtime": {
       "models_with_data": 0,
       "top": []
-    },
-    "behavioral_notes": [
-      {
-        "element": "thin module",
-        "observation": "1 models, 0 routes, 646 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
-        "source": "ast"
-      }
-    ]
+    }
   },
   "it_architecture": {
-    "application": "account_update_tax_tags (Account - Allow updating tax grids)",
+    "application": "account_update_tax_tags (Tax Grid Retroactive Update Tool)",
     "software_services": [],
     "data_objects": [
-      "account.update.tax.tags.wizard"
+      "account.update.tax.tags.wizard (TransientModel, 3 fields)",
+      "account.move.line (mutated: account_account_tag_account_move_line_rel rows replaced)",
+      "account.tax.repartition.line (source of truth for new tags)",
+      "account.account.tag (tax grid tags)"
     ],
     "logical_data_erm": [
-      "account.update.tax.tags.wizard -> res.company"
+      "account.update.tax.tags.wizard -> res.company (scopes the update)",
+      "account.move.line ->M2M account.account.tag (via account_account_tag_account_move_line_rel, mutated by wizard)",
+      "account.tax.repartition.line ->M2M account.account.tag (via account_account_tag_account_tax_repartition_line_rel, source of truth)",
+      "account.move.line -> account.tax.repartition.line (tax lines: aml.tax_repartition_line_id)",
+      "account.move.line ->M2M account.tax (base lines: account_move_line_account_tax_rel)",
+      "account.tax ->M2M account.tax (children: account_tax_filiation_rel)"
     ],
     "information_flows": [
-      "depends: account"
+      "depends: account",
+      "side-effect: wizard.update_amls_tax_tags -> raw SQL DELETE+INSERT on account_account_tag_account_move_line_rel for all in-scope amls",
+      "scope: company_id + date_from filter; CABA (cash basis) moves resolved via tax_cash_basis_origin_move_id join"
     ],
     "frontend_components": []
   },
   "business_architecture": {
     "capabilities": [
-      "Account - Allow updating tax grids"
+      "Retroactively synchronise tax grid tags on existing journal items to match the current tax repartition line configuration",
+      "Scope the update by company and start date (does not touch history before date_from)",
+      "Handle group/child taxes (account_tax_filiation_rel) and cash-basis moves (CABA)",
+      "Advisory warning when date_from precedes the company tax lock date"
     ],
-    "value_streams": [],
+    "value_streams": [
+      "Tax-Configuration-Correction: admin changes tax repartition lines (adds/changes grid tags) -> runs wizard -> historical amls retroactively re-tagged -> tax grid reports now consistent"
+    ],
     "information_concepts": [
-      "account.update.tax.tags.wizard"
+      "account.move.line (journal item whose tax_tag_ids are updated)",
+      "account.account.tag (tax grid tag / account.account.tag with applicability='taxes')",
+      "account.tax.repartition.line (defines which tags should apply)",
+      "res.company (scope boundary)",
+      "company.tax_lock_date (advisory boundary)"
     ],
-    "organization": [],
+    "organization": [
+      "base.group_no_one (developer/technical mode — wizard only visible in Settings when developer mode is active)"
+    ],
     "products": [],
-    "policies": [],
-    "stakeholders": [],
+    "policies": [
+      "Update is scoped to a single company (company_id, readonly in wizard)",
+      "Update only affects amls with date >= date_from",
+      "Child taxes belonging to multiple parent group taxes are explicitly unsupported (UserError raised)",
+      "The operation is irreversible — the wizard form warns 'highly recommended to backup your database beforehand'",
+      "The wizard does NOT enforce the tax lock date; it only shows a warning banner if date_from < tax_lock_date",
+      "Updates apply regardless of the journal entry state (posted, draft, or cancelled)"
+    ],
+    "stakeholders": [
+      "System Administrator / Technical Accountant (configures taxes and runs the retroactive fix)",
+      "Auditor (relies on consistent tax grid tags for fiscal reporting)"
+    ],
     "strategy": null,
     "metrics": []
   },
@@ -96,37 +148,55 @@
     "value_model": "support",
     "activity_class": "support",
     "apqc_category": "9.0 Manage Financial Resources",
-    "rationale": "account_update_tax_tags: thin support/support module (auto-architect baseline)."
+    "rationale": "account_update_tax_tags is a data-integrity maintenance tool for the accounting subsystem: it corrects tax grid tag assignments on historical journal items after a tax configuration change. It creates no business object and performs no revenue-generating or operational activity. It is pure firm infrastructure (Stabell & Fjeldstad support), enabling accurate fiscal reporting (APQC 9.0 Manage Financial Resources) after a tax configuration change."
   },
   "fit_to_standard": {
     "standard_capabilities": [
-      "Account - Allow updating tax grids"
+      "One-shot retroactive re-tagging of all account.move.line tax grids from a specified date",
+      "Company-scoped update (multi-company safe)",
+      "Group/child tax handling via account_tax_filiation_rel",
+      "Cash-basis (CABA) move handling via tax_cash_basis_origin_move_id join",
+      "Advisory lock-date warning (non-enforced)",
+      "Accessible only in developer mode (base.group_no_one) from Accounting Settings"
     ],
-    "typical_fits": [],
-    "common_gaps": [],
+    "typical_fits": [
+      "After a country localization upgrade changes tax repartition lines and grid tags",
+      "After a company reconfigures taxes mid-year and needs historical reports to reflect the new tags",
+      "One-time data repair after an import/migration that created amls with stale or missing tax tags"
+    ],
+    "common_gaps": [
+      "No preview/dry-run mode — the operation directly mutates the database",
+      "No rollback mechanism — the wizard form advises a backup but provides no undo",
+      "Child tax belonging to multiple parents is unsupported and raises a hard UserError",
+      "No granularity below the date_from cutoff (cannot target a subset of taxes or journals)",
+      "The tax lock date is advisory only — the wizard will overwrite locked-period entries if the user proceeds"
+    ],
     "drive_hints": [
-      "odoo shell: env['account.update.tax.tags.wizard'].search([],limit=3)"
+      "env['account.update.tax.tags.wizard'].create({'date_from': '2024-01-01'}).update_amls_tax_tags()",
+      "Settings -> Technical (developer mode) -> Accounting -> Tax section -> 'Update tax tags on existing Journal Entries'"
     ]
   },
   "reverse_eng_confidence": {
-    "information_concepts": "auto",
-    "organization": "auto",
+    "information_concepts": "code-read",
+    "organization": "code-read",
     "products": "auto",
     "capabilities": "inferred",
     "value_streams": "inferred",
-    "policies": "inferred",
-    "metrics": "inferred",
+    "policies": "code-read",
+    "metrics": "auto",
     "strategy": "human"
   },
   "open_questions": [
-    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+    "Does the SQL CTE correctly handle amls with multiple taxes on the same line when one tax is a group and another is a standalone tax simultaneously?",
+    "Does the wizard need to be re-run after each l10n tax grid update, or is there a hook that triggers it automatically?",
+    "What is the performance profile for large databases (millions of amls)? The single-CTE approach has no chunking."
   ],
   "provenance": {
     "explorer_facts": "doc/revres/facts/account_update_tax_tags.facts.json",
     "tools": [
+      "code-read",
       "extract_module.py",
-      "extract_frontend.py",
-      "gen_thin.py"
+      "extract_frontend.py"
     ],
     "odoo_version": "19.0"
   }

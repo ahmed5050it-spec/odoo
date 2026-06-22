@@ -1,12 +1,12 @@
 # revres Work Assignments Ledger
 
-> Coverage and to-do across **649 modules**. **157 deep** (agent-reviewed, code-read behavior) · **451 baseline** (category-inferred, awaiting agent upgrade). Full table in `assignments.tsv`.
+> Coverage and to-do across **649 modules**. **205 deep** (agent-reviewed, code-read behavior) · **403 baseline** (category-inferred, awaiting agent upgrade). Full table in `assignments.tsv`.
 
 ## Status summary
 
 - Total catalog: **649** modules (every installable module has a record).
-- **Deep** (agent-reviewed, DONE): **157**
-- **Baseline** (auto-classified): **451** (of which 219 are `l10n_*` localizations — keep baseline)
+- **Deep** (agent-reviewed, DONE): **205**
+- **Baseline** (auto-classified): **403** (of which 219 are `l10n_*` localizations — keep baseline)
 - **Test** fixtures (excluded from review): **41**
 - Value models: chain=91, network=107, shop=26, support=425
 
@@ -20,46 +20,46 @@
 
 | Module | Value | APQC | Models | Routes | Priority |
 |--------|-------|------|-------:|-------:|---------:|
-| account_debit_note | support | 9.0 | 1 | 0 | 2 |
-| account_update_tax_tags | support | 9.0 | 1 | 0 | 2 |
-| base_sparse_field | support | 8.0 | 1 | 0 | 2 |
-| cloud_storage_migration | support | 13.0 | 1 | 0 | 2 |
-| google_address_autocomplete | support | 13.0 | 0 | 2 | 2 |
-| hr_homeworking | support | 7.0 | 1 | 0 | 2 |
-| hr_homeworking_calendar | support | 7.0 | 1 | 0 | 2 |
-| hr_recruitment_skills | support | 7.0 | 1 | 0 | 2 |
-| partnership | chain | 3.0 | 1 | 0 | 2 |
-| payment_aps | network | 9.0 | 0 | 2 | 2 |
-| payment_asiapay | network | 9.0 | 0 | 2 | 2 |
-| payment_buckaroo | network | 9.0 | 0 | 2 | 2 |
-| payment_ecpay | network | 9.0 | 0 | 2 | 2 |
-| payment_iyzico | network | 9.0 | 0 | 2 | 2 |
-| payment_mollie | network | 9.0 | 0 | 2 | 2 |
-| payment_nuvei | network | 9.0 | 0 | 2 | 2 |
-| payment_paymob | network | 9.0 | 0 | 2 | 2 |
-| payment_paypal | network | 9.0 | 0 | 2 | 2 |
-| payment_redsys | network | 9.0 | 0 | 2 | 2 |
-| payment_worldline | network | 9.0 | 0 | 2 | 2 |
-| pos_edi_ubl | chain | 3.0 | 1 | 0 | 2 |
-| pos_event_sale | chain | 3.0 | 1 | 0 | 2 |
-| pos_online_payment_self_order | chain | 3.0 | 0 | 2 | 2 |
-| pos_self_order_pine_labs | chain | 3.0 | 0 | 2 | 2 |
-| pos_self_order_razorpay | chain | 3.0 | 0 | 2 | 2 |
-| pos_self_order_stripe | chain | 3.0 | 0 | 2 | 2 |
-| product_margin | support | 2.0 | 1 | 0 | 2 |
-| project_todo | shop | 5.0 | 1 | 0 | 2 |
-| purchase_edi_ubl_bis3 | support | 4.2 | 1 | 0 | 2 |
-| purchase_stock | support | 4.2 | 1 | 0 | 2 |
-| sale_crm | chain | 3.0 | 1 | 0 | 2 |
-| sale_edi_ubl | chain | 3.0 | 1 | 0 | 2 |
-| snailmail | support | 9.4 | 1 | 0 | 2 |
-| stock_sms | chain | 4.0 | 1 | 0 | 2 |
-| uom | support | 2.0 | 1 | 0 | 2 |
-| website_mail | network | 3.0 | 0 | 2 | 2 |
-| website_mass_mailing | network | 3.0 | 0 | 2 | 2 |
-| website_sale_collect | network | 3.0 | 0 | 2 | 2 |
-| website_sale_stock | network | 3.0 | 0 | 2 | 2 |
-| auth_totp_mail | support | 8.0 | 0 | 1 | 1 |
+| pos_mercado_pago | chain | 3.0 | 0 | 1 | 1 |
+| pos_mollie | chain | 3.0 | 0 | 1 | 1 |
+| pos_qfpay | chain | 3.0 | 0 | 1 | 1 |
+| pos_restaurant_adyen | chain | 3.0 | 0 | 1 | 1 |
+| pos_self_order_viva_com | chain | 3.0 | 0 | 1 | 1 |
+| pos_viva_com | chain | 3.0 | 0 | 1 | 1 |
+| project_purchase | shop | 5.0 | 0 | 1 | 1 |
+| sale_gelato | chain | 3.0 | 0 | 1 | 1 |
+| website_event_booth_sale | network | 3.0 | 0 | 1 | 1 |
+| website_event_sale | network | 3.0 | 0 | 1 | 1 |
+| website_event_track_live | network | 3.0 | 0 | 1 | 1 |
+| website_google_map | network | 3.0 | 0 | 1 | 1 |
+| website_livechat | network | 3.0 | 0 | 1 | 1 |
+| website_mail_group | network | 3.0 | 0 | 1 | 1 |
+| website_sale_mondialrelay | network | 3.0 | 0 | 1 | 1 |
+| website_sale_mrp | network | 3.0 | 0 | 1 | 1 |
+| website_sale_slides | network | 3.0 | 0 | 1 | 1 |
+| website_sale_stock_wishlist | network | 3.0 | 0 | 1 | 1 |
+| account_add_gln | support | 9.0 | 0 | 0 | 0 |
+| account_fleet | support | 9.0 | 0 | 0 | 0 |
+| account_peppol_advanced_fields | support | 9.0 | 0 | 0 | 0 |
+| account_qr_code_emv | support | 9.0 | 0 | 0 | 0 |
+| account_qr_code_sepa | support | 9.0 | 0 | 0 | 0 |
+| account_tax_python | support | 9.0 | 0 | 0 | 0 |
+| attachment_indexation | support | 13.0 | 0 | 0 | 0 |
+| auth_passkey_portal | support | 8.0 | 0 | 0 | 0 |
+| auth_password_policy | support | 8.0 | 0 | 0 | 0 |
+| auth_password_policy_portal | support | 8.0 | 0 | 0 | 0 |
+| auth_password_policy_signup | support | 8.0 | 0 | 0 | 0 |
+| auth_totp_portal | support | 8.0 | 0 | 0 | 0 |
+| barcodes_gs1_nomenclature | chain | 4.0 | 0 | 0 | 0 |
+| base_iban | support | 8.0 | 0 | 0 | 0 |
+| calendar_sms | support | 13.0 | 0 | 0 | 0 |
+| cloud_storage_azure | support | 13.0 | 0 | 0 | 0 |
+| cloud_storage_google | support | 13.0 | 0 | 0 | 0 |
+| contacts | support | 13.0 | 0 | 0 | 0 |
+| crm_iap_enrich | shop | 3.0 | 0 | 0 | 0 |
+| crm_livechat | shop | 3.0 | 0 | 0 | 0 |
+| crm_sms | shop | 3.0 | 0 | 0 | 0 |
+| delivery_mondialrelay | chain | 4.4 | 0 | 0 | 0 |
 
-*Generated by assignments.py. 649 modules, 157 deep / 451 baseline.*
+*Generated by assignments.py. 649 modules, 205 deep / 403 baseline.*
 

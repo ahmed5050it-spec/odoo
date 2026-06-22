@@ -3,7 +3,11 @@
   "evidence": {
     "manifest": {
       "name": "POS Self Order Razorpay",
+      "version": "1.0",
       "category": "Sales/Point Of Sale",
+      "summary": "Addon for the Self Order App that allows customers to pay by Razorpay POS Terminal.",
+      "author": "Odoo S.A.",
+      "license": "LGPL-3",
       "depends": [
         "pos_razorpay",
         "pos_self_order"
@@ -11,29 +15,29 @@
       "auto_install": true,
       "application": false
     },
-    "models": [],
-    "routes": [
+    "models": [
       {
-        "paths": [
-          "/pos-self-order/razorpay-fetch-payment-status/"
+        "_name": "pos.payment.method",
+        "_inherit": "pos.payment.method",
+        "_description": "Point of Sale Payment Methods (Razorpay self-order/kiosk bridge)",
+        "fields": 0,
+        "relations": [
+          "config_ids->pos.config (inherited)",
+          "journal_id->account.journal (inherited)"
         ],
-        "auth": "public",
-        "type": "jsonrpc"
-      },
-      {
-        "paths": [
-          "/pos-self-order/razorpay-cancel-transaction/"
-        ],
-        "auth": "public",
-        "type": "jsonrpc"
+        "added_fields": [],
+        "added_methods": [
+          "_payment_request_from_kiosk(order) (override)",
+          "_load_pos_self_data_domain(data, config) (override, @api.model)"
+        ]
       }
     ],
-    "security": {
-      "access_rules": 0,
-      "record_rules": 0,
-      "groups": 0
-    },
-    "views": {},
+    "routes": [
+      {"paths": ["/pos-self-order/razorpay-fetch-payment-status/"], "auth": "public", "type": "jsonrpc"},
+      {"paths": ["/pos-self-order/razorpay-cancel-transaction/"], "auth": "public", "type": "jsonrpc"}
+    ],
+    "security": {"access_rules": 0, "record_rules": 0, "groups": 0, "note": "no module-owned access rules/groups; reuses point_of_sale POS groups and the pos_self_order public access-token gate (_verify_pos_config). Routes declared website=True."},
+    "views": {"form": 0, "list": 0, "kanban": 0, "search": 0, "note": "no views; pure JS/controller bridge, 0 XML LOC. Razorpay device/credential fields live on the parent pos_razorpay payment-method form."},
     "frontend": {
       "present": true,
       "js_files": 3,
@@ -45,9 +49,7 @@
         "SelfOrder.prototype"
       ],
       "services": [],
-      "asset_bundles": {
-        "pos_self_order.assets": 1
-      }
+      "asset_bundles": {"pos_self_order.assets": 1}
     },
     "integrations": {
       "http_call_sites": 0,
@@ -56,63 +58,129 @@
       "endpoints": [],
       "files": []
     },
-    "runtime": {
-      "models_with_data": 0,
-      "top": []
-    },
+    "runtime": {"models_with_data": 0, "top": []},
     "behavioral_notes": [
       {
-        "element": "frontend (OWL/JS)",
-        "observation": "3 JS files, 0 OWL components, 0 registry adds; bundles ['pos_self_order.assets'].",
-        "source": "static"
+        "element": "models/pos_payment_method.py: pos.payment.method._payment_request_from_kiosk(order) + _load_pos_self_data_domain(data, config)",
+        "observation": "The bridge adds no fields and wires Razorpay into the kiosk via two pos.payment.method overrides. _payment_request_from_kiosk overrides pos_self_order's no-op hook: it returns super() unless self.use_payment_terminal == 'razorpay', otherwise it builds a Razorpay request dict (amount = order.amount_total -- NOT scaled, unlike the Pine Labs sibling; referenceId = '<config-name>/Order/<order.id>/<uuid4>') and calls the parent module's self.razorpay_make_payment_request(data), which POSTs the 'pay' endpoint to the Razorpay POS device and returns {'success': True, 'p2pRequestId': ...}. _load_pos_self_data_domain (@api.model) OR-extends pos_self_order's data-load domain so that, when config.self_ordering_mode == 'kiosk', the Razorpay methods on config.payment_method_ids are shipped to the public kiosk OWL client (otherwise excluded by the base [('id','=',False)] domain). This is the terminal-enabling config switch and is invisible to field metadata.",
+        "source": "code-read"
       },
       {
-        "element": "thin module",
-        "observation": "0 models, 2 routes, 110 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
-        "source": "ast"
+        "element": "kiosk handshake: pos_self_order /kiosk/payment/<pos_config_id>/kiosk -> _payment_request_from_kiosk -> razorpay_make_payment_request",
+        "observation": "The two module routes are the poll/cancel surface, not the payment trigger. The trigger is pos_self_order's own /kiosk/payment/<pos_config_id>/kiosk (jsonrpc, public), to which the JS Razorpay.processPayment posts the serialized order. That base route runs process_order (creating the pos.order in the open pos.session via sync_from_ui), browses the chosen pos.payment.method, calls payment_method_sudo._payment_request_from_kiosk(order_sudo) -- dispatching into this module's Razorpay override -- and returns {'order': _load_pos_self_data_read(...), 'payment_status': status} where status carries the p2pRequestId. So the kiosk creates the order and starts the Razorpay device transaction in one round-trip, then the client polls. Access on every call is gated by _verify_pos_config(access_token), which resolves the pos.config by access_token and drops privileges to its self_ordering_default_user_id.",
+        "source": "code-read"
+      },
+      {
+        "element": "controllers/orders.py: PosSelfOrderControllerRazorpay.razorpay_payment_status + razorpay_cancel_status -> order.add_payment / action_pos_order_paid / call_bus_service(_send_payment_result)",
+        "observation": "The two new public jsonrpc routes (both website=True) subclass PosSelfOrderController and drive the asynchronous device result. /pos-self-order/razorpay-fetch-payment-status/ verifies the config (_verify_pos_config), searches the pos.order by (id, config_id) (Unauthorized if missing), and calls payment_method.razorpay_fetch_payment_status(payment_data) (parent 'status' poll keyed by p2pRequestId; the parent maps Razorpay messageCodes -> AUTHORIZED/QUEUED/SENT/RECEIVED/FAILED). On status == 'AUTHORIZED' it writes a pos.payment via order.add_payment({amount: order.amount_total, payment_method_id, card_type=paymentCardType, cardholder_name=nameOnCard, transaction_id=txnId, payment_method_authcode=authCode, card_brand=paymentCardBrand, payment_method_issuer_bank=acquirerCode, card_no=cardLastFourDigit, payment_ref_no=externalRefNumber, razorpay_reverse_ref_no=reverseReferenceNumber, ...}), then order.action_pos_order_paid() and, if self_ordering_mode == 'kiosk', call_bus_service(order, 'Success') -> order._send_payment_result('Success') (config._notify('PAYMENT_STATUS') + receipt + kitchen order). On status FAILED or empty it call_bus_service(order, 'fail'). /pos-self-order/razorpay-cancel-transaction/ calls razorpay_cancel_payment_request(payment_data) (parent 'cancel' endpoint) and, on success, also call_bus_service(order, 'fail'). The poll is the only path from device approval to a paid order; none of this is in metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "frontend (OWL self-order kiosk PaymentPage/SelfOrder Razorpay handler) -- gap #3",
+        "observation": "The client side is plain JS on the pos_self_order public OWL app (3 JS files, 0 OWL components, bundle pos_self_order.assets): a non-OWL Razorpay class (static/src/app/razorpay.js) plus patches of PaymentPage.prototype (static/src/app/pages/payment_page/payment_page.js) and SelfOrder.prototype (static/src/app/services/self_order_service.js). PaymentPage.startPayment delegates to selfOrder.razorpay.startPayment when the selected method's use_payment_terminal === 'razorpay'; SelfOrder.setup instantiates Razorpay if a razorpay method is loaded and SelfOrder.filterPaymentMethods force-includes razorpay methods on the kiosk payment screen. Razorpay.startPayment posts to /kiosk/payment to create the order + start the device, then paymentPolling() calls /pos-self-order/razorpay-fetch-payment-status/ every REQUEST_TIMEOUT (10s), stashing p2pRequestId in localStorage; a 'QUEUED' status triggers a cancel+restart of the transaction, a 90s inactivity timer flips payment_stopped and auto-fires /pos-self-order/razorpay-cancel-transaction/, and a RazorpayError notification reports device errors. This poll/queue/cancel loop and localStorage correlation are client logic not reverse-engineerable from Python.",
+        "source": "static"
       }
     ]
   },
   "it_architecture": {
-    "application": "pos_self_order_razorpay (POS Self Order Razorpay)",
+    "application": "pos_self_order_razorpay (thin auto-installed bridge: wires the Razorpay POS terminal -- from pos_razorpay -- into the pos_self_order kiosk self-payment flow via a pos.payment.method override + two public poll/cancel routes + OWL kiosk patches)",
     "software_services": [
-      "/pos-self-order/razorpay-cancel-transaction/",
-      "/pos-self-order/razorpay-fetch-payment-status/"
+      "/pos-self-order/razorpay-fetch-payment-status/ (public jsonrpc, website=True; poll Razorpay device status, settle pos.payment on AUTHORIZED, bus-notify Success/fail)",
+      "/pos-self-order/razorpay-cancel-transaction/ (public jsonrpc, website=True; cancel the in-flight Razorpay transaction, bus-notify fail)",
+      "(reused from pos_self_order) /kiosk/payment/<pos_config_id>/kiosk -> _payment_request_from_kiosk (start the Razorpay payment)"
     ],
-    "data_objects": [],
-    "logical_data_erm": [],
+    "data_objects": [
+      "pos.payment.method (inherited; +_payment_request_from_kiosk, +_load_pos_self_data_domain for razorpay)"
+    ],
+    "logical_data_erm": [
+      "pos.payment.method -> pos.config (config_ids; kiosk configs whose payment_method_ids include the Razorpay method)",
+      "pos.payment.method -> pos.payment (the tender written by order.add_payment, base POS model)",
+      "pos.order -> pos.session (order created in the open session by /kiosk/payment process_order, base pos_self_order)"
+    ],
     "information_flows": [
-      "depends: pos_razorpay, pos_self_order"
+      "depends: pos_self_order (kiosk app, /kiosk/payment, _payment_request_from_kiosk hook, _send_payment_result bus) + pos_razorpay (use_payment_terminal='razorpay', razorpay_make/fetch/cancel terminal methods, p2pRequestId)",
+      "client->server: kiosk PaymentPage -> SelfOrder.razorpay.startPayment -> /kiosk/payment/<config>/kiosk -> _payment_request_from_kiosk -> razorpay_make_payment_request ('pay') -> p2pRequestId",
+      "polling: Razorpay.paymentPolling (every 10s) -> /pos-self-order/razorpay-fetch-payment-status/ -> razorpay_fetch_payment_status ('status')",
+      "settlement: on 'AUTHORIZED' -> order.add_payment (pos.payment) -> action_pos_order_paid -> (kiosk) call_bus_service -> _send_payment_result('Success') -> config._notify('PAYMENT_STATUS') + receipt + kitchen order",
+      "queue/cancel: 'QUEUED' -> cancel + restart; inactivity (90s)/FAILED -> /pos-self-order/razorpay-cancel-transaction/ -> razorpay_cancel_payment_request ('cancel') -> call_bus_service(fail)",
+      "indirect outbound: the actual HTTPS calls to the Razorpay POS device API (RazorpayPosRequest._call_razorpay) live in pos_razorpay, not in this bridge"
     ],
-    "frontend_components": []
+    "frontend_components": [
+      "Razorpay (plain JS terminal handler, static/src/app/razorpay.js)",
+      "PaymentPage.prototype (patch; route razorpay payments to Razorpay.startPayment)",
+      "SelfOrder.prototype (patch; instantiate Razorpay, force-include razorpay methods, RazorpayError notifications)"
+    ]
   },
   "business_architecture": {
     "capabilities": [
-      "POS Self Order Razorpay"
+      "Accept Self-Service Kiosk Card/UPI/QR Payment via the Razorpay POS Terminal",
+      "Settle an Authorized Razorpay Transaction into the Kiosk Order (pos.payment)",
+      "Cancel / Re-queue an In-Flight Kiosk Terminal Transaction (QUEUED handling, timeout)",
+      "Expose the Razorpay Payment Method to the Kiosk Self-Order Client (kiosk-mode only)"
     ],
-    "value_streams": [],
-    "information_concepts": [],
-    "organization": [],
+    "value_streams": [
+      "Kiosk-self-pay-by-Razorpay: diner confirms order at the kiosk -> /kiosk/payment creates the pos.order + sends the 'pay' request to the Razorpay device -> customer taps card/UPI/QR on the device -> kiosk polls 'status' -> on AUTHORIZED a pos.payment is written, the order is marked paid, and (kiosk) a PAYMENT_STATUS bus message + receipt/kitchen order are emitted"
+    ],
+    "information_concepts": [
+      "pos.payment.method (Razorpay terminal, kiosk-enabled)",
+      "pos.payment (base; tender line written on authorization)",
+      "pos.order (base; kiosk order being paid)",
+      "pos.config (base; kiosk config exposing the terminal)"
+    ],
+    "organization": [
+      "(no module-owned res.groups; reuses point_of_sale POS groups and the pos_self_order self_ordering_default_user_id public actor)"
+    ],
     "products": [],
-    "policies": [],
-    "stakeholders": [],
+    "policies": [
+      "_payment_request_from_kiosk only acts when use_payment_terminal == 'razorpay' (else delegates to super)",
+      "amount is sent unscaled (order.amount_total); parent pos_razorpay constrains the terminal to INR currency",
+      "Razorpay methods are loaded to the public kiosk client only when self_ordering_mode == 'kiosk' (_load_pos_self_data_domain OR-extension)",
+      "every route re-verifies the pos.config by access_token (_verify_pos_config) and finds the order by (id, config_id) (Unauthorized otherwise)",
+      "a paid order is only produced on a polled 'AUTHORIZED'; 'QUEUED' triggers cancel+restart and inactivity (90s)/FAILED bus-notifies 'fail'"
+    ],
+    "stakeholders": [
+      "Customer / diner (taps card/UPI/QR on the Razorpay device at the kiosk)",
+      "Razorpay POS Terminal / Razorpay POS API (external payment device/provider, via pos_razorpay)",
+      "Restaurant / Store Manager (configures the Razorpay method on the kiosk pos.config)",
+      "Accountant (consumes the resulting pos.payment via the base POS session closing entry)"
+    ],
     "strategy": null,
-    "metrics": []
+    "metrics": [
+      "Razorpay kiosk tender amounts roll up via base pos.payment / report.pos.order (no module-specific report)"
+    ]
   },
   "classification": {
     "value_model": "chain",
     "activity_class": "primary",
     "apqc_category": "3.0 Market and Sell Products and Services",
-    "rationale": "pos_self_order_razorpay: thin chain/primary module (auto-architect baseline)."
+    "rationale": "pos_self_order_razorpay is a thin payment-terminal bridge inside the in-store self-service checkout: its sole act is collecting the customer's tender on the Razorpay POS device and completing a pos.payment on the kiosk pos.order so the order can be marked paid. That places it on the retail Sell/checkout primary activity of the value chain (Stabell & Fjeldstad chain / transform), inherited from its point_of_sale -> pos_self_order lineage, and maps to APQC 3.0 (Market and Sell Products and Services) because the operation it adds -- capturing payment to close the kiosk sale -- is part of selling/closing the counter transaction, not treasury/AR (APQC 9.0), realized downstream by the base POS session closing entry. It carries a 'network' overtone (it mediates between the diner and the Razorpay device/API through public poll/cancel routes), but, like its pos_safaricom / pos_online_payment siblings, the value logic it actually completes is the chain sell transaction, so it is classified chain. (The host pos_self_order is itself classed 'network' as the mediating self-order channel; this child adds only a tender device to that channel's kiosk mode, so it is read with the underlying POS sell rather than the channel mediation.)"
   },
   "fit_to_standard": {
     "standard_capabilities": [
-      "POS Self Order Razorpay"
+      "pay a self-service kiosk order with the Razorpay POS terminal (use_payment_terminal = 'razorpay')",
+      "automatic kiosk order creation + device payment request in one /kiosk/payment round-trip",
+      "client-side status polling (10s) of the Razorpay device until AUTHORIZED, then automatic pos.payment + order-paid",
+      "QUEUED-status auto cancel+restart and ~90s-inactivity auto-cancel, with PAYMENT_STATUS bus fail signal",
+      "Razorpay method auto-exposed to the kiosk client only in kiosk self-ordering mode"
     ],
-    "typical_fits": [],
-    "common_gaps": [],
+    "typical_fits": [
+      "Indian (INR) quick-service / retail self-order kiosks taking card/UPI/QR on a Razorpay device",
+      "a Razorpay method configured on the kiosk pos.config.payment_method_ids (device serial/credentials on the pos_razorpay method)",
+      "kiosk pay-each flow where the diner settles at the kiosk before the order goes to the kitchen"
+    ],
+    "common_gaps": [
+      "INR-only (parent pos_razorpay currency constraint) -- not usable for non-INR kiosks",
+      "completion depends on client polling staying alive; a closed kiosk tab mid-poll leaves the device txn to the inactivity cancel",
+      "no module-specific reconciliation/reporting beyond the base pos.payment line (refund/void live in pos_razorpay, not exposed to the kiosk)",
+      "QUEUED storm: repeated cancel+restart if the device keeps queuing could loop without operator visibility",
+      "depends on pos_razorpay reaching the Razorpay POS API ('pay'/'status'/'cancel'); endpoint changes need edits there"
+    ],
     "drive_hints": [
-      "n/a"
+      "odoo shell: env['pos.payment.method'].search([('use_payment_terminal','=','razorpay')]).mapped(('name','razorpay_tid','razorpay_test_mode','config_ids.self_ordering_mode'))",
+      "odoo shell: env['pos.config'].search([('self_ordering_mode','=','kiosk')]).mapped(lambda c: (c.name, c.payment_method_ids.filtered(lambda p: p.use_payment_terminal=='razorpay').mapped('name')))",
+      "curl jsonrpc /pos-self-order/razorpay-fetch-payment-status/ with {'access_token':cfg.access_token,'order_id':...,'payment_data':{'p2pRequestId':...},'payment_method_id':...} (expect Unauthorized without a valid token/order)",
+      "open a kiosk POS (self_ordering_mode='kiosk') with a Razorpay method and place an order to trigger PaymentPage.startPayment -> Razorpay.startPayment",
+      "odoo shell: env['pos.order'].search([('source','=','kiosk'),('payment_ids.payment_method_id.use_payment_terminal','=','razorpay')], limit=5).mapped(('name','state','amount_total'))"
     ]
   },
   "reverse_eng_confidence": {
@@ -123,17 +191,21 @@
     "value_streams": "inferred",
     "policies": "inferred",
     "metrics": "inferred",
+    "stakeholders": "inferred",
     "strategy": "human"
   },
   "open_questions": [
-    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+    "Exact OWL correlation: how the kiosk PaymentPage reacts to the PAYMENT_STATUS bus notification after the server already wrote the pos.payment on the poll.",
+    "QUEUED handling robustness: bounds on the cancel+restart loop when the Razorpay device repeatedly returns QUEUED.",
+    "Race between the 90s inactivity cancel and a late device AUTHORIZED when the diner walks away.",
+    "Idempotency of repeated /pos-self-order/razorpay-fetch-payment-status/ calls returning AUTHORIZED (double add_payment guarded only by action_pos_order_paid state)."
   ],
   "provenance": {
     "explorer_facts": "doc/revres/facts/pos_self_order_razorpay.facts.json",
     "tools": [
-      "extract_module.py",
+      "code-read (controllers/orders.py, models/pos_payment_method.py, static/src/app/razorpay.js, static/src/app/pages/payment_page/payment_page.js, static/src/app/services/self_order_service.js, __manifest__.py; cross-read pos_self_order/controllers/orders.py + models/pos_order.py + models/pos_payment_method.py and pos_razorpay/models/pos_payment_method.py)",
       "extract_frontend.py",
-      "gen_thin.py"
+      "extract_module.py"
     ],
     "odoo_version": "19.0"
   }

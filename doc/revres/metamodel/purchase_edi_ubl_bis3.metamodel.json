@@ -4,6 +4,10 @@
     "manifest": {
       "name": "Import/Export electronic orders with UBL",
       "category": "Supply Chain/Purchase",
+      "summary": null,
+      "version": "1.0",
+      "author": "Odoo S.A.",
+      "license": "LGPL-3",
       "depends": [
         "purchase",
         "account_edi_ubl_cii"
@@ -15,7 +19,22 @@
       {
         "_name": "purchase.edi.xml.ubl_bis3",
         "_description": "Purchase UBL BIS Ordering 3.5",
-        "fields": 0
+        "fields": 0,
+        "relations": [
+          "_inherit->account.edi.xml.ubl_bis3"
+        ]
+      },
+      {
+        "_name": "purchase.order",
+        "_description": "(extension) registers the BIS3 order EDI builder + routes inbound UBL order XML to its importer",
+        "fields": 0,
+        "relations": []
+      },
+      {
+        "_name": "account.move",
+        "_description": "(extension) blocks (un)grouping invoice lines linked to a purchase order",
+        "fields": 0,
+        "relations": []
       }
     ],
     "routes": [],
@@ -24,7 +43,37 @@
       "record_rules": 0,
       "groups": 0
     },
-    "views": {},
+    "views": {
+      "form": 0,
+      "list": 0,
+      "kanban": 0,
+      "pivot": 0,
+      "graph": 0,
+      "calendar": 0,
+      "activity": 0
+    },
+    "behavioral_notes": [
+      {
+        "element": "purchase.edi.xml.ubl_bis3._export_order / _get_purchase_order_node",
+        "observation": "Outbound order export: _export_order builds a structured document_node via _get_purchase_order_node (header with CustomizationID 'urn:fdc:peppol.eu:poacc:trns:order:3', ProfileID 'urn:fdc:peppol.eu:poacc:bis:ordering:3', OrderTypeCode '105', QuotationDocumentReference=partner_ref; BuyerCustomerParty=own company, SellerSupplierParty=vendor, Delivery, PaymentTerms, cac:OrderLine, cac:AnticipatedMonetaryTotal) and renders it with dict_to_xml using the Order template (odoo.addons.account_edi_ubl_cii.tools.Order) + the BIS3 nsmap. It reuses the account.edi.xml.ubl_bis3 e-invoice machinery (_ubl_add_buyer_customer_party_node, _ubl_add_line_item_node, tax/monetary helpers) but emits a Peppol BIS Order document instead of an Invoice; _setup_base_lines additionally attaches each line's product.supplierinfo so SellersItemIdentification/Item Name carry the vendor's product_code/product_name. None of this node-mapping is visible in metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "purchase.edi.xml.ubl_bis3._retrieve_order_vals / _retrieve_line_vals",
+        "observation": "Inbound order import: _retrieve_order_vals extends the account_edi_ubl_cii base, then walks the XML tree to retrieve-or-create the vendor via _import_partner('SellerSupplier') -> partner_id, the delivery party -> dest_address_id, sets partner_ref from ./ID and origin from OriginatorDocumentReference, parses './{*}OrderLine/{*}LineItem' through _import_lines(document_type='order', tax_type='purchase') plus _import_document_allowance_charges, and writes them as order_line Command.create(...) onto the purchase.order. _retrieve_line_vals renames the base 'quantity' key to 'product_qty' so the dict fits purchase.order.line (invoice-only deferred_start/end_date keys are popped). Cross-model side-effect chain (partner create, line create) invisible in metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "purchase.order._get_edi_builders / _get_import_file_type / _get_edi_decoder",
+        "observation": "EDI dispatch wiring on purchase.order: _get_edi_builders appends env['purchase.edi.xml.ubl_bis3'] so the PDF report engine (purchase.ir_actions_report) embeds the generated BIS3 order XML inside the RFQ/PO PDF for every UBL build. Inbound, _get_import_file_type sniffs the parsed xml_tree's CustomizationID == 'urn:fdc:peppol.eu:poacc:trns:order:3' to tag the file as 'purchase.edi.xml.ubl_bis3', and _get_edi_decoder then returns that model's _import_order_ubl (defined in account_edi_ubl_cii) as the decoder at priority 20. _import_order_ubl writes the parsed vals onto the order, posts a 'Format used to import' message, and on partial data schedules a mail.mail_activity_data_todo via _create_activity_set_details. Pure Python routing, not declarative.",
+        "source": "code-read"
+      },
+      {
+        "element": "account.move._check_move_for_group_ungroup_lines_by_tax",
+        "observation": "Document-integrity guard: this override raises a UserError ('You can only (un)group lines of an invoice not linked to a purchase order') whenever any account.move.line carries a purchase_order_id, blocking the bill-line (un)group-by-tax action for PO-backed vendor bills so the line<->purchase.order.line link that drives 3-way matching and stock valuation is never broken. Side-effect (a blocked action), invisible in metadata.",
+        "source": "code-read"
+      }
+    ],
     "frontend": {
       "present": false,
       "js_files": 0,
@@ -45,39 +94,57 @@
     "runtime": {
       "models_with_data": 0,
       "top": []
-    },
-    "behavioral_notes": [
-      {
-        "element": "thin module",
-        "observation": "1 models, 0 routes, 645 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
-        "source": "ast"
-      }
-    ]
+    }
   },
   "it_architecture": {
-    "application": "purchase_edi_ubl_bis3 (Import/Export electronic orders with UBL)",
+    "application": "purchase_edi_ubl_bis3 (Peppol BIS Ordering 3 export/import engine, extends Purchase via the account_edi_ubl_cii UBL builders)",
     "software_services": [],
     "data_objects": [
       "purchase.edi.xml.ubl_bis3"
     ],
-    "logical_data_erm": [],
+    "logical_data_erm": [
+      "purchase.edi.xml.ubl_bis3 -> account.edi.xml.ubl_bis3 (_inherit)",
+      "purchase.order -> purchase.edi.xml.ubl_bis3 (_get_edi_builders / decoder, no FK)",
+      "purchase.order.line <- order_line vals built by the importer (Command.create)",
+      "account.move.line -> purchase.order.line (purchase_order_id guard)"
+    ],
     "information_flows": [
-      "depends: purchase, account_edi_ubl_cii"
+      "depends: purchase, account_edi_ubl_cii",
+      "side-effect (outbound): purchase.order PDF render -> _get_edi_builders -> _export_order -> Peppol BIS Order XML embedded in the RFQ/PO PDF",
+      "side-effect (inbound): UBL order XML/PDF -> _get_import_file_type (CustomizationID) -> _get_edi_decoder -> _import_order_ubl -> purchase.order written + order_line created + vendor (res.partner) retrieved/created",
+      "auto_install: true -> activates whenever both purchase and account_edi_ubl_cii are installed"
     ],
     "frontend_components": []
   },
   "business_architecture": {
     "capabilities": [
-      "Import/Export electronic orders with UBL"
+      "Export Purchase Orders as Peppol BIS Ordering 3 UBL XML",
+      "Import Purchase Orders / RFQs from UBL Order XML",
+      "Embed the Order XML inside the PO PDF (XML-in-PDF portability)",
+      "Map vendor product references (supplierinfo) into UBL Item identification"
     ],
-    "value_streams": [],
+    "value_streams": [
+      "Outbound: confirmed PO -> Peppol BIS Order XML -> XML embedded in PO PDF / sent to vendor",
+      "Inbound: received UBL Order XML/PDF -> format detection -> parsed purchase.order with vendor, delivery address & order lines"
+    ],
     "information_concepts": [
-      "purchase.edi.xml.ubl_bis3"
+      "purchase.order (the order carrying the BIS3 Order XML)",
+      "purchase.order.line (order lines built from / serialized to UBL OrderLine)",
+      "res.partner (vendor / delivery party matched on import)",
+      "product.supplierinfo (vendor product_code/product_name in Item identification)"
     ],
     "organization": [],
     "products": [],
-    "policies": [],
-    "stakeholders": [],
+    "policies": [
+      "Order format fixed to Peppol BIS Ordering 3 (CustomizationID urn:fdc:peppol.eu:poacc:trns:order:3) via header nodes",
+      "Auto-install with purchase + account_edi_ubl_cii: any Purchase+EDI database gains UBL order exchange by default",
+      "PO-linked vendor-bill lines cannot be (un)grouped by tax (account.move guard)"
+    ],
+    "stakeholders": [
+      "Buyer / Purchase User (sends machine-readable orders)",
+      "Vendor / Supplier (receives the UBL order, or whose RFQ is imported)",
+      "Peppol Access Point / e-procurement network (transport of the BIS Order)"
+    ],
     "strategy": null,
     "metrics": []
   },
@@ -85,16 +152,32 @@
     "value_model": "support",
     "activity_class": "support",
     "apqc_category": "4.2 Procure Materials and Services",
-    "rationale": "purchase_edi_ubl_bis3: thin support/support module (auto-architect baseline)."
+    "rationale": "purchase_edi_ubl_bis3 is a thin procurement-support/compliance layer: it owns one AbstractModel (purchase.edi.xml.ubl_bis3) that serializes a purchase.order to, and parses it from, Peppol BIS Ordering 3 UBL XML, reusing the account_edi_ubl_cii e-invoice builders. It adds no primary-chain value of its own and has no models with storage, routes, views, or UI beyond the existing Purchase forms; its terminal side-effects are an embedded Order XML on the PO PDF (export) and a populated purchase.order (import). It supports APQC 4.2 Procure Materials and Services (the order-exchange leg, activity refs 4.2.4.4 create/distribute purchase orders and 4.2.4.5 expedite/track) by making PO exchange standards-compliant; it leans compliance, sitting alongside account_edi_ubl_cii's invoice EDI. value_model 'support' per Stabell & Fjeldstad: it is an infrastructure/compliance enabler for procurement document exchange, not a chain/shop/network in its own right."
   },
   "fit_to_standard": {
     "standard_capabilities": [
-      "Import/Export electronic orders with UBL"
+      "Export a purchase order as Peppol BIS Ordering 3 (urn:fdc:peppol.eu:poacc:bis:ordering:3) UBL Order XML",
+      "Embed the Order XML inside the PO/RFQ PDF for receiver portability",
+      "Detect inbound UBL order format from CustomizationID and import into purchase.order",
+      "Retrieve-or-create the vendor and delivery party on import (via account_edi_ubl_cii partner matching)",
+      "Carry vendor product_code / product_name (product.supplierinfo) into SellersItemIdentification / Item Name",
+      "Reuse the EN16931/PINT tax & monetary computation of the shared UBL BIS3 builder"
     ],
-    "typical_fits": [],
-    "common_gaps": [],
+    "typical_fits": [
+      "Buyer issuing standards-compliant Peppol BIS orders to vendors",
+      "Importing a vendor-supplied UBL order/RFQ to seed a purchase.order automatically",
+      "Round-trip of order data via XML-in-PDF where only the PDF is exchanged"
+    ],
+    "common_gaps": [
+      "Actual Peppol Access Point transmission (this module only builds/parses XML; network delivery is a separate Peppol module)",
+      "Order-response / order-change (BIS Order Response, Order Agreement) profiles beyond the plain Order",
+      "Country-specific CIUS or extra UBL extensions on the order not covered by the shared builder",
+      "Bespoke product/UoM/tax mappings for non-standard vendor catalogues"
+    ],
     "drive_hints": [
-      "odoo shell: env['purchase.edi.xml.ubl_bis3'].search([],limit=3)"
+      "odoo shell: po = env['purchase.order'].search([('state','=','purchase')], limit=1); xml = env['purchase.edi.xml.ubl_bis3']._export_order(po); print(xml[:400])  # BIS Order XML head",
+      "odoo shell: b = env['purchase.edi.xml.ubl_bis3']; node = b._get_purchase_order_node({'purchase_order': po}); print(node['cbc:CustomizationID'])  # urn:fdc:peppol.eu:poacc:trns:order:3",
+      "UI: Print/Send a confirmed purchase order -> the Peppol BIS Order XML is generated and embedded in the PO PDF (via _get_edi_builders)"
     ]
   },
   "reverse_eng_confidence": {
@@ -108,14 +191,16 @@
     "strategy": "human"
   },
   "open_questions": [
-    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+    "Exact partner-matching precedence used by _import_partner for the SellerSupplier and Delivery parties (Peppol EAS/endpoint vs VAT vs name), inherited from account_edi_ubl_cii.",
+    "How import failures / un-mappable products are surfaced beyond the scheduled mail.mail_activity_data_todo and per-line logs.",
+    "Whether anything consumes the imported 'origin' (OriginatorDocumentReference) downstream, and how Order-Response would be modelled if added."
   ],
   "provenance": {
     "explorer_facts": "doc/revres/facts/purchase_edi_ubl_bis3.facts.json",
     "tools": [
-      "extract_module.py",
+      "code-read (models/purchase_edi_xml_ubl_bis3.py, models/purchase_order.py, models/account_move.py; account_edi_ubl_cii/models/account_edi_xml_ubl_bis3.py, tools/ubl_21_order.py)",
       "extract_frontend.py",
-      "gen_thin.py"
+      "extract_module.py"
     ],
     "odoo_version": "19.0"
   }

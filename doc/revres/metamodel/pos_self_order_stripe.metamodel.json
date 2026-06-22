@@ -3,47 +3,42 @@
   "evidence": {
     "manifest": {
       "name": "POS Self Order Stripe",
+      "version": null,
       "category": "Sales/Point Of Sale",
+      "summary": "Addon for the Self Order App that allows customers to pay by Stripe.",
+      "author": "Odoo S.A.",
+      "license": "LGPL-3",
       "depends": [
         "pos_stripe",
         "pos_self_order"
       ],
       "auto_install": true,
-      "application": false
+      "application": false,
+      "data": ["views/assets_stripe.xml"]
     },
-    "models": [],
-    "routes": [
+    "models": [
       {
-        "paths": [
-          "/pos-self-order/stripe-connection-token/"
+        "_name": "pos.payment.method",
+        "_inherit": "pos.payment.method",
+        "_description": "Point of Sale Payment Methods (Stripe self-order/kiosk bridge)",
+        "fields": 0,
+        "relations": [
+          "config_ids->pos.config (inherited)",
+          "journal_id->account.journal (inherited)"
         ],
-        "auth": "public",
-        "type": "jsonrpc"
-      },
-      {
-        "paths": [
-          "/pos-self-order/stripe-capture-payment/"
-        ],
-        "auth": "public",
-        "type": "jsonrpc"
+        "added_fields": [],
+        "added_methods": [
+          "_payment_request_from_kiosk(order) (override)",
+          "_load_pos_self_data_domain(data, config) (override, @api.model)"
+        ]
       }
     ],
-    "security": {
-      "access_rules": 0,
-      "record_rules": 0,
-      "groups": 0
-    },
-    "views": {
-      "form": 0,
-      "list": 0,
-      "tree": 0,
-      "kanban": 0,
-      "search": 0,
-      "pivot": 0,
-      "graph": 0,
-      "calendar": 0,
-      "activity": 0
-    },
+    "routes": [
+      {"paths": ["/pos-self-order/stripe-connection-token/"], "auth": "public", "type": "jsonrpc"},
+      {"paths": ["/pos-self-order/stripe-capture-payment/"], "auth": "public", "type": "jsonrpc"}
+    ],
+    "security": {"access_rules": 0, "record_rules": 0, "groups": 0, "note": "no module-owned access rules/groups; reuses point_of_sale POS groups and the pos_self_order public gate (_verify_authorization). Routes declared website=True. Parent stripe_connection_token/payment_intent/capture require point_of_sale.group_pos_user, satisfied via the self_ordering_default_user_id the gate impersonates."},
+    "views": {"form": 0, "list": 0, "kanban": 0, "search": 0, "note": "1 data file views/assets_stripe.xml: a template inheriting pos_self_order.index that injects <script src='https://js.stripe.com/terminal/v1/'> into <head> (cannot be loaded via __manifest__ assets because the URL has no .js suffix). No backend form/list views."},
     "frontend": {
       "present": true,
       "js_files": 3,
@@ -55,10 +50,7 @@
         "SelfOrder.prototype"
       ],
       "services": [],
-      "asset_bundles": {
-        "pos_self_order.assets": 1,
-        "pos_self_order.assets_tests": 1
-      }
+      "asset_bundles": {"pos_self_order.assets": 1, "pos_self_order.assets_tests": 1}
     },
     "integrations": {
       "http_call_sites": 0,
@@ -67,63 +59,131 @@
       "endpoints": [],
       "files": []
     },
-    "runtime": {
-      "models_with_data": 0,
-      "top": []
-    },
+    "runtime": {"models_with_data": 0, "top": []},
     "behavioral_notes": [
       {
-        "element": "frontend (OWL/JS)",
-        "observation": "3 JS files, 0 OWL components, 0 registry adds; bundles ['pos_self_order.assets', 'pos_self_order.assets_tests'].",
-        "source": "static"
+        "element": "models/pos_payment_method.py: pos.payment.method._payment_request_from_kiosk(order) + _load_pos_self_data_domain(data, config)",
+        "observation": "The bridge adds no fields and wires Stripe into the kiosk via two pos.payment.method overrides. _payment_request_from_kiosk overrides pos_self_order's no-op hook: it returns super() unless self.use_payment_terminal == 'stripe', otherwise it simply calls the parent module's self.stripe_payment_intent(order.amount_total) -- which creates a Stripe PaymentIntent with payment_method_types[]='card_present' and capture_method='manual' (terminal/card-present, manual capture) and returns the intent (including its client_secret) to the caller (/kiosk/payment). Unlike the Pine Labs/Razorpay siblings it builds no reference dict and starts no poll -- the Stripe Terminal SDK drives the reader client-side, so the server only mints the intent here. _load_pos_self_data_domain (@api.model) OR-extends pos_self_order's data-load domain so that, when config.self_ordering_mode == 'kiosk', the Stripe methods on config.payment_method_ids are shipped to the public kiosk OWL client (otherwise excluded by the base [('id','=',False)] domain). This terminal-enabling config switch is invisible to field metadata.",
+        "source": "code-read"
       },
       {
-        "element": "thin module",
-        "observation": "0 models, 2 routes, 222 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
-        "source": "ast"
+        "element": "kiosk handshake: /kiosk/payment -> stripe_payment_intent (client_secret) + /pos-self-order/stripe-connection-token/ -> stripe_connection_token",
+        "observation": "Stripe needs two server tokens before the reader can charge, both served public. (1) The payment trigger is pos_self_order's own /kiosk/payment/<pos_config_id>/kiosk (jsonrpc), to which the JS Stripe.startPayment posts the serialized order; that base route runs process_order (creating the pos.order in the open pos.session via sync_from_ui), then payment_method_sudo._payment_request_from_kiosk(order_sudo) -> stripe_payment_intent, returning {'order': _load_pos_self_data_read(...), 'payment_status': intent} so the client gets payment_status.client_secret. (2) /pos-self-order/stripe-connection-token/ (this module, public jsonrpc website=True) verifies the config via _verify_authorization(access_token,'',{}) and returns payment_method.stripe_connection_token() -- the parent's POST to Stripe terminal/connection_tokens, whose .secret the Stripe Terminal JS SDK consumes (onFetchConnectionToken) to authenticate the reader. The reader is then discovered/connected client-side by stripe_serial_number. This dual-token handshake is pure code, not metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "controllers/orders.py: PosSelfOrderControllerStripe.stripe_capture_payment -> stripe_capture_payment + amount check -> order.add_payment / action_pos_order_paid / _send_payment_result",
+        "observation": "/pos-self-order/stripe-capture-payment/ (public jsonrpc website=True) is the settlement route -- there is NO polling. It verifies the config (_verify_authorization), calls pos.payment.method.stripe_capture_payment(payment_intent_id) (parent POST payment_intents/<id>/capture), and finds the pos.order by (access_token=order_access_token, config_id) (Unauthorized if missing). It then re-validates the captured amount server-side: float_is_zero(payment_method._stripe_calculate_amount(order.amount_total) - stripe_confirmation['amount'], precision_rounding=currency.rounding) AND stripe_confirmation['status'] == 'succeeded'. Only then does it write a pos.payment via order.add_payment({amount: order.amount_total, payment_date: now, payment_method_id, transaction_id=stripe_confirmation['id'], payment_status='succeeded', ...}), call order.action_pos_order_paid(), and -- if self_ordering_mode == 'kiosk' -- order._send_payment_result('Success') (config._notify('PAYMENT_STATUS') + receipt + kitchen order). If the amount mismatches or status != succeeded it order._send_payment_result('fail'). This server-side amount-equality guard against a client-supplied payment_intent_id is the key integrity behavior and is invisible to metadata. (Tests/test_self_order_kiosk_stripe.py mocks stripe_capture_payment and asserts the order reaches state 'paid'.)",
+        "source": "code-read"
+      },
+      {
+        "element": "frontend (OWL self-order kiosk Stripe Terminal SDK handler + injected <script>) -- gap #3",
+        "observation": "The client side is plain JS on the pos_self_order public OWL app (3 JS files, 0 OWL components; bundles pos_self_order.assets + pos_self_order.assets_tests): a non-OWL Stripe class (static/src/app/stripe.js) wrapping the global Stripe Terminal SDK, plus patches of PaymentPage.prototype (static/src/app/pages/payment_page/payment_page.js) and SelfOrder.prototype (static/src/app/services/self_order_service.js). The SDK itself is loaded by views/assets_stripe.xml injecting <script src='https://js.stripe.com/terminal/v1/'> into the self-order index <head>. PaymentPage.startPayment delegates to selfOrder.stripe.startPayment when use_payment_terminal === 'stripe'; SelfOrder.setup instantiates Stripe and tracks stripeState via handleReaderConnection. Stripe.startPayment: POST /kiosk/payment -> get client_secret + savedOrder -> connectReader() (StripeTerminal.create with onFetchConnectionToken -> /pos-self-order/stripe-connection-token; discoverReaders + connectReader matching stripe_serial_number) -> collectPaymentMethod(clientSecret) -> terminal.processPayment -> capturePayment(intent.id, savedOrder) which calls /pos-self-order/stripe-capture-payment with the order's access_token. There is no polling loop -- the Stripe Terminal SDK is synchronous/event-driven and only the capture round-trip settles. A test tour (static/tests/tours) exercises the kiosk Stripe flow. None of this reader/SDK orchestration is reverse-engineerable from Python.",
+        "source": "static"
       }
     ]
   },
   "it_architecture": {
-    "application": "pos_self_order_stripe (POS Self Order Stripe)",
+    "application": "pos_self_order_stripe (thin auto-installed bridge: wires the Stripe Terminal reader -- from pos_stripe -- into the pos_self_order kiosk self-payment flow via a pos.payment.method override, a connection-token + a capture route, an injected Stripe Terminal SDK <script>, and OWL kiosk patches)",
     "software_services": [
-      "/pos-self-order/stripe-capture-payment/",
-      "/pos-self-order/stripe-connection-token/"
+      "/pos-self-order/stripe-connection-token/ (public jsonrpc, website=True; return Stripe terminal connection_token secret for the SDK to authenticate the reader)",
+      "/pos-self-order/stripe-capture-payment/ (public jsonrpc, website=True; capture the PaymentIntent, amount-check, settle pos.payment, bus-notify Success/fail)",
+      "(reused from pos_self_order) /kiosk/payment/<pos_config_id>/kiosk -> _payment_request_from_kiosk -> stripe_payment_intent (mint the card_present/manual PaymentIntent + client_secret)"
     ],
-    "data_objects": [],
-    "logical_data_erm": [],
+    "data_objects": [
+      "pos.payment.method (inherited; +_payment_request_from_kiosk, +_load_pos_self_data_domain for stripe)"
+    ],
+    "logical_data_erm": [
+      "pos.payment.method -> pos.config (config_ids; kiosk configs whose payment_method_ids include the Stripe method)",
+      "pos.payment.method -> pos.payment (the tender written by order.add_payment, base POS model)",
+      "pos.order -> pos.session (order created in the open session by /kiosk/payment process_order, base pos_self_order)"
+    ],
     "information_flows": [
-      "depends: pos_stripe, pos_self_order"
+      "depends: pos_self_order (kiosk app, /kiosk/payment, _payment_request_from_kiosk hook, _send_payment_result bus, pos_self_order.index template) + pos_stripe (use_payment_terminal='stripe', stripe_serial_number, stripe_connection_token/payment_intent/capture, _stripe_calculate_amount, payment.provider 'stripe')",
+      "client->server: kiosk PaymentPage -> SelfOrder.stripe.startPayment -> /kiosk/payment/<config>/kiosk -> _payment_request_from_kiosk -> stripe_payment_intent -> client_secret",
+      "client->server: Stripe Terminal SDK onFetchConnectionToken -> /pos-self-order/stripe-connection-token/ -> stripe_connection_token (terminal/connection_tokens) -> reader authenticated",
+      "client-side: discoverReaders + connectReader(stripe_serial_number) -> collectPaymentMethod(client_secret) -> terminal.processPayment (no server poll)",
+      "settlement: capturePayment -> /pos-self-order/stripe-capture-payment/ -> stripe_capture_payment (payment_intents/<id>/capture) -> amount-equality + status=='succeeded' guard -> order.add_payment (pos.payment) -> action_pos_order_paid -> (kiosk) _send_payment_result('Success') -> config._notify('PAYMENT_STATUS') + receipt + kitchen order; mismatch -> _send_payment_result('fail')",
+      "indirect outbound: the actual HTTPS calls to the Stripe API (_get_stripe_payment_provider._send_api_request) live in pos_stripe / the payment engine, not in this bridge; the browser also talks directly to Stripe via the Terminal SDK"
     ],
-    "frontend_components": []
+    "frontend_components": [
+      "Stripe (plain JS Stripe Terminal SDK wrapper, static/src/app/stripe.js)",
+      "PaymentPage.prototype (patch; route stripe payments to Stripe.startPayment)",
+      "SelfOrder.prototype (patch; instantiate Stripe, track stripeState, StripeError notifications)",
+      "assets_stripe.xml (template patch; inject Stripe Terminal SDK <script> into pos_self_order.index)"
+    ]
   },
   "business_architecture": {
     "capabilities": [
-      "POS Self Order Stripe"
+      "Accept Self-Service Kiosk Card-Present Payment via a Stripe Terminal Reader",
+      "Authenticate the Stripe Terminal Reader from the Kiosk (connection token)",
+      "Capture a Stripe PaymentIntent and Settle it into the Kiosk Order (pos.payment), with a server-side amount check",
+      "Expose the Stripe Payment Method to the Kiosk Self-Order Client (kiosk-mode only)"
     ],
-    "value_streams": [],
-    "information_concepts": [],
-    "organization": [],
+    "value_streams": [
+      "Kiosk-self-pay-by-Stripe: diner confirms order at the kiosk -> /kiosk/payment creates the pos.order + mints a card_present/manual PaymentIntent -> the Stripe Terminal SDK fetches a connection token, connects the reader (by serial), collects + processes the card -> the kiosk captures the intent -> the server re-checks the amount, writes a pos.payment, marks the order paid, and (kiosk) emits a PAYMENT_STATUS bus message + receipt/kitchen order"
+    ],
+    "information_concepts": [
+      "pos.payment.method (Stripe terminal, kiosk-enabled)",
+      "pos.payment (base; tender line written on capture)",
+      "pos.order (base; kiosk order being paid)",
+      "pos.config (base; kiosk config exposing the terminal)",
+      "payment.provider ('stripe'; supplies the API credentials, via pos_stripe)"
+    ],
+    "organization": [
+      "(no module-owned res.groups; reuses point_of_sale POS groups -- the parent Stripe methods require group_pos_user, met via the self_ordering_default_user_id the public gate impersonates)"
+    ],
     "products": [],
-    "policies": [],
-    "stakeholders": [],
+    "policies": [
+      "_payment_request_from_kiosk only acts when use_payment_terminal == 'stripe' (else delegates to super)",
+      "PaymentIntent is card_present + manual capture; amount via _stripe_calculate_amount (currency-scaled, not a fixed factor)",
+      "Stripe methods are loaded to the public kiosk client only when self_ordering_mode == 'kiosk' (_load_pos_self_data_domain OR-extension)",
+      "capture settles a pos.payment ONLY if the captured amount equals _stripe_calculate_amount(order.amount_total) (float_is_zero) AND status == 'succeeded'; otherwise _send_payment_result('fail')",
+      "routes verify the config (_verify_authorization) and bind the order by access_token (Unauthorized otherwise); the reader is matched to the method by stripe_serial_number"
+    ],
+    "stakeholders": [
+      "Customer / diner (taps/inserts card on the Stripe Terminal reader at the kiosk)",
+      "Stripe Terminal reader + Stripe API (external payment device/provider, via pos_stripe + payment.provider 'stripe')",
+      "Restaurant / Store Manager (configures the Stripe method + reader serial on the kiosk pos.config)",
+      "Accountant (consumes the resulting pos.payment via the base POS session closing entry)"
+    ],
     "strategy": null,
-    "metrics": []
+    "metrics": [
+      "Stripe kiosk tender amounts roll up via base pos.payment / report.pos.order (no module-specific report)"
+    ]
   },
   "classification": {
     "value_model": "chain",
     "activity_class": "primary",
     "apqc_category": "3.0 Market and Sell Products and Services",
-    "rationale": "pos_self_order_stripe: thin chain/primary module (auto-architect baseline)."
+    "rationale": "pos_self_order_stripe is a thin payment-terminal bridge inside the in-store self-service checkout: its sole act is collecting the customer's tender on a Stripe Terminal reader and completing a pos.payment on the kiosk pos.order so the order can be marked paid. That places it on the retail Sell/checkout primary activity of the value chain (Stabell & Fjeldstad chain / transform), inherited from its point_of_sale -> pos_self_order lineage, and maps to APQC 3.0 (Market and Sell Products and Services) because the operation it adds -- capturing payment to close the kiosk sale -- is part of selling/closing the counter transaction, not treasury/AR (APQC 9.0), realized downstream by the base POS session closing entry. It carries a 'network' overtone (it mediates between the diner, the Stripe Terminal reader and the Stripe API through public token/capture routes), but, like its pos_safaricom / pos_online_payment siblings, the value logic it actually completes is the chain sell transaction, so it is classified chain. (The host pos_self_order is itself classed 'network' as the mediating self-order channel; this child adds only a tender device to that channel's kiosk mode, so it is read with the underlying POS sell rather than the channel mediation.)"
   },
   "fit_to_standard": {
     "standard_capabilities": [
-      "POS Self Order Stripe"
+      "pay a self-service kiosk order with a Stripe Terminal reader (use_payment_terminal = 'stripe')",
+      "automatic kiosk order creation + card_present/manual PaymentIntent in one /kiosk/payment round-trip",
+      "Stripe Terminal JS SDK reader connection (connection token, discover/connect by serial) and client-side card collection",
+      "manual capture with a server-side amount-equality + 'succeeded' guard before writing the pos.payment",
+      "Stripe method auto-exposed to the kiosk client only in kiosk self-ordering mode; PAYMENT_STATUS bus Success/fail signal"
     ],
-    "typical_fits": [],
-    "common_gaps": [],
+    "typical_fits": [
+      "fast-food / retail self-order kiosks with a Stripe Terminal card reader (any Stripe-supported region/currency)",
+      "a Stripe method + stripe_serial_number on the kiosk pos.config.payment_method_ids, backed by a published 'stripe' payment.provider",
+      "kiosk pay-each flow where the diner taps a card at the kiosk before the order goes to the kitchen"
+    ],
+    "common_gaps": [
+      "requires the Stripe Terminal SDK <script> to load (injected into the index) and a reachable Stripe API; offline kiosks cannot charge",
+      "reader must be discoverable and its serial must match stripe_serial_number on the method",
+      "no module-specific reconciliation/reporting beyond the base pos.payment line (refunds live in pos_stripe.stripe_refund, not exposed to the kiosk)",
+      "tip/over-capture (amount_to_capture) is not used from the kiosk path -- it captures the exact authorized amount",
+      "a published Stripe payment.provider for the company is required (_get_stripe_payment_provider raises otherwise)"
+    ],
     "drive_hints": [
-      "n/a"
+      "odoo shell: env['pos.payment.method'].search([('use_payment_terminal','=','stripe')]).mapped(('name','stripe_serial_number','config_ids.self_ordering_mode'))",
+      "odoo shell: env['pos.config'].search([('self_ordering_mode','=','kiosk')]).mapped(lambda c: (c.name, c.payment_method_ids.filtered(lambda p: p.use_payment_terminal=='stripe').mapped('name')))",
+      "curl jsonrpc /pos-self-order/stripe-connection-token with {'access_token':cfg.access_token,'payment_method_id':...} (returns the Stripe connection_token secret; needs a valid token + published stripe provider)",
+      "open a kiosk POS (self_ordering_mode='kiosk') with a Stripe method + reader serial and place an order to trigger PaymentPage.startPayment -> Stripe.startPayment",
+      "run the kiosk Stripe test tour: addons/pos_self_order_stripe/tests/test_self_order_kiosk_stripe.py (mocks capture, asserts order state 'paid')"
     ]
   },
   "reverse_eng_confidence": {
@@ -134,17 +194,21 @@
     "value_streams": "inferred",
     "policies": "inferred",
     "metrics": "inferred",
+    "stakeholders": "inferred",
     "strategy": "human"
   },
   "open_questions": [
-    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+    "Exact OWL correlation: how the kiosk PaymentPage reacts to the PAYMENT_STATUS bus notification after the capture route already wrote the pos.payment (vs the synchronous capturePayment return).",
+    "Failure handling if terminal.processPayment succeeds client-side but /pos-self-order/stripe-capture-payment then fails the amount check (the customer's card may be authorized but not captured).",
+    "Whether a non-kiosk (mobile) self_ordering_mode ever reaches the Stripe capture path -- the success bus signal is gated on kiosk only.",
+    "Reader-sharing / fail_if_in_use behavior when two kiosks point at the same stripe_serial_number reader concurrently."
   ],
   "provenance": {
     "explorer_facts": "doc/revres/facts/pos_self_order_stripe.facts.json",
     "tools": [
-      "extract_module.py",
+      "code-read (controllers/orders.py, models/pos_payment_method.py, static/src/app/stripe.js, static/src/app/pages/payment_page/payment_page.js, static/src/app/services/self_order_service.js, views/assets_stripe.xml, tests/test_self_order_kiosk_stripe.py, __manifest__.py; cross-read pos_self_order/controllers/orders.py + models/pos_order.py + models/pos_payment_method.py and pos_stripe/models/pos_payment_method.py)",
       "extract_frontend.py",
-      "gen_thin.py"
+      "extract_module.py"
     ],
     "odoo_version": "19.0"
   }

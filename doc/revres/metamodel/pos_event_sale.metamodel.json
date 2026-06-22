@@ -4,6 +4,9 @@
     "manifest": {
       "name": "PoS - Event Sale",
       "category": "Technical",
+      "summary": "Link module between pos_sale and pos_event",
+      "author": "Odoo S.A.",
+      "license": "LGPL-3",
       "depends": [
         "pos_event",
         "pos_sale"
@@ -14,17 +17,34 @@
     "models": [
       {
         "_name": "event.registration",
-        "_description": null,
-        "fields": 0
+        "_inherit": [
+          "event.registration"
+        ],
+        "_description": "(extension) Event Registration -- POS-sold ticket status reconciliation",
+        "fields": 0,
+        "methods": 1,
+        "relations": [
+          "pos_order_id->pos.order (inherited from pos_event, related pos_order_line_id.order_id)",
+          "sale_order_id->sale.order (inherited from event_sale)"
+        ]
       }
     ],
     "routes": [],
     "security": {
       "access_rules": 0,
       "record_rules": 0,
-      "groups": 0
+      "groups": 0,
+      "note": "No own security artefacts: the model is a pure method override on event.registration; it relies entirely on the ACLs already granted by pos_event (group_pos_user CRU on event.registration) and event_sale/event."
     },
-    "views": {},
+    "views": {
+      "form": 0,
+      "list": 0,
+      "kanban": 0,
+      "search": 0,
+      "pivot": 0,
+      "graph": 0,
+      "note": "No views and no XML/data files (xml_loc=0): the module changes only one compute method's behaviour; the registration form/list it influences are the ones declared in pos_event and event_sale."
+    },
     "frontend": {
       "present": false,
       "js_files": 0,
@@ -48,53 +68,118 @@
     },
     "behavioral_notes": [
       {
-        "element": "thin module",
-        "observation": "1 models, 0 routes, 148 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
-        "source": "ast"
+        "element": "event.registration._compute_registration_status (the entire module)",
+        "observation": "pos_event_sale's whole contribution is one re-override of _compute_registration_status (@api.depends('pos_order_id.state'), 148 py LOC, 1 method). It calls super() first, then for every registration linked to a POS order (self.filtered('pos_order_id.id')) it OVERWRITES the status with a paid-state test: if pos_order_id.state in ['paid','done','invoiced'] -> sale_status='sold', state='open'; ELSE -> sale_status='to_pay', state='draft'. This deliberately replaces the rule pos_event installed -- where any non-cancelled POS order with amount_total != 0 made the ticket immediately 'sold'/'open' regardless of payment. So a ticket on a POS order that is still draft/unpaid is now correctly 'Not Sold' (to_pay) and draft instead of prematurely confirmed. This payment-aware reconciliation is the bridge's reason to exist and is invisible to metadata (the model has 0 added fields).",
+        "source": "code-read"
+      },
+      {
+        "element": "why the bridge is needed: pos_sale's settle-from-quotation flow creates unpaid draft POS orders",
+        "observation": "pos_event (without pos_sale) assumed a ticket is rung and tendered in one POS checkout, so 'amount_total != 0 => sold' was safe. pos_sale changes that assumption: it lets a cashier load a draft sale.order/quotation into the POS and settle it, and an order can carry lines and a non-zero total while still in state 'draft' until payment is validated (pos.order.action_pos_order_paid moves it to 'paid'/'done'/'invoiced'). When BOTH modules are present, an event ticket can therefore sit on a non-zero but unpaid POS order. pos_event_sale aligns event.registration.sale_status with the POS order's actual paid state, mirroring how event_sale already slaves registration status to sale_order_id.state ('sold' only when the SO is in state 'sale', else 'to_pay'). The module is the point_of_sale analogue of event_sale's sale.order rule -- hence depends ['pos_event','pos_sale'] and auto_install=true (it activates exactly when both seams are present).",
+        "source": "code-read"
+      },
+      {
+        "element": "MRO / super() ordering across event_product, event_sale and pos_event computes",
+        "observation": "event.registration._compute_registration_status is overridden in a chain (event_product base default -> event_sale for sale_order_id -> pos_event for pos_order_id -> pos_event_sale here), all feeding the same stored sale_status (defined in event_product) and state (selection in event). Because pos_event_sale calls super() FIRST and then re-writes the pos_order_id-linked records, its paid-state verdict wins for POS-sourced registrations, layering on top of whatever super() (including pos_event's amount-based pass) computed. sale_status is a stored, compute_sudo, precompute field, so this recompute fires on create and whenever pos_order_id.state changes (e.g. when the order is finally tendered), flipping a ticket from to_pay/draft to sold/open without manual intervention. The interplay of these overrides is pure Python ordering and not reverse-engineerable from field metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "verified end-to-end by tests/test_frontend.py::test_sale_status_event_in_pos",
+        "observation": "The bundled test (extends pos_event's TestUi) proves the bridge: it sync_from_ui's two POS orders each carrying an event ticket line + an event_registration_ids attendee -- order 1 with a 100.0 bank payment_ids line, order 2 in state 'draft' with empty payment_ids. After sync it asserts the two resulting event.registration records' sale_status set == {'sold','to_pay'}: the paid order's attendee is 'sold', the unpaid draft order's attendee is 'to_pay'. This is exactly the paid-vs-unpaid distinction pos_event alone could not make (it would have marked both 'sold' since both have amount_total=100). The test is the executable specification of this module.",
+        "source": "code-read"
+      },
+      {
+        "element": "frontend (gap #3) -- none",
+        "observation": "frontend_gap3.present = false: 0 JS files, 0 XML templates, 0 OWL components, 0 registry adds, 0 patches, no asset bundles. The module is backend/ORM-only: it ships models/event_registration.py + tests/test_frontend.py and no static/ tree. The POS-side ticket-selling UX (EventConfiguratorPopup/EventRegistrationPopup/EventSlotSelectionPopup and the ProductScreen patch) is contributed by pos_event, not here -- this bridge changes only a server-side compute, so it has no client footprint. integrations_gap7 is empty.",
+        "source": "static"
       }
     ]
   },
   "it_architecture": {
-    "application": "pos_event_sale (PoS - Event Sale)",
+    "application": "pos_event_sale (auto-install double-bridge reconciling event ticket registration status with the POS order's paid state when both pos_event and pos_sale are installed)",
     "software_services": [],
     "data_objects": [
-      "event.registration"
+      "event.registration (ext: _compute_registration_status override only, 0 new fields)"
     ],
-    "logical_data_erm": [],
+    "logical_data_erm": [
+      "event.registration -> pos.order (pos_order_id, related via pos_order_line_id.order_id; from pos_event)",
+      "event.registration -> sale.order (sale_order_id; from event_sale, reachable because pos_sale pulls in sale_management)",
+      "pos.order.state (paid/done/invoiced vs draft) -> event.registration.sale_status/state (this module's write)"
+    ],
     "information_flows": [
-      "depends: pos_event, pos_sale"
+      "depends: pos_event (point_of_sale + event_product; supplies pos_order_id link, ticket-selling UI, seat broadcast), pos_sale (sale_management; supplies the settle-from-SO flow that creates non-zero unpaid draft POS orders)",
+      "side-effect: event.registration._compute_registration_status -> on create and on pos_order_id.state change, sets sale_status='sold'/state='open' iff the POS order is paid/done/invoiced, else 'to_pay'/'draft'",
+      "consequence: a ticket settled at the POS from a quotation is 'Not Sold' until the till payment is validated, then auto-confirms; mirrors event_sale's sale_order_id.state rule on the POS side",
+      "no new persistence, route, view, security or external call -- the module is a single compute re-override"
     ],
     "frontend_components": []
   },
   "business_architecture": {
     "capabilities": [
-      "PoS - Event Sale"
+      "Reconcile Event Registration Status with POS Order Payment State",
+      "Defer 'Sold' confirmation of a POS-sold ticket until the till payment is validated",
+      "Harmonise POS-sold and Sale-Order-sold ticket status (pos_event vs event_sale rules)",
+      "Auto-flip a ticket to Sold/Open when its (possibly settled-from-quotation) POS order is finally paid"
     ],
-    "value_streams": [],
+    "value_streams": [
+      "Settle-Ticket-then-Confirm: ticket rung / settled from a quotation onto a (still draft, non-zero) pos.order -> registration created as 'to_pay'/draft -> cashier tenders payment -> pos.order.state -> paid/done/invoiced -> _compute_registration_status flips the attendee to 'sold'/'open'"
+    ],
     "information_concepts": [
-      "event.registration"
+      "event.registration (the attendee whose sold/unsold status this module governs)",
+      "pos.order (the till document whose paid state drives the status)",
+      "sale.order (the quotation that may have been settled at the POS, via event_sale + pos_sale)"
     ],
-    "organization": [],
+    "organization": [
+      "(no new groups) inherits pos_event's point_of_sale.group_pos_user CRU on event.registration and event's event groups"
+    ],
     "products": [],
-    "policies": [],
-    "stakeholders": [],
+    "policies": [
+      "auto_install=true: activates automatically and only when both pos_event and pos_sale are installed (the precise condition where the conflict it fixes can occur)",
+      "a POS-linked registration is 'sold'/'open' ONLY when pos_order_id.state in {paid,done,invoiced}; otherwise 'to_pay'/'draft'",
+      "super() is called before the override so the pos_event/event_sale defaults are computed first and then corrected for POS-sourced records",
+      "no revocation logic of its own: cancellation/refund-to-cancel of the registration remains pos_event's responsibility (pos.order.state=='cancel' handled upstream)"
+    ],
+    "stakeholders": [
+      "Cashier / POS User (settles and tenders the ticket order)",
+      "Attendee (res.partner / registration whose status is gated on payment)",
+      "Event Organizer (sees accurate sold vs not-yet-paid attendee counts)",
+      "Salesperson (whose quotation, once settled and paid at the till, confirms the seats)"
+    ],
     "strategy": null,
-    "metrics": []
+    "metrics": [
+      "event.registration.sale_status distribution (sold vs to_pay) now reflecting real POS payment rather than mere order presence",
+      "count of POS-linked registrations awaiting payment (state='draft', sale_status='to_pay')"
+    ]
   },
   "classification": {
     "value_model": "chain",
     "activity_class": "primary",
     "apqc_category": "3.0 Market and Sell Products and Services",
-    "rationale": "pos_event_sale: thin chain/primary module (auto-architect baseline)."
+    "rationale": "pos_event_sale is a sell-flow bridge classified chain / primary / 3.0, consistent with both of its parents (pos_event and pos_sale are each chain/primary/3.0). Its substance is a single side-effect on the in-store sell transaction: it ties the confirmation of an event-ticket sale (event.registration.sale_status='sold') to the POS order actually being paid, which is the Market-and-Sell 'accept/fulfil the order' moment realised at a till. The dominant operation it serves is the retail sale -- ringing/settling a ticket and tendering payment -- exactly the 3.5 manage-sales-orders family that point_of_sale, pos_sale and event_sale all sit in; it simply corrects WHEN the seat is counted as sold across that flow. It is primary (it is part of completing a revenue transaction, not a back-office utility) and chain (it adds value along the sell pipeline by gating order->fulfilment status on payment, the way sale.order confirmation gates downstream documents). Although the artefact it governs (event.registration) belongs to the event subsystem -- which on its own is a value NETWORK (seat-capacity mediation) -- this module touches none of that mediation: it only reads pos.order.state and writes a sold/unsold flag, so its own value logic lives squarely on the chain/selling side, not the network side. APQC 9.0 (finance) was considered because the trigger is a payment state, but rejected: the module does not manage receivables, payments or accounting entries -- it consumes the already-computed pos.order paid state to decide a SALES status, so the home is Market-and-Sell (3.0), not Manage Financial Resources."
   },
   "fit_to_standard": {
     "standard_capabilities": [
-      "PoS - Event Sale"
+      "make a POS-sold event ticket 'Sold'/open only once its POS order is paid/done/invoiced",
+      "keep a ticket 'Not Sold' (to_pay) / draft while its (possibly settled-from-quotation) POS order is unpaid",
+      "auto-flip status when the order is finally tendered (stored, precompute, compute_sudo on pos_order_id.state)",
+      "harmonise the pos_event amount-based rule with event_sale's sale-order-state rule so both channels agree",
+      "auto-install precisely when pos_event + pos_sale are both present"
     ],
-    "typical_fits": [],
-    "common_gaps": [],
+    "typical_fits": [
+      "venue/box-office that both rings walk-up tickets AND settles pre-booked quotations at the same till",
+      "deposit-then-collect ticketing where a quotation is settled at the counter and only confirmed on payment",
+      "deployments that need accurate sold-seat counts excluding unpaid in-progress POS orders"
+    ],
+    "common_gaps": [
+      "no UI of its own -- the change is silent; there is no indicator beyond the registration's existing status field",
+      "no new refund/cancel behaviour (pos_event still owns refund-to-cancel and pos.order.state='cancel' handling)",
+      "the 'invoiced' state is treated as sold like paid/done -- bespoke to-invoice-but-unpaid policies would need an override",
+      "does not change seat-availability broadcasting (that remains pos_event's _update_available_seat regardless of paid state)"
+    ],
     "drive_hints": [
-      "odoo shell: env['event.registration'].search([],limit=3)"
+      "odoo shell: env['event.registration'].search([('pos_order_id','!=',False)]).mapped(lambda r:(r.pos_order_id.name, r.pos_order_id.state, r.sale_status, r.state))",
+      "odoo shell: r = env['event.registration'].search([('pos_order_id.state','=','draft')], limit=1); print(r.sale_status, r.state)  # expect to_pay / draft",
+      "odoo shell: o = env['pos.order'].search([('lines.event_registration_ids','!=',False),('state','=','draft')], limit=1); o.action_pos_order_paid(); print(o.lines.event_registration_ids.mapped('sale_status'))  # flips to sold",
+      "run tests/test_frontend.py::TestPoSEventSale.test_sale_status_event_in_pos (two orders -> {'sold','to_pay'})"
     ]
   },
   "reverse_eng_confidence": {
@@ -105,17 +190,23 @@
     "value_streams": "inferred",
     "policies": "inferred",
     "metrics": "inferred",
+    "stakeholders": "inferred",
     "strategy": "human"
   },
   "open_questions": [
-    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+    "Exact recompute timing across the override chain when sale_order_id (event_sale) AND pos_order_id (pos_event) are both set on the same registration -- which channel's rule wins after super().",
+    "Whether 'invoiced' should always count as 'sold' for to-invoice POS orders that are not yet financially settled.",
+    "How a partial refund / partial payment on a multi-attendee ticket line maps to per-registration sale_status under this rule.",
+    "Interaction with online-payment-confirmed POS orders (action_pos_order_paid timing) versus offline tendering for the status flip."
   ],
   "provenance": {
     "explorer_facts": "doc/revres/facts/pos_event_sale.facts.json",
     "tools": [
-      "extract_module.py",
+      "code-read (addons/pos_event_sale/models/event_registration.py, addons/pos_event_sale/tests/test_frontend.py, addons/pos_event/models/event_registration.py, addons/event_sale/models/event_registration.py, addons/event_product/models/event_registration.py, manifests of pos_event/pos_sale/event_sale)",
       "extract_frontend.py",
-      "gen_thin.py"
+      "extract_module.py",
+      "Grep",
+      "Read"
     ],
     "odoo_version": "19.0"
   }
