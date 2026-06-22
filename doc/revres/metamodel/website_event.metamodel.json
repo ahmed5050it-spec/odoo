@@ -1,0 +1,377 @@
+{
+  "subsystem": "website_event",
+  "evidence": {
+    "manifest": {
+      "name": "Events",
+      "category": "Marketing/Events",
+      "depends": [
+        "event",
+        "website",
+        "website_partner",
+        "website_mail",
+        "html_builder"
+      ],
+      "auto_install": false,
+      "application": true
+    },
+    "models": [
+      {
+        "_name": "event.event",
+        "_description": "(extension) Event published on website",
+        "fields": 20,
+        "relations": [
+          "menu_id->website.menu",
+          "introduction_menu_ids->website.event.menu",
+          "register_menu_ids->website.event.menu",
+          "community_menu_ids->website.event.menu"
+        ]
+      },
+      {
+        "_name": "website.event.menu",
+        "_description": "Website Event Menu",
+        "fields": 4,
+        "relations": [
+          "menu_id->website.menu",
+          "event_id->event.event",
+          "view_id->ir.ui.view"
+        ]
+      },
+      {
+        "_name": "event.tag",
+        "_description": "(extension) adds website.published.multi.mixin",
+        "fields": 0,
+        "relations": []
+      },
+      {
+        "_name": "event.tag.category",
+        "_description": "(extension) adds website.published.multi.mixin",
+        "fields": 0,
+        "relations": []
+      },
+      {
+        "_name": "event.registration",
+        "_description": "(extension) links website.visitor",
+        "fields": 1,
+        "relations": [
+          "visitor_id->website.visitor"
+        ]
+      },
+      {
+        "_name": "website.visitor",
+        "_description": "(extension) links event registrations",
+        "fields": 3,
+        "relations": [
+          "event_registration_ids->event.registration",
+          "event_registered_ids->event.event"
+        ]
+      },
+      {
+        "_name": "event.type",
+        "_description": "(extension) website_menu/community_menu template flags",
+        "fields": 2,
+        "relations": []
+      }
+    ],
+    "routes": [
+      {
+        "paths": [
+          "/event",
+          "/events",
+          "/event/page/<int:page>",
+          "/event/tags/<string:slug_tags>",
+          "/event/tags/<string:slug_tags>/page/<int:page>"
+        ],
+        "auth": "public",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/event/<model(\"event.event\"):event>/page/<path:page>"
+        ],
+        "auth": "public",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/event/<model(\"event.event\"):event>"
+        ],
+        "auth": "public",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/event/<model(\"event.event\"):event>/register"
+        ],
+        "auth": "public",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/event/<model(\"event.event\"):event>/registration/slot/<int:slot_id>/tickets"
+        ],
+        "auth": "public",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/event/<model(\"event.event\"):event>/registration/new"
+        ],
+        "auth": "public",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/event/<model(\"event.event\"):event>/registration/confirm"
+        ],
+        "auth": "public",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/event/<model(\"event.event\"):event>/registration/success"
+        ],
+        "auth": "public",
+        "type": "http"
+      }
+    ],
+    "security": {
+      "access_rules": 27,
+      "record_rules": 8,
+      "groups": 1
+    },
+    "views": {
+      "form": 4,
+      "list": 1,
+      "search": 1,
+      "kanban": 0,
+      "pivot": 0,
+      "graph": 0,
+      "calendar": 0,
+      "activity": 0
+    },
+    "frontend": {
+      "present": true,
+      "js_files": 17,
+      "xml_templates": 5,
+      "owl_components": [],
+      "registry_adds": [
+        "public.interactions.edit:website_event.events",
+        "public.interactions.preview:website_event.events",
+        "public.interactions:website_event.display_timer",
+        "public.interactions:website_event.event_page",
+        "public.interactions:website_event.events",
+        "public.interactions:website_event.modal_registration",
+        "public.interactions:website_event.register_toaster",
+        "public.interactions:website_event.slot_details",
+        "public.interactions:website_event.ticket_details"
+      ],
+      "patches": [
+        "EventAdditionalTourSteps.prototype",
+        "NewContentSystrayItem.prototype",
+        "SearchBar.prototype"
+      ],
+      "services": [],
+      "asset_bundles": {
+        "web.assets_backend": 1,
+        "web.assets_tests": 1,
+        "web.assets_unit_tests": 1,
+        "web.assets_unit_tests_setup": 1,
+        "web.assets_frontend": 6,
+        "website.assets_editor": 1,
+        "website.website_builder_assets": 1
+      }
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": false,
+      "endpoints": [
+        "https://www.google.com/calendar/render?",
+        "https://www.odoo.com/app/events"
+      ],
+      "files": [
+        "__manifest__.py",
+        "models/event_event.py"
+      ]
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    },
+    "behavioral_notes": [
+      {
+        "element": "WebsiteEventController.events (/event, /events list)",
+        "observation": "The public /event and /events routes (http, auth=public, website=True, sitemap=sitemap_event) render the website_event.index page. They build the catalog via website._search_with_fuzzy('events', ...) and _read_group facet counts by date / tag (event.tag) / type (event.type) / country, paginated 12 per page with website.pager. GET requests on multi-tag URLs are 301-redirected to /event to stop crawler combinatorial explosion. This frontend search+facet behaviour lives in the controller, not in metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "WebsiteEventController.event / event_register (/event/<id>, /event/<id>/register)",
+        "observation": "/event/<event> redirects either to the event's first menu child URL (event.menu_id.child_id) or to /event/<id>/register. /event/<event>/register renders website_event.event_description_full with open slots (event_slot_ids._filter_open_slots) and Google Calendar / iCal resource URLs (event._get_event_resource_urls). Both are auth=public readonly routes, exposing the backend event.event record as a public registration page.",
+        "source": "code-read"
+      },
+      {
+        "element": "WebsiteEventController.registration_confirm (/event/<id>/registration/confirm)",
+        "observation": "The POST confirm route is the bridge's core write: it verifies the website_event_registration reCAPTCHA token, parses the attendee form (_process_attendees_form -> name/email/phone/company_name + event.question answers), re-checks seat availability via event._verify_seats_availability (raising ValidationError -> redirect with registration_error_code=insufficient_seats), then _create_attendees_from_registration_post calls env['event.registration'].sudo().create(...) stamping event_id, partner_id and the website.visitor (visitor_id). On success it redirects to /registration/success. So an anonymous website visitor creates real event.registration rows in the event module. Not visible in metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "event.event._update_website_menus / _update_website_menu_entry",
+        "observation": "Toggling website_menu (or the introduction/register/community sub-menu booleans) creates or unlinks a root website.menu plus per-event website.event.menu rows and their ir.ui.view pages on the fly; menus_update_by_field drives selective sync. Publishing/unpublishing an event thus mutates the live website navigation tree -- an automation side-effect invisible to the schema.",
+        "source": "code-read"
+      },
+      {
+        "element": "event.event._fetch_is_participating_events (is_participating)",
+        "observation": "is_participating is computed by a heuristic that reads the current website.visitor (_get_visitor_from_request) and/or the logged partner, then _read_groups event.registration in state open/done to decide if the viewer already registered. This couples the public page render to event.registration + website.visitor state and personalises the CTA; the logic is Python, not metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "website._search_get_details / Website.get_cta_data / new_page (models/website.py)",
+        "observation": "The website model is extended so site search and the configurator know about events: _search_get_details appends event.event._search_get_detail for search_type in ['events','all'], get_suggested_controllers/get_cta_data wire an 'Events' entry and a /event call-to-action, and new_page() wraps event/* pages in the website_event.layout template and re-keys the view per event. This is the website<->event bridging glue.",
+        "source": "code-read"
+      },
+      {
+        "element": "frontend public.interactions + Google Calendar add-to-calendar",
+        "observation": "17 JS files / 5 XML templates implement the registration UX as website public.interactions (events list filtering, event_page, modal_registration, slot_details, ticket_details, display_timer countdown, register_toaster) plus a NewContentSystrayItem patch to create an event from the website editor; no OWL components. event._get_event_resource_urls emits an outbound https://www.google.com/calendar/render? add-to-calendar link (and a local /event/<id>/ics iCal URL). Entirely client-side / static, outside Python metadata.",
+        "source": "static"
+      }
+    ]
+  },
+  "it_architecture": {
+    "application": "website_event (Events website bridge application component)",
+    "software_services": [
+      "/event, /events (+ /page, /tags) -- public event catalog with search/facets",
+      "/event/<event> -- public event landing (redirect to register/menu)",
+      "/event/<event>/register -- public registration page",
+      "/event/<event>/registration/slot/<id>/tickets, /registration/new (jsonrpc) -- slot/ticket & attendee modals",
+      "/event/<event>/registration/confirm -- create event.registration (POST)",
+      "/event/<event>/registration/success -- registration confirmation"
+    ],
+    "data_objects": [
+      "event.event",
+      "website.event.menu",
+      "event.tag",
+      "event.tag.category",
+      "event.registration",
+      "website.visitor",
+      "event.type"
+    ],
+    "logical_data_erm": [
+      "event.event -> website.menu (per-event nav root, menu_id)",
+      "website.event.menu -> event.event / website.menu / ir.ui.view",
+      "event.registration -> website.visitor (visitor_id)",
+      "website.visitor -> event.registration / event.event (registered events)",
+      "event.event -> website.published.multi.mixin / website.seo.metadata (published page)"
+    ],
+    "information_flows": [
+      "depends: event, website, website_partner, website_mail, html_builder",
+      "side-effect: POST /registration/confirm -> event.registration.sudo().create -> downstream event.mail schedulers + seats recompute (in event module)",
+      "side-effect: event.website_menu toggle -> create/unlink website.menu + website.event.menu + ir.ui.view pages",
+      "side-effect: website._search_get_details -> event.event surfaced in site search; new_page wraps event pages in website_event.layout",
+      "outbound: event._get_event_resource_urls -> https://www.google.com/calendar/render (add-to-calendar) + /event/<id>/ics"
+    ],
+    "frontend_components": []
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Publish Events to the Website (SEO page, visibility, cover)",
+      "Online Event Discovery (catalog search, tag/type/country facets)",
+      "Online Self-Service Registration (anonymous & logged visitors)",
+      "Per-Event Website Menu & Page Management",
+      "Visitor-to-Registration Linking & Add-to-Calendar"
+    ],
+    "value_streams": [
+      "Discover-to-Register: visitor browses /event catalog -> opens event page -> selects slot/ticket -> submits attendee form -> event.registration created -> success/confirmation"
+    ],
+    "information_concepts": [
+      "event.event (published event)",
+      "website.event.menu",
+      "event.registration (online attendee)",
+      "website.visitor",
+      "event.tag / event.tag.category",
+      "res.partner (attendee)"
+    ],
+    "organization": [
+      "event.group_event_registration_desk"
+    ],
+    "products": [],
+    "policies": [
+      "8 record rules: website-scoped (website_id in [False, current]) + published/visibility visibility of events, tags and menus on the frontend",
+      "website_visibility selection (public / link / logged_users) gating event exposure on website and search",
+      "reCAPTCHA (website_event_registration) gate on the public registration confirm route",
+      "seat-availability re-check (event._verify_seats_availability) enforced before creating online registrations"
+    ],
+    "stakeholders": [
+      "Website Visitor / Prospective Attendee (public user)",
+      "Registered Attendee (res.partner)",
+      "Event Organizer / Website Editor (res.users)",
+      "Registration Desk operator (event.group_event_registration_desk)"
+    ],
+    "strategy": null,
+    "metrics": [
+      "website.visitor.event_registration_count (# registrations per visitor)",
+      "event catalog facet counts (per date / tag / type / country) on /event",
+      "online vs. backend registration volume (event.registration via visitor_id)"
+    ]
+  },
+  "classification": {
+    "value_model": "network",
+    "activity_class": "primary",
+    "apqc_category": "3.0 Market and Sell Products and Services",
+    "rationale": "website_event is the BRIDGE module that fuses two value networks: it turns website (the network/mediating web-presence platform) into the public online registration channel for event (the network that mediates organizer<->attendee around seat capacity). It is itself a value network (Stabell & Fjeldstad mediating technology): its reason to exist is to connect an open population of website visitors to events and let them join -- publishing events as SEO pages, operating the catalog/search facets, and running the self-service /event/<id>/register -> /registration/confirm flow that creates event.registration rows from anonymous visitors (visitor_id link). The economic logic is membership/mediation (online seat sign-up, add-to-calendar, visitor matching), not a sequential input->output transformation (chain) nor case-by-case problem solving (shop). activity_class is primary because online event marketing & registration is a customer-facing demand activity, not back-office support. apqc_category 3.0 Market and Sell is the closest PCF home (over 6.0 Manage Customer Service) because the bridge's purpose is the public market/sell motion -- publishing and registering attendees to a marketed event -- inheriting the same 3.0 placement as both event and website; post-sale service flows are not its concern."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "public event catalog at /event & /events with fuzzy search and date/tag/type/country facets",
+      "per-event published website page (SEO metadata, cover image, visibility public/link/logged)",
+      "auto-generated per-event website menu and sub-pages (introduction / register / community)",
+      "online self-service registration with slot & ticket selection modals and custom questions",
+      "anonymous registration linked to website.visitor; reCAPTCHA-protected confirm",
+      "add-to-calendar (Google Calendar + iCal) on the event page"
+    ],
+    "typical_fits": [
+      "conferences/trainings/meetups publishing an events page and taking free online sign-ups",
+      "capacity-limited registration with live sold-out enforcement on the website",
+      "marketing-driven event landing pages with SEO and website-builder snippets"
+    ],
+    "common_gaps": [
+      "paid online ticketing / e-commerce checkout (needs website_event_sale / event_sale)",
+      "tracks, agenda, talk proposals, live sessions and exhibitor booths (needs website_event_track* / website_event_exhibitor)",
+      "bespoke registration form fields/steps beyond the standard question + ticket flow",
+      "custom catalog layouts or facet logic beyond the provided snippets/interactions"
+    ],
+    "drive_hints": [
+      "curl -s http://localhost:8069/event | head  (public event catalog page)",
+      "curl -s 'http://localhost:8069/event' -L  (follow /event/<id> redirect to /register)",
+      "odoo shell: env['event.event'].search([('website_published','=',True)]).mapped(('name','website_url','website_visibility'))",
+      "odoo shell: env['event.registration'].search([('visitor_id','!=',False)], limit=5).mapped(('name','event_id','visitor_id'))",
+      "odoo shell: env['website.event.menu'].search([], limit=5).mapped(('event_id','menu_type','menu_id'))"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "stakeholders": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Exact downstream chain when /registration/confirm creates event.registration once website_event_sale is also installed (does it route through a sale.order / cart instead of direct create?).",
+    "Whether website_visibility=link/logged_users fully hides events from /event search vs. only from facets in a live DB.",
+    "Runtime row counts for online event.registration (visitor_id set) vs. backend registrations were not captured (extract_runtime.sh not run)."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/website_event.facts.json",
+    "tools": [
+      "code-read",
+      "extract_frontend.py",
+      "extract_module.py",
+      "Grep",
+      "Read"
+    ],
+    "odoo_version": "19.0"
+  }
+}

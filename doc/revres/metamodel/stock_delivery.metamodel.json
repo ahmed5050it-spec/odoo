@@ -1,0 +1,277 @@
+{
+  "subsystem": "stock_delivery",
+  "evidence": {
+    "manifest": {
+      "name": "Delivery - Stock",
+      "category": "Shipping Connectors",
+      "depends": [
+        "sale_stock",
+        "delivery"
+      ],
+      "auto_install": true,
+      "application": false
+    },
+    "models": [
+      {
+        "_name": "(none - bridge module owns no new model)",
+        "_description": "stock_delivery declares 0 own _name models; it is a pure extension/bridge of 13 inherit-only models that wires the delivery.carrier abstraction into stock.picking / stock.move execution.",
+        "fields": 0,
+        "relations": []
+      },
+      {
+        "_name": "stock.picking (extension)",
+        "_description": "Transfer - carrier execution surface",
+        "fields": 12,
+        "relations": [
+          "carrier_id->delivery.carrier",
+          "allowed_carrier_ids->delivery.carrier",
+          "return_label_ids->ir.attachment"
+        ]
+      },
+      {
+        "_name": "delivery.carrier (extension)",
+        "_description": "Shipping Methods - send/track/cancel SPI + routing",
+        "fields": 2,
+        "relations": [
+          "route_ids->stock.route"
+        ]
+      },
+      {
+        "_name": "stock.move (extension)",
+        "_description": "Stock Move - weight + carrier propagation on picking assignment",
+        "fields": 1,
+        "relations": []
+      },
+      {
+        "_name": "stock.move.line (extension)",
+        "_description": "Move Line - sale_price/hs_code/country for customs + put-in-pack",
+        "fields": 3,
+        "relations": [
+          "carrier_id->delivery.carrier (related picking_id.carrier_id)"
+        ]
+      },
+      {
+        "_name": "stock.package + stock.package.type (extension)",
+        "_description": "Packaging - shipping weight, weight UoM, package_carrier_type, shipper_package_code",
+        "fields": 7,
+        "relations": []
+      },
+      {
+        "_name": "choose.delivery.carrier (wizard extension)",
+        "_description": "Carrier selection wizard - real-cost invoicing message",
+        "fields": 0,
+        "relations": []
+      },
+      {
+        "_name": "sale.order + sale.order.line (extension)",
+        "_description": "propagate carrier to pending pickings on set_delivery_line; carrier route_ids into procurement",
+        "fields": 0,
+        "relations": []
+      }
+    ],
+    "routes": [],
+    "security": {
+      "access_rules": 7,
+      "record_rules": 0,
+      "groups": 0
+    },
+    "views": {
+      "form": 1,
+      "list": 0,
+      "search": 0
+    },
+    "behavioral_notes": [
+      {
+        "element": "stock.picking.send_to_shipper / _send_confirmation_email (send-to-shipper at button_validate)",
+        "observation": "This is the bridge's core act. button_validate -> _send_confirmation_email iterates the pickings and, when pick.carrier_id.integration_level == 'rate_and_ship' and the type is not 'incoming' and there is no carrier_tracking_ref yet and picking_type_id.print_label, calls pick.sudo().send_to_shipper(). send_to_shipper calls self.carrier_id.send_shipping(self)[0] (the reflective '<delivery_type>_send_shipping' dispatch defined in the delivery module), applies free_over zeroing and carrier margins to set carrier_price, writes res['tracking_number'] back into carrier_tracking_ref across the up/down-stream related pickings, posts a chatter message with cost+tracking, and calls _add_delivery_cost_to_so. A carrier UserError after at least one picking was already shipped is downgraded to a chatter note + a 'warning' activity instead of rolling back the whole validate batch. Not visible in metadata (cross-module side-effect on a related Selection value).",
+        "source": "code-read"
+      },
+      {
+        "element": "stock.picking.carrier_tracking_ref / carrier_tracking_url / get_multiple_carrier_tracking",
+        "observation": "carrier_tracking_ref is the stored tracking number returned by the carrier; carrier_tracking_url is computed via carrier_id.get_tracking_link(picking) (reflective '<type>_get_tracking_link'; the built-in fixed/base_on_rule providers substitute the ref into the carrier tracking_url template). open_website_url opens the courier tracking page (single URL) or, for JSON multi-tracker payloads, posts the links to chatter and opens the trackers action. The base 'delivery' module deliberately holds NO stock.picking model, so these tracking fields and the send-to-shipper behaviour exist only here.",
+        "source": "code-read"
+      },
+      {
+        "element": "stock.picking.cancel_shipment + _add_delivery_cost_to_so (real-cost invoicing)",
+        "observation": "cancel_shipment loops the pickings, calls carrier_id.cancel_shipment(self) (reflective '<type>_cancel_shipment'; the base fixed/base_on_rule providers raise NotImplementedError), posts a cancellation chatter message and clears carrier_tracking_ref. _add_delivery_cost_to_so closes the loop to Quote-to-Cash: when carrier_id.invoice_policy == 'real', it locates the zero-priced delivery line on sale_id (or _create_delivery_line) and writes the actual carrier_price back onto the sale.order.line under the allow_delivery_cost_update context, so the customer is billed the real shipped cost rather than the estimate.",
+        "source": "code-read"
+      },
+      {
+        "element": "carrier propagation across chained pickings (stock.move._get_new_picking_values / _key_assign_picking / stock.picking.button_validate)",
+        "observation": "When a move's rule_id has propagate_carrier, _get_new_picking_values copies carrier_id (and carrier_tracking_ref) from the originating sale.order or the previous picking onto a newly-created picking, and _key_assign_picking adds carrier_id to the picking-grouping key so moves with different carriers split into different transfers. After validation, button_validate also pushes carrier_id + carrier_tracking_ref onto the next transfers (_get_next_transfers) when the propagate_carrier rule applies, keeping the carrier consistent across push/pull (pick-pack-ship) multi-step routes.",
+        "source": "code-read"
+      },
+      {
+        "element": "_set_delivery_package_type (stock.put.in.pack wizard + stock.move.line put-in-pack hooks)",
+        "observation": "Putting move lines in a pack threads carrier context: _pre_put_in_pack_hook injects default_package_carrier_type via _get_package_carrier_type_for_pack (which forbids mixing different carriers in one package and maps the built-in 'fixed'/'base_on_rule' delivery_type to 'none'); the stock.put.in.pack wizard computes shipping_weight (product weights + package base_weight) and warns when it exceeds the package type's max_weight; _post_put_in_pack_hook stamps the chosen shipping_weight onto the package. stock.package.type adds shipper_package_code (carrier's package code, defaulted from carrier._get_default_custom_package_code) so custom packaging maps to the carrier's catalogue.",
+        "source": "code-read"
+      },
+      {
+        "element": "frontend (OWL/JS)",
+        "observation": "No static frontend assets: extract_frontend reports present=false, 0 JS files, 0 XML templates, 0 OWL components/registry adds/patches/services and no asset bundles. The module is server-side only (Python extensions + 14 backend data/report XML files); the carrier-picker UX (LocationSelectorDialog, Map, etc.) lives in the base 'delivery' module, not here.",
+        "source": "static"
+      }
+    ],
+    "frontend": {
+      "present": false,
+      "js_files": 0,
+      "xml_templates": 0,
+      "owl_components": [],
+      "registry_adds": [],
+      "patches": [],
+      "services": [],
+      "asset_bundles": {}
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": true,
+      "endpoints": [],
+      "files": []
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    }
+  },
+  "it_architecture": {
+    "application": "stock_delivery (Delivery-Stock bridge application component; auto_install on sale_stock + delivery)",
+    "software_services": [],
+    "data_objects": [
+      "(no own model) extends: stock.picking",
+      "(no own model) extends: stock.move",
+      "(no own model) extends: stock.move.line",
+      "(no own model) extends: delivery.carrier",
+      "(no own model) extends: stock.package",
+      "(no own model) extends: stock.package.type",
+      "(no own model) extends: stock.route",
+      "(no own model) extends: choose.delivery.carrier"
+    ],
+    "logical_data_erm": [
+      "stock.picking -> delivery.carrier (carrier_id, check_company, domain=allowed_carrier_ids)",
+      "stock.picking -> delivery.carrier (allowed_carrier_ids computed via available_carriers)",
+      "stock.move.line -> delivery.carrier (related picking_id.carrier_id)",
+      "delivery.carrier -> stock.route (route_ids, shipping_selectable)",
+      "stock.picking -> ir.attachment (return_label_ids)"
+    ],
+    "information_flows": [
+      "depends: sale_stock, delivery",
+      "side-effect: stock.picking.button_validate -> _send_confirmation_email -> send_to_shipper -> delivery.carrier.send_shipping ('<type>_send_shipping') when integration_level='rate_and_ship'",
+      "side-effect: send_to_shipper writes carrier_tracking_ref + carrier_price back onto the picking (and related up/down-stream pickings) and posts chatter",
+      "side-effect: _add_delivery_cost_to_so -> sale.order.line price_unit (real-cost invoicing back into Quote-to-Cash)",
+      "side-effect: stock.move._get_new_picking_values / button_validate propagate carrier_id + carrier_tracking_ref across chained pick-pack-ship transfers (propagate_carrier rule)",
+      "bridge: realizes the delivery <-> stock connection (carrier abstraction in 'delivery' <-> physical transfer in 'stock') that the base 'delivery' module deferred (delivery has no stock dependency)"
+    ],
+    "frontend_components": [],
+    "external_integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": true,
+      "endpoints": [],
+      "character": "carrier-execution bridge (gap #7 boundary): this module invokes the delivery.carrier send/track/cancel SPI at picking validate time but makes no external call itself. The built-in fixed/base_on_rule providers it ships against return stub data (tracking_number=False, cancel raises NotImplementedError); real outbound carrier API traffic (FedEx/UPS/DHL/Easypost/Sendcloud) lives in delivery_* connector sub-modules that implement '<type>_send_shipping'. uses_api_keys=true reflects credential/sandbox plumbing surfaced through delivery.carrier (prod_environment/integration_level)."
+    }
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Execute Outbound Shipment to Carrier (send-to-shipper at validate)",
+      "Capture & Track Shipment (carrier_tracking_ref / tracking URL)",
+      "Cancel Shipment",
+      "Pack for Shipping (package type, shipping weight, carrier package code)",
+      "Real-Cost Delivery Invoicing (carrier cost back onto the sales order)",
+      "Propagate Carrier across Multi-Step Transfers (pick-pack-ship)"
+    ],
+    "value_streams": [
+      "Order-to-Ship: confirmed order -> picking carrier assigned -> button_validate -> send_to_shipper -> tracking number captured -> goods shipped",
+      "Quote-to-Cash (real-cost shipping leg): shipment shipped -> actual carrier_price -> delivery line updated -> invoiced"
+    ],
+    "information_concepts": [
+      "stock.picking (carrier_id, carrier_tracking_ref, carrier_price - extended, no own entity)",
+      "delivery.carrier (send/track/cancel SPI, route_ids, invoice_policy - extended, no own entity)",
+      "stock.move / stock.move.line (weight, sale_price, carrier propagation - extended)",
+      "stock.package / stock.package.type (shipping weight, package_carrier_type - extended)"
+    ],
+    "organization": [],
+    "products": [],
+    "policies": [
+      "7 ir.model.access rules cross-granting delivery.carrier / delivery.price.rule / delivery.zip.prefix / choose.delivery.carrier to stock.group_stock_user (read) and stock.group_stock_manager (write) - wires the carrier domain into the warehouse security domain",
+      "automation: integration_level == 'rate_and_ship' gates automatic send-to-shipper at button_validate; picking_type_id.print_label gates label generation",
+      "automation: carrier_id.invoice_policy == 'real' triggers post-shipment rewrite of the delivery line price on the sale order",
+      "automation: rule.propagate_carrier propagates carrier_id + carrier_tracking_ref across chained transfers",
+      "constraint: cannot pack products with different carriers (or without a carrier) into the same package"
+    ],
+    "stakeholders": [
+      "Warehouse / Shipping operator (stock.group_stock_user, validates the transfer)",
+      "Carrier / Shipping Provider (delivery.carrier, external API in connector sub-modules)",
+      "Customer (res.partner, shipping address / destination country, billed real cost)",
+      "Salesperson (res.users, carrier selection upstream on the order)"
+    ],
+    "strategy": null,
+    "metrics": [
+      "carrier_price (real shipping cost per picking)",
+      "weight / estimated weight per picking and per move (Stock Weight)",
+      "shipping_weight per package vs package-type max_weight"
+    ]
+  },
+  "classification": {
+    "value_model": "chain",
+    "activity_class": "support",
+    "apqc_category": "4.4 Operate outbound transportation / ship",
+    "rationale": "stock_delivery is the bridge that realizes the outbound-logistics carrier-execution leg of the value chain, so its value_model is chain. It is THE BRIDGE delivery <-> stock that the base 'delivery' module deliberately deferred: 'delivery' provides the delivery.carrier abstraction (rate/ship/track/cancel SPI) but has no stock dependency and no stock.picking model, while 'stock' performs the physical transfer; this auto_install module (on sale_stock + delivery) is where the two meet - it wires carrier_id onto stock.picking and, at button_validate, actually executes send_to_shipper -> delivery.carrier.send_shipping, captures carrier_tracking_ref, and feeds the real shipping cost back into Quote-to-Cash. It is classed as a support activity because it provisions/operates the shipping capability for the chain (it dispatches to the carrier SPI and orchestrates packing/tracking/invoicing) rather than being the primary order-fulfilment activity itself; the concrete external carrier API call is still delegated to delivery_* connector sub-modules (gap #7). APQC maps to 4.4 Operate outbound transportation / ship (Supply Chain), matching apqc_odoo_map.tsv row '4.4.x Operate outbound transportation (ship) -> stock.picking button_validate (delivery)'."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "send-to-shipper on transfer validation for rate_and_ship carriers",
+      "tracking reference capture + tracking-link/tracking-page from the picking",
+      "shipment cancellation via the carrier SPI",
+      "put-in-pack with shipping weight, package type and carrier package code",
+      "real-cost delivery invoicing (actual carrier cost written back to the sales order)",
+      "carrier propagation across multi-step (pick-pack-ship) routes",
+      "weight roll-up on moves and pickings (Stock Weight UoM)"
+    ],
+    "typical_fits": [
+      "fixed-price or base_on_rule carriers shipping with manual/stub tracking out of the box",
+      "installing a delivery_* connector so send_to_shipper reaches a real carrier API and returns a live tracking number",
+      "invoicing estimated cost at order time, then reconciling to real shipped cost",
+      "multi-step warehouse delivery with the carrier following the goods through each transfer"
+    ],
+    "common_gaps": [
+      "any concrete external carrier API (FedEx/UPS/DHL/Easypost/Sendcloud) - the '<type>_send_shipping'/cancel methods here are stubs; requires a delivery_* connector",
+      "real label printing / return labels - depends on the connector and picking_type_id.print_label",
+      "commercial-invoice / customs document automation beyond _should_generate_commercial_invoice + hs_code/country_of_origin",
+      "multi-package and dimensional-weight rating refinements",
+      "carrier-specific compliance checks (_check_carrier_details_compliance is an empty hook)"
+    ],
+    "drive_hints": [
+      "odoo shell: p = env['stock.picking'].search([('carrier_id','!=',False),('state','=','done')], limit=1); p.read(['carrier_id','carrier_tracking_ref','carrier_price','carrier_tracking_url'])",
+      "odoo shell: c = env['delivery.carrier'].search([('delivery_type','=','fixed')], limit=1); hasattr(c, 'fixed_send_shipping')  # SPI dispatch surface",
+      "odoo shell: pick = env['stock.picking'].search([('carrier_id.integration_level','=','rate_and_ship'),('state','=','assigned')], limit=1); pick.sudo().send_to_shipper()  # exercises the bridge",
+      "grep: rg 'propagate_carrier|send_to_shipper|carrier_tracking_ref' addons/stock_delivery"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Which concrete delivery_* connector modules are installed and which external carrier APIs '<type>_send_shipping' actually reaches at button_validate (gap #7 realized).",
+    "Exact behaviour of label printing / return-label generation, which depends on the connector and picking_type_id.print_label.",
+    "How rate_and_ship vs rate-only integration_level and free_over interact with the real-cost invoice rewrite in multi-package shipments."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/stock_delivery.facts.json",
+    "tools": [
+      "code-read",
+      "extract_frontend.py",
+      "extract_module.py",
+      "extract_runtime.sh",
+      "run-odoo (odoo shell)"
+    ],
+    "odoo_version": "19.0"
+  }
+}

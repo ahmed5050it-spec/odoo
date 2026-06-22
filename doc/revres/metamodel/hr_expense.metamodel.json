@@ -1,0 +1,304 @@
+{
+  "subsystem": "hr_expense",
+  "evidence": {
+    "manifest": {
+      "name": "Expenses",
+      "category": "Human Resources/Expenses",
+      "summary": "Submit, validate and reinvoice employee expenses",
+      "version": "2.1",
+      "depends": [
+        "account",
+        "web_tour",
+        "hr"
+      ],
+      "auto_install": false,
+      "application": true
+    },
+    "models": [
+      {
+        "_name": "hr.expense",
+        "_description": "Expense",
+        "fields": 46,
+        "relations": [
+          "employee_id->hr.employee",
+          "department_id->hr.department",
+          "manager_id->res.users",
+          "product_id->product.product",
+          "account_id->account.account",
+          "account_move_id->account.move",
+          "payment_method_line_id->account.payment.method.line",
+          "vendor_id->res.partner",
+          "tax_ids->account.tax",
+          "split_expense_origin_id->hr.expense"
+        ]
+      },
+      {
+        "_name": "hr.expense.split.wizard",
+        "_description": "Expense Split Wizard",
+        "fields": 7,
+        "relations": [
+          "expense_id->hr.expense",
+          "expense_split_line_ids->hr.expense.split"
+        ]
+      },
+      {
+        "_name": "hr.expense.split",
+        "_description": "Expense Split",
+        "fields": 15,
+        "relations": [
+          "expense_id->hr.expense",
+          "wizard_id->hr.expense.split.wizard",
+          "product_id->product.product"
+        ]
+      },
+      {
+        "_name": "hr.expense.post.wizard",
+        "_description": "Expense Posting Wizard",
+        "fields": 3,
+        "relations": [
+          "employee_journal_id->account.journal",
+          "company_id->res.company"
+        ]
+      },
+      {
+        "_name": "hr.expense.refuse.wizard",
+        "_description": "Expense Refuse Reason Wizard",
+        "fields": 2,
+        "relations": [
+          "expense_ids->hr.expense"
+        ]
+      },
+      {
+        "_name": "account.move",
+        "_description": "(extension) Journal Entry <- expenses",
+        "fields": 2,
+        "relations": [
+          "expense_ids->hr.expense"
+        ]
+      }
+    ],
+    "routes": [],
+    "security": {
+      "access_rules": 14,
+      "record_rules": 12,
+      "groups": 3
+    },
+    "views": {
+      "form": 2,
+      "list": 4,
+      "kanban": 1,
+      "search": 1,
+      "pivot": 1,
+      "graph": 1,
+      "activity": 1
+    },
+    "behavioral_notes": [
+      {
+        "element": "hr.expense state machine (action_submit / action_approve / action_post / action_reset)",
+        "observation": "The expense lifecycle is driven by approval_state ('submitted'/'approved'/'refused') and the computed state (draft -> submitted -> approved -> posted -> in_payment -> paid; refused is terminal). action_submit sets approval_state='submitted' (or auto-validates via _can_be_autovalidated when there is no approver) and schedules the 'Review this expense' activity on the manager; action_approve runs _check_can_approve, validates analytic distribution, pops a duplicate-confirmation wizard if duplicate_expense_ids overlap, then _do_approve writes approval_state='approved'. state is recomputed (not directly written) from the linked account_move_id's state/payment_state. Not visible in metadata; lives in models/hr_expense.py.",
+        "source": "code-read"
+      },
+      {
+        "element": "hr.expense.action_post -> account.move / account.payment",
+        "observation": "Posting bridges HR into accounting. Employee-paid ('own_account') expenses go through hr.expense.post.wizard and _post_without_wizard, which groups by employee and creates an in_receipt account.move (vendor receipt) on the purchase/expense journal via _prepare_receipts_vals + _prepare_move_lines_vals, then action_post. Company-paid ('company_account') expenses call _create_company_paid_moves, which creates an account.move plus a linked account.payment (origin_payment_id) and posts the payment. account_move_id is stored back on the expense; reset (action_reset) reverses or unlinks the move. This account.move/account.payment creation is invisible in metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "hr.expense analytic_distribution (analytic.mixin) -> re-invoice to sale.order via expense_policy (sale_expense bridge)",
+        "observation": "hr.expense inherits analytic.mixin; _compute_analytic_distribution derives a distribution from account.analytic.distribution.model (by product/category/partner/account-prefix). Each posted move line carries this analytic_distribution, producing an account.analytic.line — the value-link spine. The base module stops at accounting. The auto-installed bridge sale_expense (depends sale_management+hr_expense) adds sale_order_id + can_be_reinvoiced on hr.expense, keyed off product.template.expense_policy (defined in sale: 'no'/'cost'/'sales_price'). On posting, sale_expense.action_post creates/sets the SO's analytic account; account.move.line._sale_can_be_reinvoice() + _sale_create_reinvoice_sale_line() then push the analytic line onto a new sale.order.line (qty_delivered), re-invoicing the cost to the customer. Confirms PRIMARY_SUPPORT_INTEGRATION_AR.md link #4 (المصاريف -> الخدمة).",
+        "source": "code-read"
+      },
+      {
+        "element": "hr.expense mail alias intake (message_new) + duplicate/same-receipt detection",
+        "observation": "Expenses can be created by email: message_new resolves the sender to an hr.employee (_get_employee_from_email) and parses the subject for product code, price and currency (_parse_expense_subject), creating a draft expense and replying with a confirmation mail. _compute_duplicate_expense_ids runs a raw SQL self-join (employee+product+date+amount+company+currency) and _compute_same_receipt_expense_ids groups attachments by checksum to surface possible duplicates before approval. None of this is derivable from field/model metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "frontend (OWL/JS) — Expenses dashboard & receipt UX",
+        "observation": "11 JS files, 5 XML templates, 3 OWL components (ExpenseDashboard, AttachmentNumber, QRModalComponent), 7 registry registrations (nb_attachment field widget; dashboard/kanban/tree/form view overrides; hr_expense_tour), 2 patches (ActivityMenu.prototype, AttachmentView.prototype). Asset bundles: web.assets_backend (8), web.assets_tests (2), web.report_assets_common (1). Not in Python metadata.",
+        "source": "static"
+      }
+    ],
+    "frontend": {
+      "present": true,
+      "js_files": 11,
+      "xml_templates": 5,
+      "owl_components": [
+        "AttachmentNumber",
+        "ExpenseDashboard",
+        "QRModalComponent"
+      ],
+      "registry_adds": [
+        "fields:nb_attachment",
+        "views:hr_expense_dashboard_kanban",
+        "views:hr_expense_dashboard_tree",
+        "views:hr_expense_form_view",
+        "views:hr_expense_kanban",
+        "views:hr_expense_tree",
+        "web_tour.tours:hr_expense_tour"
+      ],
+      "patches": [
+        "ActivityMenu.prototype",
+        "AttachmentView.prototype"
+      ],
+      "services": [],
+      "asset_bundles": {
+        "web.assets_backend": 8,
+        "web.assets_tests": 2,
+        "web.report_assets_common": 1
+      }
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": false,
+      "endpoints": [
+        "https://www.odoo.com/app/expenses"
+      ],
+      "files": [
+        "__manifest__.py"
+      ]
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    }
+  },
+  "it_architecture": {
+    "application": "hr_expense (Expenses application component — HR-to-accounting bridge)",
+    "software_services": [],
+    "data_objects": [
+      "hr.expense",
+      "hr.expense.split",
+      "hr.expense.split.wizard",
+      "hr.expense.post.wizard",
+      "hr.expense.refuse.wizard"
+    ],
+    "logical_data_erm": [
+      "hr.expense -> hr.employee",
+      "hr.expense -> product.product",
+      "hr.expense -> account.account",
+      "hr.expense -> account.move",
+      "hr.expense -> account.payment.method.line",
+      "account.move.line -> hr.expense (expense_id)",
+      "account.payment -> hr.expense (via move_id.expense_ids)"
+    ],
+    "information_flows": [
+      "depends: account, hr, web_tour",
+      "side-effect: hr.expense.action_post -> account.move (in_receipt) for employee-paid; account.move + account.payment for company-paid",
+      "side-effect: posted move lines carry analytic_distribution -> account.analytic.line (cost spine)",
+      "bridge (sale_expense, auto_install): expense_policy on product + sale_order_id -> account.move.line._sale_create_reinvoice_sale_line -> sale.order.line (re-invoice to customer)",
+      "intake: mail alias message_new -> draft hr.expense from email subject"
+    ],
+    "frontend_components": [
+      "AttachmentNumber",
+      "ExpenseDashboard",
+      "QRModalComponent"
+    ]
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Capture & Submit Employee Expenses (incl. email/receipt intake)",
+      "Approve / Refuse Expenses (multi-level approval workflow)",
+      "Post Expenses to Accounting (employee reimbursement & company-paid)",
+      "Re-invoice Expenses to Customers (via expense_policy, sale_expense bridge)",
+      "Expense Analytics (dashboard, pivot/graph)"
+    ],
+    "value_streams": [
+      "Expense-to-Reimburse: draft -> submitted -> approved -> posted (account.move) -> in_payment -> paid",
+      "Expense-to-Cash (re-invoice): approved expense -> analytic line -> sale.order.line -> customer invoice (with sale_expense)"
+    ],
+    "information_concepts": [
+      "hr.expense (expense)",
+      "hr.employee (employee)",
+      "product.product (expense category)",
+      "account.move (journal entry / receipt)",
+      "account.payment (reimbursement)",
+      "account.analytic.line (cost on value unit)"
+    ],
+    "organization": [
+      "group_hr_expense_team_approver (Team Approver)",
+      "group_hr_expense_user (All Approver)",
+      "group_hr_expense_manager (Administrator)"
+    ],
+    "products": [],
+    "policies": [
+      "12 record rules: employee sees own expenses, approvers see team/department, multi-company scoping",
+      "Approval gate: only 'approved' expenses can be posted (_check_can_create_move); posted/approved expenses cannot be deleted",
+      "Auto-validation when employee has no approver (_can_be_autovalidated); duplicate-receipt warning before approval"
+    ],
+    "stakeholders": [
+      "Employee (hr.employee / res.users)",
+      "Expense Approver / Manager (group_hr_expense_*)",
+      "Billing Accountant (posts the move)",
+      "Customer (res.partner, when re-invoiced)"
+    ],
+    "strategy": null,
+    "metrics": [
+      "Expense dashboard (To Submit / Waiting Approval / Waiting Reimbursement amounts)",
+      "Expense analysis pivot/graph on hr.expense"
+    ]
+  },
+  "classification": {
+    "value_model": "support",
+    "activity_class": "support",
+    "apqc_category": "7.0 Develop and Manage Human Capital",
+    "rationale": "hr_expense is a support activity (Stabell & Fjeldstad: an infrastructure/HR-administration function), not a primary value-creating step. Its home is HR — category 'Human Resources/Expenses', owned by HR approver groups, operating on hr.employee — so the primary APQC fit is 7.0 Develop and Manage Human Capital (reward/reimburse employees: submit-approve-reimburse expenses). It is a bridge: every posted expense feeds 9.0 Finance (creates account.move / account.payment, the AP/reimbursement leg) via its hard dependency on account, and through the auto-installed sale_expense bridge (expense_policy + sale_order_id) it can re-invoice costs into 3.0 Market and Sell / sale.order, charging the customer. The analytic_distribution it carries is the cost spine that lands these support costs onto the analytic account (value unit) for margin. Chosen 7.0 over 9.0 because ownership, security and the employee-facing lifecycle are HR; Finance and Sales are downstream consumers it feeds, not its owning activity."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "Expense capture (manual, email alias, attachment/receipt upload)",
+      "Multi-level approval workflow with refuse-reason and duplicate detection",
+      "Employee-paid reimbursement and company-paid (card) posting to accounting",
+      "Multi-currency expenses with editable rate",
+      "Expense split wizard and analytic distribution",
+      "Re-invoice to customer via product expense_policy (with sale_expense)",
+      "Expense dashboard + pivot/graph analytics"
+    ],
+    "typical_fits": [
+      "Standard submit/approve/reimburse flow for employee expenses",
+      "Company credit-card expenses logged and reconciled via account.payment",
+      "Billable travel/expense re-invoiced to a confirmed sales order",
+      "Approver hierarchy via expense_manager_id / department manager / team leader"
+    ],
+    "common_gaps": [
+      "Per-category or per-amount spending policies / mileage & per-diem rules (need config or extra apps)",
+      "Multi-step / threshold-based approval chains beyond the single approver model",
+      "OCR receipt digitization (separate module hr_expense_extract)",
+      "Payroll reimbursement integration (separate module hr_payroll_expense)",
+      "Corporate-card feed automation (separate module hr_expense_stripe)"
+    ],
+    "drive_hints": [
+      "odoo shell: env['hr.expense'].search([], limit=5).mapped(('name','state','payment_mode','total_amount'))",
+      "odoo shell: env['hr.expense'].fields_get(['state','approval_state'])['state']['selection']  # inspect lifecycle states",
+      "odoo shell: e = env['hr.expense'].search([('state','=','approved')], limit=1); e.action_post()  # observe account.move_id getting set",
+      "odoo shell: env['product.template'].fields_get(['expense_policy'])  # confirm sale-driven re-invoice policy (needs sale_expense)"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "stakeholders": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Exact recompute order of the ~15 monetary/tax compute methods (total_amount vs tax_amount vs currency_rate) when a custom rate is set.",
+    "Behavior of company-paid vs employee-paid posting when batching expenses across journals/payment methods.",
+    "Whether re-invoicing is in scope for this deployment (requires the auto-installed sale_expense bridge + product expense_policy configured)."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/hr_expense.facts.json",
+    "tools": [
+      "code-read",
+      "extract_frontend.py",
+      "extract_module.py",
+      "extract_runtime.sh"
+    ],
+    "odoo_version": "19.0"
+  }
+}

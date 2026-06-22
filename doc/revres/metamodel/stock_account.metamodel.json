@@ -1,0 +1,263 @@
+{
+  "subsystem": "stock_account",
+  "evidence": {
+    "manifest": {
+      "name": "WMS Accounting",
+      "category": "Supply Chain/Inventory",
+      "summary": "Inventory, Logistic, Valuation, Accounting",
+      "depends": [
+        "stock",
+        "account"
+      ],
+      "auto_install": true,
+      "application": false
+    },
+    "models": [
+      {
+        "_name": "product.value",
+        "_description": "Product Value",
+        "fields": 13,
+        "relations": [
+          "product_id->product.product",
+          "lot_id->stock.lot",
+          "move_id->stock.move",
+          "company_id->res.company"
+        ]
+      },
+      {
+        "_name": "stock.avco.report",
+        "_description": "Stock AVCO Justifier",
+        "fields": 15,
+        "relations": [
+          "product_id->product.product",
+          "company_id->res.company"
+        ]
+      },
+      {
+        "_name": "stock_account.stock.valuation.report",
+        "_description": "Stock Valuation",
+        "fields": 0,
+        "relations": []
+      },
+      {
+        "_name": "stock.move",
+        "_description": "(extension)",
+        "fields": 16,
+        "relations": [
+          "account_move_id->account.move",
+          "analytic_account_line_ids->account.analytic.line"
+        ]
+      },
+      {
+        "_name": "account.move",
+        "_description": "(extension)",
+        "fields": 1,
+        "relations": [
+          "stock_move_ids->stock.move"
+        ]
+      },
+      {
+        "_name": "product.category",
+        "_description": "(extension)",
+        "fields": 7,
+        "relations": [
+          "property_stock_journal->account.journal",
+          "property_stock_valuation_account_id->account.account"
+        ]
+      }
+    ],
+    "routes": [],
+    "security": {
+      "access_rules": 9,
+      "record_rules": 2,
+      "groups": 1
+    },
+    "views": {
+      "form": 1,
+      "list": 1
+    },
+    "behavioral_notes": [
+      {
+        "element": "stock.move._action_done -> _set_value + _create_account_move",
+        "observation": "On validating a picking, _action_done() first values outgoing moves (COGS basis), then values incoming/dropship moves, then calls _create_account_move(): for storable real_time-valued moves with a valuation account it posts an account.move on the company stock journal (debit destination valuation account, credit stock valuation account, or the reverse for outgoing) wiring inventory movements into the GL. None of this is visible in metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "stock.move._set_value (cost methods standard/FIFO/AVCO)",
+        "observation": "Move value is set per product.category.property_cost_method: 'standard' = standard_price * qty; 'fifo' = _run_fifo() consuming a stack of prior incoming moves' remaining_qty/remaining_value at their actual entry cost; 'average' = standard_price * qty with _update_standard_price() recomputing the weighted-average cost on each receipt. Replaces the old stock.valuation.layer: value lives on stock.move.value (+ remaining_qty/remaining_value); product.value stores manual-adjustment/revaluation history.",
+        "source": "code-read"
+      },
+      {
+        "element": "account.move._post -> _stock_account_prepare_realtime_out_lines_vals (COGS / anglo-saxon)",
+        "observation": "Posting a customer invoice injects two display_type='cogs' journal items per eligible storable real_time line (debit Expense/COGS account, credit Stock interim account) valued via account.move.line._get_cogs_value() (FIFO/AVCO/standard). These COGS lines are unlinked on button_draft/button_cancel. This is the anglo-saxon accounting that recognises cost of goods sold against revenue.",
+        "source": "code-read"
+      },
+      {
+        "element": "product.product._change_standard_price / product.value",
+        "observation": "A manual change of standard_price (or move value via _inverse_value_manual) writes a product.value history row and, via create(), triggers _update_standard_price()/move _set_value() so the revaluation propagates; for non-FIFO products this is the audit trail backing the Stock Valuation / AVCO Justifier reports.",
+        "source": "code-read"
+      },
+      {
+        "element": "frontend (OWL/JS)",
+        "observation": "8 JS files, 4 OWL components (StockValuationReport, StockValuationReportButtonsBar, StockValuationReportFilters, StockValuationReportLine); 2 registry adds (actions:stock_valuation_report, fields:confirm_boolean); 1 patch (Parent.prototype); asset bundle ['web.assets_backend']. A client-action Stock Valuation report; no portal/public frontend.",
+        "source": "static"
+      }
+    ],
+    "frontend": {
+      "present": true,
+      "js_files": 8,
+      "xml_templates": 10,
+      "owl_components": [
+        "StockValuationReport",
+        "StockValuationReportButtonsBar",
+        "StockValuationReportFilters",
+        "StockValuationReportLine"
+      ],
+      "registry_adds": [
+        "actions:stock_valuation_report",
+        "fields:confirm_boolean"
+      ],
+      "patches": [
+        "Parent.prototype"
+      ],
+      "services": [],
+      "asset_bundles": {
+        "web.assets_backend": 1
+      }
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": false,
+      "endpoints": [],
+      "files": []
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    }
+  },
+  "it_architecture": {
+    "application": "stock_account (WMS Accounting bridge component)",
+    "software_services": [],
+    "data_objects": [
+      "product.value",
+      "stock.avco.report",
+      "stock_account.stock.valuation.report"
+    ],
+    "logical_data_erm": [
+      "stock.move -> account.move (account_move_id)",
+      "account.move -> stock.move (stock_move_ids)",
+      "product.value -> stock.move",
+      "product.category -> account.account (property_stock_valuation_account_id)",
+      "product.category -> account.journal (property_stock_journal)"
+    ],
+    "information_flows": [
+      "depends: stock, account (auto_install bridge)",
+      "side-effect: stock.move._action_done -> _create_account_move -> account.move on stock journal (real_time valuation)",
+      "side-effect: account.move._post -> COGS account.move.line pair (anglo-saxon cost of goods sold)",
+      "side-effect: product.product._change_standard_price -> product.value (revaluation history)"
+    ],
+    "frontend_components": [
+      "StockValuationReport",
+      "StockValuationReportButtonsBar",
+      "StockValuationReportFilters",
+      "StockValuationReportLine"
+    ]
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Value Inventory (standard / FIFO / AVCO cost methods)",
+      "Post Inventory Valuation to the General Ledger (perpetual / real_time)",
+      "Recognise Cost of Goods Sold (anglo-saxon COGS on invoicing)",
+      "Inventory Valuation Reporting & AVCO Justification"
+    ],
+    "value_streams": [
+      "Inventory-to-Ledger: stock move done -> move valued (cost method) -> stock journal entry -> COGS at invoicing -> realised margin"
+    ],
+    "information_concepts": [
+      "product.value (valuation/revaluation history)",
+      "stock.move (valued movement: value, remaining_qty, remaining_value)",
+      "account.move (stock journal entry / COGS)",
+      "product.category (cost method + valuation accounts)"
+    ],
+    "organization": [
+      "stock.group_stock_manager (valuation visibility)"
+    ],
+    "products": [],
+    "policies": [
+      "property_valuation periodic vs real_time (perpetual) gates GL posting",
+      "property_cost_method standard/fifo/average drives unit valuation",
+      "anglo_saxon_accounting toggles COGS-at-invoice recognition",
+      "2 record rules: multi-company scoping on valuation data"
+    ],
+    "stakeholders": [
+      "Accountant (GL / COGS)",
+      "Inventory Manager (stock.group_stock_manager)",
+      "Auditor (valuation justification)"
+    ],
+    "strategy": null,
+    "metrics": [
+      "stock_account.stock.valuation.report (Stock Valuation: qty, unit cost, value)",
+      "stock.avco.report (AVCO Justifier: weighted-average reconciliation)"
+    ]
+  },
+  "classification": {
+    "value_model": "support",
+    "activity_class": "support",
+    "apqc_category": "9.0 Manage Financial Resources",
+    "rationale": "stock_account is an auto-install BRIDGE module (depends stock + account, defines no end-user value stream of its own) that wires the value chain's inventory subsystem (stock) into the support accounting subsystem (account): it realises inventory VALUE by tagging every stock.move with a cost (standard/FIFO/AVCO), posting perpetual valuation entries to the stock journal, and recognising COGS against revenue on invoicing. This is the wiring that makes the product value-lifecycle's COGS/valuation real in the books, hence support / financial accounting (APQC 9.0 Manage Financial Resources; the inventory-accounting facet of 4.x Deliver). It owns no primary activity itself."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "three cost methods: Standard Price, FIFO, Average (AVCO)",
+      "periodic vs perpetual (real_time) inventory valuation",
+      "automatic stock journal entries on validated moves",
+      "anglo-saxon COGS recognition on customer invoices",
+      "lot/serial-level valuation (lot_valuated)",
+      "manual valuation adjustment with audit trail (product.value)",
+      "Stock Valuation report + AVCO Justifier report"
+    ],
+    "typical_fits": [
+      "perpetual valuation with category-driven valuation accounts & stock journal",
+      "anglo-saxon (COGS at invoice) vs continental (expense at purchase) accounting",
+      "FIFO/AVCO auto-update of standard_price from real receipt cost",
+      "multi-company valuation scoping via company_dependent accounts + record rules"
+    ],
+    "common_gaps": [
+      "landed-cost allocation (delegated to module stock_landed_costs)",
+      "industry-specific revaluation / write-down policies",
+      "custom valuation account determination beyond category/fiscal-position",
+      "WIP/overhead production valuation tuning (account_production_wip_*)"
+    ],
+    "drive_hints": [
+      "odoo shell: env['product.category'].search([],limit=5).mapped(('name','property_cost_method','property_valuation'))",
+      "odoo shell: env['stock.move'].search([('is_valued','=',True)],limit=5).mapped(('reference','value','account_move_id'))",
+      "odoo shell: env['account.move.line'].search([('display_type','=','cogs')],limit=5).mapped(('account_id','balance'))"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Exact GL posting differences between periodic (at closing) and perpetual (at invoicing) valuation paths.",
+    "How _run_fifo stack consumption behaves under returns, dropship and lot-valuated products at scale.",
+    "Interaction with stock_landed_costs and mrp (WIP/overhead) when computing the final move value."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/stock_account.facts.json",
+    "tools": [
+      "code-read",
+      "extract_frontend.py",
+      "extract_module.py"
+    ],
+    "odoo_version": "19.0"
+  }
+}

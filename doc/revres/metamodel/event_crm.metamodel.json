@@ -1,0 +1,283 @@
+{
+  "subsystem": "event_crm",
+  "evidence": {
+    "manifest": {
+      "name": "Event CRM",
+      "category": "Marketing/Events",
+      "depends": [
+        "event",
+        "crm"
+      ],
+      "auto_install": true,
+      "application": false
+    },
+    "models": [
+      {
+        "_name": "event.lead.rule",
+        "_description": "Event Lead Rules",
+        "fields": 13,
+        "relations": [
+          "lead_ids->crm.lead",
+          "event_type_ids->event.type",
+          "event_id->event.event",
+          "company_id->res.company",
+          "lead_sales_team_id->crm.team",
+          "lead_user_id->res.users",
+          "lead_tag_ids->crm.tag"
+        ]
+      },
+      {
+        "_name": "event.lead.request",
+        "_description": "Event Lead Request",
+        "fields": 3,
+        "relations": [
+          "event_id->event.event",
+          "event_lead_rule_ids->event.lead.rule"
+        ]
+      },
+      {
+        "_name": "crm.lead",
+        "_description": "(extension) links source event / rule / registrations",
+        "fields": 4,
+        "relations": [
+          "event_lead_rule_id->event.lead.rule",
+          "event_id->event.event",
+          "registration_ids->event.registration"
+        ]
+      },
+      {
+        "_name": "event.registration",
+        "_description": "(extension) lead generation hooks on create/confirm/done",
+        "fields": 2,
+        "relations": [
+          "lead_ids->crm.lead"
+        ]
+      },
+      {
+        "_name": "event.event",
+        "_description": "(extension) leads generated from the event",
+        "fields": 2,
+        "relations": [
+          "lead_ids->crm.lead"
+        ]
+      },
+      {
+        "_name": "event.question.answer",
+        "_description": "(extension) feeds question answers into lead description",
+        "fields": 0,
+        "relations": []
+      }
+    ],
+    "routes": [],
+    "security": {
+      "access_rules": 5,
+      "record_rules": 1,
+      "groups": 0
+    },
+    "views": {
+      "form": 1,
+      "list": 1,
+      "tree": 0,
+      "kanban": 0,
+      "search": 1,
+      "pivot": 0,
+      "graph": 0,
+      "calendar": 0,
+      "activity": 0
+    },
+    "frontend": {
+      "present": false,
+      "js_files": 0,
+      "xml_templates": 0,
+      "owl_components": [],
+      "registry_adds": [],
+      "patches": [],
+      "services": [],
+      "asset_bundles": {
+        "web.assets_tests": 1
+      }
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": false,
+      "endpoints": [
+        "https://www.odoo.com/app/events"
+      ],
+      "files": [
+        "__manifest__.py"
+      ]
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    },
+    "behavioral_notes": [
+      {
+        "element": "event.lead.rule (lead_creation_basis / lead_creation_trigger / filter)",
+        "observation": "event.lead.rule is a declarative rule defining HOW and WHEN leads are spun out of registrations. lead_creation_basis is 'attendee' (one crm.lead per registration, B2C) or 'order' (one lead per registration group, B2B). lead_creation_trigger is 'create' (at attendee creation), 'confirm' (registration state->open) or 'done' (attended, state->done) -- later triggers mean higher lead quality. _filter_registrations narrows the batch: event_registration_filter (a stored domain literal_eval'd and applied with filtered_domain), company_id must match the event's company, and event_id OR event_type_ids must match (if both set, OR; if neither set, pass). ALL matching active rules fire, so a single registration can generate multiple leads by design. Pre-filled lead defaults (lead_type, lead_user_id, lead_sales_team_id, lead_tag_ids) are stamped from the rule.",
+        "source": "code-read"
+      },
+      {
+        "element": "event.registration.create / write -> _apply_lead_generation_rules / _run_on_registrations",
+        "observation": "event.registration.create() (unless context event_lead_rule_skip, set during import via _load_records_create/_write) calls _apply_lead_generation_rules: it searches event.lead.rule with trigger 'create' (plus 'confirm' if any reg is open, 'done' if any is done) and runs them. write() additionally fires confirm-trigger rules when vals state=='open' and done-trigger rules when state=='done', so attendee confirmation/attendance re-invokes lead generation. _run_on_registrations builds a lead_vals_list and does one batched env['crm.lead'].create(lead_vals_list): per attendee mode it appends registration._get_lead_values(rule) for each registration; per order mode it groups via _get_lead_grouping and creates/updates one lead per (event, create_date) group. All rule execution is sudo().",
+        "source": "code-read"
+      },
+      {
+        "element": "_run_on_registrations deduplication + _get_lead_grouping",
+        "observation": "Before creating, the rule engine guards against duplicates: it searches existing crm.lead (active_test=False, includes lost leads) already linked to these registration_ids for the same rule, builds rule_to_existing_regs, and excludes those registrations so re-triggering the same rule (e.g. a status change) does not duplicate a lead. Order-based grouping (_get_lead_grouping) keys registrations by (create_date, event_id) -- the website_event create-multi flow and the cron re-run both land registrations in the same group; existing group leads are updated in place (appending '<br/>New registrations' to description and (4, reg.id) to registration_ids) rather than re-created. Update for an existing batch is intentionally not auto-detected beyond this grouping.",
+        "source": "code-read"
+      },
+      {
+        "element": "event.registration._get_lead_values / _get_lead_contact_values (registration->lead field mapping)",
+        "observation": "_get_lead_values maps registration data onto a crm.lead: type/user_id/team_id/tag_ids/event_lead_rule_id from the rule; event_id, referred=event.name, registration_ids=self.ids, and UTM campaign/source/medium taken as the first non-null across the group. _get_lead_contact_values resolves the contact: it picks the first non-public partner_id, and in single-attendee mode keeps that partner only if its email (email_normalized) and phone (phone_format) match the registration -- otherwise it falls back to raw contact_name/email_from/phone from the registration so as not to overwrite a partner. Lead name is formatted '<event.name> - <contact>'. _get_lead_description enumerates participants (name/email/phone) as an HTML <ol>/<ul> list. crm.lead._merge_dependences/_merge_get_fields extend CRM merge to carry registration_ids, event_id and event_lead_rule_id across merged opportunities (registration merge done as sudo).",
+        "source": "code-read"
+      },
+      {
+        "element": "event.event.action_generate_leads + event_crm.ir_cron_generate_leads (batch backfill)",
+        "observation": "action_generate_leads (Event Manager only) re-generates leads for an event's non-draft/non-cancel registrations. If the count is within event.lead.request._REGISTRATIONS_BATCH_SIZE it runs synchronously via _apply_lead_generation_rules; otherwise it enqueues event.lead.request rows and triggers the daily ir_cron_generate_leads cron (model._cron_generate_leads), which processes registrations in batches off the request queue. event.lead.request.processed_registration_id is a watermark integer tracking batch progress.",
+        "source": "code-read"
+      },
+      {
+        "element": "frontend (OWL/JS)",
+        "observation": "No frontend: 0 JS files, 0 XML templates, 0 OWL components, no registry adds or patches. The only asset bundle is web.assets_tests (1, tour JS for tests). event_crm is a pure backend automation bridge with no public routes and no client-side UI; lead rules are configured through standard backend form/list views.",
+        "source": "static"
+      }
+    ]
+  },
+  "it_architecture": {
+    "application": "event_crm (Event-to-CRM lead generation bridge application component)",
+    "software_services": [],
+    "data_objects": [
+      "event.lead.rule",
+      "event.lead.request",
+      "crm.lead",
+      "event.registration",
+      "event.event",
+      "event.question.answer"
+    ],
+    "logical_data_erm": [
+      "event.lead.rule -> crm.lead (lead_ids, created leads)",
+      "event.lead.rule -> event.event / event.type (filter scope)",
+      "event.lead.rule -> crm.team / res.users / crm.tag (lead defaults)",
+      "crm.lead -> event.lead.rule / event.event / event.registration (source provenance)",
+      "event.registration -> crm.lead (lead_ids generated)",
+      "event.event -> crm.lead (lead_ids, event_id)",
+      "event.lead.request -> event.event / event.lead.rule (batch backfill queue)"
+    ],
+    "information_flows": [
+      "depends: event, crm",
+      "side-effect: event.registration.create -> _apply_lead_generation_rules -> crm.lead.create (trigger=create)",
+      "side-effect: event.registration.write(state=open) -> confirm-trigger rules -> crm.lead.create",
+      "side-effect: event.registration.write(state=done) -> done-trigger rules -> crm.lead.create",
+      "side-effect: per-order rules group registrations by (event, create_date) -> one crm.lead created or updated per group",
+      "side-effect: event.event.action_generate_leads -> sync _apply_lead_generation_rules OR enqueue event.lead.request + trigger ir_cron_generate_leads",
+      "side-effect: crm.lead merge -> registration_ids / event_id / event_lead_rule_id carried across merged opportunities"
+    ],
+    "frontend_components": []
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Define Event Lead Generation Rules (basis, trigger, filter)",
+      "Auto-Generate Leads/Opportunities from Registrations",
+      "Per-Attendee (B2C) vs Per-Order (B2B) Lead Creation",
+      "Registration-to-Lead Contact & UTM Mapping",
+      "Lead Deduplication & Batch Backfill"
+    ],
+    "value_streams": [
+      "Registration-to-Lead: attendee registers -> rule matches (filter/trigger) -> crm.lead created with mapped contact/UTM -> handed to CRM pipeline",
+      "Quality-gated nurture: lead generated at create/confirm/done so sales engage attendees of increasing intent; re-trigger dedup prevents duplicate leads"
+    ],
+    "information_concepts": [
+      "event.lead.rule (lead generation rule)",
+      "event.lead.request (batch generation queue)",
+      "crm.lead (generated lead/opportunity)",
+      "event.registration (source attendee)",
+      "event.event (source event)"
+    ],
+    "organization": [],
+    "products": [],
+    "policies": [
+      "1 record rule: Event CRM Multi Company (event.lead.rule company_id in company_ids + False)",
+      "trigger policy: lead quality gate via lead_creation_trigger create/confirm/done",
+      "all matching active rules fire (intentional multi-lead generation)",
+      "import guard: event_lead_rule_skip context suppresses rules during data load",
+      "ir_cron_generate_leads (daily) batch lead backfill for large events"
+    ],
+    "stakeholders": [
+      "Event Attendee / Registration (event.registration)",
+      "Salesperson (res.users)",
+      "Sales Team (crm.team)",
+      "Event Manager (event.group_event_manager)",
+      "Registration Desk operator (event.group_event_registration_desk)"
+    ],
+    "strategy": null,
+    "metrics": [
+      "event.event.lead_count (# leads generated per event)",
+      "event.registration.lead_count (# leads per registration)",
+      "crm.lead.registration_count (# source registrations per lead)"
+    ]
+  },
+  "classification": {
+    "value_model": "network",
+    "activity_class": "primary",
+    "apqc_category": "3.0 Market and Sell Products and Services",
+    "rationale": "event_crm is a value-network bridge (Stabell & Fjeldstad mediating technology): its sole reason to exist is to mediate between the event network (which gathers an audience of attendees) and the CRM shop (which qualifies and converts customers), converting event audience into CRM pipeline. It owns no transformation chain and no standalone problem-solving loop -- it is glue whose economic logic is matching/membership: rule-based mediation that turns a registration into a crm.lead and routes it to a sales team/salesperson. activity_class is primary because event-driven lead generation is a customer-facing demand activity feeding the sell motion, not back-office support. apqc_category 3.0 Market and Sell Products and Services is the closest PCF home (specifically lead generation, ~3.5.1 Manage leads), inheriting the placement of its crm parent: the generated crm.lead enters the same lead->opportunity->won pipeline, with the won opportunity later handed off to sale (chain)."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "configurable event.lead.rule (per-attendee or per-order basis; create/confirm/done trigger)",
+      "registration filter by event, event type, company and a stored registration domain",
+      "automatic crm.lead/opportunity creation on registration create/confirm/attend",
+      "registration-to-lead contact, UTM and participant-list description mapping",
+      "lead default assignment (type, salesperson, sales team, tags) from the rule",
+      "deduplication of leads per rule and per-order grouping by (event, create_date)",
+      "manual / cron batch re-generation of leads for an event (action_generate_leads)"
+    ],
+    "typical_fits": [
+      "B2C event marketing: one lead per attendee for follow-up by sales",
+      "B2B event marketing: one consolidated lead per order/registration batch",
+      "quality-gated lead generation (only confirmed or attended registrations become leads)",
+      "routing event leads to a dedicated sales team / salesperson with tags and UTM attribution"
+    ],
+    "common_gaps": [
+      "advanced scoring/qualification of event leads beyond CRM's built-in PLS",
+      "grouping basis richer than (event, create_date) without event_sale (sale-order-based grouping)",
+      "bespoke registration->lead field mappings beyond name/email/phone/partner/UTM",
+      "deduplication across rules or against pre-existing non-event CRM leads"
+    ],
+    "drive_hints": [
+      "odoo shell: env['event.lead.rule'].search([]).mapped(('name','lead_creation_basis','lead_creation_trigger','event_id.name'))",
+      "odoo shell: r = env['event.registration'].create({'event_id': env['event.event'].search([],limit=1).id, 'name':'Demo','email':'a@b.com'}); r.lead_ids.mapped(('name','type'))",
+      "odoo shell: env['crm.lead'].search([('event_lead_rule_id','!=',False)],limit=5).mapped(('name','event_id.name','registration_count'))",
+      "odoo shell: env['event.event'].search([],limit=1).action_generate_leads()"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "stakeholders": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Exact value of event.lead.request._REGISTRATIONS_BATCH_SIZE and the cron's per-batch watermark advance (processed_registration_id) under load.",
+    "How per-order grouping changes when event_sale is installed (sale-order-based grouping vs the base (event, create_date) heuristic).",
+    "Runtime volumes of generated leads vs registrations were not captured (extract_runtime.sh not run)."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/event_crm.facts.json",
+    "tools": [
+      "code-read",
+      "extract_module.py",
+      "extract_frontend.py",
+      "Grep",
+      "Read"
+    ],
+    "odoo_version": "19.0"
+  }
+}

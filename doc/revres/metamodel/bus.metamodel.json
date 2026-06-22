@@ -1,0 +1,297 @@
+{
+  "subsystem": "bus",
+  "evidence": {
+    "manifest": {
+      "name": "IM Bus",
+      "category": "Hidden",
+      "depends": [
+        "base",
+        "web"
+      ],
+      "auto_install": true,
+      "application": false
+    },
+    "models": [
+      {
+        "_name": "bus.bus",
+        "_description": "Communication Bus",
+        "fields": 2,
+        "relations": []
+      },
+      {
+        "_name": "bus.listener.mixin",
+        "_description": "Can send messages via bus.bus",
+        "fields": 0,
+        "relations": []
+      },
+      {
+        "_name": "ir.websocket",
+        "_description": "websocket message handling",
+        "fields": 0,
+        "relations": []
+      },
+      {
+        "_name": "res.users",
+        "_description": "(extension of res.users via bus.listener.mixin)",
+        "fields": 0,
+        "relations": []
+      },
+      {
+        "_name": "res.partner",
+        "_description": "(extension of res.partner via bus.listener.mixin)",
+        "fields": 0,
+        "relations": []
+      }
+    ],
+    "routes": [
+      {
+        "paths": [
+          "/bus/get_model_definitions"
+        ],
+        "auth": "user",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/bus/has_missed_notifications"
+        ],
+        "auth": "public",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/websocket"
+        ],
+        "auth": "public",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/websocket/health"
+        ],
+        "auth": "none",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/websocket/peek_notifications"
+        ],
+        "auth": "public",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/websocket/on_closed"
+        ],
+        "auth": "public",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/bus/websocket_worker_bundle"
+        ],
+        "auth": "public",
+        "type": "http"
+      }
+    ],
+    "security": {
+      "access_rules": 1,
+      "record_rules": 0,
+      "groups": 0
+    },
+    "views": {},
+    "frontend": {
+      "present": true,
+      "js_files": 20,
+      "xml_templates": 1,
+      "owl_components": [
+        "BusLogsMenuItem"
+      ],
+      "registry_adds": [
+        "services:assetsWatchdog",
+        "services:bus.logs_service",
+        "services:bus.monitoring_service",
+        "services:bus.outdated_page_watcher",
+        "services:bus.parameters",
+        "services:bus_service",
+        "services:legacy_multi_tab",
+        "services:multi_tab",
+        "services:presence",
+        "services:simple_notification",
+        "services:worker_service"
+      ],
+      "patches": [],
+      "services": [
+        "subscribe"
+      ],
+      "asset_bundles": {
+        "web.assets_backend": 5,
+        "web.assets_frontend": 6,
+        "web.assets_unit_tests": 1,
+        "bus.websocket_worker_assets": 2
+      }
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": false,
+      "endpoints": [],
+      "files": []
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    },
+    "behavioral_notes": [
+      {
+        "element": "bus.bus._sendone / _ensure_hooks",
+        "observation": "Notifications are not written eagerly: _sendone buffers {channel,message} rows into cr.precommit and the target channel into cr.postcommit. A precommit hook bulk-creates the bus.bus rows, then a postcommit hook issues SQL `SELECT pg_notify('imbus', payload)` on a dedicated 'postgres' connection. NOTIFY must fire after commit so the row is fetchable; payloads >8000 bytes are recursively split. None of this transaction-hook / pg_notify wiring is visible in metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "ImDispatch.loop (PostgreSQL LISTEN/NOTIFY -> websocket fan-out)",
+        "observation": "A lazily-started daemon thread runs `LISTEN imbus` on the postgres connection and uses a selector to wake on NOTIFY. On each notification it parses the channel list, looks up every websocket subscribed to those channels in the in-memory _channels_to_ws map, and calls websocket.trigger_notification_dispatching() to relay. This is the core publish/subscribe broadcast engine.",
+        "source": "code-read"
+      },
+      {
+        "element": "bus.bus._poll vs websocket dispatch (longpolling + websocket transport)",
+        "observation": "Two transports coexist. _poll returns buffered notifications: on first poll (last=0) it returns rows newer than TIMEOUT(50s); otherwise rows with id>last for the subscribed channels (with ignore_ids dedup). Over websockets, Websocket._dispatch_bus_notifications acquires a cursor, calls _poll, tracks a per-socket _notif_history to avoid re-sending, and trusts the server-side last id after first subscribe rather than the client's.",
+        "source": "code-read"
+      },
+      {
+        "element": "ir.websocket._build_bus_channel_list (channel authorization) + heartbeat",
+        "observation": "Channel subscriptions are server-controlled: the client list is augmented with 'broadcast', the user's group records and (if logged in) their partner record, so a client cannot subscribe to arbitrary records. The websocket layer maintains PING/PONG heartbeat frames (HEARTBEAT_OP) with per-opcode expiration timers to detect dead connections; presence/im_status itself is computed in the JS presence service and downstream mail module, not in a bus_presence.py (which does not exist in this module).",
+        "source": "code-read"
+      },
+      {
+        "element": "bus.listener.mixin._bus_send / _bus_channel",
+        "observation": "The secure, recommended send path. _bus_send walks _bus_channel() up to a stable 'main channel' record, ensures it is a single record, optionally appends a subchannel, and delegates to bus.bus._sendone. Mixed into res.partner, res.users, res.groups, res.users.settings and ir.attachment so those records become addressable bus channels.",
+        "source": "code-read"
+      },
+      {
+        "element": "frontend bus_service (OWL/JS websocket client)",
+        "observation": "bus_service is the backend webclient client: it boots a SharedWorker (worker_service), sends BUS:INITIALIZE_CONNECTION/START/ADD_CHANNEL/SEND control messages, receives notification batches from the worker, tracks lastNotificationId (shared across tabs via multi_tab), and re-emits each notification by type on an EventBus that other services subscribe() to. Includes reconnection backoff and an outdated-page watcher. Not visible in Python metadata.",
+        "source": "static"
+      }
+    ]
+  },
+  "it_architecture": {
+    "application": "bus (IM Bus real-time messaging infrastructure component)",
+    "software_services": [
+      "/websocket",
+      "/websocket/health",
+      "/websocket/peek_notifications",
+      "/websocket/on_closed",
+      "/bus/get_model_definitions",
+      "/bus/has_missed_notifications",
+      "/bus/websocket_worker_bundle"
+    ],
+    "data_objects": [
+      "bus.bus",
+      "bus.listener.mixin",
+      "ir.websocket"
+    ],
+    "logical_data_erm": [
+      "bus.bus (channel, message) -- no FK relations, channels encode (db, model, id) tuples",
+      "bus.listener.mixin -> mixed into res.partner / res.users / res.groups / res.users.settings / ir.attachment",
+      "ir.websocket -> bus.bus._poll (transport-to-store binding)"
+    ],
+    "information_flows": [
+      "depends: base, web",
+      "side-effect: any model._bus_send -> bus.bus._sendone -> bus_bus row (precommit) -> pg_notify 'imbus' (postcommit)",
+      "side-effect: pg_notify 'imbus' -> ImDispatch.loop -> websocket.trigger_notification_dispatching -> browser",
+      "consumed-by: mail/discuss, web (longpolling/websocket-driven UI updates) subscribe via this bus"
+    ],
+    "frontend_components": [
+      "BusLogsMenuItem"
+    ]
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Real-time Notification Delivery (publish/subscribe)",
+      "WebSocket / Longpolling Transport Management",
+      "Channel-based Message Broadcasting",
+      "Multi-tab / Multi-worker Connection Coordination"
+    ],
+    "value_streams": [
+      "Event-to-Client: model change -> _bus_send -> bus.bus row -> pg_notify -> dispatcher -> websocket -> browser update"
+    ],
+    "information_concepts": [
+      "bus.bus (notification)",
+      "channel",
+      "bus.listener.mixin (addressable channel record)"
+    ],
+    "organization": [],
+    "products": [],
+    "policies": [
+      "1 access rule on bus.bus (low-level table, sudo-managed)",
+      "Channel authorization: ir.websocket._build_bus_channel_list restricts a client to broadcast + its own groups + its own partner",
+      "Autovacuum GC: bus.bus._gc_messages purges rows older than bus.gc_retention_seconds (default 24h) via direct SQL"
+    ],
+    "stakeholders": [
+      "Web client (res.users browser session)",
+      "Public/portal visitor (public_user)",
+      "Downstream modules (mail/discuss, web) that broadcast and consume"
+    ],
+    "strategy": null,
+    "metrics": [
+      "bus.monitoring_service / bus.logs_service (frontend connection health and notification logs)"
+    ]
+  },
+  "classification": {
+    "value_model": "support",
+    "activity_class": "support",
+    "apqc_category": "8.0 Manage Information Technology",
+    "rationale": "bus is technical real-time infrastructure (Hidden, auto_install, depends only base+web) with no business documents of its own. It is a Stabell & Fjeldstad value-shop/value-network ENABLER rather than a value activity: a small but foundational publish/subscribe layer (PostgreSQL LISTEN/NOTIFY -> websocket fan-out) that powers the collaboration and value-network features (Discuss chat, live presence, real-time UI updates) of modules layered above it. It produces no primary-chain output, so it is classified support / APQC 8.0 Manage Information Technology (deliver IT services / infrastructure)."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "websocket transport with longpolling fallback (/websocket, /websocket/peek_notifications)",
+      "PostgreSQL LISTEN/NOTIFY publish/subscribe dispatcher (imbus channel)",
+      "channel-addressable records via bus.listener.mixin",
+      "server-controlled channel authorization (broadcast + groups + own partner)",
+      "multi-tab coordination via SharedWorker and bus_service",
+      "automatic GC of stale notifications (24h retention)"
+    ],
+    "typical_fits": [
+      "real-time chat/notifications out of the box once mail/discuss is installed",
+      "custom records made live by inheriting bus.listener.mixin and calling _bus_send",
+      "horizontal scaling behind a websocket-aware reverse proxy (gevent/worker)"
+    ],
+    "common_gaps": [
+      "new server-pushed event types require an override of _build_bus_channel_list and a JS subscribe() handler (custom dev)",
+      "very high notification volume may need ODOO_NOTIFY_PAYLOAD_MAX_LENGTH tuning or an external NOTIFY function (ODOO_NOTIFY_FUNCTION)",
+      "deployments behind proxies that do not support websocket upgrades fall back to longpolling and need configuration"
+    ],
+    "drive_hints": [
+      "odoo shell: env['res.partner'].browse(uid).partner_id._bus_send('demo.notif', {'msg': 'hello'})",
+      "odoo shell: env['bus.bus'].search_count([]) ; env['bus.bus'].search([], order='id desc', limit=3).read(['channel','message'])",
+      "curl -i http://localhost:8069/websocket/health  (expects HTTP 200, auth=none)"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Exact interplay between the longpolling _poll buffer (50s window) and per-socket _notif_history dedup under reconnect storms.",
+    "How presence/im_status is computed end-to-end (lives in the JS presence service and the mail module, not in bus itself).",
+    "Operational scaling limits of the single ImDispatch thread and the postgres LISTEN connection under many concurrent websockets."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/bus.facts.json",
+    "tools": [
+      "code-read",
+      "extract_frontend.py",
+      "extract_module.py",
+      "Grep/Read"
+    ],
+    "odoo_version": "19.0"
+  }
+}

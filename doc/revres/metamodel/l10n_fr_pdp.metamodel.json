@@ -1,0 +1,234 @@
+{
+  "subsystem": "l10n_fr_pdp",
+  "evidence": {
+    "manifest": {
+      "name": "France - E-Invoicing (Approved Platform)",
+      "category": "Accounting/Localizations/EDI",
+      "depends": [
+        "l10n_fr_account",
+        "account_peppol_response",
+        "auth_totp_mail",
+        "iap"
+      ],
+      "auto_install": [
+        "l10n_fr_account",
+        "auth_totp_mail"
+      ],
+      "application": false
+    },
+    "models": [
+      {
+        "_name": "account.edi.xml.ubl_21_fr",
+        "_description": "France UBL 2.1 E-Invoicing Format",
+        "fields": 0
+      },
+      {
+        "_name": "l10n.fr.pdp.reports.flow",
+        "_description": "French PDP Flow",
+        "fields": 22
+      },
+      {
+        "_name": "l10n.fr.pdp.reports.send.wizard",
+        "_description": "Send PDP Flow Wizard",
+        "fields": 2
+      },
+      {
+        "_name": "pdp.config.wizard",
+        "_description": "Peppol Configuration Wizard",
+        "fields": 5
+      },
+      {
+        "_name": "pdp.flow.10.xml.builder",
+        "_description": "Flow 10 XML Builder",
+        "fields": 0
+      },
+      {
+        "_name": "pdp.registration",
+        "_description": "PDP Registration",
+        "fields": 12
+      },
+      {
+        "_name": "pdp.response.wizard",
+        "_description": "PDP Response wizard",
+        "fields": 10
+      }
+    ],
+    "routes": [
+      {
+        "paths": [
+          "/api/signaturit_authentication_status/1/webhooks"
+        ],
+        "auth": "public",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/peppol/webhook/new-regulatory-message"
+        ],
+        "auth": "public",
+        "type": "http"
+      }
+    ],
+    "security": {
+      "access_rules": 9,
+      "record_rules": 0,
+      "groups": 0
+    },
+    "views": {
+      "form": 2,
+      "list": 1,
+      "tree": 0,
+      "kanban": 0,
+      "search": 1,
+      "pivot": 0,
+      "graph": 0,
+      "calendar": 0,
+      "activity": 0
+    },
+    "frontend": {
+      "present": true,
+      "js_files": 1,
+      "xml_templates": 1,
+      "owl_components": [],
+      "registry_adds": [
+        "views:pdp_status_listener"
+      ],
+      "patches": [],
+      "services": [],
+      "asset_bundles": {
+        "web.assets_backend": 1
+      }
+    },
+    "integrations": {
+      "http_call_sites": 1,
+      "sdk_imports": [
+        "requests"
+      ],
+      "uses_api_keys": false,
+      "endpoints": [
+        "http://www.w3.org/2001/XMLSchema-instance",
+        "https://pdp.api.odoo.com",
+        "https://pdp.odoo.com",
+        "https://pdp.test.odoo.com"
+      ],
+      "files": [
+        "models/account_edi_proxy_user.py",
+        "models/pdp_flow_xml_builder.py",
+        "models/res_company.py",
+        "models/res_partner.py"
+      ]
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    },
+    "behavioral_notes": [
+      {
+        "element": "frontend (OWL/JS)",
+        "observation": "1 JS files, 0 OWL components, 1 registry adds; bundles ['web.assets_backend'].",
+        "source": "static"
+      },
+      {
+        "element": "external integrations",
+        "observation": "1 HTTP call sites; SDKs ['requests']; api_keys=False.",
+        "source": "static"
+      },
+      {
+        "element": "thin module",
+        "observation": "7 models, 2 routes, 7874 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
+        "source": "ast"
+      }
+    ]
+  },
+  "it_architecture": {
+    "application": "l10n_fr_pdp (France - E-Invoicing (Approved Platform))",
+    "software_services": [
+      "/api/signaturit_authentication_status/1/webhooks",
+      "/peppol/webhook/new-regulatory-message"
+    ],
+    "data_objects": [
+      "account.edi.xml.ubl_21_fr",
+      "l10n.fr.pdp.reports.flow",
+      "l10n.fr.pdp.reports.send.wizard",
+      "pdp.config.wizard",
+      "pdp.flow.10.xml.builder",
+      "pdp.registration",
+      "pdp.response.wizard"
+    ],
+    "logical_data_erm": [
+      "l10n.fr.pdp.reports.flow -> account.move",
+      "l10n.fr.pdp.reports.flow -> ir.attachment",
+      "l10n.fr.pdp.reports.flow -> l10n.fr.pdp.reports.flow",
+      "l10n.fr.pdp.reports.flow -> res.company",
+      "l10n.fr.pdp.reports.send.wizard -> l10n.fr.pdp.reports.flow",
+      "pdp.config.wizard -> account_edi_proxy_client.user",
+      "pdp.config.wizard -> res.company",
+      "pdp.registration -> account_edi_proxy_client.user",
+      "pdp.registration -> res.company",
+      "pdp.response.wizard -> account.move",
+      "pdp.response.wizard -> res.currency"
+    ],
+    "information_flows": [
+      "depends: l10n_fr_account, account_peppol_response, auth_totp_mail, iap"
+    ],
+    "frontend_components": []
+  },
+  "business_architecture": {
+    "capabilities": [
+      "France - E-Invoicing (Approved Platform)"
+    ],
+    "value_streams": [],
+    "information_concepts": [
+      "account.edi.xml.ubl_21_fr",
+      "l10n.fr.pdp.reports.flow",
+      "l10n.fr.pdp.reports.send.wizard",
+      "pdp.config.wizard",
+      "pdp.flow.10.xml.builder",
+      "pdp.registration"
+    ],
+    "organization": [],
+    "products": [],
+    "policies": [],
+    "stakeholders": [],
+    "strategy": null,
+    "metrics": []
+  },
+  "classification": {
+    "value_model": "support",
+    "activity_class": "support",
+    "apqc_category": "9.0 Manage Financial Resources",
+    "rationale": "l10n_fr_pdp: thin support/support module (auto-architect baseline)."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "France - E-Invoicing (Approved Platform)"
+    ],
+    "typical_fits": [],
+    "common_gaps": [],
+    "drive_hints": [
+      "odoo shell: env['account.edi.xml.ubl_21_fr'].search([],limit=3)"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/l10n_fr_pdp.facts.json",
+    "tools": [
+      "extract_module.py",
+      "extract_frontend.py",
+      "gen_thin.py"
+    ],
+    "odoo_version": "19.0"
+  }
+}

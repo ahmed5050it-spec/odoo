@@ -1,0 +1,304 @@
+{
+  "subsystem": "sale_stock",
+  "evidence": {
+    "manifest": {
+      "name": "Sales and Warehouse Management",
+      "category": "Sales/Sales",
+      "summary": "Quotation, Sales Orders, Delivery & Invoicing Control",
+      "depends": [
+        "sale",
+        "stock_account"
+      ],
+      "auto_install": true,
+      "application": false
+    },
+    "models": [
+      {
+        "_inherit": "sale.order",
+        "_description": "Sales Order (extension)",
+        "fields": 13,
+        "methods": 22,
+        "relations": [
+          "picking_ids->stock.picking",
+          "warehouse_id->stock.warehouse",
+          "incoterm->account.incoterms",
+          "stock_reference_ids->stock.reference"
+        ]
+      },
+      {
+        "_inherit": "sale.order.line",
+        "_description": "Sales Order Line (extension)",
+        "fields": 14,
+        "methods": 25,
+        "relations": [
+          "move_ids->stock.move",
+          "route_ids->stock.route",
+          "warehouse_id->stock.warehouse"
+        ]
+      },
+      {
+        "_inherit": "stock.move",
+        "_description": "Stock Move (extension)",
+        "fields": 1,
+        "methods": 12,
+        "relations": [
+          "sale_line_id->sale.order.line"
+        ]
+      },
+      {
+        "_inherit": "stock.picking",
+        "_description": "Transfer (extension)",
+        "fields": 1,
+        "methods": 7,
+        "relations": [
+          "sale_id->sale.order"
+        ]
+      },
+      {
+        "_inherit": "stock.lot",
+        "_description": "Lot/Serial Number (extension)",
+        "fields": 2,
+        "methods": 2,
+        "relations": [
+          "sale_order_ids->sale.order"
+        ]
+      },
+      {
+        "_inherit": "stock.rule",
+        "_description": "Stock Rule (extension)",
+        "fields": 0,
+        "methods": 1,
+        "relations": []
+      }
+    ],
+    "routes": [
+      {
+        "paths": [
+          "/my/picking/pdf/<int:picking_id>"
+        ],
+        "auth": "public",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/my/picking/return/pdf/<int:picking_id>"
+        ],
+        "auth": "public",
+        "type": "http"
+      }
+    ],
+    "security": {
+      "access_rules": 16,
+      "record_rules": 2,
+      "groups": 0
+    },
+    "views": {
+      "form": 0,
+      "list": 0,
+      "kanban": 0,
+      "note": "no new view records; module extends sale & stock views in-place (xml_loc 870)"
+    },
+    "behavioral_notes": [
+      {
+        "element": "sale.order._action_confirm / sale.order.line._action_launch_stock_rule",
+        "observation": "THE BRIDGE: _action_confirm calls self.order_line._action_launch_stock_rule() BEFORE super(), which builds Procurement tuples from each consu line (_create_procurements) and runs self.env['stock.rule'].run(procurements). This is what concretely materializes the abstract 'action_confirm -> stock.picking' side-effect documented across the catalog: the procurement pull rule creates stock.move -> stock.picking, then pickings_to_confirm.action_confirm() triggers the scheduler. Pure side-effect, invisible in metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "sale.order.line.create / write",
+        "observation": "On a confirmed order (state=='sale'), creating or re-quantifying lines also (re)launches procurement: create() calls _action_launch_stock_rule on sale lines; write() re-runs it with previous_product_uom_qty so increasing/decreasing ordered qty adds or back-logs delivery moves. write() also propagates commitment_date to move.date_deadline and logs decrease-quantity exception activities on impacted pickings.",
+        "source": "code-read"
+      },
+      {
+        "element": "sale.order.delivery_status & sale.order.line.qty_delivered (_prepare_qty_delivered)",
+        "observation": "Reverse direction of the bridge: delivery_status is computed from picking_ids.state (pending/started/partial/full), effective_date = first done customer picking's date_done, and qty_delivered_method becomes 'stock_move' for consu lines so qty_delivered is summed from done outgoing/incoming stock.move quantities (UoM-converted). Fulfillment progress flows stock -> sale, and drives invoice_status for delivery-policy products.",
+        "source": "code-read"
+      },
+      {
+        "element": "stock.picking.sale_id linkage (_compute_sale_id / _set_sale_id / stock.move.sale_line_id)",
+        "observation": "The order<->picking link is realized by stock.move.sale_line_id (indexed btree_not_null); stock.picking.sale_id is computed (stored, _auto_init creates the column directly) from move_ids.sale_line_id.order_id. _action_done / _action_synch_order auto-create zero-qty SO lines for delivered products not on the order, and _assign_picking_post_process posts a mail.message_origin_link from picking back to the originating sale.order.",
+        "source": "code-read"
+      },
+      {
+        "element": "frontend qty_at_date_widget (QtyAtDateWidget / QtyAtDatePopover)",
+        "observation": "Backend-only OWL widget registered as view_widgets:qty_at_date_widget; renders the green/red availability popover on SO lines from the computed forecast fields (free_qty_today, virtual_available_at_date, scheduled_date, forecast_expected_date) and opens stock.stock_forecasted_product_product_action. Also patches ProductCatalogKanbanRecord and StockValuationReport prototypes. Static asset, not in Python metadata.",
+        "source": "static"
+      }
+    ],
+    "frontend": {
+      "present": true,
+      "js_files": 4,
+      "xml_templates": 3,
+      "owl_components": [
+        "QtyAtDatePopover",
+        "QtyAtDateWidget"
+      ],
+      "registry_adds": [
+        "view_widgets:qty_at_date_widget"
+      ],
+      "patches": [
+        "ProductCatalogKanbanRecord.prototype",
+        "StockValuationReport.prototype"
+      ],
+      "services": [
+        "display_qty_widget",
+        "forecast_expected_date",
+        "free_qty_today",
+        "is_mto",
+        "move_ids",
+        "qty_available_today",
+        "qty_to_deliver",
+        "scheduled_date",
+        "virtual_available_at_date",
+        "warehouse_id"
+      ],
+      "asset_bundles": {
+        "web.assets_backend": 1,
+        "web.assets_tests": 1
+      }
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": true,
+      "endpoints": [],
+      "files": []
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    }
+  },
+  "it_architecture": {
+    "application": "sale_stock (Sales<->Warehouse bridge application component)",
+    "software_services": [
+      "/my/picking/pdf/<picking_id>",
+      "/my/picking/return/pdf/<picking_id>"
+    ],
+    "data_objects": [
+      "sale.order (extension)",
+      "sale.order.line (extension)",
+      "stock.move (extension)",
+      "stock.picking (extension)",
+      "stock.lot (extension)",
+      "stock.rule (extension)"
+    ],
+    "logical_data_erm": [
+      "sale.order -> stock.picking (picking_ids / sale_id)",
+      "sale.order.line -> stock.move (move_ids)",
+      "stock.move -> sale.order.line (sale_line_id)",
+      "stock.picking -> sale.order (sale_id)",
+      "sale.order.line -> stock.route (route_ids)",
+      "sale.order -> stock.warehouse (warehouse_id)",
+      "stock.lot -> sale.order (sale_order_ids)"
+    ],
+    "information_flows": [
+      "depends: sale, stock_account",
+      "side-effect (forward): sale.order._action_confirm -> sale.order.line._action_launch_stock_rule -> stock.rule.run -> stock.move -> stock.picking (delivery order)",
+      "side-effect (backward): stock.picking.state / stock.move.quantity -> sale.order.line.qty_delivered + sale.order.delivery_status + effective_date -> invoice_status",
+      "auto_install: true -> activates whenever both sale and stock_account are installed"
+    ],
+    "frontend_components": [
+      "QtyAtDatePopover",
+      "QtyAtDateWidget"
+    ]
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Order Fulfillment (sales order -> delivery order)",
+      "Available-to-Promise / Delivery Date Forecasting",
+      "Delivery Status & Delivered-Quantity Tracking",
+      "Procurement Route & MTO/MTS Selection per Order Line",
+      "Delivery Slip & Return PDF (customer portal)"
+    ],
+    "value_streams": [
+      "Quote-to-Cash (delivery leg): confirmed sale order -> procurement -> delivery order -> goods shipped -> qty_delivered -> invoice on delivery"
+    ],
+    "information_concepts": [
+      "sale.order (extension)",
+      "sale.order.line (extension)",
+      "stock.picking (delivery order)",
+      "stock.move (delivery move)",
+      "stock.reference",
+      "stock.lot (traceability to sale)"
+    ],
+    "organization": [],
+    "products": [],
+    "policies": [
+      "2 record rules (delivery-document visibility scoping)",
+      "automation: confirm/create/write on sale lines launch stock rules (procurement); picking validation back-fills qty_delivered & delivery_status",
+      "picking_policy (direct vs one) governs partial vs all-at-once shipping; security_lead/customer_lead shift procurement date_planned"
+    ],
+    "stakeholders": [
+      "Customer (res.partner / partner_shipping_id)",
+      "Salesperson (res.users)",
+      "Warehouse / Inventory user (stock.picking operator)"
+    ],
+    "strategy": null,
+    "metrics": [
+      "sale.report extended with warehouse_id dimension",
+      "delivery_status, effective_date, expected_date (delivery KPIs)"
+    ]
+  },
+  "classification": {
+    "value_model": "chain",
+    "activity_class": "primary",
+    "apqc_category": "4.0 Deliver Physical Products (3.5.4.4 Determine fulfillment process)",
+    "rationale": "sale_stock is THE BRIDGE that makes the chain's abstract sale.order.action_confirm -> stock.picking side-effect concrete: _action_confirm calls sale.order.line._action_launch_stock_rule, which runs the procurement stock.rule that materializes delivery moves and the delivery order. It is a pure value-chain bridge realizing outbound logistics (Operations / Outbound Logistics in Porter terms): inbound demand (confirmed sale order) is transformed into a physical delivery, and fulfillment progress (qty_delivered, delivery_status) flows back to gate invoicing. It owns no standalone business object, only inherits sale.* and stock.* to wire them; classified primary because order fulfillment / shipping is a core line activity (APQC 4.0 Deliver Physical Products; the order-line fulfillment-route decision is APQC 3.5.4.4). Depends sale + stock_account and auto_installs, confirming its bridge role rather than an independent capability."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "automatic delivery-order creation on order confirmation via procurement routes",
+      "MTS / MTO / drop-ship route selection per sale order line",
+      "shipping policy (deliver as-soon-as-possible vs when-all-ready)",
+      "delivery status, effective date & expected-date computation",
+      "qty_delivered driven from stock moves (invoice on delivery)",
+      "ATP / forecasted availability widget on order lines",
+      "incoterms on order & propagated to invoice",
+      "lot/serial traceability back to sale order; delivery-slip portal PDF"
+    ],
+    "typical_fits": [
+      "standard confirm-order -> auto delivery order -> ship -> invoice-on-delivery flow",
+      "multi-warehouse selection from user/company default warehouse",
+      "security lead time & customer lead time shifting the scheduled date",
+      "partial deliveries with backorders"
+    ],
+    "common_gaps": [
+      "custom procurement/route rules beyond MTO/MTS/drop-ship",
+      "carrier/shipping-connector integration (delivery module / 3rd-party, out of scope here)",
+      "bespoke ATP or allocation logic (reservation strategies)",
+      "industry-specific delivery-document or return workflows"
+    ],
+    "drive_hints": [
+      "odoo shell: so = env['sale.order'].search([('state','=','sale')], limit=1); so.action_confirm(); print(so.picking_ids.mapped(('name','state')), so.delivery_status)",
+      "odoo shell: env['sale.order.line'].search([('move_ids','!=',False)], limit=5).mapped(('order_id.name','qty_delivered','qty_to_deliver'))",
+      "curl http://localhost:8069/my/picking/pdf/<picking_id> (auth=public, needs access_token) -> delivery slip PDF"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Exact procurement branching (_run_pull vs _run_buy vs _run_manufacture) is delegated to stock/purchase/mrp rules; sale_stock only triggers the pull leg.",
+    "How returns (stock.return.picking) feed negative qty_delivered back onto the originating sale order line.",
+    "Interaction with stock.reference grouping when multiple sale orders share references/pickings."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/sale_stock.facts.json",
+    "tools": [
+      "code-read",
+      "extract_frontend.py",
+      "extract_module.py",
+      "extract_runtime.sh",
+      "run-odoo (odoo shell)"
+    ],
+    "odoo_version": "19.0"
+  }
+}

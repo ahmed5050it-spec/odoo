@@ -1,0 +1,211 @@
+{
+  "subsystem": "base_address_extended",
+  "evidence": {
+    "manifest": {
+      "name": "Extended Addresses",
+      "category": "Sales/Sales",
+      "summary": "Add extra fields on addresses",
+      "author": "Odoo S.A.",
+      "version": "1.1",
+      "license": "LGPL-3",
+      "depends": ["base", "contacts"],
+      "auto_install": false,
+      "application": false,
+      "data_files": 4,
+      "demo_files": 0
+    },
+    "models": [
+      {
+        "_name": "res.city",
+        "_description": "City",
+        "fields": 4,
+        "relations": [
+          "country_id->res.country",
+          "state_id->res.country.state"
+        ]
+      },
+      {
+        "_name": "res.country (inherit)",
+        "_description": "Country (extended)",
+        "fields": 1,
+        "relations": [
+          "_inherit: res.country; adds enforce_cities (Boolean)"
+        ]
+      },
+      {
+        "_name": "res.partner (inherit)",
+        "_description": "Contact (extended with structured street)",
+        "fields": 5,
+        "relations": [
+          "_inherit: res.partner; adds street_name, street_number, street_number2 (Char), city_id->res.city, country_enforce_cities (related res.country.enforce_cities)"
+        ]
+      }
+    ],
+    "routes": [],
+    "security": {
+      "access_rules": 2,
+      "record_rules": 0,
+      "groups": 0
+    },
+    "views": {
+      "form": 1,
+      "list": 1,
+      "search": 1
+    },
+    "frontend": {
+      "present": false,
+      "js_files": 0,
+      "xml_templates": 0,
+      "owl_components": [],
+      "registry_adds": [],
+      "patches": [],
+      "services": [],
+      "asset_bundles": {}
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": false,
+      "endpoints": [],
+      "files": []
+    },
+    "behavioral_notes": [
+      {
+        "element": "res.partner.street_name / street_number / street_number2 (_compute_street_data, @api.depends('street'))",
+        "observation": "The three structured sub-fields are stored, computed-with-inverse Char fields. _compute_street_data fires on every change of the combined `street` and splits it into its parts by calling tools.street_split(partner.street). The split is driven by tools.ADDRESS_REGEX = r'^(.*?)(\\s[0-9][0-9\\S]*)?(?: - (.+))?$': street_name = leading text, street_number = first whitespace-delimited token beginning with a digit, street_number2 = the part after ' - '. Storing both the raw `street` and the parsed components is invisible to field metadata; only reading the compute reveals that the canonical source of truth remains `street` and the sub-fields are derived.",
+        "source": "code-read"
+      },
+      {
+        "element": "res.partner._inverse_street_data (inverse of the three sub-fields)",
+        "observation": "Bidirectional sync: when street_name, street_number or street_number2 are written directly (e.g. from a structured input form), _inverse_street_data rejoins them back into `street` as ((street_name or '') + ' ' + (street_number or '')).strip(), appending ' - ' + street_number2 when present. This split-on-read / join-on-write mirror keeps the legacy single `street` field and the structured fields consistent in both directions, so any module reading plain `street` still works while structured countries get the parsed parts. The join template is hard-coded here (it does not consult res.country); only the inverse direction is symmetric with the regex used on compute.",
+        "source": "code-read"
+      },
+      {
+        "element": "res.country.enforce_cities + res.partner.city_id / country_enforce_cities + _onchange_city_id / _onchange_country_id",
+        "observation": "The module adds a Boolean enforce_cities on res.country and a city_id Many2one(res.city) plus a related country_enforce_cities on res.partner. For countries flagged enforce_cities, addresses are expected to pick a city from the curated res.city list; _onchange_city_id then copies the chosen city's name, zipcode and state_id onto the partner's city/zip/state_id (one-way master-data fill-down), and _onchange_country_id clears city_id when the partner's country no longer matches the city's country. city_id is registered as an address field via _address_fields() so it propagates on contact/child-address creation. These cross-field side-effects are not derivable from metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "country street/address formatting context (res.country.address_format, res.partner._get_address_format)",
+        "observation": "Whether the structured street fields are surfaced is country-driven: res.country carries address_format (Text, 'Layout in Reports') and address_view_id (alternate input form); res.partner._get_address_format() falls back to _get_default_address_format() '%(street)s\\n%(street2)s\\n%(city)s %(state_code)s %(zip)s\\n%(country_name)s' when no country format is set, and get_address_fields()/_check_address_format() validate the format keys against the partner formatting fields. So the 'countries that need it' targeting is realised through the country's address_format / address_view_id, while base_address_extended supplies the street_name/street_number/street_number2 parsing those formats can reference.",
+        "source": "code-read"
+      },
+      {
+        "element": "frontend (OWL/JS)",
+        "observation": "base_address_extended ships no client-side code: extract_frontend reports present=false, 0 JS files, 0 XML/OWL templates, 0 registry adds, 0 patches, 0 services, no asset bundles. The structured-street and city UX is delivered purely through inherited server-side XML form/list/search views (form=1, list=1, search=1) over the standard web client; there is no bespoke OWL widget.",
+        "source": "static"
+      }
+    ]
+  },
+  "it_architecture": {
+    "application": "base_address_extended (address master-data structuring utility extending res.partner / res.country)",
+    "software_services": [
+      "(no HTTP routes; exposes ORM-level compute/inverse and onchange behaviour on res.partner consumed in-process by the contacts/address UI and any module reading partner addresses)"
+    ],
+    "data_objects": [
+      "res.city",
+      "res.country",
+      "res.partner"
+    ],
+    "logical_data_erm": [
+      "res.city -> res.country (country_id)",
+      "res.city -> res.country.state (state_id)",
+      "res.partner -> res.city (city_id)",
+      "res.partner.country_enforce_cities = related(res.country.enforce_cities)",
+      "res.partner.{street_name,street_number,street_number2} <-> res.partner.street (compute/inverse via tools.street_split)"
+    ],
+    "information_flows": [
+      "depends: [base, contacts] (extends the base partner/country master data and the Contacts app)",
+      "side-effect: write street -> _compute_street_data splits into street_name/street_number/street_number2 (tools.ADDRESS_REGEX)",
+      "side-effect: write any street sub-field -> _inverse_street_data rejoins into street ('name number - number2')",
+      "side-effect: select city_id -> _onchange_city_id fills city/zip/state_id from res.city; change country -> _onchange_country_id clears mismatched city_id",
+      "config: res.country.enforce_cities / address_format / address_view_id govern whether structured/city input is required and shown per country"
+    ],
+    "frontend_components": []
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Structure Partner Street Address (split/join street into street name, number, door)",
+      "Maintain Curated City Master Data (res.city per country/state)",
+      "Enforce Country-Specific Address Rules (enforce_cities, address_format/view per country)",
+      "Auto-fill Address Components from City selection (city/zip/state)"
+    ],
+    "value_streams": [
+      "Address-Capture-to-Structured-Record: user types a combined street (or picks a city) -> module parses/joins components and fills city/zip/state -> a normalized, country-conformant partner address ready for reuse across CRM/Sales/Invoicing/Shipping"
+    ],
+    "information_concepts": [
+      "res.city (city master-data record)",
+      "res.country (country, extended with enforce_cities)",
+      "res.partner (contact address, extended with structured street + city_id)"
+    ],
+    "organization": [],
+    "products": [],
+    "policies": [
+      "2 model-access ACL rules (ir.model.access) for res.city",
+      "res.country.enforce_cities flag — requires choosing a city from the curated list for flagged countries",
+      "res.country.address_format constraint (_check_address_format) validating layout format keys"
+    ],
+    "stakeholders": [
+      "Contacts / address data stewards",
+      "Sales / Invoicing / Delivery users relying on structured addresses",
+      "Localization (l10n) modules requiring per-country street/city structuring"
+    ],
+    "strategy": null,
+    "metrics": []
+  },
+  "classification": {
+    "value_model": "support",
+    "activity_class": "support",
+    "apqc_category": "8.0 Manage Information Technology (IT)",
+    "rationale": "base_address_extended owns no business object of its own: it is a thin extension of existing master data (res.partner, res.country) plus one reference-data model (res.city) whose entire job is to improve the structure and quality of address data — splitting/rejoining the partner street into street_name/street_number/street_number2 and enforcing curated cities per country. By Stabell & Fjeldstad this is a 'support' value model (firm infrastructure / data management), never a primary value-creating activity; it produces no document chain and confirms/transforms no business state. APQC 8.0 'Manage Information Technology' is chosen as the master-data / data-quality home for this utility (an argument exists for 13.0 'Develop and Manage Business Capabilities' as it refines the shared Information-Concept of a partner address, but the dominant character is data-structuring infrastructure, so 8.0 is primary). activity_class=support and the absence of routes/groups/business value-streams confirm the classification."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "structured street fields (street_name, street_number, street_number2) computed from / inverted to the combined street via tools.street_split",
+      "bidirectional sync keeping legacy single `street` consistent with the structured components",
+      "curated city master data (res.city) with country/state/zip and display name",
+      "per-country enforcement of city selection (res.country.enforce_cities) with auto-fill of city/zip/state",
+      "country-driven address layout (address_format) and alternate input form (address_view_id) selecting which structured fields appear"
+    ],
+    "typical_fits": [
+      "localizations needing house/door numbers split out of the street (e.g. many EU countries)",
+      "deployments wanting validated city lists rather than free-text city entry",
+      "reports/labels that must render addresses in a country-specific structured layout"
+    ],
+    "common_gaps": [
+      "loading/maintaining the res.city reference data per country (often supplied by l10n_* modules)",
+      "the split regex assumes a 'name number - number2' convention; countries with number-first formats may need custom parsing or a dedicated address_view_id",
+      "address validation / geocoding / postal-code lookup (separate add-ons such as base_address_city, partner_autocomplete)"
+    ],
+    "drive_hints": [
+      "odoo shell: p = env['res.partner'].create({'street': 'Main Street 12 - B'}); (p.street_name, p.street_number, p.street_number2)  # ('Main Street','12','B')",
+      "odoo shell: p.write({'street_name':'Rue Neuve','street_number':'5','street_number2':''}); p.street  # 'Rue Neuve 5'",
+      "odoo shell: env['res.country'].search([('enforce_cities','=',True)])  # countries requiring a curated city",
+      "odoo shell: env['res.city'].search_count([])  # number of curated cities loaded"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Which countries ship enforce_cities=True and how much res.city reference data is actually loaded (depends on installed l10n_* modules).",
+    "How robust the ADDRESS_REGEX split is for non-'name number - number2' conventions (number-first or comma-separated formats).",
+    "Whether downstream apps (Sales/Invoicing/Delivery/website checkout) consume street_name/street_number directly or only the combined street."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/base_address_extended.facts.json",
+    "tools": [
+      "code-read",
+      "extract_module.py",
+      "extract_frontend.py"
+    ],
+    "odoo_version": "19.0"
+  }
+}

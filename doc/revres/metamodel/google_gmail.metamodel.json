@@ -1,0 +1,275 @@
+{
+  "subsystem": "google_gmail",
+  "evidence": {
+    "manifest": {
+      "name": "Google Gmail",
+      "category": "Hidden",
+      "depends": [
+        "mail"
+      ],
+      "auto_install": true,
+      "application": false
+    },
+    "models": [
+      {
+        "_name": "google.gmail.mixin",
+        "_description": "Google Gmail Mixin (AbstractModel)",
+        "fields": 5,
+        "relations": []
+      },
+      {
+        "_name": "ir.mail_server",
+        "_description": "(extension) inherits google.gmail.mixin — outgoing SMTP server",
+        "fields": 1,
+        "relations": []
+      },
+      {
+        "_name": "fetchmail.server",
+        "_description": "(extension) inherits google.gmail.mixin — incoming IMAP server",
+        "fields": 1,
+        "relations": []
+      },
+      {
+        "_name": "res.config.settings",
+        "_description": "(extension) holds google_gmail_client_id / google_gmail_client_secret config params",
+        "fields": 2,
+        "relations": []
+      },
+      {
+        "_name": "res.users",
+        "_description": "(extension) adds 'gmail' outgoing_mail_server_type + wires the SMTP setup wizard to OAuth",
+        "fields": 1,
+        "relations": []
+      }
+    ],
+    "routes": [
+      {
+        "paths": [
+          "/google_gmail/confirm"
+        ],
+        "auth": "user",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/google_gmail/iap_confirm"
+        ],
+        "auth": "user",
+        "type": "http"
+      }
+    ],
+    "security": {
+      "access_rules": 0,
+      "record_rules": 0,
+      "groups": 0
+    },
+    "views": {
+      "form": 0,
+      "list": 0,
+      "tree": 0,
+      "kanban": 0,
+      "search": 0,
+      "pivot": 0,
+      "graph": 0,
+      "calendar": 0,
+      "activity": 0
+    },
+    "frontend": {
+      "present": false,
+      "js_files": 0,
+      "xml_templates": 0,
+      "owl_components": [],
+      "registry_adds": [],
+      "patches": [],
+      "services": [],
+      "asset_bundles": {}
+    },
+    "integrations": {
+      "http_call_sites": 4,
+      "sdk_imports": [
+        "requests"
+      ],
+      "uses_api_keys": true,
+      "endpoints": [
+        "https://accounts.google.com/o/oauth2/v2/auth?%s",
+        "https://gmail.api.odoo.com",
+        "https://mail.google.com/ https://www.googleapis.com/auth/userinfo.email",
+        "https://oauth2.googleapis.com/token",
+        "https://www.googleapis.com/oauth2/v2/userinfo"
+      ],
+      "files": [
+        "controllers/main.py",
+        "models/google_gmail_mixin.py"
+      ]
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    },
+    "behavioral_notes": [
+      {
+        "element": "google.gmail.mixin OAuth2 token lifecycle: _compute_gmail_uri / _fetch_gmail_refresh_token / _fetch_gmail_access_token / _fetch_gmail_token (against https://oauth2.googleapis.com/token)",
+        "observation": "OAuth2 authorization-code flow against Google. _compute_gmail_uri builds the consent URL https://accounts.google.com/o/oauth2/v2/auth with response_type=code, access_type=offline and prompt=consent (both required so Google returns a refresh_token) for scope _SERVICE_SCOPE='https://mail.google.com/ https://www.googleapis.com/auth/userinfo.email', redirect_uri /google_gmail/confirm, and a JSON state carrying {model, id, csrf_token}. The browser returns to the /google_gmail/confirm controller, which calls _fetch_gmail_refresh_token(code): _fetch_gmail_token POSTs grant_type=authorization_code (with client_id/client_secret from ir.config_parameter google_gmail_client_id/google_gmail_client_secret and the same redirect_uri) to https://oauth2.googleapis.com/token and returns refresh_token + access_token + (int(time.time())+expires_in) as the absolute expiration timestamp. _fetch_gmail_access_token(refresh_token) lazily renews an access token by POSTing grant_type=refresh_token to the same endpoint; a non-ok HTTP response raises a UserError('An error occurred when fetching the access token.'). The three tokens are stored on the mail-server record itself (google_gmail_refresh_token / google_gmail_access_token / google_gmail_access_token_expiration, all groups='base.group_system', copy=False) — there is NO separate token table. None of this token lifecycle is visible from field/model metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "google.gmail.mixin._generate_oauth2_string — XOAUTH2 SASL string build + lazy access-token refresh",
+        "observation": "The single bridge between OAuth and the mail protocols. _generate_oauth2_string(user, refresh_token) checks whether the stored google_gmail_access_token is missing or within GMAIL_TOKEN_VALIDITY_THRESHOLD (GMAIL_TOKEN_REQUEST_TIMEOUT 5s + 5s = 10s) of its google_gmail_access_token_expiration; if so it calls _fetch_gmail_access_token to refresh and writes the new access_token + expiration back onto the record (logging 'fetch new access token'), otherwise it reuses the cached token ('reuse existing access token'). It then returns the SASL initial-client-response for the XOAUTH2 mechanism, the literal byte string 'user=%s\\x01auth=Bearer %s\\x01\\x01' % (user, access_token). This is exactly the Gmail XOAUTH2 protocol string (Control-A delimited) and is what makes a Bearer access token substitute for a password on both SMTP and IMAP. The just-in-time refresh-on-connect (rather than a background cron) and the 10s safety threshold are runtime behavior absent from metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "ir.mail_server._smtp_login__ (SMTP) overriding connect-time authentication with XOAUTH2",
+        "observation": "ir.mail_server adds smtp_authentication selection value 'gmail' (ondelete set default) and overrides _smtp_login__: when the server is Gmail and self is a single record it calls _generate_oauth2_string(smtp_user, google_gmail_refresh_token), base64-encodes it, sends connection.ehlo() then connection.docmd('AUTH', f'XOAUTH2 {oauth_param}') — i.e. it replaces the normal SMTP login/password with a SASL XOAUTH2 AUTH command; otherwise it defers to super(). Onchange _onchange_smtp_authentication_gmail pins smtp_host=smtp.gmail.com, smtp_encryption=starttls, smtp_port=587 (and _onchange_encryption refuses to re-derive the port for a Gmail server); _on_change_smtp_user_gmail sets from_filter=smtp_user so the server can only send as the authenticated mailbox. The constraint _check_use_google_gmail_service forbids a non-empty smtp_pass ('the OAuth process does not require it'), forces starttls, and requires smtp_user. Switching authentication away from 'gmail' clears all three google_gmail_* token fields. This connect()-path token injection is invisible to metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "fetchmail.server._imap_login__ (IMAP) overriding connect-time authentication with XOAUTH2",
+        "observation": "fetchmail.server adds server_type selection value 'gmail' and overrides _imap_login__: when server_type=='gmail' it builds the same auth_string via _generate_oauth2_string(self.user, google_gmail_refresh_token) and calls connection.authenticate('XOAUTH2', lambda x: auth_string) then connection.select('INBOX') — the imaplib AUTHENTICATE XOAUTH2 handshake (imaplib base64-encodes the SASL response itself, hence no manual b64 here, unlike the SMTP path), instead of a LOGIN with a password; otherwise it defers to super(). onchange_server_type pins server=imap.gmail.com, is_ssl=True, port=993; the constraint _check_use_google_gmail_service requires is_ssl (SSL is mandatory); _get_connection_type forces 'imap' (never POP) for a Gmail server. Switching server_type away from 'gmail' clears the token fields. This IMAP XOAUTH2 path is runtime behavior, not metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "credential configuration + IAP fallback + OAuth callback hardening (res.config.settings / controllers/main.py)",
+        "observation": "Two configuration modes. (a) Self-hosted credentials: the admin sets google_gmail_client_id / google_gmail_client_secret (res.config.settings fields backed by ir.config_parameter). (b) Enterprise IAP fallback: when those are NOT configured, open_google_gmail_uri (Enterprise builds only — release.version_info[-1]=='e', else UserError 'Please configure your Gmail credentials.') GETs <mail.server.gmail.iap.endpoint, default https://gmail.api.odoo.com>/api/mail_oauth/1/gmail with db_uuid + a callback to /google_gmail/iap_confirm, and _fetch_gmail_access_token_iap proxies the refresh through /api/mail_oauth/1/gmail_access_token so the database never holds Google client secrets. Security hardening in the controller: state-derived model must inherit google.gmail.mixin (else Forbidden); a per-record HMAC CSRF token (_get_gmail_csrf_token via tools.misc.hmac, scope 'google_gmail_oauth') is verified with consteq; and for a shared ir.mail_server the granted account's verified email (fetched from https://www.googleapis.com/oauth2/v2/userinfo) must equal the server's email_field or an error page is rendered. open_google_gmail_uri is admin-only (AccessError otherwise). The IAP-vs-direct branching, the email-match guard and the CSRF/HMAC protection are not metadata-derivable.",
+        "source": "code-read"
+      },
+      {
+        "element": "external integration -> Google OAuth2 + Gmail SMTP/IMAP + Odoo IAP (gap #7, static)",
+        "observation": "Outbound HTTPS via python-requests to Google: the OAuth2 authorization endpoint accounts.google.com/o/oauth2/v2/auth (browser redirect), the token endpoint oauth2.googleapis.com/token (authorization_code + refresh_token grants) and the userinfo endpoint www.googleapis.com/oauth2/v2/userinfo (email verification); plus, on Enterprise without local credentials, the Odoo IAP proxy gmail.api.odoo.com. The actual mail transport is to Google's mail hosts — smtp.gmail.com:587 (STARTTLS) and imap.gmail.com:993 (SSL) — where the OAuth access token is presented as a Bearer credential inside an XOAUTH2 SASL exchange rather than over the OAuth HTTPS APIs. Auth material is the per-server google_gmail_* tokens (group base.group_system) and the admin-supplied google_gmail_client_id (public) / google_gmail_client_secret (secret) ir.config_parameters. No vendored SDK — the REST/OAuth client is hand-rolled in models/google_gmail_mixin.py + controllers/main.py. This external dependency on Google's identity + Gmail mail infrastructure is invisible to Python model/field metadata and is the defining trait of the module.",
+        "source": "static"
+      }
+    ]
+  },
+  "it_architecture": {
+    "application": "google_gmail (Gmail OAuth2 authentication connector for Odoo's outgoing SMTP and incoming IMAP mail servers)",
+    "software_services": [
+      "/google_gmail/confirm (http, user) - OAuth2 redirect callback: exchanges the authorization code for tokens, verifies CSRF + (for shared SMTP servers) the granted email, stores tokens on the mail-server record",
+      "/google_gmail/iap_confirm (http, user) - Enterprise IAP callback: receives access/refresh tokens proxied by gmail.api.odoo.com so the DB never holds Google client secrets"
+    ],
+    "data_objects": [
+      "google.gmail.mixin",
+      "ir.mail_server",
+      "fetchmail.server",
+      "res.config.settings",
+      "res.users"
+    ],
+    "logical_data_erm": [
+      "ir.mail_server -> google.gmail.mixin (mixin: google_gmail_refresh_token / google_gmail_access_token / google_gmail_access_token_expiration / google_gmail_uri, all groups=base.group_system; + smtp_authentication='gmail')",
+      "fetchmail.server -> google.gmail.mixin (mixin: same OAuth token fields; + server_type='gmail')",
+      "res.config.settings -> ir.config_parameter google_gmail_client_id / google_gmail_client_secret (OAuth app credentials)",
+      "res.users -> outgoing_mail_server_type='gmail' (per-user personal Gmail SMTP setup)"
+    ],
+    "information_flows": [
+      "depends: mail (ir.mail_server SMTP outgoing + fetchmail.server IMAP/POP incoming)",
+      "outbound: Odoo -> https://oauth2.googleapis.com/token (authorization_code + refresh_token grants) -> access/refresh tokens onto the mail-server record",
+      "outbound: Odoo -> https://www.googleapis.com/oauth2/v2/userinfo (verify granted email == server email for shared SMTP servers)",
+      "outbound (Enterprise fallback): Odoo -> https://gmail.api.odoo.com IAP proxy when no local client_id/secret",
+      "side-effect: ir.mail_server._smtp_login__ -> AUTH XOAUTH2 to smtp.gmail.com:587 (STARTTLS), Bearer access token instead of password",
+      "side-effect: fetchmail.server._imap_login__ -> AUTHENTICATE XOAUTH2 to imap.gmail.com:993 (SSL) then SELECT INBOX",
+      "side-effect: _generate_oauth2_string refreshes an access token within 10s of expiry at connect time and writes it back",
+      "inbound: browser redirect from accounts.google.com -> /google_gmail/confirm (or /google_gmail/iap_confirm) with authorization code"
+    ],
+    "frontend_components": []
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Authenticate a Gmail mailbox via OAuth2 (consent + refresh-token grant, scope https://mail.google.com/)",
+      "Send outgoing email through Gmail SMTP using XOAUTH2 (no stored password)",
+      "Fetch incoming email from Gmail IMAP using XOAUTH2",
+      "Lazily refresh the OAuth access token at connect time and cache it on the server record",
+      "Configure Google OAuth app credentials, or fall back to the Odoo Gmail IAP proxy (Enterprise)"
+    ],
+    "value_streams": [
+      "Connect-Gmail-mailbox: admin sets Google client id/secret (or uses Enterprise IAP) -> opens the consent URL and grants offline access -> /google_gmail/confirm exchanges the code for refresh+access tokens, verifies CSRF + email -> tokens stored on the ir.mail_server / fetchmail.server record -> every subsequent SMTP/IMAP connect injects a fresh XOAUTH2 Bearer token so mail flows without a password"
+    ],
+    "information_concepts": [
+      "google.gmail.mixin (OAuth credential mixin: refresh/access token + expiration + consent URI)",
+      "ir.mail_server (outgoing SMTP server, Gmail-authenticated)",
+      "fetchmail.server (incoming IMAP server, Gmail-authenticated)",
+      "res.config.settings (Google OAuth client id/secret container)",
+      "res.users (personal outgoing Gmail mail-server type)"
+    ],
+    "organization": [],
+    "products": [],
+    "policies": [
+      "OAuth token fields (google_gmail_refresh_token / access_token / access_token_expiration / google_gmail_uri) carry groups='base.group_system' and copy=False — only system admins can read/copy them",
+      "open_google_gmail_uri is admin-only (AccessError for non-admins): only the administrator can link a Gmail mail server",
+      "ir.mail_server constraint: smtp_pass must be empty, smtp_encryption must be STARTTLS, smtp_user required for a Gmail server; from_filter pinned to smtp_user",
+      "fetchmail.server constraint: is_ssl required (SSL mandatory); connection type forced to IMAP",
+      "OAuth callback hardening: state model must inherit google.gmail.mixin, per-record HMAC CSRF token verified with consteq, and granted verified email must match the shared server email",
+      "Enterprise IAP fallback only when google_gmail_client_id/secret unset (release.version_info[-1]=='e'); otherwise a UserError demands configured credentials"
+    ],
+    "stakeholders": [
+      "System administrator (configures Google OAuth client id/secret and links shared incoming/outgoing mail servers)",
+      "Internal user (grants OAuth consent for a personal outgoing Gmail server)",
+      "Google Identity / Gmail SMTP-IMAP (external authentication + mail-transport system)",
+      "Odoo IAP (gmail.api.odoo.com OAuth proxy for Enterprise databases without their own credentials)"
+    ],
+    "strategy": null,
+    "metrics": [
+      "access-token freshness (google_gmail_access_token_expiration vs now; logged 'fetch new' vs 'reuse existing' on each connect)"
+    ]
+  },
+  "classification": {
+    "value_model": "support",
+    "activity_class": "support",
+    "apqc_category": "8.0 Manage Information Technology",
+    "rationale": "google_gmail is mail-infrastructure integration: it adds no business object of its own — only an OAuth credential mixin (google.gmail.mixin) and a handful of token/selection fields grafted onto the existing ir.mail_server (SMTP), fetchmail.server (IMAP), res.config.settings and res.users — and it produces no sellable output. Its entire purpose is to let Odoo's mail servers authenticate to an external SaaS (Google Identity + Gmail SMTP/IMAP) with XOAUTH2 Bearer tokens instead of a password, managing the OAuth credential lifecycle (consent, authorization-code exchange, refresh-token storage under base.group_system, just-in-time access-token refresh) and an Enterprise IAP credential proxy. Per Stabell & Fjeldstad this is a support / firm-infrastructure function (activity_class=support), exactly the sibling pattern of microsoft_outlook (Outlook SMTP/IMAP XOAUTH2) and microsoft_calendar (Outlook Calendar OAuth sync). For APQC it maps to 8.0 Manage Information Technology — specifically the 'manage IT security/identity & external-system integration' band: external-system integration (gap #7: accounts.google.com, oauth2.googleapis.com, googleapis.com/oauth2/v2/userinfo, gmail.api.odoo.com) plus OAuth credential/secret lifecycle management are IT-management concerns, not business-capability development. This is the deliberate departure from the inherited baseline 13.0 Develop and Manage Business Capabilities: the auto-architect baseline tagged this thin module 13.0 by default, but nothing here develops a new business capability — it operates an external authentication interface and manages credentials, which is precisely what 8.0 covers (and matches the microsoft_calendar sibling already classified 8.0). 13.0 was rejected because no capability is built — outbound email itself is the mail module's capability, not this connector's. 9.0 Acquire, Construct, and Manage Assets was rejected because no physical or IT asset is constructed or managed, only an OAuth/API authentication binding. 9.4 (the asset-maintenance band) likewise does not apply: there is no asset being maintained, only a renewing token credential; the work is identity/integration plumbing (8.0), not asset upkeep."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "OAuth2 connect of a Gmail account for outgoing SMTP (smtp.gmail.com:587 STARTTLS) with XOAUTH2 instead of a password",
+      "OAuth2 connect of a Gmail account for incoming IMAP (imap.gmail.com:993 SSL) with XOAUTH2",
+      "refresh-token storage on the mail-server record + just-in-time access-token refresh at connect time",
+      "per-user personal outgoing Gmail server setup (res.users outgoing_mail_server_type='gmail') and shared admin servers",
+      "Enterprise IAP fallback (gmail.api.odoo.com) so the database never stores Google client secrets",
+      "email-ownership verification (userinfo) + per-record HMAC CSRF protection on the OAuth callback"
+    ],
+    "typical_fits": [
+      "an organization sending/receiving Odoo mail through a Google Workspace mailbox without an app password",
+      "self-registered Google Cloud OAuth client: admin pastes client id/secret into Settings",
+      "Enterprise customers using the built-in IAP proxy instead of registering their own Google app"
+    ],
+    "common_gaps": [
+      "a Google Cloud OAuth app (client id/secret) must be created and the redirect URI /google_gmail/confirm registered — not zero-config on Community",
+      "the IAP fallback is Enterprise-only (release.version_info[-1]=='e'); Community must configure credentials",
+      "scope is the broad https://mail.google.com/ (full mailbox) — no finer-grained send-only/read-only scoping",
+      "a Gmail server can only send/receive as the single authenticated mailbox (from_filter pinned to smtp_user); broader from-addresses need a mail.default.from system parameter",
+      "Google may require the OAuth app to pass verification for the restricted gmail scope before external users can consent",
+      "tokens live per mail-server record under base.group_system — no shared/central token vault across servers"
+    ],
+    "drive_hints": [
+      "odoo shell: env['ir.mail_server'].search([('smtp_authentication','=','gmail')])  # Gmail-authenticated outgoing servers",
+      "odoo shell: env['fetchmail.server'].search([('server_type','=','gmail')])  # Gmail-authenticated incoming servers",
+      "odoo shell: env['ir.config_parameter'].sudo().get_param('google_gmail_client_id')  # is the OAuth app configured?",
+      "odoo shell: srv = env['ir.mail_server'].search([('smtp_authentication','=','gmail')], limit=1); srv._generate_oauth2_string(srv.smtp_user, srv.google_gmail_refresh_token)  # build the XOAUTH2 SASL string (refreshes token)",
+      "odoo shell: env['fetchmail.server'].search([('server_type','=','gmail')], limit=1)._get_connection_type()  # -> 'imap'",
+      "curl http /google_gmail/confirm?state=...&code=... (auth=user) -> OAuth callback (CSRF-guarded); external endpoint exercised: https://oauth2.googleapis.com/token"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "stakeholders": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Behavior when both google_gmail_client_id/secret are set AND the database is Enterprise — confirm the self-hosted credentials always take precedence over IAP in _fetch_gmail_access_token (it returns the IAP path only when client id/secret are missing).",
+    "How concurrent SMTP/IMAP sends racing to refresh the same expiring access token are reconciled (each connect writes google_gmail_access_token on the record; last-writer-wins, no explicit lock observed).",
+    "Whether a revoked/invalid refresh token surfaces a clear admin-facing re-consent path or only a generic UserError ('An error occurred when fetching the access token.') at send time."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/google_gmail.facts.json",
+    "tools": [
+      "code-read",
+      "extract_frontend.py",
+      "extract_module.py",
+      "extract_runtime.sh"
+    ],
+    "odoo_version": "19.0"
+  }
+}

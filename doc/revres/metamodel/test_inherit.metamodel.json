@@ -1,0 +1,165 @@
+{
+  "subsystem": "test_inherit",
+  "evidence": {
+    "manifest": {
+      "name": "test-inherit",
+      "category": "Hidden/Tests",
+      "depends": [
+        "base",
+        "test_orm"
+      ],
+      "auto_install": false,
+      "application": false
+    },
+    "models": [
+      {
+        "_name": "test.inherit.mother",
+        "_description": "Test Inherit Mother",
+        "fields": 2
+      },
+      {
+        "_name": "test_inherit_child",
+        "_description": "Test Inherit Child",
+        "fields": 1
+      },
+      {
+        "_name": "test_inherit_daughter",
+        "_description": "Test Inherit Daughter",
+        "fields": 2
+      },
+      {
+        "_name": "test_inherit_mixin",
+        "_description": "Test Inherit Mixin",
+        "fields": 1
+      },
+      {
+        "_name": "test_inherit_parent",
+        "_description": "Test Inherit Parent",
+        "fields": 0
+      },
+      {
+        "_name": "test_inherit_property",
+        "_description": "Test Inherit Property",
+        "fields": 3
+      },
+      {
+        "_name": "test_mother_underscore",
+        "_description": "Test Inherit Underscore",
+        "fields": 0
+      }
+    ],
+    "routes": [],
+    "security": {
+      "access_rules": 0,
+      "record_rules": 0,
+      "groups": 0
+    },
+    "views": {},
+    "frontend": {
+      "present": false,
+      "js_files": 0,
+      "xml_templates": 0,
+      "owl_components": [],
+      "registry_adds": [],
+      "patches": [],
+      "services": [],
+      "asset_bundles": {}
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": false,
+      "endpoints": [],
+      "files": []
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    },
+    "behavioral_notes": [
+      {
+        "element": "thin module",
+        "observation": "7 models, 0 routes, 444 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
+        "source": "ast"
+      }
+    ]
+  },
+  "it_architecture": {
+    "application": "test_inherit (test-inherit)",
+    "software_services": [],
+    "data_objects": [
+      "test.inherit.mother",
+      "test_inherit_child",
+      "test_inherit_daughter",
+      "test_inherit_mixin",
+      "test_inherit_parent",
+      "test_inherit_property",
+      "test_mother_underscore"
+    ],
+    "logical_data_erm": [
+      "test_inherit_daughter -> test.inherit.mother"
+    ],
+    "information_flows": [
+      "depends: base, test_orm"
+    ],
+    "frontend_components": []
+  },
+  "business_architecture": {
+    "capabilities": [
+      "test-inherit"
+    ],
+    "value_streams": [],
+    "information_concepts": [
+      "test.inherit.mother",
+      "test_inherit_child",
+      "test_inherit_daughter",
+      "test_inherit_mixin",
+      "test_inherit_parent",
+      "test_inherit_property"
+    ],
+    "organization": [],
+    "products": [],
+    "policies": [],
+    "stakeholders": [],
+    "strategy": null,
+    "metrics": []
+  },
+  "classification": {
+    "value_model": "support",
+    "activity_class": "support",
+    "apqc_category": "13.0 Develop and Manage Business Capabilities",
+    "rationale": "test_inherit: thin support/support module (auto-architect baseline)."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "test-inherit"
+    ],
+    "typical_fits": [],
+    "common_gaps": [],
+    "drive_hints": [
+      "odoo shell: env['test.inherit.mother'].search([],limit=3)"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/test_inherit.facts.json",
+    "tools": [
+      "extract_module.py",
+      "extract_frontend.py",
+      "gen_thin.py"
+    ],
+    "odoo_version": "19.0"
+  }
+}

@@ -1,0 +1,364 @@
+{
+  "subsystem": "hr",
+  "evidence": {
+    "manifest": {
+      "name": "Employees",
+      "category": "Human Resources/Employees",
+      "depends": [
+        "base_setup",
+        "digest",
+        "phone_validation",
+        "resource_mail",
+        "web"
+      ],
+      "auto_install": false,
+      "application": true
+    },
+    "models": [
+      {
+        "_name": "hr.employee",
+        "_description": "Employee",
+        "fields": 102,
+        "relations": [
+          "resource_id->resource.resource",
+          "user_id->res.users",
+          "work_contact_id->res.partner",
+          "parent_id->hr.employee",
+          "department_id->hr.department",
+          "version_id->hr.version"
+        ]
+      },
+      {
+        "_name": "hr.employee.public",
+        "_description": "Public Employee",
+        "fields": 50,
+        "relations": [
+          "department_id->hr.department",
+          "job_id->hr.job",
+          "user_id->res.users",
+          "employee_id->hr.employee",
+          "parent_id->hr.employee.public"
+        ]
+      },
+      {
+        "_name": "hr.department",
+        "_description": "Department",
+        "fields": 17,
+        "relations": [
+          "parent_id->hr.department",
+          "manager_id->hr.employee",
+          "member_ids->hr.employee",
+          "jobs_ids->hr.job",
+          "company_id->res.company"
+        ]
+      },
+      {
+        "_name": "hr.job",
+        "_description": "Job Position",
+        "fields": 14,
+        "relations": [
+          "department_id->hr.department",
+          "employee_ids->hr.employee",
+          "user_id->res.users",
+          "contract_type_id->hr.contract.type"
+        ]
+      },
+      {
+        "_name": "hr.version",
+        "_description": "Version",
+        "fields": 64,
+        "relations": [
+          "employee_id->hr.employee",
+          "department_id->hr.department",
+          "job_id->hr.job",
+          "structure_type_id->hr.payroll.structure.type",
+          "contract_type_id->hr.contract.type"
+        ]
+      },
+      {
+        "_name": "hr.work.location",
+        "_description": "Work Location",
+        "fields": 6,
+        "relations": [
+          "address_id->res.partner",
+          "company_id->res.company"
+        ]
+      }
+    ],
+    "routes": [],
+    "security": {
+      "access_rules": 26,
+      "record_rules": 13,
+      "groups": 2
+    },
+    "views": {
+      "form": 11,
+      "list": 12,
+      "kanban": 4,
+      "search": 5,
+      "pivot": 2,
+      "graph": 2,
+      "activity": 1
+    },
+    "behavioral_notes": [
+      {
+        "element": "hr.employee vs hr.employee.public (private/public split)",
+        "observation": "hr.employee overrides _search, fetch, search_fetch, get_view and get_formview_id/action: when the user lacks hr.group_hr_user, reads are transparently rerouted to the hr.employee.public model (which exposes only non-private fields like name, job, department, work email). Private fields carry groups='hr.group_hr_user'; _check_private_fields raises AccessError if a non-HR user reads them. This dual-model confidentiality is invisible in metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "hr.employee.user_id <-> res.users linkage",
+        "observation": "user_id is related to resource_id.user_id. action_create_user / action_create_users / action_create_users_confirmation create res.users records from employees (login=work_email, partner=work_contact_id); _sync_user copies partner, image and tz between user and employee; create()/write() keep work_contact_id and res.partner in sync. A unique (user_id, company_id) SQL constraint forbids one user being two employees in a company.",
+        "source": "code-read"
+      },
+      {
+        "element": "hr.employee.parent_id org-chart + hr.department.manager_id cascade",
+        "observation": "parent_id/child_ids build the manager hierarchy (Many2one self-relation, tracked). hr.department.write() with a new manager_id calls _update_employee_manager to reassign parent_id of all department members; get_department_hierarchy feeds the OWL DepartmentChart org-chart widget. parent_path/_parent_store gives recursive department nesting.",
+        "source": "code-read"
+      },
+      {
+        "element": "hr.employee _inherits hr.version (contract/version snapshots)",
+        "observation": "hr.employee delegates ~64 fields (job, department, wage, contract dates, address) to hr.version via _inherits. create_version/create_contract snapshot a new dated version; current_version_id is computed by date and a cron (_cron_update_current_version_id) keeps it current. Edits to inherited fields are routed to version_id.write in employee.write and chatter-logged.",
+        "source": "code-read"
+      },
+      {
+        "element": "hr.employee.action_archive -> departure & notifications",
+        "observation": "Archiving an employee empties dangling manager/coach links, then opens the hr.departure.wizard (reason/date). Cron notify_expiring_contract_work_permit schedules mail.activity reminders before contract/work-permit expiry. Department membership also auto-subscribes the user to discuss.channel via subscription_department_ids.",
+        "source": "code-read"
+      },
+      {
+        "element": "frontend (OWL/JS)",
+        "observation": "36 JS files, 6 OWL components (DepartmentChart org-chart, HrPresenceStatus, HrEmployeeChat, Many2OneAvatarEmployeeField + kanban variant, ButtonNewContractWidget); ~24 registry registrations (avatar-employee fields, presence-status widgets, versions_timeline, work_permit_upload) and 7 patches (AvatarCardPopover, ResPartner, ResUsers, Store). Asset bundles include web.assets_backend and mail.assets_public.",
+        "source": "static"
+      }
+    ],
+    "frontend": {
+      "present": true,
+      "js_files": 36,
+      "xml_templates": 14,
+      "owl_components": [
+        "ButtonNewContractWidget",
+        "DepartmentChart",
+        "HrEmployeeChat",
+        "HrPresenceStatus",
+        "KanbanMany2OneAvatarEmployeeField",
+        "Many2OneAvatarEmployeeField"
+      ],
+      "registry_adds": [
+        "fields:activity.many2one_avatar_employee",
+        "fields:background_image",
+        "fields:boolean_radio",
+        "fields:form.hr_presence_status",
+        "fields:form.hr_presence_status_private",
+        "fields:hr_homeworking_radio_image",
+        "fields:hr_presence_status",
+        "fields:hr_presence_status_private",
+        "fields:kanban.many2many_avatar_employee",
+        "fields:kanban.many2one_avatar_employee",
+        "fields:list.many2many_avatar_employee",
+        "fields:many2many_avatar_employee",
+        "fields:many2many_tags_salary_bank",
+        "fields:many2one_avatar_employee",
+        "fields:radio_followed_by_element",
+        "fields:versions_timeline",
+        "fields:work_permit_upload",
+        "view_widgets:button_new_contract",
+        "view_widgets:hr_department_chart",
+        "view_widgets:hr_employee_chat",
+        "views:hr_employee_form",
+        "views:hr_employee_kanban",
+        "views:hr_employee_list",
+        "views:hr_user_preferences_form"
+      ],
+      "patches": [
+        "AvatarCardPopover.prototype",
+        "AvatarCardResourcePopover",
+        "AvatarCardResourcePopover.prototype",
+        "ResPartner.prototype",
+        "ResUsers.prototype",
+        "Store.prototype",
+        "helpers"
+      ],
+      "services": [
+        "currency_symbol",
+        "display_avatar_name",
+        "display_name",
+        "employee_salary_amount",
+        "employee_salary_amount_is_percentage",
+        "links",
+        "no_label_element_id",
+        "observe",
+        "yes_label_element_id"
+      ],
+      "asset_bundles": {
+        "web.assets_backend": 1,
+        "im_livechat.assets_embed_core": 1,
+        "mail.assets_public": 1,
+        "web.qunit_suite_tests": 1,
+        "web.assets_unit_tests": 4,
+        "web.assets_tests": 1
+      }
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": false,
+      "endpoints": [
+        "https://www.odoo.com/app/employees"
+      ],
+      "files": [
+        "__manifest__.py"
+      ]
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    }
+  },
+  "it_architecture": {
+    "application": "hr (Employees application component)",
+    "software_services": [],
+    "data_objects": [
+      "hr.employee",
+      "hr.employee.public",
+      "hr.department",
+      "hr.job",
+      "hr.version",
+      "hr.work.location",
+      "hr.contract.type",
+      "hr.employee.category",
+      "hr.departure.reason"
+    ],
+    "logical_data_erm": [
+      "hr.employee -> resource.resource",
+      "hr.employee -> res.users",
+      "hr.employee -> res.partner (work_contact_id)",
+      "hr.employee -> hr.employee (parent_id manager org-chart)",
+      "hr.employee -> hr.department",
+      "hr.employee -inherits-> hr.version",
+      "hr.department -> hr.department (parent_id)",
+      "hr.department -> hr.employee (manager_id)",
+      "hr.job -> hr.department"
+    ],
+    "information_flows": [
+      "depends: base_setup, digest, phone_validation, resource_mail, web",
+      "side-effect: hr.employee.action_create_users -> creates res.users (login=work_email)",
+      "side-effect: hr.employee.create/write -> syncs res.partner work contact + image + tz",
+      "side-effect: hr.department.write(manager_id) -> reassigns parent_id of all members",
+      "side-effect: employee read without hr.group_hr_user -> rerouted to hr.employee.public",
+      "side-effect: department membership -> auto-subscribe user to discuss.channel"
+    ],
+    "frontend_components": [
+      "ButtonNewContractWidget",
+      "DepartmentChart",
+      "HrEmployeeChat",
+      "HrPresenceStatus",
+      "KanbanMany2OneAvatarEmployeeField",
+      "Many2OneAvatarEmployeeField"
+    ]
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Manage Employee Master Data",
+      "Organize Departments & Org Chart",
+      "Define Job Positions",
+      "Manage Employee Versions/Contract Snapshots",
+      "Control Private vs Public Employee Information",
+      "Track Employee Presence & Onboarding/Departure"
+    ],
+    "value_streams": [
+      "Hire-to-Retire (master data): create employee -> assign job/department/manager -> create user -> manage versions -> archive/departure"
+    ],
+    "information_concepts": [
+      "hr.employee",
+      "hr.employee.public",
+      "hr.department",
+      "hr.job",
+      "hr.version",
+      "hr.work.location",
+      "res.users (linked account)",
+      "res.partner (work contact)"
+    ],
+    "organization": [
+      "group_hr_user",
+      "group_hr_manager"
+    ],
+    "products": [],
+    "policies": [
+      "13 record rules: multi-company scoping + own/department employee visibility",
+      "private fields gated by groups='hr.group_hr_user'; non-HR reads rerouted to hr.employee.public",
+      "unique (user_id, company_id) and unique (barcode) constraints",
+      "crons: _cron_update_current_version_id, notify_expiring_contract_work_permit"
+    ],
+    "stakeholders": [
+      "Employee (hr.employee / linked res.users)",
+      "HR Officer (group_hr_user)",
+      "HR Manager (group_hr_manager)",
+      "Department Manager (hr.department.manager_id)"
+    ],
+    "strategy": null,
+    "metrics": [
+      "hr.job: no_of_employee, expected_employees, no_of_recruitment (Target)",
+      "hr.department: total_employee",
+      "hr.manager.department.report (manager department access report)"
+    ]
+  },
+  "classification": {
+    "value_model": "support",
+    "activity_class": "support",
+    "apqc_category": "7.0 Develop and Manage Human Capital",
+    "rationale": "hr is the Human Resource Management support activity of Porter's value chain (Stabell & Fjeldstad: a support value configuration, not a primary chain/shop/network flow). It maintains the employee/department/job master data and version history that every operational module consumes; it does not itself convert demand into a delivered product. APQC PCF category 7.0 Develop and Manage Human Capital covers exactly this: workforce master data, organization structure and job positions."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "employee master records with private/public confidentiality split",
+      "department hierarchy + org-chart widget and manager cascade",
+      "job positions with headcount/recruitment targets",
+      "dated employee versions / contract snapshots (hr.version)",
+      "user account creation & res.partner work-contact sync",
+      "presence indicators, onboarding plans, departure wizard, expiry crons"
+    ],
+    "typical_fits": [
+      "centralized HR directory feeding payroll/attendance/time-off bridge modules",
+      "two-tier HR security (officer vs manager) with own-document record rules",
+      "multi-company employee scoping"
+    ],
+    "common_gaps": [
+      "country-specific contract/payroll structures (need localization modules)",
+      "custom employee_properties beyond the generic Properties field",
+      "approval workflows for hires/departures",
+      "skills/appraisal/recruitment (separate hr_skills, hr_appraisal, hr_recruitment apps)"
+    ],
+    "drive_hints": [
+      "odoo shell: env['hr.employee'].search([], limit=5).mapped(('name','department_id.name','parent_id.name'))",
+      "odoo shell: env['hr.department'].search([], limit=3).read(['complete_name','manager_id','total_employee'])",
+      "odoo shell: env['hr.employee.public'].search([], limit=5).mapped('name')  # public view fields only"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Exact set of presence-state overrides contributed by hr_attendance / hr_holidays bridges.",
+    "How salary_distribution and bank-account allocation interact with downstream payroll modules.",
+    "Full lifecycle of hr.version snapshots when contract dates are edited across multiple bridge apps."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/hr.facts.json",
+    "tools": [
+      "code-read",
+      "extract_frontend.py",
+      "extract_module.py",
+      "extract_runtime.sh",
+      "run-odoo (odoo shell)"
+    ],
+    "odoo_version": "19.0"
+  }
+}

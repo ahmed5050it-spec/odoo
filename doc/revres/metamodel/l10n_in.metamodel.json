@@ -1,0 +1,189 @@
+{
+  "subsystem": "l10n_in",
+  "evidence": {
+    "manifest": {
+      "name": "Indian - Accounting",
+      "category": "Accounting/Localizations/Account Charts",
+      "depends": [
+        "account_tax_python",
+        "base_vat",
+        "account_debit_note",
+        "account",
+        "iap"
+      ],
+      "auto_install": [
+        "account"
+      ],
+      "application": false
+    },
+    "models": [
+      {
+        "_name": "l10n_in.pan.entity",
+        "_description": "Indian PAN Entity",
+        "fields": 8
+      },
+      {
+        "_name": "l10n_in.port.code",
+        "_description": "Indian port code",
+        "fields": 3
+      },
+      {
+        "_name": "l10n_in.section.alert",
+        "_description": "indian section alert",
+        "fields": 10
+      },
+      {
+        "_name": "l10n_in.withhold.wizard",
+        "_description": "Withhold Wizard",
+        "fields": 14
+      }
+    ],
+    "routes": [],
+    "security": {
+      "access_rules": 6,
+      "record_rules": 0,
+      "groups": 1
+    },
+    "views": {
+      "form": 3,
+      "list": 6,
+      "tree": 0,
+      "kanban": 0,
+      "search": 1,
+      "pivot": 0,
+      "graph": 0,
+      "calendar": 0,
+      "activity": 0
+    },
+    "frontend": {
+      "present": true,
+      "js_files": 3,
+      "xml_templates": 1,
+      "owl_components": [],
+      "registry_adds": [
+        "fields:l10n_in_hsn_autocomplete"
+      ],
+      "patches": [
+        "TestsSharedJsPython.prototype",
+        "accountTaxHelpers"
+      ],
+      "services": [
+        "hsn_description_field"
+      ],
+      "asset_bundles": {
+        "web.assets_backend": 2,
+        "web.assets_frontend": 2
+      }
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": false,
+      "endpoints": [
+        "https://l10n-in-edi-demo.api.odoo.com",
+        "https://l10n-in-edi.api.odoo.com"
+      ],
+      "files": [
+        "models/iap_account.py"
+      ]
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    },
+    "behavioral_notes": [
+      {
+        "element": "frontend (OWL/JS)",
+        "observation": "3 JS files, 0 OWL components, 1 registry adds; bundles ['web.assets_backend', 'web.assets_frontend'].",
+        "source": "static"
+      },
+      {
+        "element": "thin module",
+        "observation": "4 models, 0 routes, 5780 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
+        "source": "ast"
+      }
+    ]
+  },
+  "it_architecture": {
+    "application": "l10n_in (Indian - Accounting)",
+    "software_services": [],
+    "data_objects": [
+      "l10n_in.pan.entity",
+      "l10n_in.port.code",
+      "l10n_in.section.alert",
+      "l10n_in.withhold.wizard"
+    ],
+    "logical_data_erm": [
+      "l10n_in.pan.entity -> res.partner",
+      "l10n_in.port.code -> res.country.state",
+      "l10n_in.section.alert -> account.report.line",
+      "l10n_in.section.alert -> account.tax",
+      "l10n_in.withhold.wizard -> account.journal",
+      "l10n_in.withhold.wizard -> account.move",
+      "l10n_in.withhold.wizard -> account.payment",
+      "l10n_in.withhold.wizard -> account.tax",
+      "l10n_in.withhold.wizard -> company_id.currency_id",
+      "l10n_in.withhold.wizard -> res.company"
+    ],
+    "information_flows": [
+      "depends: account_tax_python, base_vat, account_debit_note, account, iap"
+    ],
+    "frontend_components": []
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Indian - Accounting"
+    ],
+    "value_streams": [],
+    "information_concepts": [
+      "l10n_in.pan.entity",
+      "l10n_in.port.code",
+      "l10n_in.section.alert",
+      "l10n_in.withhold.wizard"
+    ],
+    "organization": [],
+    "products": [],
+    "policies": [],
+    "stakeholders": [],
+    "strategy": null,
+    "metrics": []
+  },
+  "classification": {
+    "value_model": "support",
+    "activity_class": "support",
+    "apqc_category": "9.0 Manage Financial Resources",
+    "rationale": "l10n_in: thin support/support module (auto-architect baseline)."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "Indian - Accounting"
+    ],
+    "typical_fits": [],
+    "common_gaps": [],
+    "drive_hints": [
+      "odoo shell: env['l10n_in.pan.entity'].search([],limit=3)"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/l10n_in.facts.json",
+    "tools": [
+      "extract_module.py",
+      "extract_frontend.py",
+      "gen_thin.py"
+    ],
+    "odoo_version": "19.0"
+  }
+}

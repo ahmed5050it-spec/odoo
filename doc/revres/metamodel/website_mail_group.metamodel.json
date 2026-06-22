@@ -1,0 +1,145 @@
+{
+  "subsystem": "website_mail_group",
+  "evidence": {
+    "manifest": {
+      "name": "Website Mail Group",
+      "category": null,
+      "depends": [
+        "mail_group",
+        "website"
+      ],
+      "auto_install": true,
+      "application": false
+    },
+    "models": [],
+    "routes": [
+      {
+        "paths": [
+          "/group/is_member"
+        ],
+        "auth": "public",
+        "type": "jsonrpc"
+      }
+    ],
+    "security": {
+      "access_rules": 0,
+      "record_rules": 0,
+      "groups": 0
+    },
+    "views": {
+      "form": 0,
+      "list": 0,
+      "tree": 0,
+      "kanban": 0,
+      "search": 0,
+      "pivot": 0,
+      "graph": 0,
+      "calendar": 0,
+      "activity": 0
+    },
+    "frontend": {
+      "present": true,
+      "js_files": 3,
+      "xml_templates": 1,
+      "owl_components": [],
+      "registry_adds": [
+        "public.interactions.edit:website_mail_group.mail_group"
+      ],
+      "patches": [
+        "MailGroup.prototype"
+      ],
+      "services": [],
+      "asset_bundles": {
+        "web.assets_frontend": 2,
+        "website.assets_inside_builder_iframe": 1,
+        "website.website_builder_assets": 1
+      }
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": true,
+      "endpoints": [],
+      "files": []
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    },
+    "behavioral_notes": [
+      {
+        "element": "frontend (OWL/JS)",
+        "observation": "3 JS files, 0 OWL components, 1 registry adds; bundles ['web.assets_frontend', 'website.assets_inside_builder_iframe', 'website.website_builder_assets'].",
+        "source": "static"
+      },
+      {
+        "element": "thin module",
+        "observation": "0 models, 1 routes, 107 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
+        "source": "ast"
+      }
+    ]
+  },
+  "it_architecture": {
+    "application": "website_mail_group (Website Mail Group)",
+    "software_services": [
+      "/group/is_member"
+    ],
+    "data_objects": [],
+    "logical_data_erm": [],
+    "information_flows": [
+      "depends: mail_group, website"
+    ],
+    "frontend_components": []
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Website Mail Group"
+    ],
+    "value_streams": [],
+    "information_concepts": [],
+    "organization": [],
+    "products": [],
+    "policies": [],
+    "stakeholders": [],
+    "strategy": null,
+    "metrics": []
+  },
+  "classification": {
+    "value_model": "network",
+    "activity_class": "primary",
+    "apqc_category": "3.0 Market and Sell Products and Services",
+    "rationale": "website_mail_group: thin network/primary module (auto-architect baseline)."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "Website Mail Group"
+    ],
+    "typical_fits": [],
+    "common_gaps": [],
+    "drive_hints": [
+      "n/a"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/website_mail_group.facts.json",
+    "tools": [
+      "extract_module.py",
+      "extract_frontend.py",
+      "gen_thin.py"
+    ],
+    "odoo_version": "19.0"
+  }
+}

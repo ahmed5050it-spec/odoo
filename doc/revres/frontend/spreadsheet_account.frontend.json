@@ -1,0 +1,1 @@
+{"module": "spreadsheet_account", "frontend_gap3": {"present": true, "js_files": 5, "xml_templates": 0, "owl_components": [], "registry_adds": [], "patches": [], "services": [], "asset_bundles": {"spreadsheet.o_spreadsheet": 1, "web.assets_unit_tests": 1}}, "integrations_gap7": {"http_call_sites": 0, "sdk_imports": [], "uses_api_keys": false, "endpoints": [], "files": []}}

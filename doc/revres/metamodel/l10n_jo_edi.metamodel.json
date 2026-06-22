@@ -1,0 +1,145 @@
+{
+  "subsystem": "l10n_jo_edi",
+  "evidence": {
+    "manifest": {
+      "name": "Jordan E-Invoicing",
+      "category": "Accounting/Localizations/EDI",
+      "depends": [
+        "account_edi_ubl_cii",
+        "l10n_jo"
+      ],
+      "auto_install": [
+        "l10n_jo"
+      ],
+      "application": false
+    },
+    "models": [
+      {
+        "_name": "account.edi.xml.ubl_21.jo",
+        "_description": "UBL 2.1 (JoFotara)",
+        "fields": 0
+      }
+    ],
+    "routes": [],
+    "security": {
+      "access_rules": 0,
+      "record_rules": 0,
+      "groups": 0
+    },
+    "views": {
+      "form": 0,
+      "list": 0,
+      "tree": 0,
+      "kanban": 0,
+      "search": 0,
+      "pivot": 0,
+      "graph": 0,
+      "calendar": 0,
+      "activity": 0
+    },
+    "frontend": {
+      "present": false,
+      "js_files": 0,
+      "xml_templates": 0,
+      "owl_components": [],
+      "registry_adds": [],
+      "patches": [],
+      "services": [],
+      "asset_bundles": {}
+    },
+    "integrations": {
+      "http_call_sites": 1,
+      "sdk_imports": [
+        "requests"
+      ],
+      "uses_api_keys": true,
+      "endpoints": [
+        "https://backend.jofotara.gov.jo/core/invoices/"
+      ],
+      "files": [
+        "models/res_company.py"
+      ]
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    },
+    "behavioral_notes": [
+      {
+        "element": "external integrations",
+        "observation": "1 HTTP call sites; SDKs ['requests']; api_keys=True.",
+        "source": "static"
+      },
+      {
+        "element": "thin module",
+        "observation": "1 models, 0 routes, 1976 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
+        "source": "ast"
+      }
+    ]
+  },
+  "it_architecture": {
+    "application": "l10n_jo_edi (Jordan E-Invoicing)",
+    "software_services": [],
+    "data_objects": [
+      "account.edi.xml.ubl_21.jo"
+    ],
+    "logical_data_erm": [],
+    "information_flows": [
+      "depends: account_edi_ubl_cii, l10n_jo"
+    ],
+    "frontend_components": []
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Jordan E-Invoicing"
+    ],
+    "value_streams": [],
+    "information_concepts": [
+      "account.edi.xml.ubl_21.jo"
+    ],
+    "organization": [],
+    "products": [],
+    "policies": [],
+    "stakeholders": [],
+    "strategy": null,
+    "metrics": []
+  },
+  "classification": {
+    "value_model": "support",
+    "activity_class": "support",
+    "apqc_category": "9.0 Manage Financial Resources",
+    "rationale": "l10n_jo_edi: thin support/support module (auto-architect baseline)."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "Jordan E-Invoicing"
+    ],
+    "typical_fits": [],
+    "common_gaps": [],
+    "drive_hints": [
+      "odoo shell: env['account.edi.xml.ubl_21.jo'].search([],limit=3)"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/l10n_jo_edi.facts.json",
+    "tools": [
+      "extract_module.py",
+      "extract_frontend.py",
+      "gen_thin.py"
+    ],
+    "odoo_version": "19.0"
+  }
+}

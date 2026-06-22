@@ -1,0 +1,293 @@
+{
+  "subsystem": "digest",
+  "evidence": {
+    "manifest": {
+      "name": "KPI Digests",
+      "category": "Marketing",
+      "summary": null,
+      "version": "1.1",
+      "depends": [
+        "mail",
+        "portal",
+        "resource"
+      ],
+      "auto_install": false,
+      "application": false
+    },
+    "models": [
+      {
+        "_name": "digest.digest",
+        "_description": "Digest",
+        "_inherit": null,
+        "fields": 13,
+        "methods": 33,
+        "relations": [
+          "user_ids->res.users",
+          "company_id->res.company",
+          "currency_id->res.company (related company_id.currency_id)"
+        ]
+      },
+      {
+        "_name": "digest.tip",
+        "_description": "Digest Tips",
+        "_inherit": null,
+        "fields": 5,
+        "methods": 0,
+        "relations": [
+          "user_ids->res.users",
+          "group_id->res.groups"
+        ]
+      },
+      {
+        "_name": "res.config.settings",
+        "_description": "Config Settings (inherit)",
+        "_inherit": "res.config.settings",
+        "fields": 2,
+        "methods": 0,
+        "relations": [
+          "digest_id->digest.digest"
+        ]
+      },
+      {
+        "_name": "res.users",
+        "_description": "Users (inherit)",
+        "_inherit": "res.users",
+        "fields": 0,
+        "methods": 1,
+        "relations": []
+      }
+    ],
+    "routes": [
+      {
+        "paths": [
+          "/digest/<int:digest_id>/unsubscribe_oneclik"
+        ],
+        "auth": "public",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/digest/<int:digest_id>/unsubscribe"
+        ],
+        "auth": "public",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/digest/<int:digest_id>/set_periodicity"
+        ],
+        "auth": "user",
+        "type": "http"
+      }
+    ],
+    "security": {
+      "access_rules": 4,
+      "record_rules": 0,
+      "groups": 0,
+      "note": "digest defines NO own res.groups; 4 access rules gate digest.digest + digest.tip on base.group_erp_manager (full CRUD) vs base.group_user (read-only). Unsubscribe is authorized out-of-band by an hmac token (_get_unsubscribe_token), not by ACL."
+    },
+    "views": {
+      "form": 2,
+      "list": 3,
+      "search": 2,
+      "kanban": 0,
+      "pivot": 0,
+      "graph": 0
+    },
+    "behavioral_notes": [
+      {
+        "element": "digest.digest._cron_send_digest_email + _action_send (periodicity & per-subscriber batching)",
+        "observation": "Daily cron 'Digest Emails' (ir_cron_digest_scheduler_action) runs model._cron_send_digest_email(), which searches digests with next_run_date <= today and state='activated', then per digest iterates digest.user_ids and calls _action_send_to_user(user) for EACH subscriber individually (one mail.mail per recipient, rendered in the user's lang/company). After sending it advances next_run_date by the periodicity delta (daily/weekly/monthly/quarterly via _get_next_run_date). _check_daily_logs inspects res.users.log: if no recipient logged in within the window, the digest is added to to_slowdown and its periodicity is bumped down one step (_get_next_periodicity: daily->weekly->monthly->quarterly) to avoid spamming inactive users. MailDeliveryException is caught and the digest retried next cron run.",
+        "source": "code-read"
+      },
+      {
+        "element": "digest.digest._compute_kpis / _calculate_company_based_kpi (kpi_* fields over a date window)",
+        "observation": "KPIs are opt-in Boolean toggle fields named kpi_*/x_kpi_*/x_studio_kpi_* (base ships kpi_res_users_connected, kpi_mail_message_total); each has a paired <field>_value computed field. _compute_kpis renders 3 columns by re-running the value compute under 3 context timeframes (Last 24h / Last 7 Days / Last 30 Days from _compute_timeframes) plus their prior periods, invalidating the cache between each to force recomputation, and derives a percentage margin vs the previous period. _calculate_company_based_kpi is the generic engine: it _read_group()s the target model (company_id/company_ids field) filtered on (date_field >= start, < end) scoped to the digest's company. kpi_mail_message_total_value directly search_count()s mail.message with subtype mail.mt_comment over the window. AccessError on any KPI silently drops that row from that user's email (per-user data security).",
+        "source": "code-read"
+      },
+      {
+        "element": "digest controllers/portal.py /digest/<id>/unsubscribe(_oneclik) + per-recipient hmac token",
+        "observation": "_action_send_to_user mints a per-(digest,user) hmac token via _get_unsubscribe_token and embeds both a body 'Unsubscribe' link (/digest/<id>/unsubscribe?token=..&user_id=..) and RFC-8058 List-Unsubscribe / List-Unsubscribe-Post=One-Click email headers pointing at /digest/<id>/unsubscribe_oneclik. The public controller validates the token with consteq (constant-time) before calling _action_unsubscribe_users (sudo removes the user from user_ids). The one-click route is POST-only + csrf=False so an MUA can unsubscribe without a session while anti-spam GET prefetch cannot. /digest/<id>/set_periodicity (auth=user) is gated to base.group_erp_manager and lets a manager switch periodicity from the email.",
+        "source": "code-read"
+      },
+      {
+        "element": "digest.tip rotation (_compute_tips, consume-once per user)",
+        "observation": "Each email includes tips_count tips drawn by _compute_tips: it searches digest.tip for tips NOT yet sent to this user (user_ids != user.id) whose group_id is in the user's groups or is empty, limit=tips_count. The tip_description Html is rendered with the qweb engine (mail.render.mixin) and html-sanitized. When consumed=True the user is appended to tip.user_ids, so each tip is shown at most once per recipient and tips rotate over successive digests until exhausted.",
+        "source": "code-read"
+      },
+      {
+        "element": "res.users.create auto-subscribe to default digest",
+        "observation": "digest extends res.users.create: when ir.config_parameter digest.default_digest_emails and digest.default_digest_id are set, every newly created non-share (internal) user is automatically added to the default digest's user_ids (sudo). This is how new employees start receiving the company digest without manual subscription.",
+        "source": "code-read"
+      },
+      {
+        "element": "frontend (email templates, no OWL/JS)",
+        "observation": "0 JS files, 0 OWL components, 0 registry adds, 0 patches, 0 asset bundles. The entire user-facing surface is server-rendered QWeb email: digest.digest_mail_layout (encapsulating HTML/CSS shell) + digest.digest_mail_main (3-column KPI grid digest.digest_tool_kpi with up/down margin badges, tips loop, manager 'customize/switch periodicity' preferences, mobile-app banner, unsubscribe footer) + the portal_digest_unsubscribed confirmation page. Backend config UI is plain form/list/search (2 form, 3 list, 2 search) on digest.digest/digest.tip.",
+        "source": "static"
+      }
+    ],
+    "frontend": {
+      "present": true,
+      "js_files": 0,
+      "xml_templates": 0,
+      "owl_components": [],
+      "registry_adds": [],
+      "patches": [],
+      "services": [],
+      "asset_bundles": {}
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": false,
+      "endpoints": [],
+      "files": []
+    }
+  },
+  "it_architecture": {
+    "application": "digest (KPI Digests application component - periodic performance-reporting / summary-email engine; thin host that other apps extend with their own kpi_* fields)",
+    "software_services": [
+      "/digest/<int:digest_id>/unsubscribe_oneclik",
+      "/digest/<int:digest_id>/unsubscribe",
+      "/digest/<int:digest_id>/set_periodicity"
+    ],
+    "data_objects": [
+      "digest.digest",
+      "digest.tip",
+      "res.config.settings",
+      "res.users"
+    ],
+    "logical_data_erm": [
+      "digest.digest -> res.users (user_ids, recipients, share=False)",
+      "digest.digest -> res.company (company_id) -> res.currency (currency_id related)",
+      "digest.tip -> res.users (user_ids = already-received) + res.groups (group_id audience)",
+      "res.config.settings -> digest.digest (digest_id default digest)",
+      "digest.digest kpi_*_value -> (any model)._read_group over a date window (computed, not stored FK)"
+    ],
+    "information_flows": [
+      "depends: mail, portal, resource",
+      "side-effect: _cron_send_digest_email -> per subscriber _action_send_to_user -> mail.mail (one outgoing email per recipient) via mail.render.mixin",
+      "side-effect: KPI compute -> reads mail.message, res.users.log and every consumer module's models (account/crm/project/pos/sale/website_sale/im_livechat/hr_recruitment) via _read_group over Last 24h/7d/30d windows",
+      "side-effect: inactive recipient (no res.users.log in window) -> periodicity slowed one step to throttle email volume",
+      "side-effect: new internal res.users -> auto-added to default digest user_ids",
+      "inverse-dependency: 9 modules inject kpi_* Boolean toggles + paired *_value computes (crm, account, project, point_of_sale, website_sale, sale_management, im_livechat, hr_recruitment) so a single digest email aggregates cross-app KPIs",
+      "consumes resource.calendar.tz to localize the KPI timeframe windows"
+    ],
+    "frontend_components": [],
+    "external_integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "endpoints": []
+    }
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Periodic KPI Digest Email (daily/weekly/monthly/quarterly company summary)",
+      "Company Performance Metric Computation (period-over-period with % margin)",
+      "Extensible KPI Catalog (opt-in kpi_* toggles, host for other apps' metrics)",
+      "Subscriber Management & Auto-Subscription (default digest for new internal users)",
+      "Engagement-Based Send Throttling (slow down digests for inactive recipients)",
+      "Per-Recipient Unsubscribe & Preference Self-Service (hmac token, RFC-8058 one-click)",
+      "Contextual Tip / Onboarding Rotation (consume-once tips by group)"
+    ],
+    "value_streams": [
+      "Compute-and-Broadcast-KPIs: cron due -> compute per-company KPIs over time windows -> render per-subscriber email -> queue mail.mail -> advance next_run_date",
+      "Throttle-Inactive-Recipients: check res.users.log -> no activity -> downgrade periodicity + notify preference change",
+      "Unsubscribe-and-Tune: recipient clicks token link -> validate hmac -> remove from user_ids / manager switches periodicity"
+    ],
+    "information_concepts": [
+      "digest.digest (KPI digest definition)",
+      "digest.tip (rotating tip / onboarding hint)"
+    ],
+    "organization": [
+      "base.group_erp_manager (configure digests + KPIs, switch periodicity)",
+      "base.group_user (internal recipient, read-only on digest)",
+      "(digest defines no own groups - reuses base groups via 4 access rules; recipients restricted to share=False internal users)"
+    ],
+    "products": [],
+    "policies": [
+      "Recipients limited to internal users (domain share=False on user_ids); share/portal users excluded",
+      "Engagement throttle: if no res.users.log for recipients in the period window, periodicity is automatically slowed one step (_check_daily_logs / _get_next_periodicity) to curb unwanted email",
+      "Unsubscribe gated by constant-time hmac token (not ACL); one-click route POST-only + csrf-exempt per RFC 8058",
+      "set_periodicity restricted to base.group_erp_manager; KPI rows the user cannot read (AccessError) are silently dropped from that user's email",
+      "Default-digest auto-subscription controlled by ir.config_parameter digest.default_digest_emails / digest.default_digest_id"
+    ],
+    "stakeholders": [
+      "Business manager / executive (digest recipient consuming KPIs)",
+      "ERP manager / administrator (configures digest, selects KPIs, periodicity)",
+      "Internal employee (auto-subscribed recipient)",
+      "Consumer modules (account/crm/project/sale/pos... extending the KPI set)"
+    ],
+    "strategy": null,
+    "metrics": [
+      "kpi_res_users_connected (active/connected internal users in period)",
+      "kpi_mail_message_total (messages/communication volume in period)",
+      "period-over-period margin % per KPI (Last 24h / 7 Days / 30 Days vs prior period)",
+      "downstream KPIs: revenue, new leads/opportunities, invoiced, POS sales, website sales, project hours, livechat/recruitment counts (injected by consumer modules)"
+    ]
+  },
+  "classification": {
+    "value_model": "support",
+    "activity_class": "support",
+    "apqc_category": "13.0 Develop and Manage Business Capabilities (manage business performance / KPI reporting); secondary touch on 9.4 Manage internal controls and an information/knowledge-distribution aspect",
+    "rationale": "digest is a cross-cutting SUPPORT subsystem (Stabell & Fjeldstad): it has no value stream of its own, produces no product, order, or document, and converts no demand into delivered output. It is internal performance-reporting/communication infrastructure - it READS the metrics produced by primary activities (sales, invoicing, projects, POS, leads) and BROADCASTS them as a periodic summary email. Hence value_model=support / activity_class=support. APQC best fit is 13.0 'Develop and Manage Business Capabilities' because the dominant capability is managing/monitoring business performance via KPI reporting and dashboards - the digest is a management-information instrument that lets leadership track company health over time (period-over-period KPI margins). This is preferred over 9.4 (internal controls/governance) because digest is forward-looking performance monitoring rather than compliance/control enforcement, and it is preferred over a pure internal-communications classification (which would lean on the mail subsystem at ~13.x Information & Knowledge Management): although digest sends email, the email is merely the delivery channel - the substance and reason-for-being is the KPI/business-performance content and its extensible metric catalog, which 9.4-style internal comms does not capture. The concrete delivery mechanics (per-recipient mail.mail, unsubscribe, templates) are inherited from mail (itself support/13.x); digest adds the business-performance-management layer on top, anchoring it at 13.0. No 13.0 row exists yet in apqc_odoo_map.tsv; this is the architect classification."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "Out-of-box daily/weekly/monthly/quarterly KPI digest email per company",
+      "Two base KPIs (connected users, messages sent) with period-over-period margins across 3 timeframes",
+      "Opt-in KPI selection per digest via kpi_* Boolean toggles (no code to enable/disable a metric)",
+      "Per-recipient send in recipient language/company; one-click + token unsubscribe (RFC 8058)",
+      "Automatic periodicity slow-down for inactive recipients (anti-spam)",
+      "Auto-subscription of new internal users to a default digest",
+      "Rotating, group-scoped onboarding tips consumed once per user",
+      "Extension point used by account/crm/project/sale/pos/website_sale/im_livechat/hr_recruitment to add their own KPIs"
+    ],
+    "typical_fits": [
+      "Enable the default 'Your Odoo Periodic Digest' and let new employees auto-subscribe",
+      "Toggle which KPIs appear and set company-wide periodicity from Settings",
+      "Add a custom KPI by declaring a kpi_<x> Boolean + kpi_<x>_value compute that calls _calculate_company_based_kpi",
+      "Switch a manager from daily to weekly straight from the email footer"
+    ],
+    "common_gaps": [
+      "KPIs are integer/monetary counts over a fixed company date-window - no charts/trends, grouping, or drill-down beyond the optional 'Open Report' action link",
+      "Custom KPIs require Python (compute method) or Studio x_kpi_* fields; non-trivial metrics not configurable by end users",
+      "Audience is per-digest user list (internal only) - no role/segment targeting, A/B content, or external/portal recipients without dev",
+      "Single delivery channel (email via mail.mail/ir.mail_server); no in-app dashboard, Slack/Teams push, or scheduled PDF",
+      "Engagement throttle is coarse (presence in res.users.log), not open/click tracking"
+    ],
+    "drive_hints": [
+      "odoo shell: env['digest.digest'].search([]).mapped(('name','periodicity','state','next_run_date'))",
+      "odoo shell: d=env.ref('digest.digest_digest_default'); [f for f in d._fields if f.startswith('kpi_') and d[f]]  # enabled KPIs",
+      "odoo shell: d._action_send_to_user(env.user)  # render + queue one digest email, then inspect env['mail.mail'].search([], order='id desc', limit=1)",
+      "odoo shell: d._compute_kpis(env.company, env.user)  # see the 3-column KPI payload with margins",
+      "curl -X POST '/digest/<id>/unsubscribe_oneclik' -d 'token=<hmac>&user_id=<uid>'  # RFC-8058 one-click unsubscribe"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Whether the 'Marketing' manifest category is accurate - behavior is management/performance reporting (13.0), not marketing; category appears legacy.",
+    "Exact set and compute cost of KPIs once all consumer modules (account/crm/project/pos/sale/website_sale/im_livechat/hr_recruitment) are installed - base digest ships only 2.",
+    "Precise APQC leaf under 13.0 for periodic management KPI reporting vs 9.x controls - no clean single PCF leaf for a digest/summary instrument.",
+    "Interaction of multi-company: per-digest company_id scoping vs a recipient belonging to several companies (company_ids) when computing res.users KPIs."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/digest.facts.json",
+    "tools": [
+      "code-read (models/digest.py, models/digest_tip.py, models/res_users.py, controllers/portal.py, data/ir_cron_data.xml, data/digest_data.xml, security/ir.model.access.csv)",
+      "extract_module.py",
+      "extract_frontend.py",
+      "grep (kpi_* Boolean injection across addons)"
+    ],
+    "odoo_version": "19.0"
+  }
+}

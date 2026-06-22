@@ -1,0 +1,514 @@
+{
+  "subsystem": "html_editor",
+  "evidence": {
+    "manifest": {
+      "name": "HTML Editor",
+      "category": "Hidden",
+      "depends": [
+        "base",
+        "bus",
+        "web"
+      ],
+      "auto_install": true,
+      "application": false
+    },
+    "models": [
+      {
+        "_name": "html.field.history.mixin",
+        "_description": "Field html History",
+        "fields": 2,
+        "relations": []
+      },
+      {
+        "_name": "ir.attachment (extension)",
+        "_description": "Adds image_src/image_width/image_height/local_url/original_id for editor media (image optim/resize, media dialog)",
+        "fields": 5,
+        "relations": [
+          "original_id->ir.attachment"
+        ]
+      },
+      {
+        "_name": "ir.qweb / ir.qweb.field.* (extension)",
+        "_description": "Editor-context QWeb rendering: adds data-snippet/data-oe-* metadata and converts edited field values back to Odoo records (~17 ir.qweb.field.* inherit-only)",
+        "fields": 0,
+        "relations": []
+      },
+      {
+        "_name": "ir.ui.view (extension)",
+        "_description": "Inline field editing save path (save_oe_structure / replace_arch_section / oe-translatable handling)",
+        "fields": 0,
+        "relations": []
+      },
+      {
+        "_name": "ir.websocket (extension)",
+        "_description": "Authorizes editor_collaboration:<model>:<field>:<id> bus channels (read+write access check) for real-time co-editing",
+        "fields": 0,
+        "relations": []
+      },
+      {
+        "_name": "ir.http (extension)",
+        "_description": "Adds ?editable/?edit_translations/?translatable query-string context for in-place edit mode",
+        "fields": 0,
+        "relations": []
+      },
+      {
+        "_name": "html_editor.converter.test / .sub",
+        "_description": "Test-only models exercising the QWeb field->record converter",
+        "fields": 12,
+        "relations": [
+          "many2one->html_editor.converter.test.sub"
+        ]
+      }
+    ],
+    "routes": [
+      {
+        "paths": [
+          "/html_editor/attachment/remove"
+        ],
+        "auth": "user",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/web_editor/get_image_info",
+          "/html_editor/get_image_info"
+        ],
+        "auth": "user",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/web_editor/video_url/data",
+          "/html_editor/video_url/data"
+        ],
+        "auth": "user",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/web_editor/attachment/add_data",
+          "/html_editor/attachment/add_data"
+        ],
+        "auth": "user",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/web_editor/attachment/add_url",
+          "/html_editor/attachment/add_url"
+        ],
+        "auth": "user",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/web_editor/modify_image/<model(\"ir.attachment\"):attachment>",
+          "/html_editor/modify_image/<model(\"ir.attachment\"):attachment>"
+        ],
+        "auth": "user",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/web_editor/save_library_media",
+          "/html_editor/save_library_media"
+        ],
+        "auth": "user",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/web_editor/shape/<module>/<path:filename>",
+          "/html_editor/shape/<module>/<path:filename>"
+        ],
+        "auth": "public",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/web_editor/image_shape/<string:img_key>/<module>/<path:filename>",
+          "/html_editor/image_shape/<string:img_key>/<module>/<path:filename>"
+        ],
+        "auth": "public",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/web_editor/generate_text",
+          "/html_editor/generate_text"
+        ],
+        "auth": "user",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/web_editor/get_ice_servers",
+          "/html_editor/get_ice_servers"
+        ],
+        "auth": "user",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/web_editor/bus_broadcast",
+          "/html_editor/bus_broadcast"
+        ],
+        "auth": "user",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/html_editor/link_preview_external"
+        ],
+        "auth": "public",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/html_editor/link_preview_internal"
+        ],
+        "auth": "user",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/html_editor/media_library_search"
+        ],
+        "auth": "user",
+        "type": "jsonrpc"
+      }
+    ],
+    "security": {
+      "access_rules": 2,
+      "record_rules": 0,
+      "groups": 0
+    },
+    "views": {
+      "form": 0,
+      "list": 0,
+      "kanban": 0,
+      "pivot": 0,
+      "graph": 0,
+      "calendar": 0,
+      "activity": 0
+    },
+    "frontend": {
+      "present": true,
+      "js_files": 187,
+      "xml_templates": 58,
+      "owl_components": [
+        "AlignSelector",
+        "Attachment",
+        "AttachmentError",
+        "ChatGPTDialog",
+        "CodeToolbar",
+        "ColorPickerGradientTab",
+        "ColorSelector",
+        "EditorOverlay",
+        "EmbeddedCaptionComponent",
+        "EmbeddedComponentToolbar",
+        "EmbeddedComponentToolbarButton",
+        "EmbeddedDummy",
+        "EmbeddedSyntaxHighlightingComponent",
+        "EmbeddedTableOfContentComponent",
+        "EmbeddedToggleBlockComponent",
+        "FileSelector",
+        "FileSelectorControlPanel",
+        "FontFamilySelector",
+        "FontSelector",
+        "FontSizeSelector",
+        "GradientPicker",
+        "HistoryDialog",
+        "HtmlField",
+        "HtmlViewer",
+        "IconSelector",
+        "ImageCrop",
+        "ImageDescription",
+        "ImageDescriptionPopover",
+        "ImageToolbarDropdown",
+        "ImageTransformButton",
+        "ImageTransformation",
+        "LanguageSelector",
+        "LinkPopover",
+        "ListSelector",
+        "MediaDialog",
+        "Powerbox",
+        "ProgressBar",
+        "QWebPicker",
+        "ReadonlyEmbeddedFileComponent",
+        "ReadonlyEmbeddedVideoComponent"
+      ],
+      "registry_adds": [
+        "color_picker_tabs:html_editor.gradient",
+        "fields:html",
+        "fields:x2_many_image",
+        "fields:x2_many_media_viewer",
+        "main_components:ImageCropping",
+        "main_components:ImageTransformation",
+        "main_components:UploadProgressToast",
+        "public.interactions:html_editor.embedded_component",
+        "public.interactions:html_editor.html_migrations",
+        "services:upload",
+        "services:uploadLocalFiles"
+      ],
+      "patches": [
+        "PropertyValue.prototype"
+      ],
+      "services": [
+        "Default",
+        "Large",
+        "Medium",
+        "None",
+        "Small",
+        "XL",
+        "caption",
+        "clear_content",
+        "delete",
+        "file",
+        "image_padding",
+        "image_size",
+        "insert_above",
+        "insert_below",
+        "insert_left",
+        "insert_right",
+        "make_header",
+        "move_down",
+        "move_left",
+        "move_right",
+        "move_up",
+        "readonlySyntaxHighlighting",
+        "remove_header",
+        "reset_column_size",
+        "reset_row_size",
+        "reset_table_size",
+        "syntaxHighlighting",
+        "tableOfContent",
+        "toggleBlock",
+        "useDragAndDrop",
+        "video"
+      ],
+      "asset_bundles": {
+        "web._assets_primary_variables": 1,
+        "web.assets_frontend": 7,
+        "web.assets_backend": 8,
+        "html_editor.assets_editor": 14,
+        "html_editor.assets_history_diff": 2,
+        "html_editor.assets_media_dialog": 2,
+        "html_editor.assets_readonly": 11,
+        "web.assets_web_dark": 1,
+        "web.assets_tests": 1,
+        "web.assets_unit_tests": 1,
+        "web.assets_unit_tests_setup": 1,
+        "html_editor.assets_image_cropper": 3,
+        "web.report_assets_common": 3,
+        "web._assets_secondary_variables": 1,
+        "web._assets_backend_helpers": 2,
+        "web._assets_frontend_helpers": 1,
+        "html_editor.assets_prism": 2,
+        "html_editor.assets_prism_dark": 2
+      }
+    },
+    "integrations": {
+      "http_call_sites": 9,
+      "sdk_imports": [
+        "requests"
+      ],
+      "uses_api_keys": true,
+      "endpoints": [
+        "http://vimeo.com/api/oembed.json?url={video_url}",
+        "https://img.youtube.com/vi/{video_id}/0.jpg",
+        "https://media-api.odoo.com",
+        "https://olg.api.odoo.com",
+        "https://www.dailymotion.com/thumbnail/video/{video_id}",
+        "https://www.instagram.com/p/{video_id}/media/?size=t",
+        "https://www.odoo.com"
+      ],
+      "files": [
+        "__manifest__.py",
+        "controllers/main.py",
+        "models/ir_qweb_fields.py",
+        "tools.py"
+      ]
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    },
+    "behavioral_notes": [
+      {
+        "element": "Editor + Plugin framework (static/src/editor.js, plugin.js, plugin_sets.js)",
+        "observation": "The substance of html_editor is a static OWL/JS rich-text editor engine, NOT Python models. The Editor class attaches to a contenteditable element, topologically sorts a dependency-ordered list of Plugin subclasses, then wires them through a frozen 'resources' registry exposing dispatchTo (event fan-out), delegateTo (first-truthy command override) and checkPredicates (predicate voting). ~50 plugins are grouped into CORE_PLUGINS (Sanitize, Selection, History, Delete, Split, Clipboard, Format, Dom, Overlay, ProtectedNode, ...), MAIN_PLUGINS (Toolbar, Powerbox '/' command menu, Table, List, Link, Media/Image/Video, Font/Color, Banner, Emoji, Column, ...), COLLABORATION_PLUGINS and EMBEDDED_COMPONENT_PLUGINS (table-of-content, toggle-block, syntax-highlighting, caption, embedded video). The HtmlField OWL widget (registry fields:html) and Wysiwyg mount this engine inside forms; getContent runs clean_for_save_handlers before persistence. None of this architecture is visible in Python metadata (gap #3).",
+        "source": "static"
+      },
+      {
+        "element": "html.field.history.mixin.write (models/html_field_history_mixin.py)",
+        "observation": "Provides field-level version history for sanitized Html fields. On write of a versioned field (declared via _get_versioned_fields, which MUST be sanitize=True or it raises ValidationError), it diffs old vs new content with generate_patch (diff_utils) and prepends a reverse patch {patch, revision_id, create_date, create_uid, create_user_name} into the html_field_history Json column, capped at 300 revisions (_html_field_history_size_limit), then calls super().write a second time to persist the new revision. html_field_history_get_content_at_revision replays patches with apply_patch to reconstruct any past revision, and *_get_comparison / *_get_unified_diff produce visual diffs. This document-versioning side-effect is invisible to metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "ir.websocket._build_bus_channel_list + /html_editor/bus_broadcast (real-time collaboration)",
+        "observation": "Collaborative editing rides the bus: the client subscribes to channels matching editor_collaboration:<model>:<field>:<res_id>; ir.websocket parses that pattern and authorizes the subscription only after check_access('read') AND check_access('write') on the document plus _check_field_access on the field (public users denied via AccessDenied). The /html_editor/bus_broadcast jsonrpc route re-runs the same access checks then bus.bus._sendone broadcasts peer edit ops/cursors on the (db,'editor_collaboration',model,field,res_id) channel. /get_ice_servers returns mail.ice.server records for the WebRTC peer transport. Cross-module side-effects (bus.bus + mail.ice.server) not derivable from html_editor's own models.",
+        "source": "code-read"
+      },
+      {
+        "element": "ir.attachment extension + /modify_image + /generate_text (media pipeline & AI)",
+        "observation": "html_editor extends ir.attachment with computed image_src/image_width/image_height/local_url and an original_id link to the unoptimized source, so the media dialog and image-shape routes can serve optimized/resized/cropped variants (image_process, webp). /modify_image writes a derived attachment keeping original_id; /shape and /image_shape recolor SVG shapes by substituting palette colors pulled from the web.assets_frontend CSS bundle (with hex/rgba injection guards to prevent arbitrary CSS). /generate_text proxies the editor 'AI' feature to Odoo's OLG IAP endpoint (olg.api.odoo.com) via iap_tools.iap_jsonrpc with the database uuid; link_preview routes call mail.tools.link_preview; /video_url/data hits YouTube/Vimeo/Dailymotion oEmbed. These outbound calls and the attachment side-effects are metadata-invisible (gap #7).",
+        "source": "code-read"
+      }
+    ]
+  },
+  "it_architecture": {
+    "application": "html_editor (OWL rich-text editor engine + plugin framework, media/attachment pipeline, in-place QWeb field editing, real-time collaboration transport)",
+    "software_services": [
+      "/html_editor/attachment/remove",
+      "/web_editor|/html_editor/get_image_info",
+      "/web_editor|/html_editor/attachment/add_data, add_url",
+      "/web_editor|/html_editor/modify_image (optimize/resize/crop)",
+      "/web_editor|/html_editor/shape, image_shape (recolored SVG shapes)",
+      "/web_editor|/html_editor/save_library_media",
+      "/html_editor/media_library_search (Odoo media library)",
+      "/web_editor|/html_editor/video_url/data (oEmbed)",
+      "/web_editor|/html_editor/generate_text (AI / OLG IAP)",
+      "/web_editor|/html_editor/get_ice_servers (WebRTC)",
+      "/web_editor|/html_editor/bus_broadcast (collaboration)",
+      "/html_editor/link_preview_external, link_preview_internal"
+    ],
+    "data_objects": [
+      "html.field.history.mixin",
+      "ir.attachment (extension)",
+      "html_editor.converter.test",
+      "html_editor.converter.test.sub"
+    ],
+    "logical_data_erm": [
+      "ir.attachment.original_id -> ir.attachment (optimized variant -> original source)",
+      "html.field.history.mixin.html_field_history -> Json revision stack (self-contained, no FK)",
+      "editor_collaboration:<model>:<field>:<res_id> -> bus.bus channel (any sanitized Html field on any model)",
+      "html_editor.converter.test.many2one -> html_editor.converter.test.sub (test only)"
+    ],
+    "information_flows": [
+      "depends: base, bus, web",
+      "edit: HtmlField/Wysiwyg OWL widget -> Editor.attachTo(contenteditable) -> plugin pipeline -> getContent (clean_for_save) -> ORM write",
+      "versioning: write(sanitized Html field) -> generate_patch -> html_field_history Json (<=300 revs) -> apply_patch replay on demand",
+      "collaboration: client bus subscribe editor_collaboration:* -> ir.websocket access check -> /bus_broadcast -> bus.bus._sendone -> peers",
+      "media: add_data/add_url/modify_image -> ir.attachment (image_process, original_id) -> /web/image serving; /shape recolors SVG from web.assets_frontend CSS",
+      "external: /generate_text -> iap_tools.iap_jsonrpc(olg.api.odoo.com); /video_url/data -> youtube/vimeo/dailymotion oEmbed; link_preview -> mail.tools",
+      "extends: ir.qweb, ir.qweb.field.*, ir.ui.view, ir.http, ir.websocket, ir.attachment"
+    ],
+    "frontend_components": [
+      "Editor (engine, static/src/editor.js)",
+      "Plugin base + ~50 plugins (plugin_sets.js: CORE/MAIN/COLLABORATION/EMBEDDED)",
+      "HtmlField (registry fields:html OWL widget)",
+      "HtmlViewer",
+      "Powerbox ('/' command menu)",
+      "MediaDialog",
+      "FileSelector",
+      "ImageCrop / ImageTransformation",
+      "LinkPopover",
+      "ColorSelector / GradientPicker",
+      "FontSelector / FontFamilySelector / FontSizeSelector",
+      "AlignSelector / ListSelector / IconSelector",
+      "ChatGPTDialog",
+      "HistoryDialog",
+      "EditorOverlay",
+      "Embedded components (TableOfContent, ToggleBlock, SyntaxHighlighting, Caption, Video)"
+    ]
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Provide a Rich-Text / WYSIWYG Editing Component (OWL Editor + plugin framework reused by mail, website, knowledge, mass_mailing)",
+      "Sanitize, Edit & Save HTML Field Content (contenteditable -> clean_for_save -> ORM)",
+      "Manage Editor Media (image upload/optimize/resize/crop, video oEmbed, SVG shape recoloring, Odoo media library)",
+      "Version HTML Field Content (diff/patch revision history + restore/compare)",
+      "Enable Real-Time Collaborative Editing (bus channels + WebRTC ICE)",
+      "Render Editable QWeb Fields & Convert Edits Back to Records (in-place website/report editing)",
+      "Provide AI Text Generation in the Editor (OLG IAP proxy)"
+    ],
+    "value_streams": [
+      "Compose-to-Persist: open Html field -> Editor plugins -> sanitized content -> ORM write (+ optional version snapshot)",
+      "Insert-Media: pick/upload media -> ir.attachment optimize -> embed referencing /web/image",
+      "Co-edit: subscribe collaboration channel -> broadcast peer ops via bus -> converge document"
+    ],
+    "information_concepts": [
+      "html.field.history.mixin (field revision stack)",
+      "ir.attachment (editor media / image variants)",
+      "editor_collaboration bus channel (collaboration session state)",
+      "QWeb editable field (data-oe-* metadata)",
+      "asset bundle (html_editor.assets_editor / assets_readonly)"
+    ],
+    "organization": [],
+    "products": [],
+    "policies": [
+      "Versioned Html fields MUST be sanitize=True (ValidationError otherwise); collaboration bus channels require check_access read+write on the document and field (_check_field_access), public users denied; SVG shape recoloring guards against arbitrary color injection (hex/rgba whitelist); editor content passes the Sanitize plugin / server-side sanitize before persistence"
+    ],
+    "stakeholders": [
+      "End user / content author (writes rich text in any Html field)",
+      "Module developer (embeds HtmlField/Wysiwyg, writes editor plugins, declares versioned fields)",
+      "Website / Knowledge / Mail composer (consumes the editor as its text surface)"
+    ],
+    "strategy": null,
+    "metrics": [
+      "Revision count per versioned field (html_field_history, capped 300); upload progress toast; AI request quota (limit_call_reached from OLG endpoint)"
+    ]
+  },
+  "classification": {
+    "value_model": "support",
+    "activity_class": "support",
+    "apqc_category": "8.0 Manage Information Technology",
+    "rationale": "html_editor is technical UI-framework infrastructure (Porter support activity; Stabell & Fjeldstad 'support'), not a value-creating primary activity of any chain/shop/network. It is the shared rich-text/WYSIWYG editing component and plugin framework that mail, website, knowledge, mass_mailing and other modules embed wherever an Html field is edited; auto_install=true (depends base/bus/web) makes it ubiquitous editor plumbing. Like web, its substance is the FRONTEND layer: ~187 JS files / ~58 XML templates, ~40 catalogued OWL components and an Editor-plus-~50-plugin engine (gap #3), versus only ~2 real own Python models (html.field.history.mixin + test models) and ~5 inherit-only ORM extensions (ir.attachment, ir.qweb.field.*, ir.ui.view, ir.http, ir.websocket) — the inverse of a data-bearing business module. APQC 8.0 'Manage Information Technology' fits because html_editor is an IT-delivery / application-platform capability (it delivers a reusable client UI component plus its media/collaboration plumbing). 13.0 'Develop and Manage Business Capabilities' was the auto-architect baseline guess and was considered (the editor is a platform other capabilities build on) but rejected: html_editor is a concrete running UI runtime/component, not a governance/portfolio capability — its work is IT delivery, squarely 8.0."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "Reusable OWL rich-text editor (HtmlField widget + Wysiwyg) with a dependency-ordered plugin framework",
+      "Powerbox '/' command menu, toolbar, tables, lists, links, fonts/colors, emoji, banners, columns",
+      "Media management: image upload/optimize/resize/crop, video oEmbed (YouTube/Vimeo/Dailymotion), SVG shape recoloring, Odoo media library search",
+      "HTML field versioning (diff/patch history, restore & visual comparison)",
+      "Real-time collaborative editing over the bus (+ WebRTC ICE servers)",
+      "In-place QWeb field editing with conversion of edits back to Odoo records",
+      "Embedded components (table of contents, toggle blocks, syntax highlighting, captions)",
+      "AI text generation in the editor via Odoo OLG IAP"
+    ],
+    "typical_fits": [
+      "Drop an Html field with the editor into any form/model with zero editor plumbing",
+      "Use the media dialog and image pipeline out of the box (website, mail, knowledge)",
+      "Enable field history by overriding _get_versioned_fields on a sanitize=True Html field"
+    ],
+    "common_gaps": [
+      "Custom editor plugins / commands / embedded components (requires JS dev, gap #3)",
+      "Bespoke sanitization / allowed-tag policies beyond the default Sanitize plugin",
+      "Self-hosted or alternative AI provider instead of the Odoo OLG IAP endpoint",
+      "External integrations are limited to Odoo IAP/media + public oEmbed/CDN hosts (gap #7), not arbitrary third-party CMS/editor services"
+    ],
+    "drive_hints": [
+      "odoo shell: create a model inheriting html.field.history.mixin overriding _get_versioned_fields, write a sanitized Html field twice, then html_field_history_get_comparison_at_revision(field, 1) to see the diff",
+      "curl POST /html_editor/video_url/data with a YouTube url (auth=user) to exercise oEmbed thumbnail/embed extraction",
+      "curl POST /html_editor/link_preview_external {preview_url:'https://www.odoo.com'} to see Open Graph link-preview metadata",
+      "Open any form with an Html field in the web client, type '/' to invoke the Powerbox command menu (the OWL editor engine)"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Full plugin/component inventory: extract_frontend caps the list; ~187 JS files hold many more plugins/components than catalogued (plugin_sets.js alone references ~50 plugin classes).",
+    "Which downstream modules embed the editor and with which plugin sets (web vs mail vs website vs knowledge configurations).",
+    "Exact collaboration protocol payload (peer ops / CRDT-like merge semantics) carried over the editor_collaboration bus channel.",
+    "Runtime usage: no live row counts captured (extract_runtime not run); html.field.history.mixin is abstract so storage lives on concrete adopters."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/html_editor.facts.json",
+    "tools": [
+      "code-read",
+      "extract_frontend.py",
+      "extract_module.py",
+      "static (frontend source read)"
+    ],
+    "odoo_version": "19.0"
+  }
+}

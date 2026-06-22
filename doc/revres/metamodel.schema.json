@@ -1,0 +1,99 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Odoo Subsystem Architecture Metamodel Record",
+  "description": "One record per Odoo subsystem. code-explorer fills the `evidence` (facts from code/runtime); code-architect fills `business_architecture`, `it_architecture`, classification, and fit_to_standard (synthesis). Confidence per element: auto = from metadata/AST; inferred = reasoned from structure; human = needs a person.",
+  "type": "object",
+  "required": ["subsystem", "evidence", "it_architecture", "business_architecture", "classification", "fit_to_standard", "provenance"],
+  "properties": {
+    "subsystem": {"type": "string", "description": "module name, e.g. sale"},
+
+    "evidence": {
+      "description": "FILLED BY code-explorer. Ground-truth facts.",
+      "type": "object",
+      "properties": {
+        "manifest": {"type": "object", "description": "name, category, depends, auto_install"},
+        "models": {"type": "array", "description": "[{_name,_description,fields,relations}]"},
+        "routes": {"type": "array", "description": "[{paths,auth,type}]"},
+        "security": {"type": "object", "description": "{access_rules,record_rules,groups}"},
+        "views": {"type": "object"},
+        "frontend": {"type": "object", "description": "gap #3: OWL/JS from extract_frontend.py (owl_components, registry_adds, patches, asset_bundles, js/xml counts)"},
+        "integrations": {"type": "object", "description": "gap #7: external HTTP/SDK/api-key usage from extract_frontend.py"},
+        "runtime": {"type": "object", "description": "gap #5/#6: live row counts + samples + queries-per-count from extract_runtime.sh"},
+        "behavioral_notes": {
+          "type": "array",
+          "description": "What metadata CANNOT show (METADATA_LIMITS_AR): key method semantics, cross-model side-effects, automation effects, external calls. From reading code / running it.",
+          "items": {"type": "object", "properties": {
+            "element": {"type": "string"},
+            "observation": {"type": "string"},
+            "source": {"enum": ["ast", "code-read", "static", "runtime", "log-trace"]}
+          }}
+        }
+      }
+    },
+
+    "it_architecture": {
+      "description": "FILLED BY code-architect from evidence. (B&IT Metamodel Alignment whitepaper.)",
+      "type": "object",
+      "properties": {
+        "application": {"type": "string", "description": "the module as an application component"},
+        "software_services": {"type": "array", "description": "from routes[]", "items": {"type": "string"}},
+        "data_objects": {"type": "array", "description": "from models[]._name", "items": {"type": "string"}},
+        "logical_data_erm": {"type": "array", "description": "key relations a->b", "items": {"type": "string"}},
+        "information_flows": {"type": "array", "description": "depends + cross-model side-effects", "items": {"type": "string"}}
+      }
+    },
+
+    "business_architecture": {
+      "description": "FILLED BY code-architect. Business Architecture Guild Metamodel v3.0 domains. Mark each item's confidence.",
+      "type": "object",
+      "properties": {
+        "capabilities": {"type": "array", "items": {"type": "string"}, "description": "inferred"},
+        "value_streams": {"type": "array", "items": {"type": "string"}, "description": "inferred (document flow)"},
+        "information_concepts": {"type": "array", "items": {"type": "string"}, "description": "auto (= business models)"},
+        "organization": {"type": "array", "items": {"type": "string"}, "description": "auto (groups)"},
+        "products": {"type": "array", "items": {"type": "string"}, "description": "auto if product-bearing"},
+        "policies": {"type": "array", "items": {"type": "string"}, "description": "inferred (ir.rule/automation)"},
+        "stakeholders": {"type": "array", "items": {"type": "string"}},
+        "strategy": {"type": ["string", "null"], "description": "human — usually null"},
+        "metrics": {"type": "array", "items": {"type": "string"}, "description": "inferred (reports/KPIs)"}
+      }
+    },
+
+    "classification": {
+      "type": "object",
+      "properties": {
+        "value_model": {"enum": ["chain", "shop", "network", "support"], "description": "Stabell & Fjeldstad"},
+        "activity_class": {"enum": ["primary", "support"]},
+        "apqc_category": {"type": "string", "description": "1.0-13.0"},
+        "rationale": {"type": "string"}
+      }
+    },
+
+    "fit_to_standard": {
+      "type": "object",
+      "properties": {
+        "standard_capabilities": {"type": "array", "items": {"type": "string"}, "description": "what Odoo does out-of-box here"},
+        "typical_fits": {"type": "array", "items": {"type": "string"}},
+        "common_gaps": {"type": "array", "items": {"type": "string"}, "description": "areas usually needing config/dev"},
+        "drive_hints": {"type": "array", "items": {"type": "string"}, "description": "odoo shell / curl to demo live"}
+      }
+    },
+
+    "reverse_eng_confidence": {
+      "type": "object",
+      "description": "per BA-domain: auto | inferred | human",
+      "additionalProperties": {"enum": ["auto", "inferred", "human"]}
+    },
+
+    "open_questions": {"type": "array", "items": {"type": "string"}},
+
+    "provenance": {
+      "type": "object",
+      "properties": {
+        "explorer_facts": {"type": "string", "description": "path to facts.json"},
+        "tools": {"type": "array", "items": {"type": "string"}},
+        "odoo_version": {"type": "string"}
+      }
+    }
+  }
+}

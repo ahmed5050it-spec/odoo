@@ -1,0 +1,193 @@
+{
+  "subsystem": "l10n_ro_edi",
+  "evidence": {
+    "manifest": {
+      "name": "Romania - E-invoicing",
+      "category": "Accounting/Localizations/EDI",
+      "depends": [
+        "account_edi_ubl_cii",
+        "l10n_ro"
+      ],
+      "auto_install": true,
+      "application": false
+    },
+    "models": [
+      {
+        "_name": "account.edi.xml.ubl_ro",
+        "_description": "CIUS RO",
+        "fields": 0
+      },
+      {
+        "_name": "l10n_ro_edi.document",
+        "_description": "Document object for tracking CIUS-RO XML sent to E-Factura",
+        "fields": 9
+      }
+    ],
+    "routes": [
+      {
+        "paths": [
+          "/l10n_ro_edi/authorize/<int:company_id>"
+        ],
+        "auth": "user",
+        "type": null
+      },
+      {
+        "paths": [
+          "/l10n_ro_edi/callback/<int:company_id>"
+        ],
+        "auth": "user",
+        "type": "http"
+      }
+    ],
+    "security": {
+      "access_rules": 2,
+      "record_rules": 0,
+      "groups": 0
+    },
+    "views": {
+      "form": 0,
+      "list": 1,
+      "tree": 0,
+      "kanban": 0,
+      "search": 0,
+      "pivot": 0,
+      "graph": 0,
+      "calendar": 0,
+      "activity": 0
+    },
+    "frontend": {
+      "present": true,
+      "js_files": 1,
+      "xml_templates": 1,
+      "owl_components": [
+        "FetchInvoicesCogMenu"
+      ],
+      "registry_adds": [
+        "cogMenu:l10n_ro_edi-fetch-invoices"
+      ],
+      "patches": [],
+      "services": [
+        "action_l10n_ro_edi_fetch_invoices"
+      ],
+      "asset_bundles": {
+        "web.assets_backend": 1,
+        "web.tests_assets": 1
+      }
+    },
+    "integrations": {
+      "http_call_sites": 1,
+      "sdk_imports": [
+        "requests"
+      ],
+      "uses_api_keys": true,
+      "endpoints": [
+        "http://www.w3.org/2000/09/xmldsig#",
+        "https://api.anaf.ro/{send_mode}/FCTEL/rest/{endpoint}",
+        "https://logincert.anaf.ro/anaf-oauth2/v1/authorize",
+        "https://logincert.anaf.ro/anaf-oauth2/v1/token",
+        "https://webservicesp.anaf.ro/prod/FCTEL/rest/transformare/FACT1/DA"
+      ],
+      "files": [
+        "controllers/main.py",
+        "models/account_move.py",
+        "models/res_company.py",
+        "models/utils.py"
+      ]
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    },
+    "behavioral_notes": [
+      {
+        "element": "frontend (OWL/JS)",
+        "observation": "1 JS files, 1 OWL components, 1 registry adds; bundles ['web.assets_backend', 'web.tests_assets'].",
+        "source": "static"
+      },
+      {
+        "element": "external integrations",
+        "observation": "1 HTTP call sites; SDKs ['requests']; api_keys=True.",
+        "source": "static"
+      },
+      {
+        "element": "thin module",
+        "observation": "2 models, 2 routes, 2377 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
+        "source": "ast"
+      }
+    ]
+  },
+  "it_architecture": {
+    "application": "l10n_ro_edi (Romania - E-invoicing)",
+    "software_services": [
+      "/l10n_ro_edi/authorize/<int:company_id>",
+      "/l10n_ro_edi/callback/<int:company_id>"
+    ],
+    "data_objects": [
+      "account.edi.xml.ubl_ro",
+      "l10n_ro_edi.document"
+    ],
+    "logical_data_erm": [
+      "l10n_ro_edi.document -> account.move"
+    ],
+    "information_flows": [
+      "depends: account_edi_ubl_cii, l10n_ro"
+    ],
+    "frontend_components": [
+      "FetchInvoicesCogMenu"
+    ]
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Romania - E-invoicing"
+    ],
+    "value_streams": [],
+    "information_concepts": [
+      "account.edi.xml.ubl_ro",
+      "l10n_ro_edi.document"
+    ],
+    "organization": [],
+    "products": [],
+    "policies": [],
+    "stakeholders": [],
+    "strategy": null,
+    "metrics": []
+  },
+  "classification": {
+    "value_model": "support",
+    "activity_class": "support",
+    "apqc_category": "9.0 Manage Financial Resources",
+    "rationale": "l10n_ro_edi: thin support/support module (auto-architect baseline)."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "Romania - E-invoicing"
+    ],
+    "typical_fits": [],
+    "common_gaps": [],
+    "drive_hints": [
+      "odoo shell: env['account.edi.xml.ubl_ro'].search([],limit=3)"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/l10n_ro_edi.facts.json",
+    "tools": [
+      "extract_module.py",
+      "extract_frontend.py",
+      "gen_thin.py"
+    ],
+    "odoo_version": "19.0"
+  }
+}

@@ -1,0 +1,306 @@
+{
+  "subsystem": "auth_timeout",
+  "evidence": {
+    "manifest": {
+      "name": "Auth Timeout",
+      "category": "Hidden/Tools",
+      "summary": "Ask for authentication after user inactivity",
+      "author": "Odoo S.A.",
+      "license": "LGPL-3",
+      "depends": [
+        "auth_totp",
+        "auth_totp_mail",
+        "auth_passkey",
+        "bus"
+      ],
+      "auto_install": false,
+      "application": false
+    },
+    "models": [
+      {
+        "_name": "ir.http (extension)",
+        "_description": "Dispatch hook: _must_check_identity / _authenticate / _handle_error / _set_session_inactivity / _check_identity + session_info enrichment",
+        "fields": 0,
+        "relations": [
+          "_inherit ir.http (abstract; no table)"
+        ]
+      },
+      {
+        "_name": "ir.websocket (extension)",
+        "_description": "Presence-driven inactivity stamping: _update_mail_presence / _on_websocket_closed feed _set_session_inactivity",
+        "fields": 0,
+        "relations": [
+          "_inherit ir.websocket (abstract; no table)"
+        ]
+      },
+      {
+        "_name": "res.groups (extension)",
+        "_description": "Adds the timeout configuration: lock_timeout, lock_timeout_mfa, lock_timeout_inactivity, lock_timeout_inactivity_mfa (+ UI compute/inverse helpers) and the cached _get_lock_timeouts() resolver",
+        "fields": 12,
+        "relations": [
+          "_inherit res.groups (timeout policy attached to access groups)"
+        ]
+      },
+      {
+        "_name": "res.users (extension)",
+        "_description": "User-facing resolvers: _get_auth_methods, _get_lock_timeouts (via group membership), _get_lock_timeout_inactivity",
+        "fields": 0,
+        "relations": [
+          "_inherit res.users (resolves timeouts from the user's implied groups)"
+        ]
+      },
+      {
+        "_name": "auth_totp.device (extension)",
+        "_description": "Caps trusted-device age to the shortest MFA session timeout (_get_trusted_device_age)",
+        "fields": 0,
+        "relations": [
+          "_inherit auth_totp.device"
+        ]
+      }
+    ],
+    "routes": [
+      {
+        "paths": [
+          "/auth-timeout/check-identity"
+        ],
+        "auth": "user",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/auth-timeout/session/check-identity"
+        ],
+        "auth": "user",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/auth-timeout/send-totp-mail-code"
+        ],
+        "auth": "user",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/web/webclient/load_menus (re-route, check_identity=False)"
+        ],
+        "auth": "user",
+        "type": "http"
+      }
+    ],
+    "security": {
+      "access_rules": 0,
+      "record_rules": 0,
+      "groups": 0
+    },
+    "views": {
+      "form": 0,
+      "list": 0,
+      "tree": 0,
+      "kanban": 0,
+      "search": 0,
+      "pivot": 0,
+      "graph": 0,
+      "calendar": 0,
+      "activity": 0
+    },
+    "frontend": {
+      "present": true,
+      "js_files": 1,
+      "xml_templates": 1,
+      "owl_components": [
+        "CheckIdentityDialog",
+        "CheckIdentityForm"
+      ],
+      "registry_adds": [
+        "error_handlers:checkIdentityErrorHandler",
+        "public_components:auth_timeout.check_identity_form",
+        "services:check_identity"
+      ],
+      "patches": [],
+      "services": [],
+      "asset_bundles": {
+        "web.assets_backend": 1,
+        "web.assets_frontend": 2,
+        "web.assets_tests": 1
+      }
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": false,
+      "endpoints": [],
+      "files": []
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    },
+    "behavioral_notes": [
+      {
+        "element": "ir.http._authenticate / _must_check_identity (the request-dispatch inactivity/age gate)",
+        "observation": "The whole module hangs off ir.http._authenticate, the per-request auth hook. After super()._authenticate, for any auth='user' route with a logged-in session it calls _must_check_identity(). That resolver pulls the user's timeouts (res.users._get_lock_timeouts) and walks two thresholds: a hard 'lock_timeout' compared against the session's create_time (max session age regardless of activity) and a 'lock_timeout_inactivity' compared against the session key 'identity-check-next'. threshold = time.time() - timeout; if the stored timestamp - first_timeout <= threshold the timeout is breached. A breached lock_timeout returns {logout:True} -> _authenticate raises SessionExpiredException (client redirects to /web/login, full re-login); a breached inactivity timeout returns {check_identity:True} -> raises the module's CheckIdentityException (a SessionExpiredException subclass with DEBUG loglevel) unless the route opted out via routing check_identity=False. So expiry is enforced lazily on the NEXT request after the deadline, not by a background job.",
+        "source": "code-read"
+      },
+      {
+        "element": "ir.http._set_session_inactivity + ir.websocket presence (how session activity is stamped)",
+        "observation": "Inactivity is tracked not via an HTTP last-seen timestamp but through the bus websocket presence channel. ir.websocket._update_mail_presence (extended) forwards the JS-reported inactivity_period to ir.http._set_session_inactivity(session, inactivity_period): it converts ms->s, fetches the user's shortest inactivity timeout, and when inactive (period >= timeout, or force=True) writes session['identity-check-next'] = now + timeout - inactivity_period, persisting via root.session_store.save(session) because websocket requests don't auto-save the session. If the user becomes active again before the deadline it pops 'identity-check-next'. ir.websocket._on_websocket_closed calls _set_session_inactivity(session, force=True) so closing the last tab / losing connectivity immediately arms the deadline. Only the lowest inactivity timeout sets the key, so _must_check_identity discounts higher timeouts by 'first_timeout' to stay consistent.",
+        "source": "code-read"
+      },
+      {
+        "element": "res.groups timeout configuration + _get_lock_timeouts() resolver (configurable: group-scoped, not per-user)",
+        "observation": "Timeouts are configured per access GROUP, not per individual user and not as a single system parameter: res.groups gains lock_timeout, lock_timeout_mfa, lock_timeout_inactivity, lock_timeout_inactivity_mfa (minutes), plus human-readable UI helpers (delay/unit selection, with_2fa vs without_2fa). The @ormcache('self._ids') _get_lock_timeouts() folds every group a user implies into the SHORTEST applicable timeout per type, splitting MFA vs non-MFA into ordered (seconds, requires_mfa) tuples; res.users._get_lock_timeouts resolves this through _get_group_ids(). create/write/unlink override env.registry.clear_cache() whenever any of the four core fields change to keep the ormcache coherent. UI defaults via onchange: enabling session timeout seeds 1440 min (1 day) + MFA required; enabling inactivity timeout seeds 15 min + MFA off.",
+        "source": "code-read"
+      },
+      {
+        "element": "ir.http._check_identity + _handle_error (re-auth completion & MFA step-up)",
+        "observation": "On a CheckIdentityException, _handle_error redirects HTTP requests to /auth-timeout/check-identity (server-rendered page) while JSONRPC errors surface as the screen-lock dialog. The /auth-timeout/session/check-identity jsonrpc route calls ir.http._check_identity(credential): with no credential it returns the user's available _get_auth_methods (webauthn/totp/totp_mail/password); with a credential it runs user._check_credentials, and when the breached timeout demanded MFA and more than one method exists it records the first factor in session 'identity-check-1fa' and asks for a second. On success it pops 'identity-check-next' and stamps 'identity-check-last', clearing the deadline. auth_totp.device._get_trusted_device_age is also capped to the shortest MFA session timeout so a 'remembered' device can't outlive the policy.",
+        "source": "code-read"
+      },
+      {
+        "element": "frontend (CheckIdentity OWL dialog + error handler, static)",
+        "observation": "Client footprint is a small OWL surface, not a Python concern: components CheckIdentityDialog and CheckIdentityForm, a 'check_identity' service, a 'checkIdentityErrorHandler' error_handler (catches the CheckIdentityException over rpc and pops the screen-lock dialog instead of erroring), and a public_components registration 'auth_timeout.check_identity_form' for the standalone page. Bundles touched: web.assets_backend (1), web.assets_frontend (2), web.assets_tests (1); 1 JS file + 1 QWeb template (the check_identity page). The web client also reads 'lock_timeout_inactivity' injected into session_info/get_frontend_session_info to drive the inactivity countdown locally.",
+        "source": "static"
+      }
+    ]
+  },
+  "it_architecture": {
+    "application": "auth_timeout (session inactivity / max-age timeout: lazily re-confirms identity or logs out idle or long-lived web sessions, with optional MFA step-up, layered on the web request dispatch)",
+    "software_services": [
+      "/auth-timeout/check-identity (HTTP: server-rendered re-auth page reached on CheckIdentityException redirect)",
+      "/auth-timeout/session/check-identity (JSONRPC: receive the screen-lock auth form, run _check_identity)",
+      "/auth-timeout/send-totp-mail-code (JSONRPC: trigger email-OTP delivery during re-auth)",
+      "/web/webclient/load_menus (re-routed check_identity=False so the bare fetch is exempt from the gate)"
+    ],
+    "data_objects": [
+      "(none - models=0; behaviour lives in ir.http / ir.websocket / res.groups / res.users extensions and HTTP session keys)"
+    ],
+    "logical_data_erm": [
+      "res.groups -1::N(implied)-> res.users (timeout policy resolved from implied-group membership)",
+      "res.users -reads-> res.groups._get_lock_timeouts (shortest per-type timeout, MFA vs non-MFA)",
+      "HTTP session keys: create_time / identity-check-next / identity-check-last / identity-check-1fa (transient state, no DB table)",
+      "auth_totp.device -capped-by-> res.groups.lock_timeout (MFA) (trusted-device age <= session timeout)"
+    ],
+    "information_flows": [
+      "depends: auth_totp + auth_totp_mail + auth_passkey (re-auth offers totp/totp_mail/webauthn/password factors) + bus (websocket presence carries inactivity)",
+      "stamp: web client presence -> ir.websocket._update_mail_presence -> ir.http._set_session_inactivity -> session['identity-check-next'] (saved to session_store)",
+      "arm-on-close: ir.websocket._on_websocket_closed(force=True) -> identity-check-next set immediately (last tab closed / connection lost)",
+      "gate: every auth='user' request -> ir.http._authenticate -> _must_check_identity -> compare now vs create_time (age) & identity-check-next (idle)",
+      "logout: lock_timeout breached -> SessionExpiredException -> client redirect to /web/login (full re-login)",
+      "lock: lock_timeout_inactivity breached -> CheckIdentityException -> _handle_error -> /auth-timeout/check-identity (page) or screen-lock dialog (rpc)",
+      "re-auth: /auth-timeout/session/check-identity -> _check_identity -> _check_credentials (+optional MFA step-up via identity-check-1fa) -> pop identity-check-next, set identity-check-last",
+      "config: res.groups timeout fields -> _get_lock_timeouts (ormcache, cleared on create/write/unlink) -> res.users -> session_info/get_frontend_session_info (lock_timeout_inactivity to JS countdown)"
+    ],
+    "frontend_components": [
+      "CheckIdentityDialog (OWL screen-lock dialog shown on CheckIdentityException over rpc)",
+      "CheckIdentityForm (OWL re-auth form, also registered as public_components auth_timeout.check_identity_form)",
+      "check_identity (service)",
+      "checkIdentityErrorHandler (error_handlers registry: intercepts CheckIdentityException -> dialog)"
+    ]
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Session Inactivity Timeout (auto screen-lock after idle period)",
+      "Maximum Session Age / Forced Re-login (regardless of activity)",
+      "Lazy Identity Re-confirmation on Request Dispatch",
+      "Step-up Multi-Factor Re-authentication (optional MFA on timeout)",
+      "Group-scoped Timeout Policy Configuration (per access group, shortest-wins)",
+      "Presence-driven Inactivity Tracking (websocket)",
+      "Trusted-Device Age Capping to Session Policy"
+    ],
+    "value_streams": [
+      "Idle-to-Locked: presence reports inactivity -> identity-check-next armed -> next request raises CheckIdentityException -> screen-lock dialog -> re-auth -> session resumed",
+      "Aged-to-Relogin: session passes lock_timeout from create_time -> next request raises SessionExpiredException -> redirect to /web/login -> full re-login",
+      "Policy-to-Enforcement: admin sets group lock_timeout(_inactivity) -> _get_lock_timeouts cache rebuilt -> every member's sessions gated"
+    ],
+    "information_concepts": [
+      "res.groups timeout policy (lock_timeout / lock_timeout_inactivity + _mfa flags)",
+      "HTTP session deadline keys (create_time, identity-check-next, identity-check-last, identity-check-1fa)",
+      "resolved per-user timeouts ((seconds, requires_mfa) tuples from _get_lock_timeouts)"
+    ],
+    "organization": [],
+    "policies": [
+      "Timeout policy is attached to res.groups, not per-user; the SHORTEST timeout across all implied groups wins (stricter group dominates)",
+      "Two independent thresholds: hard max session age (lock_timeout vs create_time) and idle period (lock_timeout_inactivity vs identity-check-next)",
+      "Each timeout can independently require MFA (lock_timeout_mfa / lock_timeout_inactivity_mfa); UI defaults: 1 day + MFA for session, 15 min no-MFA for inactivity",
+      "Enforcement is lazy/at-dispatch (next request after the deadline), not a background expiry job",
+      "Routes may opt out of the identity check via routing check_identity=False (e.g. the re-auth routes themselves and /web/webclient/load_menus)",
+      "Trusted-device (auth_totp.device) lifetime is capped to the shortest MFA session timeout so 'remember me' cannot outlive policy"
+    ],
+    "products": [],
+    "stakeholders": [
+      "End user / employee (sees the screen-lock dialog and re-authenticates after idling)",
+      "Security administrator (sets per-group session and inactivity timeouts + MFA requirements)",
+      "Compliance / IT governance owner (relies on auto-lock to meet unattended-session controls)",
+      "Module developer (consumes _must_check_identity / check_identity=False routing flag and the auth-method extension points)"
+    ],
+    "strategy": null,
+    "metrics": [
+      "count of groups with lock_timeout / lock_timeout_inactivity configured (policy coverage)",
+      "frequency of CheckIdentityException / SessionExpiredException (re-auth and forced-logout rate)",
+      "shortest effective timeout per user (strictness of applied policy)"
+    ]
+  },
+  "classification": {
+    "value_model": "support",
+    "activity_class": "support",
+    "apqc_category": "8.0 Manage Information Technology",
+    "rationale": "auth_timeout is IT security infrastructure (Porter support activity; Stabell & Fjeldstad 'support'). It owns NO business object of its own (models=0: every piece of behaviour is an extension of ir.http, ir.websocket, res.groups and res.users plus transient HTTP-session keys), so it cannot be chain/shop/network. Its sole purpose is session-lifecycle hardening: lazily re-confirming identity or logging out idle / long-lived web sessions that EVERY other module sits behind. It creates no document chain, holds no customer/order/product/ledger data, and produces no primary-activity output. APQC 8.0 'Manage Information Technology' is the precise fit - specifically the 'Develop and manage IT security, privacy and data protection' / identity & access management capability, here the concrete runtime build/run of an access control (inactivity + max-age timeout, MFA step-up, group-scoped policy) wired into the request dispatcher. 11.0 'Manage Enterprise Risk, Compliance, Remediation and Resiliency' was considered because auto-lock supports unattended-session compliance mandates, but rejected: 11.0 is the governance layer (risk registers, control frameworks, audits, policy management) whereas auth_timeout is the technical implementation IT operates and delivers. No row exists in apqc_odoo_map.tsv for auth_timeout (that map enumerates primary chain/shop activities only); aligned instead with the auth_totp sibling record, which is likewise 8.0/support."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "Inactivity timeout (auto screen-lock) after a configurable idle period, enforced at the next request",
+      "Maximum session age forcing full re-login independent of activity",
+      "Optional MFA step-up on either timeout (reuse of auth_totp / auth_totp_mail / auth_passkey factors)",
+      "Group-scoped timeout policy with shortest-applicable-timeout resolution across implied groups",
+      "Presence-driven inactivity tracking over the bus websocket, with immediate arming on tab/connection close",
+      "Screen-lock OWL dialog for rpc requests + server-rendered re-auth page for plain HTTP requests",
+      "Trusted-device age automatically capped to the session MFA timeout",
+      "Per-route opt-out via routing check_identity=False"
+    ],
+    "typical_fits": [
+      "Locking unattended back-office sessions after N minutes idle to meet security/compliance controls",
+      "Forcing a daily full re-login on sensitive groups (default 1-day session timeout + MFA)",
+      "Requiring a second factor when an admin group session times out, without re-typing the password elsewhere",
+      "Applying stricter timeouts to admin/finance groups while leaving ordinary users looser (shortest-wins)"
+    ],
+    "common_gaps": [
+      "Configuration is per access group only - no per-user or single global system-parameter timeout out of the box",
+      "Enforcement is lazy (on next request) - a truly idle tab is only locked when it next talks to the server",
+      "Inactivity detection depends on the bus websocket presence channel; environments that block websockets weaken idle tracking",
+      "No built-in audit log / report of lock & forced-logout events (only the exceptions in the request log)",
+      "No UI to configure timeouts per individual user; relies on group membership modelling"
+    ],
+    "drive_hints": [
+      "odoo shell: env['res.users'].browse(2)._get_lock_timeouts()  # inspect resolved (seconds, requires_mfa) tuples for a user",
+      "odoo shell: g = env.ref('base.group_system'); g.write({'lock_timeout_inactivity': 1}); env['res.users'].browse(2)._get_lock_timeout_inactivity()  # set a 1-min idle policy and read it back",
+      "odoo shell: env['ir.http']._must_check_identity()  # (within a request context) returns {logout:True}/{check_identity:True}/None for the current session",
+      "curl -i 'http://localhost:8069/auth-timeout/check-identity'  # the server-rendered re-auth page (requires a user session)",
+      "browser: idle a backend tab past the group inactivity timeout -> next action raises CheckIdentityException -> CheckIdentityDialog screen-lock appears"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Interplay with the email-OTP factor (auth_totp_mail _send_totp_mail_code) and passkey (auth_passkey) during step-up re-auth is wired here but the factor logic lives in sibling modules - not fully traced.",
+    "Real-world timeout adoption and lock/forced-logout frequencies require runtime data (extract_runtime not run; no own models to count).",
+    "Exact behaviour when websocket presence is unavailable (idle-detection degradation) is referenced but not measured."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/auth_timeout.facts.json",
+    "tools": [
+      "code-read",
+      "extract_module.py",
+      "extract_frontend.py"
+    ],
+    "odoo_version": "19.0"
+  }
+}

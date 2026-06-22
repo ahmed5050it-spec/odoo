@@ -1,0 +1,1 @@
+{"module": "data_recycle", "frontend_gap3": {"present": true, "js_files": 2, "xml_templates": 1, "owl_components": [], "registry_adds": ["views:data_recycle_list"], "patches": [], "services": [], "asset_bundles": {"web.assets_backend": 2}}, "integrations_gap7": {"http_call_sites": 0, "sdk_imports": [], "uses_api_keys": false, "endpoints": [], "files": []}}

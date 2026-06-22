@@ -1,0 +1,296 @@
+{
+  "subsystem": "sale_pdf_quote_builder",
+  "evidence": {
+    "manifest": {
+      "name": "Sales PDF Quotation Builder",
+      "category": "Sales/Sales",
+      "summary": null,
+      "depends": [
+        "sale_management"
+      ],
+      "auto_install": true,
+      "application": false
+    },
+    "models": [
+      {
+        "_name": "quotation.document",
+        "_description": "Quotation's Headers & Footers",
+        "fields": 7,
+        "relations": [
+          "ir_attachment_id->ir.attachment (_inherits delegation)",
+          "quotation_template_ids->sale.order.template (header_footer_quotation_template_rel)",
+          "form_field_ids->sale.pdf.form.field"
+        ]
+      },
+      {
+        "_name": "sale.pdf.form.field",
+        "_description": "Form fields of inside quotation documents.",
+        "fields": 5,
+        "relations": [
+          "product_document_ids->product.document",
+          "quotation_document_ids->quotation.document"
+        ]
+      },
+      {
+        "_name": "ir.actions.report",
+        "_description": "(extension) overrides _render_qweb_pdf_prepare_streams to merge & fill PDF",
+        "fields": 0,
+        "relations": []
+      },
+      {
+        "_name": "product.document",
+        "_description": "(extension) adds attached_on_sale='inside' + form_field_ids",
+        "fields": 2,
+        "relations": [
+          "form_field_ids->sale.pdf.form.field"
+        ]
+      },
+      {
+        "_name": "sale.order",
+        "_description": "(extension) adds quotation_document_ids + customizable_pdf_form_fields",
+        "fields": 4,
+        "relations": [
+          "quotation_document_ids->quotation.document",
+          "available_quotation_document_ids->quotation.document"
+        ]
+      },
+      {
+        "_name": "sale.order.line",
+        "_description": "(extension) adds product_document_ids",
+        "fields": 2,
+        "relations": [
+          "product_document_ids->product.document (sale_order_line_product_document_rel)",
+          "available_product_document_ids->product.document"
+        ]
+      },
+      {
+        "_name": "sale.order.template",
+        "_description": "(extension) adds quotation_document_ids",
+        "fields": 1,
+        "relations": [
+          "quotation_document_ids->quotation.document (header_footer_quotation_template_rel)"
+        ]
+      }
+    ],
+    "routes": [
+      {
+        "paths": [
+          "/sale_pdf_quote_builder/quotation_document/upload"
+        ],
+        "auth": "user",
+        "type": "http"
+      }
+    ],
+    "security": {
+      "access_rules": 4,
+      "record_rules": 1,
+      "groups": 0
+    },
+    "views": {
+      "form": 1,
+      "list": 2,
+      "tree": 0,
+      "kanban": 1,
+      "search": 2,
+      "pivot": 0,
+      "graph": 0,
+      "calendar": 0,
+      "activity": 0
+    },
+    "frontend": {
+      "present": true,
+      "js_files": 5,
+      "xml_templates": 3,
+      "owl_components": [
+        "CustomContentKanbanLikeWidget",
+        "CustomFieldCard"
+      ],
+      "registry_adds": [
+        "fields:quotation_document_many2many",
+        "view_widgets:customContentKanbanLikeWidget",
+        "views:quotation_document_kanban"
+      ],
+      "patches": [],
+      "services": [],
+      "asset_bundles": {
+        "web.assets_backend": 1,
+        "web.assets_tests": 1
+      }
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": false,
+      "endpoints": [],
+      "files": []
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    },
+    "behavioral_notes": [
+      {
+        "element": "quotation.document (_inherits ir.attachment) + sale.order.template.quotation_document_ids",
+        "observation": "A quotation.document is a reusable header/footer PDF block: it delegates storage to ir.attachment via _inherits and carries a document_type selection ('header'|'footer'), a sequence and an add_by_default flag. It is linked to sale.order.template through the shared Many2many relation 'header_footer_quotation_template_rel' (declared on both quotation.document.quotation_template_ids and sale.order.template.quotation_document_ids), so a quotation template owns a curated set of header/footer blocks. On the sale.order, _compute_available_quotation_document_ids restricts the pool to documents of the order's company whose quotation_template_ids is empty (global) or contains the order's template; _onchange_sale_order_template_id then drops documents no longer available and re-adds the template's add_by_default header/footer blocks. This is the 'assemble reusable PDF blocks onto a quotation' behaviour and lives entirely in Python, not metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "sale.pdf.form.field path-vs-customizable AcroForm mapping (_create_or_update_form_fields_on_pdf_records / _add_basic_mapped_form_fields)",
+        "observation": "When a PDF's datas changes, quotation.document._compute_form_field_ids and product.document._compute_form_field_ids call sale.pdf.form.field._create_or_update_form_fields_on_pdf_records, which extracts the AcroForm text-field names from the PDF (utils._get_form_fields_from_pdf) and links one sale.pdf.form.field per field name (deduplicated per document_type by the UNIQUE(name, document_type) constraint). Each form field has an optional 'path': a dotted ORM path validated by _check_valid_and_existing_paths to be a real traversable field chain on sale.order (for quotation_document) or sale.order.line (for product_document). A field WITHOUT a path is a 'customizable' field whose value the user types in the quotation form (stored in sale.order.customizable_pdf_form_fields JSON); a field WITH a path is 'dynamic' and is resolved from live sale.order values at render. _add_basic_mapped_form_fields seeds the standard mappings (e.g. amount_total->amount_total, order_date->date_order, partner_id__name->partner_id.name, quantity->product_uom_qty). Header/footer field names may not start with 'sol_id_' (reserved as the per-line prefix).",
+        "source": "code-read"
+      },
+      {
+        "element": "ir.actions.report._render_qweb_pdf_prepare_streams (pypdf assembly + AcroForm fill)",
+        "observation": "The override fires only for report_name == 'sale.report_saleorder'. For each order (skipped once state=='sale' unless the ICP sale.always_include_selected_documents is set) it builds a pypdf PdfFileWriter and merges, in order: each selected header quotation.document, then per order_line each selected product.document, then the original QWeb quotation stream, then each footer. Every added page's AcroForm fields are renamed with a per-document prefix (quotation_document_id_<id>__ for headers/footers, sol_id_<line>_product_document_id_<doc>__ for product docs) via _add_pages_to_writer so identically-named fields across merged PDFs do not collide, and each field is forced read-only + multiline through /Ff flag bit-twiddling. A form_fields_values_mapping of prefixed-name -> value is accumulated and applied at the end with odoo.tools.pdf.fill_form_fields_pdf. This is the actual final-quotation PDF merge/assembly step.",
+        "source": "code-read"
+      },
+      {
+        "element": "dynamic field substitution (_get_value_from_path) vs customizable (_get_custom_value_from_order)",
+        "observation": "_update_mapping_and_add_pages_to_writer resolves each form field: a path field is filled by _get_value_from_path, which sudo-mapped-traverses the dotted path from the order (or order_line for product docs), formats the leaf by field type (booleans -> Yes/No, monetary -> format_amount with the order currency, date/datetime -> localized to the partner/user timezone, selection -> label, x2many/m2o -> comma-joined display_name), joining multiple values with ', '. A customizable (path-less) field is filled by _get_custom_value_from_order, reading the per-document value the user entered in sale.order.customizable_pdf_form_fields (keyed header/footer/line -> document id -> custom_form_fields). This is the dynamic substitution that fills the PDF AcroForm fields from live sale.order values at render time.",
+        "source": "code-read"
+      },
+      {
+        "element": "frontend (OWL PDF-field configurator, gap #3)",
+        "observation": "5 JS files, 3 XML templates, 2 OWL components and 0 patches. CustomContentKanbanLikeWidget (registered as view_widget customContentKanbanLikeWidget, template sale_pdf_quote_builder.CustomContentKanbanLike) is an in-form configurator on the sale.order: on setup/effect it calls sale.order.get_update_included_pdf_params via ORM to fetch available headers/lines/footers and their customizable fields, lets the salesperson toggle which header/footer/product PDF blocks are included and type values for path-less (customizable) form fields, then writes back quotation_document_ids (x2ManyCommands) and customizable_pdf_form_fields JSON; it goes readonly once the order state is 'sale'. CustomFieldCard renders an individual customizable form field. Also a custom quotation_document_kanban view/controller and a quotation_document_many2many field widget. Backend-only bundle (web.assets_backend); no external HTTP/SDK/api-key usage (gap #7 empty).",
+        "source": "static"
+      }
+    ]
+  },
+  "it_architecture": {
+    "application": "sale_pdf_quote_builder (rich-PDF quotation assembly add-on on the Sales app; auto_install on sale_management)",
+    "software_services": [
+      "/sale_pdf_quote_builder/quotation_document/upload"
+    ],
+    "data_objects": [
+      "quotation.document",
+      "sale.pdf.form.field",
+      "ir.actions.report (ext)",
+      "product.document (ext)",
+      "sale.order (ext)",
+      "sale.order.line (ext)",
+      "sale.order.template (ext)"
+    ],
+    "logical_data_erm": [
+      "quotation.document -> ir.attachment (_inherits, PDF storage)",
+      "quotation.document <-> sale.order.template (header_footer_quotation_template_rel)",
+      "quotation.document -> sale.pdf.form.field (form_field_ids)",
+      "product.document -> sale.pdf.form.field (form_field_ids)",
+      "sale.order -> quotation.document (quotation_document_ids selected headers/footers)",
+      "sale.order.line -> product.document (product_document_ids inside-quote PDFs)",
+      "sale.order.customizable_pdf_form_fields (JSON of user-entered field values)"
+    ],
+    "information_flows": [
+      "depends: sale_management (-> sale -> account, mail, portal)",
+      "side-effect: quotation.document/product.document datas change -> _create_or_update_form_fields_on_pdf_records extracts AcroForm field names -> sale.pdf.form.field records",
+      "side-effect: sale.order._onchange_sale_order_template_id -> add template add_by_default header/footer blocks, drop unavailable ones",
+      "side-effect: OWL configurator get_update_included_pdf_params -> writes quotation_document_ids + customizable_pdf_form_fields JSON",
+      "side-effect: ir.actions.report._render_qweb_pdf_prepare_streams (sale.report_saleorder) -> pypdf-merge headers + product docs + quote + footers, prefix & fill AcroForm fields from order/line values"
+    ],
+    "frontend_components": [
+      "view_widgets:customContentKanbanLikeWidget (CustomContentKanbanLikeWidget)",
+      "CustomFieldCard",
+      "fields:quotation_document_many2many",
+      "views:quotation_document_kanban (custom kanban view/controller)"
+    ]
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Manage Reusable Quotation PDF Blocks (headers/footers)",
+      "Attach Product PDF Documents Inside Quotations",
+      "Map PDF AcroForm Fields to Sale Order Data (dynamic & customizable)",
+      "Assemble & Render Rich PDF Quotations",
+      "Configure Included Documents per Quotation (in-form)"
+    ],
+    "value_streams": [
+      "Quotation document enrichment: define header/footer & product PDF blocks -> attach to template/quotation -> salesperson selects blocks & fills customizable fields -> render merged, form-filled PDF quotation"
+    ],
+    "information_concepts": [
+      "quotation.document (header/footer block)",
+      "sale.pdf.form.field (AcroForm field mapping)",
+      "product.document (inside-quote PDF)",
+      "sale.order (quotation, selected documents + customizable values)"
+    ],
+    "organization": [
+      "sales_team.group_sale_manager (manage quotation.document)",
+      "sales_team.group_sale_salesman (read quotation_template_ids)",
+      "base.group_system (manage sale.pdf.form.field)",
+      "base.group_user (read access)"
+    ],
+    "products": [],
+    "policies": [
+      "1 record rule: quotation.document multi-company scoping (company_id false or parent_of company_ids)",
+      "constraint: only non-encrypted PDF mimetypes accepted as header/footer/inside-quote documents",
+      "constraint: form-field name alphanumerics/-/_ only, header/footer names may not start with 'sol_id_', UNIQUE(name, document_type)",
+      "constraint: form-field path must be a valid traversable ORM field chain on sale.order / sale.order.line",
+      "config: ICP sale.always_include_selected_documents forces document inclusion even after order confirmation"
+    ],
+    "stakeholders": [
+      "Salesperson (res.users, sales_team.group_sale_salesman)",
+      "Sales Manager (sales_team.group_sale_manager)",
+      "System Administrator (base.group_system, form-field mapping)",
+      "Customer (res.partner, receives the rendered PDF quotation)"
+    ],
+    "strategy": null,
+    "metrics": []
+  },
+  "classification": {
+    "value_model": "chain",
+    "activity_class": "primary",
+    "apqc_category": "3.0 Market and Sell Products and Services",
+    "rationale": "sale_pdf_quote_builder is a sales-document enrichment add-on on the Quote-to-Cash value chain: it does not create a new downstream document but enriches the sale.order quotation primary deliverable with reusable header/footer and product PDF blocks merged via pypdf and AcroForm fields filled from live order data. It sits in the Marketing & Sell primary activity (APQC 3.0 Market and Sell Products and Services, quotation/proposal management, supporting 3.5.3.13 present quote / 3.5.3.14 revise quote). It auto-installs on sale_management and operates at quotation-render time, so its value-creation logic is the linear, document-producing transformation characteristic of a value chain rather than a shop/network/support model."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "reusable header/footer PDF blocks (quotation.document) attachable to quotation templates and quotations",
+      "product-level PDF documents merged inside the quotation PDF (attached_on_sale='inside')",
+      "automatic extraction of PDF AcroForm fields and mapping to sale order / line data via dotted ORM paths",
+      "customizable (free-text) form fields the salesperson fills in the quotation form",
+      "in-form OWL configurator to toggle included documents and enter field values",
+      "render-time pypdf assembly: headers + product docs + quote table + footers with per-document field prefixing and read-only fill",
+      "default header/footer inclusion (add_by_default) and multi-company scoping"
+    ],
+    "typical_fits": [
+      "branded quotations with standard cover pages, terms and back-page blocks",
+      "auto-filling contract/specification PDFs with order totals, dates, partner and line data",
+      "attaching product datasheets/spec PDFs inside the customer-facing quote"
+    ],
+    "common_gaps": [
+      "non-text AcroForm widgets (checkboxes, radio, images, signatures) beyond read-only text fill",
+      "conditional/rule-based block selection (e.g. block depends on product mix, region or channel)",
+      "encrypted/password-protected source PDFs are rejected (must be pre-decrypted)",
+      "non-PDF formats (docx/xlsx) cannot be merged inside the quote"
+    ],
+    "drive_hints": [
+      "odoo shell: env['quotation.document'].search([]).mapped(('name','document_type','add_by_default'))",
+      "odoo shell: env['sale.pdf.form.field'].search([]).mapped(('name','document_type','path'))",
+      "odoo shell: so = env['sale.order'].search([('quotation_document_ids','!=',False)], limit=1); env['ir.actions.report']._render_qweb_pdf_prepare_streams('sale.report_saleorder', {}, res_ids=so.ids)",
+      "odoo shell: so.get_update_included_pdf_params()  # headers/lines/footers offered to the OWL configurator"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Precedence/merge order when both a per-company default header and a template-supplied header carry add_by_default and apply to the same order.",
+    "How dynamic path values are localized when the order partner timezone differs from the rendering user (tz fallback chain partner->user->UTC).",
+    "Behaviour when a customizable field value is left blank vs a dynamic path resolving to an empty value (both yield '' but differ in source/auditability)."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/sale_pdf_quote_builder.facts.json",
+    "tools": [
+      "code-read",
+      "extract_frontend.py",
+      "extract_module.py",
+      "extract_runtime.sh",
+      "run-odoo (odoo shell)"
+    ],
+    "odoo_version": "19.0"
+  }
+}

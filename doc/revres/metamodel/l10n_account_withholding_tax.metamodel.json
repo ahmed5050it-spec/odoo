@@ -1,0 +1,164 @@
+{
+  "subsystem": "l10n_account_withholding_tax",
+  "evidence": {
+    "manifest": {
+      "name": "Withholding Tax on Payment",
+      "category": "Accounting/Localizations",
+      "depends": [
+        "account"
+      ],
+      "auto_install": false,
+      "application": false
+    },
+    "models": [
+      {
+        "_name": "account.payment.register.withholding.line",
+        "_description": "Payment register withholding line",
+        "fields": 1
+      },
+      {
+        "_name": "account.payment.withholding.line",
+        "_description": "Payment withholding line",
+        "fields": 1
+      },
+      {
+        "_name": "account.withholding.line",
+        "_description": "withholding line",
+        "fields": 24
+      }
+    ],
+    "routes": [],
+    "security": {
+      "access_rules": 2,
+      "record_rules": 0,
+      "groups": 0
+    },
+    "views": {
+      "form": 0,
+      "list": 1,
+      "tree": 0,
+      "kanban": 0,
+      "search": 0,
+      "pivot": 0,
+      "graph": 0,
+      "calendar": 0,
+      "activity": 0
+    },
+    "frontend": {
+      "present": true,
+      "js_files": 1,
+      "xml_templates": 0,
+      "owl_components": [],
+      "registry_adds": [],
+      "patches": [
+        "accountTaxHelpers"
+      ],
+      "services": [],
+      "asset_bundles": {
+        "web.assets_backend": 1,
+        "web.assets_frontend": 1
+      }
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": false,
+      "endpoints": [],
+      "files": []
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    },
+    "behavioral_notes": [
+      {
+        "element": "frontend (OWL/JS)",
+        "observation": "1 JS files, 0 OWL components, 0 registry adds; bundles ['web.assets_backend', 'web.assets_frontend'].",
+        "source": "static"
+      },
+      {
+        "element": "thin module",
+        "observation": "3 models, 0 routes, 3060 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
+        "source": "ast"
+      }
+    ]
+  },
+  "it_architecture": {
+    "application": "l10n_account_withholding_tax (Withholding Tax on Payment)",
+    "software_services": [],
+    "data_objects": [
+      "account.payment.register.withholding.line",
+      "account.payment.withholding.line",
+      "account.withholding.line"
+    ],
+    "logical_data_erm": [
+      "account.payment.register.withholding.line -> account.payment.register",
+      "account.payment.withholding.line -> account.payment",
+      "account.withholding.line -> account.account",
+      "account.withholding.line -> account.tax",
+      "account.withholding.line -> company_id.currency_id",
+      "account.withholding.line -> res.company",
+      "account.withholding.line -> res.currency",
+      "account.withholding.line -> tax_id.withholding_sequence_id"
+    ],
+    "information_flows": [
+      "depends: account"
+    ],
+    "frontend_components": []
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Withholding Tax on Payment"
+    ],
+    "value_streams": [],
+    "information_concepts": [
+      "account.payment.register.withholding.line",
+      "account.payment.withholding.line",
+      "account.withholding.line"
+    ],
+    "organization": [],
+    "products": [],
+    "policies": [],
+    "stakeholders": [],
+    "strategy": null,
+    "metrics": []
+  },
+  "classification": {
+    "value_model": "support",
+    "activity_class": "support",
+    "apqc_category": "9.0 Manage Financial Resources",
+    "rationale": "l10n_account_withholding_tax: thin support/support module (auto-architect baseline)."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "Withholding Tax on Payment"
+    ],
+    "typical_fits": [],
+    "common_gaps": [],
+    "drive_hints": [
+      "odoo shell: env['account.payment.register.withholding.line'].search([],limit=3)"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/l10n_account_withholding_tax.facts.json",
+    "tools": [
+      "extract_module.py",
+      "extract_frontend.py",
+      "gen_thin.py"
+    ],
+    "odoo_version": "19.0"
+  }
+}

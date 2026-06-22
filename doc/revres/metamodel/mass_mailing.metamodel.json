@@ -1,0 +1,404 @@
+{
+  "subsystem": "mass_mailing",
+  "evidence": {
+    "manifest": {
+      "name": "Email Marketing",
+      "category": "Marketing/Email Marketing",
+      "depends": [
+        "contacts",
+        "mail",
+        "html_builder",
+        "utm",
+        "link_tracker",
+        "social_media",
+        "web_tour",
+        "digest"
+      ],
+      "auto_install": false,
+      "application": true
+    },
+    "models": [
+      {
+        "_name": "mailing.mailing",
+        "_description": "Mass Mailing",
+        "fields": 73,
+        "relations": [
+          "campaign_id->utm.campaign",
+          "medium_id->utm.medium",
+          "mailing_model_id->ir.model",
+          "contact_list_ids->mailing.list",
+          "mailing_filter_id->mailing.filter",
+          "mail_server_id->ir.mail_server",
+          "mailing_trace_ids->mailing.trace"
+        ]
+      },
+      {
+        "_name": "mailing.trace",
+        "_description": "Mailing Statistics",
+        "fields": 20,
+        "relations": [
+          "mass_mailing_id->mailing.mailing",
+          "mail_mail_id->mail.mail",
+          "campaign_id->utm.campaign",
+          "links_click_ids->link.tracker.click"
+        ]
+      },
+      {
+        "_name": "mailing.contact",
+        "_description": "Mailing Contact",
+        "fields": 10,
+        "relations": [
+          "list_ids->mailing.list",
+          "subscription_ids->mailing.subscription",
+          "country_id->res.country",
+          "tag_ids->res.partner.category"
+        ]
+      },
+      {
+        "_name": "mailing.list",
+        "_description": "Mailing List",
+        "fields": 14,
+        "relations": [
+          "contact_ids->mailing.contact",
+          "mailing_ids->mailing.mailing",
+          "subscription_ids->mailing.subscription"
+        ]
+      },
+      {
+        "_name": "mailing.subscription",
+        "_description": "Mailing List Subscription",
+        "fields": 7,
+        "relations": [
+          "contact_id->mailing.contact",
+          "list_id->mailing.list",
+          "opt_out_reason_id->mailing.subscription.optout"
+        ]
+      },
+      {
+        "_name": "mailing.trace.report",
+        "_description": "Mass Mailing Statistics",
+        "fields": 17,
+        "relations": []
+      }
+    ],
+    "routes": [
+      {
+        "paths": [
+          "/mailing/my",
+          "/mailing/<int:mailing_id>/view",
+          "/mailing/mobile/preview"
+        ],
+        "auth": "user",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/mailing/<int:mailing_id>/unsubscribe",
+          "/mailing/<int:mailing_id>/unsubscribe_oneclick",
+          "/mailing/<int:mailing_id>/confirm_unsubscribe",
+          "/mailing/confirm_unsubscribe",
+          "/unsubscribe_from_list"
+        ],
+        "auth": "public",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/mail/track/<int:mail_id>/<string:token>/blank.gif",
+          "/r/<string:code>/m/<int:mailing_trace_id>"
+        ],
+        "auth": "public",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/mailing/list/update",
+          "/mailing/feedback",
+          "/mailing/blocklist/add",
+          "/mailing/blocklist/remove"
+        ],
+        "auth": "public",
+        "type": "jsonrpc"
+      }
+    ],
+    "security": {
+      "access_rules": 25,
+      "record_rules": 1,
+      "groups": 2
+    },
+    "views": {
+      "form": 11,
+      "list": 10,
+      "kanban": 3,
+      "search": 7,
+      "pivot": 2,
+      "graph": 3,
+      "calendar": 1
+    },
+    "behavioral_notes": [
+      {
+        "element": "mailing.mailing.action_put_in_queue / _process_mass_mailing_queue",
+        "observation": "Sending is asynchronous: action_launch sets schedule_type='now' then action_put_in_queue writes state='in_queue' and triggers the ir_cron_mass_mailing_queue cron (cron._trigger at schedule_date). The cron's _process_mass_mailing_queue picks mailings in ('in_queue','sending'), sets state='sending', and calls _action_send_mail, which builds a mail.compose.message in composition_mode='mass_mail' and calls composer._action_send_mail(auto_commit=True). Mails are produced into the standard mail.mail outgoing queue; not visible in metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "mailing.trace open/click tracking (mail_mail._prepare_outgoing_body, controllers track_mail_open + full_url_redirect)",
+        "observation": "mail.mail._prepare_outgoing_body injects an HMAC-tokened 1x1 tracking pixel (/mail/track/<mail_id>/<token>/blank.gif) and rewrites /r/<code> short links to add the trace id (.../m/<trace_id>). The public pixel route calls mailing.trace.set_opened; the /r/<code>/m/<trace_id> redirect calls link.tracker.click.add_click which (via add_click override) fires trace.set_opened + set_clicked, then 301-redirects to the real URL. Open/click semantics live entirely in code + link_tracker, not metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "mailing.trace reply/bounce via incoming mail gateway (mail_thread._message_route_process / _routing_handle_bounce)",
+        "observation": "Inbound replies matched by References/Message-ID call mailing.trace.set_opened + set_replied; bounce notifications call mailing.trace.set_bounced. An auto-blacklist rule blacklists an address after >=5 bounces in 13 weeks (separated by >1 week) by calling mail.blacklist._add. Statuses (sent/delivered/open/reply/bounce/error/cancel) are mutated by mailing.trace.set_* helpers.",
+        "source": "code-read"
+      },
+      {
+        "element": "A/B testing (mailing.mailing.action_send_winner_mailing / action_select_as_winner, ir_cron_mass_mailing_ab_testing)",
+        "observation": "A/B variants share a utm.campaign; each gets ab_testing_pc (% of audience). The winner is chosen by ab_testing_winner_selection (e.g. opened/clicked/replied ratio, or manual); action_send_winner_mailing sorts sent siblings by that metric and action_select_as_winner copies the winner at 100% and launches it. A campaign-level cron sends the winner at ab_testing_schedule_datetime.",
+        "source": "code-read"
+      },
+      {
+        "element": "Blacklist / unsubscribe / opt-out (controllers main.py, mailing.contact, mailing.subscription)",
+        "observation": "Recipient-specific HMAC-signed unsubscribe/view URLs and List-Unsubscribe / List-Unsubscribe-Post one-click headers are injected per email in mail_mail._prepare_outgoing_list. List-based mailings opt-out via mailing.subscription (opt_out + opt_out_reason_id); document/blacklist mode adds the address to mail.blacklist via _add. mailing.contact.opt_out is a per-list computed/searched flag, not a stored column.",
+        "source": "code-read"
+      },
+      {
+        "element": "external integrations (manifest website URL, requests SDK in models/mailing.py)",
+        "observation": "Outbound HTTP is not a marketing-API call: models/mailing.py imports `requests` and uses requests.Session() only in _convert_inline_images_to_urls to fetch image bytes by URL for VML/responsive cropping when preparing email bodies. The manifest exposes the product page https://www.odoo.com/app/email-marketing. Email delivery itself goes out via SMTP through ir.mail_server (mail_server_id; mass-mail servers filtered to those without owner_user_id), and open/click/bounce tracking is driven by inbound HTTP pixels/redirects and the incoming mail gateway rather than a third-party ESP SDK.",
+        "source": "static"
+      }
+    ],
+    "frontend": {
+      "present": true,
+      "js_files": 47,
+      "xml_templates": 23,
+      "owl_components": [
+        "DesignTab",
+        "FieldMany2OneMailingFilter",
+        "MassMailingBuilder",
+        "MassMailingIframe",
+        "ThemeSelector"
+      ],
+      "registry_adds": [
+        "fields:mailing_filter",
+        "fields:mass_mailing_html",
+        "lazy_components:mass_mailing.MassMailingBuilder",
+        "public.interactions:mass_mailing.subscribe",
+        "services:mass_mailing.themes",
+        "views:subscription_graph",
+        "web_tour.tours:mass_mailing_tour"
+      ],
+      "patches": [
+        "CropImageAction.prototype",
+        "ImageAndFaOption",
+        "ImageToolOption.prototype",
+        "sizingGrid",
+        "sizingX",
+        "sizingY"
+      ],
+      "services": [
+        "alertTypeOption",
+        "body_html",
+        "domain_field",
+        "imageAndFaOption",
+        "imageToolOption",
+        "model_field",
+        "verticalAlignmentOption",
+        "widthOption"
+      ],
+      "asset_bundles": {
+        "mass_mailing.assets_builder": 3,
+        "mass_mailing.assets_iframe_style": 26,
+        "mass_mailing.assets_inside_basic_editor_iframe": 2,
+        "mass_mailing.assets_inside_builder_iframe": 4,
+        "mass_mailing.iframe_add_dialog": 1,
+        "mass_mailing.mailing_assets": 5,
+        "web.assets_backend": 11,
+        "web.assets_backend_lazy": 1,
+        "mass_mailing.assets_mail_themes": 1,
+        "web.assets_frontend": 1,
+        "web.assets_tests": 1,
+        "web.assets_unit_tests": 3
+      }
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [
+        "requests"
+      ],
+      "uses_api_keys": true,
+      "endpoints": [
+        "https://www.odoo.com/app/email-marketing"
+      ],
+      "files": [
+        "__manifest__.py",
+        "models/mailing.py"
+      ]
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    }
+  },
+  "it_architecture": {
+    "application": "mass_mailing (Email Marketing application component)",
+    "software_services": [
+      "/mailing/my",
+      "/mailing/<int:mailing_id>/unsubscribe*",
+      "/mailing/confirm_unsubscribe",
+      "/mailing/list/update",
+      "/mailing/feedback",
+      "/mailing/blocklist/add",
+      "/mailing/blocklist/remove",
+      "/mail/track/<int:mail_id>/<string:token>/blank.gif",
+      "/r/<string:code>/m/<int:mailing_trace_id>",
+      "/mailing/<int:mailing_id>/view"
+    ],
+    "data_objects": [
+      "mailing.mailing",
+      "mailing.trace",
+      "mailing.contact",
+      "mailing.list",
+      "mailing.subscription",
+      "mailing.subscription.optout",
+      "mailing.filter",
+      "mailing.trace.report"
+    ],
+    "logical_data_erm": [
+      "mailing.mailing -> utm.campaign",
+      "mailing.mailing -> mailing.list (contact_list_ids)",
+      "mailing.mailing -> ir.mail_server",
+      "mailing.trace -> mailing.mailing",
+      "mailing.trace -> mail.mail",
+      "mailing.trace -> link.tracker.click",
+      "mailing.contact -> mailing.list (via mailing.subscription)",
+      "mailing.subscription -> mailing.subscription.optout"
+    ],
+    "information_flows": [
+      "depends: contacts, mail, html_builder, utm, link_tracker, social_media, web_tour, digest",
+      "side-effect: action_put_in_queue -> ir_cron_mass_mailing_queue -> _action_send_mail -> mail.compose.message (mass_mail) -> mail.mail outgoing queue (SMTP via ir.mail_server)",
+      "side-effect: sending -> mailing.trace per recipient; pixel/redirect HTTP -> trace.set_opened/set_clicked + link.tracker.click",
+      "side-effect: incoming mail gateway -> trace.set_replied / set_bounced -> auto mail.blacklist._add after repeated bounces",
+      "side-effect: A/B test -> action_select_as_winner copies winner @100% and launches; ir_cron_mass_mailing_ab_testing sends winner on schedule"
+    ],
+    "frontend_components": [
+      "DesignTab",
+      "FieldMany2OneMailingFilter",
+      "MassMailingBuilder",
+      "MassMailingIframe",
+      "ThemeSelector"
+    ],
+    "external_integrations": {
+      "sdk_imports": [
+        "requests"
+      ],
+      "endpoints": [
+        "https://www.odoo.com/app/email-marketing"
+      ],
+      "notes": "requests.Session() used only in mailing._convert_inline_images_to_urls to fetch image bytes by URL for VML/responsive cropping while building email bodies; no third-party ESP API. Email delivery is SMTP via ir.mail_server; open/click/bounce tracking via inbound HTTP pixel/redirect + incoming mail gateway."
+    }
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Design Email Campaigns (drag-and-drop builder, themes, A/B testing)",
+      "Manage Mailing Lists, Contacts & Subscriptions",
+      "Send & Schedule Mass Mailings (queued via cron)",
+      "Track Engagement (opens, clicks, replies, bounces)",
+      "Manage Blacklist / Opt-out / Unsubscribe compliance"
+    ],
+    "value_streams": [
+      "Campaign-to-Engagement: design mailing -> select audience (lists/domain) -> queue & send (mail.mail/SMTP) -> track traces (open/click/reply/bounce) -> analyze (mailing.trace.report) / pick A/B winner"
+    ],
+    "information_concepts": [
+      "mailing.mailing",
+      "mailing.trace",
+      "mailing.contact",
+      "mailing.list",
+      "mailing.subscription",
+      "utm.campaign (campaign)"
+    ],
+    "organization": [
+      "group_mass_mailing_user",
+      "group_mass_mailing_campaign",
+      "res_groups_privilege_email_marketing"
+    ],
+    "products": [],
+    "policies": [
+      "1 record rule + 25 ACLs scoping mailing data access",
+      "Auto-blacklist on >=5 bounces in 13 weeks (mail_thread._routing_handle_bounce)",
+      "Opt-out / unsubscribe + List-Unsubscribe one-click headers enforce send-suppression",
+      "HMAC-token-gated public unsubscribe/view/tracking endpoints"
+    ],
+    "stakeholders": [
+      "Marketing user (res.users / group_mass_mailing_user)",
+      "Email recipient / contact (mailing.contact, res.partner)",
+      "Audience / mailing list (mailing.list)"
+    ],
+    "strategy": null,
+    "metrics": [
+      "mailing.trace.report (Mass Mailing Statistics: scheduled/sent/delivered/opened/replied/bounced/clicked)",
+      "mailing.mailing computed ratios (received_ratio, opened_ratio, replied_ratio, bounced_ratio, clicks_ratio)",
+      "24H KPI statistics email (_action_send_statistics)"
+    ]
+  },
+  "classification": {
+    "value_model": "network",
+    "activity_class": "primary",
+    "apqc_category": "3.0 Market and Sell Products and Services",
+    "rationale": "mass_mailing is a value-network mediating activity: it connects the organization to a large audience at scale, brokering the relationship through mediating infrastructure (mailing lists/subscriptions, SMTP delivery, UTM campaigns, open/click/bounce tracking). Per Stabell & Fjeldstad the network firm's primary activities are network promotion & contract management, service provisioning, and infrastructure operation — mass-emailing recruits and serves a contact network rather than transforming inputs (chain) or solving a client problem (shop). It is the marketing broadcast primary activity, mapping to APQC 3.0 Market and Sell (3.3 Develop and manage marketing plans / 3.4 Develop and manage marketing communications). Its utm + link_tracker dependencies wire campaign attribution back into the value network."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "drag-and-drop email builder with themes and mobile preview (html_builder/OWL)",
+      "mailing lists, contacts import/merge, per-list subscriptions and opt-out reasons",
+      "queued/scheduled sending via cron through mail.mail / ir.mail_server (SMTP)",
+      "open/click/reply/bounce tracking (pixel + link_tracker + mail gateway) into mailing.trace",
+      "A/B testing with automatic winner selection and scheduled send",
+      "blacklist, one-click unsubscribe (List-Unsubscribe headers) and auto-blacklist on bounce",
+      "UTM campaign/medium/source attribution and statistics report (pivot/graph)"
+    ],
+    "typical_fits": [
+      "newsletter / promotional campaigns to mailing lists",
+      "targeted mailings on any mailing-enabled business model via domain filters",
+      "campaign-level A/B test then broadcast winner",
+      "engagement KPI dashboards and 24H statistics email"
+    ],
+    "common_gaps": [
+      "third-party ESP / deliverability provider integration (no ESP SDK out-of-box; SMTP only)",
+      "advanced drip / multi-step automation (belongs to marketing_automation app)",
+      "custom segmentation logic beyond saved domain filters (mailing.filter)",
+      "dedicated IP / warmup and advanced deliverability analytics"
+    ],
+    "drive_hints": [
+      "odoo shell: env['mailing.mailing'].search([], limit=5).mapped(('subject','state','sent','opened','clicked'))",
+      "odoo shell: env['mailing.trace'].read_group([], ['__count'], ['trace_status'])",
+      "odoo shell: m = env['mailing.mailing'].create({'subject':'demo','mailing_model_id': env.ref('mass_mailing.model_mailing_list').id}); m.action_test()",
+      "curl public pixel: GET /mail/track/<mail_id>/<token>/blank.gif (returns 1x1 gif, flips trace to opened)"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Exact mailing.mailing state machine (draft -> in_queue -> sending -> done) and all transitions that re-trigger the queue cron.",
+    "Full set of failure_type codes set during composer _prepare_mail_values (mail_bl / mail_optout / mail_dup) and how cancel vs error is decided per recipient.",
+    "How _get_remaining_recipients applies blacklist + opt-out + seen-list exclusion to compute the audience per send."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/mass_mailing.facts.json",
+    "tools": [
+      "code-read",
+      "extract_frontend.py",
+      "extract_module.py",
+      "extract_runtime.sh",
+      "run-odoo (odoo shell)"
+    ],
+    "odoo_version": "19.0"
+  }
+}

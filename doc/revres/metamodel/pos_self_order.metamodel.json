@@ -1,0 +1,407 @@
+{
+  "subsystem": "pos_self_order",
+  "evidence": {
+    "manifest": {
+      "name": "POS Self Order",
+      "category": "Sales/Point Of Sale",
+      "summary": "Addon for the POS App that allows customers to view the menu on their smartphone.",
+      "depends": [
+        "pos_restaurant",
+        "http_routing",
+        "link_tracker"
+      ],
+      "auto_install": [
+        "pos_restaurant"
+      ],
+      "application": false
+    },
+    "models": [
+      {
+        "_name": "pos_self_order.custom_link",
+        "_description": "Custom links that the restaurant can configure to be displayed on the self order screen",
+        "fields": 6,
+        "relations": [
+          "pos_config_ids->pos.config"
+        ]
+      },
+      {
+        "_name": "pos.config",
+        "_description": "(extension) Point of Sale Configuration",
+        "fields": 13,
+        "relations": [
+          "self_ordering_default_language_id->res.lang",
+          "self_ordering_available_language_ids->res.lang",
+          "self_ordering_image_home_ids->ir.attachment",
+          "self_ordering_image_background_ids->ir.attachment",
+          "self_ordering_default_user_id->res.users"
+        ]
+      },
+      {
+        "_name": "pos.order",
+        "_description": "(extension) Point of Sale Orders",
+        "fields": 3,
+        "relations": [
+          "self_ordering_table_id->restaurant.table"
+        ]
+      },
+      {
+        "_name": "pos.order.line",
+        "_description": "(extension) Point of Sale Order Lines",
+        "fields": 1,
+        "relations": [
+          "combo_id->product.combo"
+        ]
+      },
+      {
+        "_name": "pos.preset",
+        "_description": "(extension) POS preset (service mode / takeaway)",
+        "fields": 3,
+        "relations": [
+          "mail_template_id->mail.template"
+        ]
+      },
+      {
+        "_name": "restaurant.table",
+        "_description": "(extension) Restaurant table (QR identifier)",
+        "fields": 1,
+        "relations": []
+      }
+    ],
+    "routes": [
+      {
+        "paths": [
+          "/pos-self/<config_id>",
+          "/pos-self/<config_id>/<path:subpath>"
+        ],
+        "auth": "public",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/pos-self/data/<config_id>",
+          "/pos-self/relations/<config_id>"
+        ],
+        "auth": "public",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/pos-self-order/process-order/<device_type>/"
+        ],
+        "auth": "public",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/pos-self-order/validate-partner",
+          "/pos-self-order/remove-order",
+          "/pos-self-order/get-user-data",
+          "/pos-self-order/get-slots"
+        ],
+        "auth": "public",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/kiosk/payment/<int:pos_config_id>/<device_type>",
+          "/pos_self_order/kiosk/increment_nb_print/",
+          "/pos-self-order/change-printer-status"
+        ],
+        "auth": "public",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/pos-self/ping"
+        ],
+        "auth": "public",
+        "type": "jsonrpc"
+      }
+    ],
+    "security": {
+      "access_rules": 2,
+      "record_rules": 0,
+      "groups": 0
+    },
+    "views": {
+      "form": 0,
+      "list": 1,
+      "kanban": 0,
+      "search": 0,
+      "pivot": 0,
+      "graph": 0,
+      "calendar": 0,
+      "activity": 0
+    },
+    "frontend": {
+      "present": true,
+      "js_files": 54,
+      "xml_templates": 37,
+      "owl_components": [
+        "AttributeSelection",
+        "CancelPopup",
+        "CartPage",
+        "CategoryListPopup",
+        "ComboPage",
+        "ComboStepper",
+        "ConfirmationPage",
+        "EatingLocationPage",
+        "LandingPage",
+        "LanguagePopup",
+        "LanguageSelector",
+        "LoadingOverlay",
+        "NetworkConnectionLostPopup",
+        "OrderWidget",
+        "OrdersHistoryPage",
+        "PaymentPage",
+        "PopupTable",
+        "PresetInfoPopup",
+        "PrintingFailurePopup",
+        "ProductInfoPopup",
+        "ProductListPage",
+        "ProductNameWidget",
+        "ProductPage",
+        "Router",
+        "StandNumberPage",
+        "TimeoutPopup",
+        "UnavailableProductsDialog",
+        "selfOrderIndex"
+      ],
+      "registry_adds": [
+        "actions:pos_qr_stands",
+        "fields:upgrade_selection",
+        "services:printer",
+        "services:router",
+        "services:self_order"
+      ],
+      "patches": [
+        "DataServiceOptions.prototype",
+        "PosConfig.prototype",
+        "PosData.prototype",
+        "PosOrder.prototype",
+        "PosOrderline.prototype",
+        "PosPreset.prototype",
+        "PosStore.prototype",
+        "ProductInfoPopup.prototype",
+        "RestaurantTable.prototype",
+        "TicketScreen.prototype"
+      ],
+      "services": [],
+      "asset_bundles": {
+        "web.assets_unit_tests_setup": 7,
+        "web.assets_unit_tests": 1,
+        "point_of_sale._assets_pos": 2,
+        "web.assets_backend": 2,
+        "pos_self_order.assets": 56,
+        "pos_self_order.assets_tests": 6,
+        "web.assets_tests": 1
+      }
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": true,
+      "endpoints": [
+        "https://www.odoo.com/app/point-of-sale-restaurant-qr-code"
+      ],
+      "files": [
+        "models/pos_config.py"
+      ]
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    },
+    "behavioral_notes": [
+      {
+        "element": "controllers/self_entry.py: /pos-self/<config_id> + _verify_entry_access",
+        "observation": "The public QR-menu / kiosk entry point. start_self_ordering renders the standalone OWL self-order SPA (template pos_self_order.index) for anyone hitting /pos-self/<config_id>. _verify_entry_access gates access by self_ordering_mode (404 if 'nothing'), optionally matches a per-config access_token, resolves the table from a table_identifier query arg, and re-binds the public request to the config's company and to self_ordering_default_user_id (sudo(False).with_user(...)) so an anonymous diner acts with a constrained POS user's rights. This anonymous-to-POS-user impersonation and mode-based gating is not visible in metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "models/pos_config.py: self_ordering_mode + _get_self_order_route / _get_self_order_url / _get_qr_code_data",
+        "observation": "pos.config gains self_ordering_mode in {nothing, consultation (QR menu, read-only), mobile (QR menu + ordering), kiosk} plus service_mode {counter, table}. _get_self_order_route builds the customer URL (appends ?access_token=... and &table_identifier=... for table service), _get_self_order_url shortens it through the link.tracker dependency, and _get_qr_code_data / get_pos_qr_order_data render per-table or generic QR codes into a downloadable PNG/SVG zip. write() enforces mode-coupled rules (kiosk or counter-mobile forces pay_after='each'); a constraint forbids cash payment methods in kiosk mode. This QR/URL/access-token machinery is the access layer of the self-order channel and is pure Python.",
+        "source": "code-read"
+      },
+      {
+        "element": "controllers/orders.py: process_order -> pos.order.sync_from_ui -> pos.session; recompute_prices",
+        "observation": "A customer order placed in the browser app POSTs to /pos-self-order/process-order/<device_type>/. The server builds a sanitized order dict via pos.order._check_pos_order (re-maps taxes, derives tracking_number with a K<config>- prefix for kiosk vs S for mobile, stamps source='kiosk'|'mobile' and session_id=config.current_session_id.id), calls sudo().sync_from_ui([...]) to create the pos.order inside the currently OPEN pos.session, then recompute_prices() re-prices every line server-side to defeat frontend tampering. The customer-created order is thereby injected into the same shared session a cashier is running; free (amount_total==0) orders auto-finalize via _process_saved_order. This cross-actor sync is invisible to metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "models/pos_order.py _send_notification / config._notify + models/pos_session.py + /kiosk/payment",
+        "observation": "After every self-order create / cancel / remove, pos.order._send_notification pushes a longpolling bus message (notify_synchronisation + _notify('ORDER_STATE_CHANGED')) to the config's current_session_id so the cashier POS UI and kiosk screens live-refresh. pos.session._load_pos_data_read injects a computed _self_ordering flag telling the main POS client a kiosk/mobile config exists. Kiosk payment runs from /kiosk/payment/.../<device_type>, which (after re-running process_order) calls payment_method._payment_request_from_kiosk against a supported terminal (adyen/razorpay/stripe/pine_labs/viva_com). These real-time bus side-effects and the kiosk-terminal handshake are not in metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "frontend (separate customer-facing OWL self-order SPA) -- gap #3 exemplar",
+        "observation": "pos_self_order ships a SECOND standalone OWL single-page app distinct from the cashier POS terminal: entry static/src/app/self_order_index.js, root.js, its own router.js, plus pages/ services/ store/ models/ trees, mounted by the public /pos-self/<config_id> route and bundled in pos_self_order.assets (56 entries). 54 JS files / 37 XML templates / ~28 components (LandingPage, ProductListPage, ProductPage, ComboPage/ComboStepper, CartPage, PaymentPage, ConfirmationPage, OrdersHistoryPage, EatingLocationPage, StandNumberPage, plus self_order, router and printer client services). It patches the cashier app's PosStore/PosOrder/PosData/TicketScreen so kiosk/mobile orders surface in the till. This entire customer journey (menu browse, attribute/combo selection, cart, pay, track) is client logic not reverse-engineerable from Python metadata.",
+        "source": "static"
+      }
+    ]
+  },
+  "it_architecture": {
+    "application": "pos_self_order (POS Self Order: customer-facing kiosk + QR-menu OWL app layered on the Point of Sale terminal)",
+    "software_services": [
+      "/pos-self/<config_id> (render the customer self-order SPA / QR menu)",
+      "/pos-self/data/<config_id> | /pos-self/relations/<config_id> (public menu + relations payload)",
+      "/pos-self-order/process-order/<device_type>/ (submit a customer order into the live session)",
+      "/pos-self-order/validate-partner | remove-order | get-user-data | get-slots",
+      "/kiosk/payment/<pos_config_id>/<device_type> (kiosk terminal payment request)",
+      "/pos_self_order/kiosk/increment_nb_print | /pos-self-order/change-printer-status",
+      "/pos-self/ping (public liveness check)"
+    ],
+    "data_objects": [
+      "pos_self_order.custom_link",
+      "pos.config (self_ordering_* fields)",
+      "pos.order (source, self_ordering_table_id, table_stand_number)",
+      "pos.order.line (combo_id)",
+      "pos.preset (available_in_self, service_at)",
+      "restaurant.table (identifier)"
+    ],
+    "logical_data_erm": [
+      "pos_self_order.custom_link -> pos.config (pos_config_ids)",
+      "pos.config -> res.users (self_ordering_default_user_id)",
+      "pos.config -> res.lang (self_ordering default/available languages)",
+      "pos.order -> restaurant.table (self_ordering_table_id)",
+      "pos.order -> pos.session (current_session_id, set on sync)",
+      "pos.order.line -> product.combo (combo_id)"
+    ],
+    "information_flows": [
+      "depends: pos_restaurant, http_routing, link_tracker",
+      "side-effect: process-order -> pos.order._check_pos_order -> sync_from_ui -> pos.order created inside config.current_session_id (shared with cashier)",
+      "side-effect: recompute_prices re-prices all lines server-side after every customer submission",
+      "side-effect: _send_notification -> config._notify (longpolling bus) -> cashier POS + kiosk screens live-refresh",
+      "side-effect: kiosk payment -> pos.payment.method._payment_request_from_kiosk -> external terminal (adyen/stripe/razorpay/pine_labs/viva_com)",
+      "access path: QR code (link.tracker short URL + access_token + table_identifier) -> /pos-self/<config_id> -> public SPA bound to self_ordering_default_user_id"
+    ],
+    "frontend_components": [
+      "selfOrderIndex",
+      "LandingPage",
+      "EatingLocationPage",
+      "ProductListPage",
+      "ProductPage",
+      "AttributeSelection",
+      "ComboPage",
+      "ComboStepper",
+      "CartPage",
+      "PaymentPage",
+      "ConfirmationPage",
+      "OrdersHistoryPage",
+      "StandNumberPage",
+      "OrderWidget",
+      "LanguageSelector",
+      "Router"
+    ]
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Provide Customer Self-Ordering (kiosk & mobile)",
+      "Publish a QR-code Digital Menu (consultation)",
+      "Capture Customer-Placed Orders into the POS session",
+      "Accept Kiosk Self-Payment at a terminal",
+      "Configure Self-Order Channel (modes, branding, languages, custom links)",
+      "Route Orders by Table / Stand / Pickup zone"
+    ],
+    "value_streams": [
+      "Self-Order-to-Counter: scan QR / approach kiosk -> browse menu -> build cart (attributes/combos) -> place order -> (kiosk) self-pay or (mobile) pay-after -> order injected into live pos.session -> kitchen/cashier notified -> fulfilment by POS"
+    ],
+    "information_concepts": [
+      "pos_self_order.custom_link",
+      "pos.config (self-order channel profile)",
+      "pos.order (customer-sourced)",
+      "pos.preset (service mode)",
+      "restaurant.table (QR identifier)",
+      "res.partner (self-registered customer)"
+    ],
+    "organization": [
+      "(no new groups) reuses point_of_sale.group_pos_user / group_pos_manager",
+      "self_ordering_default_user_id (the POS user public diners act as)"
+    ],
+    "products": [],
+    "policies": [
+      "self_ordering_mode gates the public route (404 unless consultation/mobile/kiosk)",
+      "constraint: no cash payment methods allowed in kiosk mode",
+      "constraint: self_ordering_default_user_id must be a POS user when mode != nothing",
+      "write() couples mode/service_mode to pay_after (kiosk & counter-mobile force pay-each)",
+      "server-side recompute_prices + access_token/consteq checks prevent frontend price/order tampering"
+    ],
+    "stakeholders": [
+      "Customer / diner (anonymous public, optional res.partner)",
+      "Cashier / POS User (res.users, group_pos_user)",
+      "Restaurant Manager (configures kiosk/QR via res.config.settings)",
+      "Kitchen (receives notified self-orders)"
+    ],
+    "strategy": null,
+    "metrics": [
+      "pos.order.source breakdown (mobile vs kiosk vs POS) feeding report.pos.order",
+      "nb_print / kiosk print counters",
+      "link.tracker click stats on self-order QR short URLs"
+    ]
+  },
+  "classification": {
+    "value_model": "network",
+    "activity_class": "primary",
+    "apqc_category": "3.0 Market and Sell Products and Services",
+    "rationale": "pos_self_order is best read as a value NETWORK (Stabell & Fjeldstad mediating technology), not a chain. Unlike its parent point_of_sale -- which owns the sell/checkout value logic and triggers the downstream stock+account chain -- this module adds no new order/accounting value flow of its own: every customer order it captures is injected via sync_from_ui into the EXISTING pos.session and re-priced by the host POS. Its actual contribution is mediating infrastructure that links a new party (the diner) directly to the restaurant's POS service: a public OWL self-order app, a QR / access-token + link.tracker + table_identifier access layer (_get_self_order_url, _get_qr_code_data), and a longpolling bus (config._notify) that connects customer terminals to the cashier and kitchen in real time. That mediation between customers and the POS service -- with tiered membership (consultation / mobile / kiosk) and a self-payment terminal handshake -- is the value-network pattern. It is classed PRIMARY (a customer-facing revenue channel) and mapped to APQC 3.0 Market and Sell because self-ordering is a sales / order-capture channel for the point-of-sale family (consistent with the apqc_odoo_map sell-family rows and the point_of_sale parent record). Alternative considered: chain, because the orders ultimately flow into the chain-style POS pipeline; rejected because pos_self_order itself does not perform the inbound->operate->outbound conversion, it federates a customer channel onto the host that does."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "QR-code digital menu (consultation, read-only)",
+      "mobile self-ordering with pay-after-meal or pay-each, table or pickup service",
+      "self-service kiosk mode with on-terminal self-payment (adyen/stripe/razorpay/pine_labs/viva_com)",
+      "per-table / generic QR code generation as downloadable PNG+SVG zip",
+      "branding, splash/background images, multi-language and custom action links on the self-order screen",
+      "orders synced live into the running pos.session with kitchen/cashier bus notifications",
+      "email receipt to customer via pos.preset mail template"
+    ],
+    "typical_fits": [
+      "restaurant QR-menu + table ordering on customer phones",
+      "fast-food / counter self-service kiosk with card terminal",
+      "menu-only consultation deployments (no ordering)",
+      "channel toggled per till via pos.config self_ordering_mode (kiosk onboarding scenario provided)"
+    ],
+    "common_gaps": [
+      "custom self-order UI screens / journey changes (OWL dev on pos_self_order.assets, not config)",
+      "kiosk integration with an unsupported payment terminal (custom _payment_request_from_kiosk)",
+      "loyalty / promotions / upsell logic inside the self-order flow beyond standard pricelists & combos",
+      "bespoke order-routing or coursing rules beyond preset service_at",
+      "cash handling in kiosk (blocked by constraint -- requires alternative tender design)"
+    ],
+    "drive_hints": [
+      "odoo shell: env['pos.config'].search([('self_ordering_mode','!=','nothing')]).mapped(('name','self_ordering_mode','self_ordering_service_mode'))",
+      "odoo shell: env['pos.config'].browse(ID)._get_self_order_url()  # short QR URL via link.tracker",
+      "curl jsonrpc /pos-self/ping with {'access_token': cfg.access_token} -> {'response':'pong'}",
+      "browse /pos-self/<config_id> to launch the customer self-order SPA",
+      "odoo shell: env['pos.order'].search([('source','in',('kiosk','mobile'))], limit=5).mapped(('name','source','state'))"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "stakeholders": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Exact pos.order.state lifecycle for self-orders (draft -> paid) across mobile pay-after vs kiosk pay-each, and how _process_saved_order is triggered for paid (non-zero) orders.",
+    "How _payment_request_from_kiosk drives each supported terminal and returns status to the kiosk PaymentPage.",
+    "Conflict handling when multiple diners on the same table_identifier edit a shared draft order concurrently.",
+    "Full set of fields exposed publicly via _load_pos_self_data_fields and the data-minimization guarantees for anonymous access."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/pos_self_order.facts.json",
+    "tools": [
+      "code-read",
+      "extract_frontend.py",
+      "extract_module.py",
+      "extract_runtime.sh",
+      "run-odoo (odoo shell)"
+    ],
+    "odoo_version": "19.0"
+  }
+}

@@ -1,0 +1,235 @@
+{
+  "subsystem": "project_mail_plugin",
+  "evidence": {
+    "manifest": {
+      "name": "Project Mail Plugin",
+      "category": "Services/Project",
+      "summary": "Integrate your inbox with projects",
+      "description": "Turn emails received in your mailbox into tasks and log their content as internal notes.",
+      "depends": [
+        "project",
+        "mail_plugin"
+      ],
+      "auto_install": true,
+      "application": false,
+      "license": "LGPL-3",
+      "author": "Odoo S.A."
+    },
+    "models": [],
+    "routes": [
+      {
+        "paths": [
+          "/mail_plugin/project/search"
+        ],
+        "auth": "outlook",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/mail_plugin/task/create"
+        ],
+        "auth": "outlook",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/mail_plugin/project/create"
+        ],
+        "auth": "outlook",
+        "type": "jsonrpc"
+      }
+    ],
+    "security": {
+      "access_rules": 0,
+      "record_rules": 0,
+      "groups": 0
+    },
+    "views": {
+      "form": 0,
+      "list": 0,
+      "kanban": 0,
+      "search": 0,
+      "server_action": 0,
+      "act_window": 1
+    },
+    "frontend": {
+      "present": true,
+      "js_files": 0,
+      "xml_templates": 2,
+      "owl_components": [],
+      "registry_adds": [],
+      "patches": [],
+      "services": [],
+      "asset_bundles": {}
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": false,
+      "endpoints": [
+        "https://www.odoo.com/app/project"
+      ],
+      "files": [
+        "__manifest__.py"
+      ]
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    },
+    "behavioral_notes": [
+      {
+        "element": "ProjectClient.task_create (/mail_plugin/task/create)",
+        "observation": "The core inbox-to-task endpoint the add-in calls. It browse()+exists()-validates both partner_id (returns {'error': 'partner_not_found'}) and project_id (returns {'error': 'project_not_found'}), defaults a missing subject to _('Task for %s', partner.name), then creates a project.task with_company(partner.company_id) using name=email_subject (raw subject, NOT html2plaintext'd unlike crm_mail_plugin's lead path), partner_id, description=email_body (raw email content), project_id, and user_ids=[Command.link(request.env.uid)] so the API-key user is assigned as the task owner. Returns {'task_id': record.id, 'name': record.name}. No stage is set, so project.task create defaults (project's first kanban stage, etc.) apply downstream.",
+        "source": "code-read"
+      },
+      {
+        "element": "ProjectClient.projects_search (/mail_plugin/project/search)",
+        "observation": "The project lookup/typeahead endpoint backing the sidebar project picker. Searches project.project by name ilike search_term (default limit=5) and returns a list of {project_id, name, partner_name (project.partner_id.name), company_id} per hit. It iterates projects.sudo() to read those fields, so the picker can surface projects the searching user might not otherwise have field-read rights on; the access gate happens earlier in _get_contact_data (project.task create access), not in this search itself.",
+        "source": "code-read"
+      },
+      {
+        "element": "ProjectClient.project_create (/mail_plugin/project/create)",
+        "observation": "On-the-fly project creation from the add-in when no target project exists yet. It does request.env['project.project'].create({'name': name}) with no sudo and no extra defaults (no partner, no company override), returning {'project_id': record.id, 'name': record.name}. Standard project.project create defaults (company, default stages, privacy) apply. Exposure of the 'create project' option is gated upstream via can_create_project = project.project.has_access('create') set in _get_contact_data.",
+        "source": "code-read"
+      },
+      {
+        "element": "MailPluginController._get_contact_data (override)",
+        "observation": "This module does NOT enrich partners; it extends the parent mail_plugin._get_contact_data to append a 'tasks' key (and 'can_create_project' flag) to the sidebar contact card. The whole 'tasks' branch is skipped unless project.task.has_access('create') is True, so the Project section disappears for users who cannot create tasks (graceful degradation, as if project were not installed). For a known partner it searches project.task by partner_id (limit 5), then filters to tasks whose project the user can read via partner_tasks.project_id._filtered_access('read').ids, returning {task_id, name, project_name} only for accessible projects. It also overrides _mail_content_logging_models_whitelist (adds 'project.task') and _translation_modules_whitelist (adds 'project_mail_plugin'), both behind the same task-create access check.",
+        "source": "code-read"
+      },
+      {
+        "element": "auth='outlook' (mail_plugin.ir_http._auth_method_outlook)",
+        "observation": "All three jsonrpc routes use the custom 'outlook' auth method inherited from mail_plugin (not defined here). It reads the HTTP Authorization header, strips a leading 'Bearer ' prefix, and validates the token via res.users.apikeys._check_credentials(scope='odoo.plugin.outlook', key=access_token); on success it request.update_env(user=user_id) to take the API-key user's identity and update_context. Missing/invalid tokens raise werkzeug BadRequest. The token itself is minted by mail_plugin's auth flow (HMAC auth code -> short-lived apikey); the bearer plumbing lives entirely in the parent module.",
+        "source": "code-read"
+      },
+      {
+        "element": "frontend (static templates) + redirect action",
+        "observation": "No OWL/JS: 0 js_files, no registry adds, no patches, no services. The 2 xml_templates are the to_translate translation bundles (translations_gmail.xml, translations_outlook.xml) shipped for the external add-in UI, not Odoo client assets. The only backend view data is views/project_task_views.xml, an ir.actions.act_window (project_task_action_form_edit) used by the plugin to redirect the user to the newly created project.task form in edit mode. The actual sidebar UI lives in the Outlook/Gmail add-in client (external to Odoo); this module is purely a route+ORM backend.",
+        "source": "static"
+      }
+    ]
+  },
+  "it_architecture": {
+    "application": "project_mail_plugin (mail-plugin Project backend; auto-installed bridge between project and mail_plugin)",
+    "software_services": [
+      "/mail_plugin/project/search",
+      "/mail_plugin/task/create",
+      "/mail_plugin/project/create"
+    ],
+    "data_objects": [
+      "project.task (created)",
+      "project.project (created/searched)"
+    ],
+    "logical_data_erm": [
+      "project.task -> project.project (project_id)",
+      "project.task -> res.partner (partner_id, supplied by parent mail_plugin lookup)",
+      "project.task -> res.users (user_ids, the outlook API-key user)",
+      "project.project -> res.partner (partner_id, surfaced in search results)",
+      "res.users.apikeys -> res.users (outlook bearer-token identity)"
+    ],
+    "information_flows": [
+      "depends: project, mail_plugin (inherits outlook auth, IAP enrich, partner lookup)",
+      "inbound: Outlook/Gmail add-in -> Bearer token (Authorization header) -> _auth_method_outlook -> res.users.apikeys validation -> identity switch",
+      "side-effect: /mail_plugin/task/create -> project.task.create (name from email subject, description from email body, partner_id, project_id, user_ids=current user) -> project default stage applies",
+      "side-effect: /mail_plugin/project/create -> project.project.create (name only) on demand",
+      "read-flow: /mail_plugin/project/search -> project.project search (ilike) -> sudo()-read picker rows for the sidebar",
+      "read-flow: _get_contact_data override -> project.task search by partner_id -> _filtered_access('read') project filter -> tasks surfaced in sidebar contact card",
+      "upstream dependency: mail_plugin.res_partner_get resolves/enriches the partner before this module attaches its task list / creates a task"
+    ],
+    "frontend_components": []
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Capture a Project Task from an Inbox Email",
+      "Search/Lookup Projects from the Mail Sidebar",
+      "Create a Project On-the-fly from the Inbox",
+      "Surface a Contact's Existing Tasks in the Mail Sidebar",
+      "Log Email Content onto a Task (internal note)"
+    ],
+    "value_streams": [
+      "Inbox-to-Task: read email -> resolve sender as partner (parent) -> pick or create a project -> one-click create project.task with subject+body, self-assigned -> hand off to Project delivery",
+      "Contact context loop: open an email -> see that contact's existing tasks (name/project) without leaving the mailbox"
+    ],
+    "information_concepts": [
+      "project.task (work request / engagement task)",
+      "project.project (project container)",
+      "res.partner (email sender / contact)",
+      "res.users.apikeys (outlook access token)"
+    ],
+    "organization": [],
+    "products": [],
+    "policies": [
+      "Capability gating: the 'tasks' section, task creation, content logging and translation whitelist are exposed only when project.task.has_access('create') is True",
+      "Project-create option gated by project.project.has_access('create') (can_create_project flag)",
+      "Sidebar task list filtered to projects the user can read via project_id._filtered_access('read')",
+      "outlook bearer-token policy: res.users.apikeys scope odoo.plugin.outlook validated per request (plumbing inherited from mail_plugin)"
+    ],
+    "stakeholders": [
+      "Project member / Internal User (reads inbox, creates tasks)",
+      "Email sender / Requester (res.partner)",
+      "Outlook / Gmail mail add-in (external client)"
+    ],
+    "strategy": null,
+    "metrics": []
+  },
+  "classification": {
+    "value_model": "shop",
+    "activity_class": "primary",
+    "apqc_category": "5.0 Deliver Services (service request intake / 5.x project.task engagement)",
+    "rationale": "project_mail_plugin is a thin service-intake extension of Project (a value-shop): it captures inbound work requests from the mailbox and turns an email into a project.task at the very front of the deliver-services value-shop loop (diagnose -> plan -> execute -> control). The core activity is creating a project.task (subject->name, sender->partner_id, body->description, project_id, self-assigned) and surfacing a contact's existing tasks in the inbox, i.e. work-request intake feeding the Project delivery engine. It inherits Project's shop classification and is a primary activity. The APQC map (apqc_odoo_map.tsv) anchors project.task to 5.x Deliver Services / shop; this module is the inbox-to-task intake at that category's front edge. It is a feeder/bridge (auto_install) onto project.task/project.project, not its own value stream, but the work it performs is engagement intake, hence 'shop'/'primary' rather than 'support'."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "one-click task creation from an email (subject->name, body->description, sender->partner_id, chosen project_id, self-assigned)",
+      "project name typeahead/search returning {project_id, name, partner_name, company_id}",
+      "on-the-fly project creation from the add-in",
+      "show a contact's existing tasks (name, project) in the add-in contact card, filtered to readable projects",
+      "log email content as an internal note on a project.task",
+      "outlook/gmail bearer-token (res.users.apikeys) authenticated JSON-RPC backend",
+      "access-gated Project section that hides when the user cannot create tasks"
+    ],
+    "typical_fits": [
+      "services/project teams triaging shared or personal mailboxes who want inbox-to-task capture",
+      "standard project.task defaulting (first kanban stage, company, privacy) on plugin-created tasks",
+      "Outlook and Gmail add-ins reusing the shared mail_plugin auth/enrich plumbing",
+      "self-assignment of the created task to the acting user via user_ids Command.link"
+    ],
+    "common_gaps": [
+      "no stage/deadline/tag/priority assignment on plugin-created tasks (project defaults only)",
+      "subject is stored raw (no html2plaintext) so HTML-ish subjects pass through unsanitized; body description is the raw email content",
+      "project_create takes only a name (no partner/company/template), so on-the-fly projects start bare",
+      "task list capped at 5 by partner with no pagination; no opportunity/sale linkage stamped by the plugin path"
+    ],
+    "drive_hints": [
+      "odoo shell: p = env['res.partner'].search([('email','!=',False)], limit=1); pr = env['project.project'].search([], limit=1); t = env['project.task'].with_company(p.company_id).create({'name':'Inbox subject','partner_id':p.id,'description':'email body','project_id':pr.id,'user_ids':[(4, env.uid)]}); (t.id, t.stage_id.name, t.project_id.name)",
+      "odoo shell: env['project.project'].search([('name','ilike','a')], limit=5).mapped(lambda r: (r.id, r.name, r.partner_id.name, r.company_id.id))",
+      "curl -X POST .../mail_plugin/task/create -H 'Authorization: Bearer <apikey>' -H 'Content-Type: application/json' -d '{\"jsonrpc\":\"2.0\",\"method\":\"call\",\"params\":{\"email_subject\":\"Hi\",\"email_body\":\"body\",\"project_id\":1,\"partner_id\":1}}'",
+      "odoo shell: env['res.users.apikeys']._check_credentials(scope='odoo.plugin.outlook', key='<token>')"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Exact project.task defaults (stage_id/company_id/privacy) for a plugin-created task with no stage context beyond with_company.",
+    "Whether email_body/description is sanitized for HTML anywhere downstream (none applied in this module, and subject is not html2plaintext'd unlike the crm lead path).",
+    "Whether any add-in client uses project_create to spin up bare projects in production, or only targets existing ones via project/search."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/project_mail_plugin.facts.json",
+    "tools": [
+      "code-read",
+      "extract_module.py",
+      "extract_frontend.py"
+    ],
+    "odoo_version": "19.0"
+  }
+}

@@ -1,0 +1,436 @@
+{
+  "subsystem": "web",
+  "evidence": {
+    "manifest": {
+      "name": "Web",
+      "category": "Hidden",
+      "depends": [
+        "base"
+      ],
+      "auto_install": true,
+      "application": false
+    },
+    "models": [
+      {
+        "_name": "base.document.layout",
+        "_description": "Company Document Layout",
+        "fields": 26,
+        "relations": [
+          "company_id->res.company",
+          "paperformat_id->report.paperformat",
+          "report_layout_id->report.layout",
+          "partner_id->res.partner",
+          "country_id->res.country"
+        ]
+      },
+      {
+        "_name": "res.users.settings.embedded.action",
+        "_description": "User Settings for Embedded Actions",
+        "fields": 7,
+        "relations": [
+          "user_setting_id->res.users.settings",
+          "action_id->ir.actions.act_window"
+        ]
+      },
+      {
+        "_name": "ir.http (extension)",
+        "_description": "Routing/session/dispatch extension (session_info, webclient_rendering_context)",
+        "fields": 0,
+        "relations": []
+      },
+      {
+        "_name": "res.config.settings (extension)",
+        "_description": "Adds web_app_name (PWA naming)",
+        "fields": 1,
+        "relations": []
+      }
+    ],
+    "routes": [
+      {
+        "paths": [
+          "/web/dataset/call_kw",
+          "/web/dataset/call_kw/<path:path>"
+        ],
+        "auth": "user",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/web/dataset/call_button",
+          "/web/dataset/call_button/<path:path>"
+        ],
+        "auth": "user",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/web",
+          "/odoo",
+          "/odoo/<path:subpath>",
+          "/scoped_app/<path:subpath>"
+        ],
+        "auth": "none",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/web/session/authenticate"
+        ],
+        "auth": "none",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/web/session/get_session_info"
+        ],
+        "auth": "user",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/web/webclient/load_menus"
+        ],
+        "auth": "user",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/web/action/load",
+          "/web/action/run"
+        ],
+        "auth": "user",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/web/bundle/<string:bundle_name>",
+          "/web/assets/<string:unique>/<string:filename>"
+        ],
+        "auth": "public",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/web/content",
+          "/web/image"
+        ],
+        "auth": "public",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/report/<converter>/<reportname>",
+          "/report/download"
+        ],
+        "auth": "user",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/web/database/manager",
+          "/web/database/create",
+          "/web/database/backup"
+        ],
+        "auth": "none",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/json/<path:subpath>",
+          "/json/1/<path:subpath>"
+        ],
+        "auth": "user|bearer",
+        "type": "http"
+      }
+    ],
+    "security": {
+      "access_rules": 2,
+      "record_rules": 2,
+      "groups": 0
+    },
+    "views": {
+      "form": 3,
+      "list": 0,
+      "kanban": 0,
+      "pivot": 0,
+      "graph": 0,
+      "calendar": 0,
+      "activity": 0
+    },
+    "behavioral_notes": [
+      {
+        "element": "DataSet.call_kw (/web/dataset/call_kw)",
+        "observation": "The universal RPC dispatch of the whole client. Every model method the browser invokes goes through this single jsonrpc route: it resolves request.registry[model], then delegates to odoo.service.model.call_kw(env[model], method, args, kwargs). readonly is computed dynamically by walking the model MRO for a method-level _readonly flag, which routes the request to a read-replica cursor when possible. This is the metadata-invisible heart of Odoo's frontend-to-ORM bridge.",
+        "source": "code-read"
+      },
+      {
+        "element": "Home.web_client (/web, /odoo bootstrap)",
+        "observation": "The web client bootstrap. ensure_db() + session.uid checks gate access, security.check_session validates the session (raising SessionExpiredException), user._on_webclient_bootstrap() runs, then ir.http.webclient_rendering_context() builds session_info and the page renders the 'web.webclient_bootstrap' QWeb template with Cache-Control: no-store and X-Frame-Options: DENY. This template is what loads the entire OWL asset bundle that becomes the SPA.",
+        "source": "code-read"
+      },
+      {
+        "element": "Session.authenticate / get_session_info",
+        "observation": "Session handling: authenticate() opens a fresh Registry cursor/Environment, calls request.session.authenticate(env, credential), persists session.db and saves the session, then returns ir.http.session_info(). get_session_info() touches the session (refreshing lifetime) and re-returns session_info. /web/session/account builds an Odoo OAuth2 URL (accounts.odoo.com) from database.uuid. These wire browser session state to server-side auth, invisible to ORM metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "frontend (OWL framework + registries + services)",
+        "observation": "web is the prime example of metadata gap #3: it ships the ENTIRE client framework as static assets, not Python models. extract_frontend.py finds ~526 JS files and ~257 XML/QWeb templates, 40+ catalogued OWL components, dozens of registry categories (actions, fields, services, dialogs, error_handlers, color_picker_tabs), core services (orm_service, name_service, field_service, rpc, registry) and ~30 asset bundles (web.assets_backend=66, web.assets_frontend=67, web.report_assets_common=52). static/src/start.js mounts the WebClient OWL root onto document.body. None of this is reverse-engineerable from Python metadata.",
+        "source": "code-read"
+      }
+    ],
+    "frontend": {
+      "present": true,
+      "js_files": 526,
+      "xml_templates": 257,
+      "owl_components": [
+        "AccordionItem",
+        "AceField",
+        "ActionContainer",
+        "ActionHelper",
+        "ActionMenus",
+        "ActionSwiper",
+        "AnimatedNumber",
+        "AppIconCommand",
+        "AttachDocumentWidget",
+        "AttachmentImageField",
+        "AutoComplete",
+        "BadgeField",
+        "BadgeSelectionField",
+        "BarcodeDialog",
+        "BarcodeVideoScanner",
+        "BinaryField",
+        "BlankComponent",
+        "BlockUI",
+        "BooleanFavoriteField",
+        "BooleanField",
+        "BooleanIconField",
+        "BottomSheet",
+        "Breadcrumbs",
+        "BurgerMenu",
+        "ButtonBox",
+        "CalendarController",
+        "CalendarRenderer",
+        "CharField",
+        "CheckBox",
+        "CodeEditor",
+        "ColorField",
+        "ColorList"
+      ],
+      "registry_adds": [
+        "actions:display_exception",
+        "actions:display_notification",
+        "actions:home",
+        "actions:reload",
+        "actions:soft_reload",
+        "color_picker_tabs:web.solid",
+        "dialogs:select_create",
+        "error_dialogs:odoo.exceptions.AccessDenied",
+        "error_handlers:swallowAllVisitorErrors",
+        "error_notifications:odoo.http.SessionExpiredException",
+        "fields:char",
+        "fields:boolean",
+        "fields:binary",
+        "fields:date",
+        "fields:domain",
+        "fields:color",
+        "fields:ace",
+        "fields:badge",
+        "fields:dashboard_graph"
+      ],
+      "patches": [
+        "Many2OneReferenceField.prototype",
+        "interactionsService.constructor.prototype",
+        "objToPatch"
+      ],
+      "services": [
+        "orm_service",
+        "name_service",
+        "field_service",
+        "rpc",
+        "registry"
+      ],
+      "asset_bundles": {
+        "web.assets_backend": 66,
+        "web.assets_backend_lazy": 8,
+        "web.assets_frontend": 67,
+        "web.assets_frontend_minimal": 10,
+        "web.assets_frontend_lazy": 7,
+        "web.report_assets_common": 52,
+        "web.assets_emoji": 1,
+        "web._assets_bootstrap": 4,
+        "web.tests_assets": 35,
+        "web.assets_unit_tests_setup": 17,
+        "web.fullcalendar_lib": 7,
+        "web.chartjs_lib": 2
+      }
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": true,
+      "endpoints": [
+        "https://accounts.odoo.com/oauth2/auth?",
+        "https://cdn.jsdelivr.net/npm/speedscope@1.13.0/dist/release/",
+        "https://www.odoo.com/buy"
+      ],
+      "files": [
+        "controllers/profiling.py",
+        "controllers/session.py",
+        "models/ir_http.py"
+      ]
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    }
+  },
+  "it_architecture": {
+    "application": "web (Web Client framework / WSGI app, asset bundler, OWL SPA host)",
+    "software_services": [
+      "/web/dataset/call_kw (universal RPC dispatch)",
+      "/web/dataset/call_button",
+      "/web, /odoo (web client bootstrap)",
+      "/web/session/authenticate",
+      "/web/session/get_session_info",
+      "/web/webclient/load_menus",
+      "/web/action/load, /web/action/run",
+      "/web/bundle, /web/assets (asset serving)",
+      "/web/content, /web/image (binary/image serving)",
+      "/report/<converter>/<reportname> (report rendering)",
+      "/web/database/* (database manager)",
+      "/json/<path:subpath>, /json/1 (bearer JSON API)"
+    ],
+    "data_objects": [
+      "base.document.layout",
+      "res.users.settings.embedded.action"
+    ],
+    "logical_data_erm": [
+      "base.document.layout -> res.company",
+      "base.document.layout -> report.layout",
+      "res.users.settings.embedded.action -> res.users.settings",
+      "res.users.settings.embedded.action -> ir.actions.act_window"
+    ],
+    "information_flows": [
+      "depends: base",
+      "bridge: browser OWL client -> /web/dataset/call_kw -> odoo.service.model.call_kw -> ORM (any model/method)",
+      "bootstrap: /web|/odoo -> ir.http.webclient_rendering_context -> render web.webclient_bootstrap -> load asset bundles -> mount WebClient (start.js)",
+      "session: /web/session/authenticate -> request.session.authenticate -> session_info",
+      "extends: ir.http, ir.ui.view, ir.ui.menu, ir.model, ir.qweb.field.* (routing, views, menus, qweb rendering)"
+    ],
+    "frontend_components": [
+      "WebClient (OWL root mounted in start.js)",
+      "ActionContainer",
+      "Breadcrumbs",
+      "BurgerMenu",
+      "ActionMenus",
+      "CharField",
+      "BooleanField",
+      "BinaryField",
+      "ColorField",
+      "AceField",
+      "CalendarController",
+      "CalendarRenderer",
+      "AutoComplete",
+      "BlockUI",
+      "CodeEditor"
+    ]
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Render the Application UI (OWL Single-Page Web Client)",
+      "Dispatch Client-to-Server RPC (call_kw / call_button)",
+      "Manage Web Session & Authentication Bootstrap",
+      "Serve & Bundle Static Assets (JS/CSS/QWeb)",
+      "Provide the Field/View/Service/Registry Framework all modules extend",
+      "Render & Download Reports (PDF/XLSX/CSV)",
+      "Administer Databases (database manager)"
+    ],
+    "value_streams": [
+      "Request-to-Render: browser request -> bootstrap -> asset bundle -> mounted OWL client",
+      "Action-to-View: load_menus/action.load -> view rendering -> call_kw data fetch -> rendered records"
+    ],
+    "information_concepts": [
+      "base.document.layout",
+      "res.users.settings.embedded.action",
+      "session_info (session state)",
+      "asset bundle (web.assets_backend/frontend)"
+    ],
+    "organization": [],
+    "products": [],
+    "policies": [
+      "2 record rules (minimal); web client bootstrap enforces session/security.check_session and is_user_internal gating; Cache-Control: no-store + X-Frame-Options: DENY on the client page"
+    ],
+    "stakeholders": [
+      "End user (every authenticated user renders through this layer)",
+      "Module developer (consumes the OWL/registry/service framework)",
+      "System administrator (database manager, asset/report serving)"
+    ],
+    "strategy": null,
+    "metrics": [
+      "Profiling / speedscope endpoints (/web/set_profiling, /web/speedscope) for client/server performance traces"
+    ]
+  },
+  "classification": {
+    "value_model": "support",
+    "activity_class": "support",
+    "apqc_category": "8.0 Manage Information Technology",
+    "rationale": "web is technical/firm infrastructure (Porter support activity; Stabell & Fjeldstad 'support'). It is not a value-creating primary activity of any single value chain/shop/network — it is the UI framework and HTTP/RPC plumbing that EVERY other module renders and dispatches through. auto_install=true makes it ubiquitous infrastructure. Its substance is the FRONTEND (~526 JS / ~257 XML, the OWL framework, registries and services) plus 68 routes, with only ~2 real Python models — the exact inverse of a data-bearing business module. APQC 8.0 'Manage Information Technology' fits because web is the IT-delivery/application-platform capability (develop & manage application software, deliver the UI runtime); 13.0 'Develop and Manage Business Capabilities' was considered (web is the platform other capabilities build on) but rejected because web is a concrete running runtime/application platform, not a governance/portfolio-management capability — its work is IT delivery, which is squarely 8.0."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "OWL-based single-page web client (backend & frontend asset bundles)",
+      "Universal RPC bridge (/web/dataset/call_kw) to any ORM method",
+      "Field/view/widget registry framework reused by all modules",
+      "Session & authentication bootstrap, including Odoo OAuth account link",
+      "Asset bundling/minification and content/image serving",
+      "Report rendering & export (PDF, XLSX, CSV)",
+      "Database manager (create/backup/restore/duplicate/drop)",
+      "Bearer-token JSON API (/json/1)"
+    ],
+    "typical_fits": [
+      "Standard backend client for all apps with zero per-module UI plumbing",
+      "Adding a new field widget / view type via registry registration",
+      "Patching existing OWL components via web's patch mechanism"
+    ],
+    "common_gaps": [
+      "Custom OWL components / services beyond the registry (requires JS dev, gap #3)",
+      "Branding / white-label theming of the client",
+      "Bespoke client-side caching or offline behavior beyond the PWA service worker",
+      "External integrations are not in web itself (gap #7) — only Odoo OAuth + CDN libs"
+    ],
+    "drive_hints": [
+      "curl -X POST /web/dataset/call_kw with {model:'res.partner',method:'search_read'} (auth=user) to exercise the universal RPC dispatch",
+      "odoo shell: env['ir.http'].session_info() to see the session_info payload the client bootstraps from",
+      "GET /web (browser) -> view source -> confirm web.webclient_bootstrap loads web.assets_backend bundle",
+      "GET /web/manifest.webmanifest to see the PWA manifest"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Full OWL component inventory (extract_frontend caps the list; ~526 JS files hold many more components/services than catalogued).",
+    "Exact registry category taxonomy and which downstream modules extend each (actions/fields/services/views).",
+    "Asset-bundle composition order and lazy-loading boundaries (web.assets_backend_lazy) at runtime.",
+    "Behavior of the bearer-auth /json/1 API surface vs the jsonrpc call_kw path."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/web.facts.json",
+    "tools": [
+      "code-read",
+      "extract_frontend.py",
+      "extract_module.py",
+      "extract_runtime.sh",
+      "run-odoo (odoo shell)"
+    ],
+    "odoo_version": "19.0"
+  }
+}

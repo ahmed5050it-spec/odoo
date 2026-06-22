@@ -1,0 +1,314 @@
+{
+  "subsystem": "spreadsheet_dashboard",
+  "evidence": {
+    "manifest": {
+      "name": "Spreadsheet dashboard",
+      "category": "Productivity/Dashboard",
+      "depends": [
+        "spreadsheet"
+      ],
+      "auto_install": false,
+      "application": false
+    },
+    "models": [
+      {
+        "_name": "spreadsheet.dashboard",
+        "_description": "Spreadsheet Dashboard",
+        "_inherit": [
+          "spreadsheet.mixin"
+        ],
+        "fields": 10,
+        "relations": [
+          "dashboard_group_id->spreadsheet.dashboard.group",
+          "company_ids->res.company",
+          "group_ids->res.groups",
+          "favorite_user_ids->res.users",
+          "main_data_model_ids->ir.model"
+        ]
+      },
+      {
+        "_name": "spreadsheet.dashboard.group",
+        "_description": "Group of dashboards",
+        "fields": 4,
+        "relations": [
+          "dashboard_ids->spreadsheet.dashboard",
+          "published_dashboard_ids->spreadsheet.dashboard"
+        ]
+      },
+      {
+        "_name": "spreadsheet.dashboard.share",
+        "_description": "Copy of a shared dashboard",
+        "_inherit": [
+          "spreadsheet.mixin"
+        ],
+        "fields": 5,
+        "relations": [
+          "dashboard_id->spreadsheet.dashboard"
+        ]
+      }
+    ],
+    "routes": [
+      {
+        "paths": [
+          "/spreadsheet/dashboard/data/<model(\"spreadsheet.dashboard\"):dashboard>"
+        ],
+        "auth": "user",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/dashboard/share/<int:share_id>/<token>"
+        ],
+        "auth": "public",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/dashboard/download/<int:share_id>/<token>"
+        ],
+        "auth": "user",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/dashboard/data/<int:share_id>/<token>"
+        ],
+        "auth": "public",
+        "type": "http"
+      }
+    ],
+    "security": {
+      "access_rules": 5,
+      "record_rules": 4,
+      "groups": 1
+    },
+    "views": {
+      "form": 2,
+      "list": 2,
+      "tree": 0,
+      "kanban": 1,
+      "search": 0,
+      "pivot": 0,
+      "graph": 0,
+      "calendar": 0,
+      "activity": 0
+    },
+    "frontend": {
+      "present": true,
+      "js_files": 14,
+      "xml_templates": 7,
+      "owl_components": [
+        "DashboardDateFilter",
+        "DashboardFacet",
+        "DashboardMobileSearchPanel",
+        "DashboardSearchBar",
+        "MobileFigureContainer",
+        "SpreadsheetDashboardAction"
+      ],
+      "registry_adds": [
+        "actions:action_spreadsheet_dashboard",
+        "services:spreadsheet_dashboard_loader",
+        "services:spreadsheet_dashboard_menu_translate"
+      ],
+      "patches": [
+        "ChartDashboardMenu.prototype",
+        "components.ChartJsComponent.prototype"
+      ],
+      "services": [],
+      "asset_bundles": {
+        "spreadsheet.o_spreadsheet": 2,
+        "spreadsheet.assets_print": 1,
+        "web.assets_backend": 2,
+        "web.assets_unit_tests": 1
+      }
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": true,
+      "endpoints": [],
+      "files": []
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    },
+    "behavioral_notes": [
+      {
+        "element": "spreadsheet.dashboard (spreadsheet.mixin) + /spreadsheet/dashboard/data/<dashboard>",
+        "observation": "A dashboard is a stored o-spreadsheet document: spreadsheet.dashboard inherits spreadsheet.mixin, which persists the workbook as JSON (spreadsheet_data) plus a binary copy. The readonly data route calls _get_serialized_readonly_dashboard(), which json.loads(spreadsheet_data), injects the user's locale (res.lang._get_user_spreadsheet_locale) and the company currency (res.currency.get_company_currency_for_spreadsheet) into settings, attaches an empty revisions list and the translation namespace, and returns it as the snapshot the OWL client hydrates into an o-spreadsheet Model in mode:'dashboard'. The cells contain ODOO formulas (pivots/lists/charts bound to business models) that the data provider re-evaluates client-side — the 'BI' content is data, not Python.",
+        "source": "code-read"
+      },
+      {
+        "element": "spreadsheet.dashboard._dashboard_is_empty / _get_sample_dashboard (sample fallback)",
+        "observation": "Metadata-invisible 'empty state' behavior: main_data_model_ids (Many2many to ir.model) declares which business models a dashboard reports on. The data controller checks _dashboard_is_empty() — it sudo-reads each declared model and, if any has search_count([],limit=1)==0, treats the dashboard as empty and instead serves a static demo workbook loaded from sample_dashboard_file_path (file_open + json.load), flagged is_sample:true. So a fresh database with no live records renders a canned sample dashboard rather than blank figures.",
+        "source": "code-read"
+      },
+      {
+        "element": "spreadsheet.dashboard.group + security rules (visibility / sectioning)",
+        "observation": "spreadsheet.dashboard.group is the catalog/section layer (Finance, Sales, HR, Website, Services, Logistics, Marketing seeded in data/dashboard.xml); published_dashboard_ids is a domain-filtered One2many ([is_published=True]) the client lists. Visibility is enforced by ir.rule, not the controller: record rule ir_rule_spreadsheet_dashboard restricts base.group_user to dashboards whose group_ids intersect the user's groups ([('group_ids','in',user.all_group_ids.ids)]); spreadsheet_dashboard_rule_company adds a multi-company filter on company_ids; the Dashboard 'Admin' group (group_dashboard_manager) bypasses via [(1,'=',1)]. _unlink_except_spreadsheet_data blocks deleting a group that carries a non-export external_id (i.e. shipped by another module).",
+        "source": "code-read"
+      },
+      {
+        "element": "spreadsheet.dashboard.share + /dashboard/share|data|download routes (public sharing)",
+        "observation": "Public sharing snapshots a dashboard: action_get_share_url() creates a spreadsheet.dashboard.share (a frozen spreadsheet.mixin copy), zips any provided xlsx exports into excel_export, and returns full_url = .../dashboard/share/<id>/<uuid-token>. The public portal route renders spreadsheet.public_spreadsheet_layout with is_frozen and props.dataUrl=/dashboard/data/<id>/<token>. Access is double-gated by _check_dashboard_access: consteq() constant-time token compare AND the share creator (create_uid) must still have read access to the source dashboard, else werkzeug Forbidden. Download (xlsx) additionally requires base.group_allow_export.",
+        "source": "code-read"
+      },
+      {
+        "element": "frontend (OWL dashboard viewer + loader service)",
+        "observation": "The viewer is a substantial OWL app, not a view: SpreadsheetDashboardAction (action 'action_spreadsheet_dashboard', registered force:true, lazy-loaded via addSpreadsheetActionLazyLoader) renders a ControlPanel + sidebar of groups/sections + SpreadsheetComponent in dashboard mode, with global filters (SET_GLOBAL_FILTER_VALUE), favorites toggle, URL sync (router.pushState dashboard_id) and a mobile variant (DashboardMobileSearchPanel, MobileFigureContainer, DashboardSearchBar, DashboardFacet, DashboardDateFilter). A reactive 'spreadsheet_dashboard_loader' service webSearchReads the published groups, lazily fetches each dashboard's JSON over http.get('/spreadsheet/dashboard/data/<id>'), builds the o-spreadsheet Model with an OdooDataProvider that re-evaluates cells on data-source-updated, and clears on action change. Two o-spreadsheet patches add chart-granularity controls (ChartDashboardMenu) and dashboard chart animations (ChartJsComponent). None of this is reverse-engineerable from Python metadata (gap #3).",
+        "source": "static"
+      }
+    ]
+  },
+  "it_architecture": {
+    "application": "spreadsheet_dashboard (BI/analytics dashboard layer on the spreadsheet engine: stored o-spreadsheet workbooks + OWL dashboard viewer)",
+    "software_services": [
+      "/spreadsheet/dashboard/data/<dashboard> (serialized readonly dashboard snapshot, with sample fallback)",
+      "/dashboard/share/<share_id>/<token> (public shared-dashboard portal)",
+      "/dashboard/data/<share_id>/<token> (public shared snapshot data)",
+      "/dashboard/download/<share_id>/<token> (xlsx export of a share)"
+    ],
+    "data_objects": [
+      "spreadsheet.dashboard",
+      "spreadsheet.dashboard.group",
+      "spreadsheet.dashboard.share"
+    ],
+    "logical_data_erm": [
+      "spreadsheet.dashboard -> spreadsheet.dashboard.group (dashboard_group_id)",
+      "spreadsheet.dashboard.group -> spreadsheet.dashboard (dashboard_ids / published_dashboard_ids)",
+      "spreadsheet.dashboard -> ir.model (main_data_model_ids: reported-on business models)",
+      "spreadsheet.dashboard -> res.company (company_ids: multi-company scope)",
+      "spreadsheet.dashboard -> res.groups (group_ids: visibility ACL)",
+      "spreadsheet.dashboard -> res.users (favorite_user_ids)",
+      "spreadsheet.dashboard.share -> spreadsheet.dashboard (dashboard_id, ondelete cascade)"
+    ],
+    "information_flows": [
+      "depends: spreadsheet (provides spreadsheet.mixin: spreadsheet_data JSON, binary copy, action_edit_dashboard, xlsx zipping)",
+      "render: OWL SpreadsheetDashboardAction -> spreadsheet_dashboard_loader.load -> webSearchRead spreadsheet.dashboard.group -> http.get /spreadsheet/dashboard/data/<id> -> o-spreadsheet Model (dashboard mode) with OdooDataProvider re-evaluating ODOO() formulas",
+      "data binding: dashboard cells reference arbitrary business models (pivots/lists/charts) via main_data_model_ids; empty -> static sample workbook from sample_dashboard_file_path",
+      "share: action_get_share_url -> create spreadsheet.dashboard.share (frozen copy + zipped xlsx) -> public /dashboard/share/<id>/<token> -> public_spreadsheet_layout (is_frozen)",
+      "extends: spreadsheet.mixin (spreadsheet.dashboard, spreadsheet.dashboard.share)"
+    ],
+    "frontend_components": [
+      "SpreadsheetDashboardAction (OWL client action, dashboard viewer root)",
+      "DashboardSearchBar",
+      "DashboardFacet",
+      "DashboardDateFilter",
+      "DashboardMobileSearchPanel",
+      "MobileFigureContainer",
+      "ControlPanel (reused from web)",
+      "SpreadsheetComponent (reused from spreadsheet, dashboard mode)",
+      "spreadsheet_dashboard_loader (reactive service)",
+      "spreadsheet_dashboard_menu_translate (service)",
+      "ChartDashboardMenu (patched: chart granularity)",
+      "ChartJsComponent (patched: dashboard chart animations)"
+    ]
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Author & Store BI Dashboards as Spreadsheets (workbook persisted as JSON via spreadsheet.mixin)",
+      "Organize Dashboards into Groups/Sections (Finance, Sales, HR, Logistics, ...)",
+      "Render Interactive Read-Only Dashboards (OWL viewer: global filters, charts, pivots, lists)",
+      "Bind Dashboard Figures to Live Business Data (cells reference arbitrary models via ODOO formulas)",
+      "Serve Sample/Demo Dashboards on Empty Databases (sample fallback)",
+      "Control Dashboard Visibility by Group & Company (record rules)",
+      "Publicly Share & Export Dashboards (token-gated portal + xlsx download)",
+      "Favorite & Personalize Dashboards (per-user favorites)"
+    ],
+    "value_streams": [
+      "Author-to-Publish: design spreadsheet dashboard -> assign group + visibility/company -> is_published -> appears in viewer",
+      "View-to-Insight: open viewer -> load published groups -> fetch dashboard JSON -> hydrate o-spreadsheet model -> re-evaluate ODOO formulas against live data -> rendered figures",
+      "Share-to-External: action_get_share_url -> frozen share snapshot + token URL -> public portal render / xlsx export"
+    ],
+    "information_concepts": [
+      "spreadsheet.dashboard",
+      "spreadsheet.dashboard.group",
+      "spreadsheet.dashboard.share",
+      "dashboard spreadsheet snapshot (spreadsheet_data JSON)",
+      "main data model (reported-on business model)"
+    ],
+    "organization": [
+      "spreadsheet_dashboard.group_dashboard_manager (Dashboard 'Admin')",
+      "res_groups_privilege_dashboard (Dashboard privilege, Productivity category)"
+    ],
+    "products": [],
+    "policies": [
+      "ir_rule_spreadsheet_dashboard: users see only dashboards whose group_ids intersect their groups",
+      "spreadsheet_dashboard_rule_company: multi-company filter on company_ids",
+      "spreadsheet_dashboard_rule_manager: Dashboard Admin sees all [(1,'=',1)]",
+      "spreadsheet_dashboard_share_create_uid_rule: a share is owned by its creator (create_uid = user.id)",
+      "share access double-gated: constant-time token (consteq) AND creator still has read access; xlsx download requires base.group_allow_export",
+      "_unlink_except_spreadsheet_data: cannot delete a group shipped by another module"
+    ],
+    "stakeholders": [
+      "Business user / analyst (consumes dashboards, applies filters, favorites)",
+      "Dashboard administrator (authors dashboards, sets groups/visibility/company)",
+      "Module developer (ships dashboards + sample data, extends the OWL viewer)",
+      "External recipient (views/downloads a shared dashboard via public token URL)"
+    ],
+    "strategy": null,
+    "metrics": [
+      "LOG_DATASOURCE_EXPORT telemetry on print/export of a dashboard",
+      "The dashboards themselves are the metric surface (KPIs/charts/pivots over business models) — this module is infrastructure FOR metrics, not a metric owner"
+    ]
+  },
+  "classification": {
+    "value_model": "support",
+    "activity_class": "support",
+    "apqc_category": "13.0 Develop and Manage Business Capabilities",
+    "rationale": "spreadsheet_dashboard is firm-infrastructure / BI-tooling (Porter support activity; Stabell & Fjeldstad 'support'). It produces no primary value in any single chain/shop/network — it is a horizontal analytics-presentation layer reused across apps (Finance, Sales, HR, Logistics, Services, Marketing, Website groups are all seeded), depending only on the generic spreadsheet engine and binding to whatever business models a dashboard's cells reference (main_data_model_ids). Its substance is the FRONTEND (14 JS files, the OWL SpreadsheetDashboardAction viewer + reactive loader service + o-spreadsheet chart patches) plus 3 thin models and 4 routes that just serialize a stored workbook — a presentation/decision-support layer, not a transactional document chain. APQC 13.0 'Develop and Manage Business Capabilities' is chosen because the module delivers the analytics/KPI-dashboard capability that lets the organization measure and improve its other capabilities (13.0 covers managing business performance / the enterprise's measurement and improvement tooling). 8.0 'Manage Information Technology' was considered (it is technical platform code) but rejected: unlike `web` (a generic UI runtime that is pure IT delivery), this module's purpose is business-performance visualization — packaged BI dashboards consumed by analysts to make decisions — which is a business-capability/performance-management concern (13.0) sitting on top of the IT platform rather than IT delivery itself."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "Spreadsheet-based BI dashboards (pivots, lists, charts, scorecards) authored in o-spreadsheet",
+      "Dashboard grouping/sectioning with publish flag and sequence ordering",
+      "Read-only interactive viewer with global filters, date filters, favorites, mobile layout",
+      "Group- and company-scoped visibility via record rules",
+      "Sample/demo dashboard fallback on empty databases",
+      "Public token-based dashboard sharing + xlsx export",
+      "Locale/currency-aware rendering injected at serve time"
+    ],
+    "typical_fits": [
+      "Shipping curated dashboards per app (the spreadsheet_dashboard_* sibling modules add account/sale/hr/pos/website dashboards into the seeded groups)",
+      "Restricting a dashboard to a security group and/or company out of the box",
+      "Sharing a frozen dashboard externally via a public link without granting backend access"
+    ],
+    "common_gaps": [
+      "Authoring a new dashboard's spreadsheet content / ODOO formulas (requires the spreadsheet editor + data modeling, not config)",
+      "Custom OWL components or new dashboard widgets beyond the shipped viewer (JS dev, gap #3)",
+      "Scheduled/push distribution of dashboards (email/snapshot) is not in this module",
+      "No external BI/integration surface here (gap #7) — 0 HTTP call sites; data stays inside Odoo"
+    ],
+    "drive_hints": [
+      "odoo shell: env['spreadsheet.dashboard.group'].search_read([], ['name','sequence']) to list the seeded sections",
+      "odoo shell: d = env['spreadsheet.dashboard'].search([('is_published','=',True)], limit=1); d._get_serialized_readonly_dashboard()[:200] to see the snapshot the viewer hydrates",
+      "curl GET /spreadsheet/dashboard/data/<id> (auth=user, cids cookie) to fetch a dashboard payload (or the is_sample fallback)",
+      "odoo shell: env['spreadsheet.dashboard.share'].action_get_share_url({'dashboard_id': d.id, 'spreadsheet_data': d.spreadsheet_data}) to mint a public share URL, then GET it"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Per-cell data binding: which business models each shipped dashboard actually queries (lives inside the spreadsheet_data JSON, not in metadata) — main_data_model_ids only declares the emptiness-check set.",
+    "Runtime row counts / real dashboards present were not captured (extract_runtime not run here; runtime.models_with_data=0 is a placeholder).",
+    "Full inventory of the OWL viewer beyond the 6 catalogued components (clickable cells, sort icons, print assets) and exact o-spreadsheet Model capabilities reused from the spreadsheet dependency."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/spreadsheet_dashboard.facts.json",
+    "tools": [
+      "code-read",
+      "extract_module.py",
+      "extract_frontend.py"
+    ],
+    "odoo_version": "19.0"
+  }
+}

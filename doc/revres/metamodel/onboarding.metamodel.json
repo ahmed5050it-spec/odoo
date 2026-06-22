@@ -1,0 +1,263 @@
+{
+  "subsystem": "onboarding",
+  "evidence": {
+    "manifest": {
+      "name": "Onboarding Toolbox",
+      "category": "Hidden",
+      "depends": [
+        "web"
+      ],
+      "auto_install": false,
+      "application": false
+    },
+    "models": [
+      {
+        "_name": "onboarding.onboarding",
+        "_description": "Onboarding",
+        "fields": 11,
+        "relations": [
+          "step_ids->onboarding.onboarding.step",
+          "current_progress_id->onboarding.progress",
+          "progress_ids->onboarding.progress"
+        ]
+      },
+      {
+        "_name": "onboarding.onboarding.step",
+        "_description": "Onboarding Step",
+        "fields": 15,
+        "relations": [
+          "onboarding_ids->onboarding.onboarding",
+          "current_progress_step_id->onboarding.progress.step",
+          "progress_ids->onboarding.progress.step"
+        ]
+      },
+      {
+        "_name": "onboarding.progress",
+        "_description": "Onboarding Progress Tracker",
+        "fields": 5,
+        "relations": [
+          "company_id->res.company",
+          "onboarding_id->onboarding.onboarding",
+          "progress_step_ids->onboarding.progress.step"
+        ]
+      },
+      {
+        "_name": "onboarding.progress.step",
+        "_description": "Onboarding Progress Step Tracker",
+        "fields": 4,
+        "relations": [
+          "progress_ids->onboarding.progress",
+          "step_id->onboarding.onboarding.step",
+          "company_id->res.company"
+        ]
+      }
+    ],
+    "routes": [],
+    "security": {
+      "access_rules": 12,
+      "record_rules": 0,
+      "groups": 0
+    },
+    "views": {
+      "form": 2,
+      "list": 2,
+      "tree": 0,
+      "kanban": 0,
+      "search": 0,
+      "pivot": 0,
+      "graph": 0,
+      "calendar": 0,
+      "activity": 0
+    },
+    "frontend": {
+      "present": true,
+      "js_files": 1,
+      "xml_templates": 0,
+      "owl_components": [],
+      "registry_adds": [],
+      "patches": [],
+      "services": [],
+      "asset_bundles": {
+        "web.assets_backend": 2,
+        "web.dark_mode_variables": 1,
+        "web._assets_primary_variables": 1
+      }
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": false,
+      "endpoints": [],
+      "files": []
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    },
+    "behavioral_notes": [
+      {
+        "element": "onboarding.onboarding (panel) + onboarding.onboarding.step (ordered steps)",
+        "observation": "onboarding.onboarding is a definition/template record: a named panel (route_name, unique constraint _route_name_uniq) that links an ordered set of onboarding.onboarding.step records via the step_ids Many2many (steps ordered by 'sequence asc, id asc'). The panel and its steps carry only presentation/definition data (name, text_completed, panel_close_action_name on the panel; title, description, button_text, done_icon, done_text, step_image, panel_step_open_action_name on each step) and hold NO per-user/per-company completion state themselves. A @api.constrains on the step (check_step_on_onboarding_has_action) refuses to link a step to a panel unless that step defines a panel_step_open_action_name opening action, so every clickable step resolves to a server action. This definition-vs-state split is the core design and is invisible to field metadata alone.",
+        "source": "code-read"
+      },
+      {
+        "element": "onboarding.progress / onboarding.progress.step (per-company state machine, not_done/just_done/done)",
+        "observation": "Completion state lives in two SEPARATE tracker models, one per (panel, company) and one per (step, company): onboarding.progress (one row per onboarding_id + COALESCE(company_id,0), enforced by the _onboarding_company_uniq UniqueIndex) and onboarding.progress.step (one row per step_id + COALESCE(company_id,0), _company_uniq). Both use the shared ONBOARDING_PROGRESS_STATES selection ['not_done','just_done','done']. is_per_company (computed on the panel from its steps / existing progress) decides whether trackers are scoped to env.company (company_id set) or global (company_id=False); company_id has ondelete='cascade'. onboarding.progress.onboarding_state is a STORED compute that rolls up the step trackers: it is 'done' only when the count of progress_step_ids in {'just_done','done'} equals the number of linked step_ids, else 'not_done'. None of this rollup logic is reverse-engineerable from the Selection field metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "onboarding.onboarding._search_or_create_progress / _create_progress (lazy per-context materialization)",
+        "observation": "Trackers are created lazily, not up front. _search_or_create_progress() filters the panels whose current_progress_id is empty for the active context and calls _create_progress(), which creates one onboarding.progress per panel with company_id = env.company.id when is_per_company else False, seeding progress_step_ids from the steps' already-existing per-company progress. The matching current_progress_id / current_onboarding_state / is_onboarding_closed are themselves @api.depends_context('company') computes that pick the progress row whose company_id is in {False, env.company.id}. Symmetrically, steps materialize their own trackers on demand via _create_progress_steps() (searching onboarding.progress for the panel(s) and current company). So a brand-new company/user has NO tracker rows until the panel is first rendered or a step is first actioned, a runtime side-effect metadata cannot show.",
+        "source": "code-read"
+      },
+      {
+        "element": "step completion: action_set_just_done -> action_validate_step + rollup to 'closed' in _get_and_update_onboarding_state",
+        "observation": "Marking a step done flows: onboarding.onboarding.step.action_set_just_done() ensures a progress.step exists then calls onboarding.progress.step.action_set_just_done(), which flips trackers from 'not_done' to 'just_done' (returning the changed records). The @api.model action_validate_step(xml_id) is the public entry the JS step-dialog controller calls after a step saves (returning 'JUST_DONE'/'WAS_DONE'/'NOT_FOUND'). Rendering goes through _prepare_rendering_values() -> onboarding.progress._get_and_update_onboarding_state(): this is the ONLY place 'just_done' is consolidated to 'done' (via onboarding.progress.step.action_consolidate_just_done) so the completion/confetti state renders exactly once, and the ONLY place the synthetic onboarding_state='closed' value (NOT a member of ONBOARDING_PROGRESS_STATES) is injected, when is_onboarding_closed is True; when fully done it reports 'just_done' once then 'done'. action_close()/action_toggle_visibility() set/flip is_onboarding_closed on the progress row.",
+        "source": "code-read"
+      },
+      {
+        "element": "how other modules register a panel/steps (account as the canonical consumer)",
+        "observation": "Downstream apps do not call a route, they (1) ship onboarding.onboarding + onboarding.onboarding.step DATA records (e.g. addons/account/data/onboarding_data.xml: panels account.onboarding_onboarding_account_invoice / _account_dashboard, steps onboarding_onboarding_step_company_data, _base_document_layout, _create_invoice, ...), (2) _inherit='onboarding.onboarding.step' to implement the action_open_step_* opening actions named by panel_step_open_action_name (each returns an ir.actions.act_window opening the relevant config form, e.g. base.document.layout or account.move) plus action_validate_step_* gating helpers, and (3) _inherit='onboarding.onboarding' to add action_close_panel_* wrappers and override _prepare_rendering_values to auto-complete steps from real business data (e.g. mark 'create invoice' just_done if an out_invoice exists). The host module then renders the framework's QWeb (onboarding.onboarding_panel via _prepare_rendering_values) into its own dashboard/kanban, e.g. account_journal_dashboard.py calls ob.with_company(progress.company_id)._prepare_rendering_values(). This registration/extension contract is a pure code pattern, not in onboarding's own metadata (the module has 0 routes and 0 demo records).",
+        "source": "code-read"
+      },
+      {
+        "element": "frontend: onboarding step dialog form controller (static asset; no OWL component / registry add)",
+        "observation": "extract_frontend reports exactly 1 JS file and 0 XML/QWeb templates, NO OWL components, NO registry entries and NO patches; the frontend is purely SCSS theming (onboarding.scss + onboarding.variables[.dark].scss feeding web.assets_backend, web.dark_mode_variables, web._assets_primary_variables) plus a single thin controller. static/src/views/form/onboarding_step_form_controller.js extends @web/views/form FormController and overrides save(): after the step dialog persists it RPC-calls onboarding.onboarding.step.action_validate_step([stepName]) and, depending on the subclass stepConfig (reloadAlways / reloadOnFirstValidation) and the 'JUST_DONE' response, either restores/reloads the underlying action or closes the dialog (ir.actions.act_window_close). The banner itself is server-rendered QWeb (onboarding_templates.xml: onboarding_panel / onboarding_container / onboarding_step) with data-model/data-method hooks driven by generic web action handlers, not a bespoke OWL widget.",
+        "source": "static"
+      }
+    ]
+  },
+  "it_architecture": {
+    "application": "onboarding (Onboarding Toolbox — reusable getting-started panel/step framework embedded in app dashboards; no HTTP surface of its own)",
+    "software_services": [],
+    "data_objects": [
+      "onboarding.onboarding",
+      "onboarding.onboarding.step",
+      "onboarding.progress",
+      "onboarding.progress.step"
+    ],
+    "logical_data_erm": [
+      "onboarding.onboarding -> onboarding.onboarding.step (step_ids, M2M, ordered)",
+      "onboarding.onboarding -> onboarding.progress (progress_ids, O2M)",
+      "onboarding.onboarding.step -> onboarding.onboarding (onboarding_ids, M2M)",
+      "onboarding.onboarding.step -> onboarding.progress.step (progress_ids, O2M)",
+      "onboarding.progress -> onboarding.onboarding (onboarding_id, M2O, required, cascade)",
+      "onboarding.progress -> onboarding.progress.step (progress_step_ids, M2M)",
+      "onboarding.progress -> res.company (company_id, M2O, cascade)",
+      "onboarding.progress.step -> onboarding.onboarding.step (step_id, M2O, required, cascade)",
+      "onboarding.progress.step -> onboarding.progress (progress_ids, M2M)",
+      "onboarding.progress.step -> res.company (company_id, M2O, cascade)"
+    ],
+    "information_flows": [
+      "depends: web",
+      "definition: onboarding.onboarding (panel) --step_ids--> onboarding.onboarding.step (ordered, action-bearing definitions)",
+      "state: onboarding.progress (per panel+company) --progress_step_ids--> onboarding.progress.step (per step+company); states not_done/just_done/done",
+      "rollup: onboarding.progress.step.step_state --(stored compute)--> onboarding.progress.onboarding_state (done iff all steps just_done/done)",
+      "completion: step dialog save -> onboarding_step_form_controller.save -> RPC onboarding.onboarding.step.action_validate_step -> action_set_just_done (just_done) -> _get_and_update_onboarding_state consolidates just_done->done and injects synthetic 'closed'",
+      "consumption: host module (e.g. account) ships onboarding.onboarding/.step DATA records + _inherit action_open_step_* / overrides _prepare_rendering_values, then renders onboarding.onboarding_panel QWeb into its own dashboard (account_journal_dashboard._prepare_rendering_values)"
+    ],
+    "frontend_components": [
+      "OnboardingStepFormController (extends @web FormController; overrides save() to RPC action_validate_step then reload/close the step dialog)",
+      "onboarding.onboarding_panel (server-rendered QWeb banner template)",
+      "onboarding.onboarding_container (QWeb: panel chrome, hide/close modal, completed message)",
+      "onboarding.onboarding_step (QWeb: per-step card with state-driven not_done/just_done/done rendering)"
+    ]
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Define an Onboarding Panel and its Ordered Steps (reusable getting-started checklist)",
+      "Track Setup Progress per Company and per Step (not_done/just_done/done state machine)",
+      "Render a Step-by-Step Getting-Started Banner inside any app dashboard",
+      "Drive Each Step to a Configuration Action and Mark It Complete",
+      "Auto-Complete / Close / Hide a Panel based on real configuration state",
+      "Provide a Reusable Registration & Extension Contract for downstream apps (Sales/Invoicing/etc.)"
+    ],
+    "value_streams": [
+      "New-app-setup: first dashboard render -> _search_or_create_progress materializes trackers -> banner shows pending steps",
+      "Step-to-Done: user clicks step -> opening action configures the feature -> action_validate_step marks just_done -> rollup -> panel completed/closed"
+    ],
+    "information_concepts": [
+      "onboarding.onboarding",
+      "onboarding.onboarding.step",
+      "onboarding.progress",
+      "onboarding.progress.step"
+    ],
+    "organization": [],
+    "products": [],
+    "policies": [
+      "Step must define an opening action to be linked to a panel (@api.constrains check_step_on_onboarding_has_action)",
+      "One progress tracker per (panel, company) and per (step, company) (UniqueIndex on COALESCE(company_id,0))",
+      "Per-company vs global scoping driven by is_per_company; trackers cascade-deleted with their res.company",
+      "Read/write/create/unlink on all four models restricted to base.group_system (manager); base.group_user has no read access via ACL"
+    ],
+    "stakeholders": [
+      "End user / new customer (sees the getting-started banner and completes setup steps)",
+      "Module developer (registers panels/steps as data + _inherit action methods to embed onboarding in an app)",
+      "System administrator (base.group_system — the only group with CRUD on onboarding records)"
+    ],
+    "strategy": null,
+    "metrics": [
+      "onboarding.progress.onboarding_state per company (panel completion: not_done/done)",
+      "onboarding.progress.step.step_state per step (step-level completion funnel)",
+      "is_onboarding_closed (panel dismissed/hidden by the company)"
+    ]
+  },
+  "classification": {
+    "value_model": "support",
+    "activity_class": "support",
+    "apqc_category": "13.0 Develop and Manage Business Capabilities",
+    "rationale": "Onboarding is a cross-cutting UI/enablement framework, not a value-creating primary activity of any single value configuration (Stabell & Fjeldstad 'support'; Porter support activity). It produces no business document and runs no chain/shop/network flow of its own: it is firm infrastructure reused by many apps (Sales, Invoicing, ...) to surface step-by-step getting-started banners. Structurally it is four small definition/state-tracker models (~11/15/5/4 fields), 0 routes, 0 demo data, ~850 Python LOC and a single thin JS controller + SCSS theming; its substance is the registration/extension CONTRACT other modules build on, not data it owns. APQC 13.0 'Develop and Manage Business Capabilities' fits because onboarding is capability-enablement / user-adoption tooling: it operationalizes how the firm rolls out and brings users into ERP capabilities (guided configuration, adoption checklists, completion tracking) — the 'develop and manage the firm's capabilities / knowledge & change' family. 8.0 'Manage Information Technology' was the alternative (it is technical scaffolding shipped in code) but is rejected: unlike web (the runtime/asset/RPC platform that IS IT delivery, squarely 8.0), onboarding does not deliver IT services, run infrastructure, or host the UI runtime; it sits on top of web and addresses the human / business-capability adoption layer (getting people productive on the apps), which is governance/enablement (13.0), not IT operations (8.0)."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "Reusable onboarding-panel framework: define a named panel (onboarding.onboarding) with an ordered list of steps (onboarding.onboarding.step)",
+      "Per-company and per-step progress tracking with a not_done/just_done/done state machine (onboarding.progress / onboarding.progress.step)",
+      "Server-rendered getting-started banner QWeb (onboarding_panel/container/step) embeddable in any app dashboard via _prepare_rendering_values",
+      "Each step links to a server opening action (panel_step_open_action_name) and is validated via action_validate_step from a generic step-dialog form controller",
+      "Close / hide / auto-complete behavior (action_close, action_toggle_visibility, override of _prepare_rendering_values) with a one-shot 'just_done' completion message and synthetic 'closed' state",
+      "Multi-company aware scoping (is_per_company) with unique trackers per (panel/step, company)"
+    ],
+    "typical_fits": [
+      "Standard 'getting started' banner in Sales/Invoicing/etc. dashboards with zero bespoke UI plumbing (register data records + action methods)",
+      "Adding/removing a step from an existing panel via step_ids (progress recomputes automatically through write / _recompute_progress_step_ids)",
+      "Auto-checking a step from real business data by overriding _prepare_rendering_values (e.g. mark 'create invoice' done when an out_invoice exists)"
+    ],
+    "common_gaps": [
+      "Embedding the panel in a NEW app's dashboard requires JS/QWeb work in that host module (onboarding ships no route and no generic embed point — gap #3)",
+      "Any non-trivial step opening action / validation logic must be coded as @api.model methods in the consuming module (_inherit)",
+      "No analytics/reporting view over progress out of the box (state lives in tracker models; KPI dashboards would be custom)",
+      "Manager-only ACLs mean editing panels/steps in the UI needs base.group_system; end users only ever see the rendered banner"
+    ],
+    "drive_hints": [
+      "odoo shell: env['onboarding.onboarding'].search([]).mapped(lambda o: (o.route_name, o.current_onboarding_state, o.is_onboarding_closed)) to list panels and their per-company state",
+      "odoo shell: ob = env.ref('account.onboarding_onboarding_account_invoice'); ob._prepare_rendering_values() to see the steps + state payload the banner renders from (also materializes progress for the current company)",
+      "odoo shell: step = env.ref('account.onboarding_onboarding_step_create_invoice'); step.action_set_just_done(); env.ref('account.onboarding_onboarding_account_invoice').current_onboarding_state to watch the not_done -> done rollup",
+      "odoo shell: env['onboarding.progress'].search_read([], ['onboarding_id','company_id','onboarding_state','is_onboarding_closed']) to inspect per-company progress trackers"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Exact HTTP/JS path that triggers a panel re-render in a host dashboard (onboarding itself has 0 routes; rendering is driven by each consuming module's dashboard/kanban code).",
+    "Concurrency behavior of lazy tracker creation under simultaneous first-access (tests/test_onboarding_concurrency.py exists but was not code-read here).",
+    "Full inventory of downstream modules that register panels/steps and which override _prepare_rendering_values for auto-completion (account confirmed; others inferred).",
+    "Whether any consumer relies on the synthetic 'closed' onboarding_state beyond the standard banner rendering path."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/onboarding.facts.json",
+    "tools": [
+      "code-read",
+      "extract_module.py",
+      "extract_frontend.py"
+    ],
+    "odoo_version": "19.0"
+  }
+}

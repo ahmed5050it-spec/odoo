@@ -1,0 +1,1 @@
+{"module": "l10n_ch", "frontend_gap3": {"present": true, "js_files": 0, "xml_templates": 0, "owl_components": [], "registry_adds": [], "patches": [], "services": [], "asset_bundles": {"web.report_assets_common": 1}}, "integrations_gap7": {"http_call_sites": 0, "sdk_imports": [], "uses_api_keys": false, "endpoints": [], "files": []}}

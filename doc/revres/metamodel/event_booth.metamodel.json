@@ -1,0 +1,273 @@
+{
+  "subsystem": "event_booth",
+  "evidence": {
+    "manifest": {
+      "name": "Events Booths",
+      "category": "Marketing/Events",
+      "version": "1.1",
+      "summary": "Manage event booths",
+      "depends": [
+        "event"
+      ],
+      "auto_install": false,
+      "application": false
+    },
+    "models": [
+      {
+        "_name": "event.booth",
+        "_description": "Event Booth",
+        "_inherit": [
+          "event.type.booth",
+          "mail.thread",
+          "mail.activity.mixin"
+        ],
+        "fields": 8,
+        "relations": [
+          "event_type_id->event.type",
+          "event_id->event.event",
+          "partner_id->res.partner",
+          "booth_category_id->event.booth.category"
+        ]
+      },
+      {
+        "_name": "event.booth.category",
+        "_description": "Event Booth Category",
+        "_inherit": [
+          "image.mixin"
+        ],
+        "fields": 5,
+        "relations": [
+          "booth_ids->event.booth"
+        ]
+      },
+      {
+        "_name": "event.type.booth",
+        "_description": "Event Booth Template",
+        "fields": 3,
+        "relations": [
+          "event_type_id->event.type",
+          "booth_category_id->event.booth.category"
+        ]
+      },
+      {
+        "_name": "event.event",
+        "_description": "(inherit) Event",
+        "_inherit": "event.event",
+        "fields": 5,
+        "relations": [
+          "event_booth_ids->event.booth",
+          "event_booth_category_ids->event.booth.category",
+          "event_booth_category_available_ids->event.booth.category"
+        ]
+      },
+      {
+        "_name": "event.type",
+        "_description": "(inherit) Event Template",
+        "_inherit": "event.type",
+        "fields": 1,
+        "relations": [
+          "event_type_booth_ids->event.type.booth"
+        ]
+      }
+    ],
+    "routes": [],
+    "security": {
+      "access_rules": 9,
+      "record_rules": 0,
+      "groups": 0
+    },
+    "views": {
+      "form": 4,
+      "list": 3,
+      "kanban": 1,
+      "search": 3,
+      "pivot": 1,
+      "graph": 1
+    },
+    "frontend": {
+      "present": true,
+      "js_files": 0,
+      "xml_templates": 0,
+      "owl_components": [],
+      "registry_adds": [],
+      "patches": [],
+      "services": [],
+      "asset_bundles": {}
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": false,
+      "endpoints": [],
+      "files": []
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    },
+    "behavioral_notes": [
+      {
+        "element": "event.booth.state + _compute_is_available / _search_is_available",
+        "observation": "event.booth carries a 2-value Selection state available/unavailable (default 'available', group_expand=True, tracking=True). is_available is a non-stored compute (state=='available') with a custom _search_is_available that maps the 'in'/'not in' operators back onto state='available'/'unavailable' (returning NotImplemented for other operators). The kanban/pivot/graph and the event-level available counters all hang off this single state field; none of that mapping is visible in metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "event.booth.action_confirm -> write(state='unavailable') -> _action_post_confirm",
+        "observation": "Assigning a booth to a renter is a state transition, not a separate document: action_confirm(additional_values) merges {'state':'unavailable'} with any extra vals and calls write(). write() snapshots booths still 'available' as to_confirm, and after super().write() if the new state is 'unavailable' it calls _action_post_confirm, which posts the 'event_booth.event_booth_booked_template' mail message onto the parent event_id chatter under the mt_event_booth_booked subtype. So booking a booth confirms it (makes it unavailable) AND logs a booked note on the event. This side-effect chain is invisible to metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "event.booth.partner_id + _compute_contact_name/email/phone + create",
+        "observation": "The customer side is captured by partner_id (string 'Renter', tracking=True, copy=False). contact_name/contact_email/contact_phone are stored, editable computes (readonly=False, copy=False) that default-fill from partner_id.name/email/phone only when still empty, letting an exhibitor contact differ from the renter partner record. create() runs with mail_create_nosubscribe=True and immediately calls _post_confirmation_message for any booth created already-unavailable. Pure code behavior, not in metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "event.event._compute_event_booth_ids (booth creation from event.type templates)",
+        "observation": "On the event.event inherit, event_booth_ids is a stored compute (precompute=True) depending on event_type_id: when the event type changes it emulates an onchange by Command.unlink-ing only booths still is_available and Command.create-ing one event.booth per event_type_booth_ids template line, copying just the whitelisted fields from event.type.booth._get_event_booth_fields_whitelist() (['name','booth_category_id']). _compute_event_booth_count uses a sudo _read_group over event.booth grouped by state to derive event_booth_count and event_booth_count_available without loading rows. event.type.booth._get_default_booth_category auto-assigns the sole booth category when exactly one exists. This template-instantiation logic is not in metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "frontend (OWL/JS)",
+        "observation": "extract_frontend reports no JS/OWL footprint for event_booth: 0 js files, 0 xml templates, 0 owl_components, 0 registry adds, no asset bundles. The module is backend-only and renders entirely through standard Odoo form/list/kanban/pivot/graph views (4 form, 3 list, 1 kanban, 3 search, 1 pivot, 1 graph); any storefront booth-selection UI lives in the separate website_event_booth / event_booth_sale addons.",
+        "source": "static"
+      },
+      {
+        "element": "integrations (external HTTP/SDK)",
+        "observation": "extract_frontend reports no outbound integration surface: 0 http call sites, no sdk imports, no api keys, no endpoints. event_booth makes no external calls of its own; any payment/map integration is inherited transitively from the event dependency, not introduced here.",
+        "source": "static"
+      }
+    ]
+  },
+  "it_architecture": {
+    "application": "event_booth (Events Booths application component, extends event)",
+    "software_services": [],
+    "data_objects": [
+      "event.booth",
+      "event.booth.category",
+      "event.type.booth",
+      "event.event",
+      "event.type"
+    ],
+    "logical_data_erm": [
+      "event.booth -> event.event (booth belongs to an event)",
+      "event.booth -> res.partner (renter)",
+      "event.booth -> event.booth.category (via inherited booth_category_id)",
+      "event.booth.category -> event.booth (booths in category)",
+      "event.type.booth -> event.type (template line)",
+      "event.type.booth -> event.booth.category",
+      "event.event -> event.booth (event_booth_ids)",
+      "event.type -> event.type.booth (event_type_booth_ids)"
+    ],
+    "information_flows": [
+      "depends: event",
+      "side-effect: event.booth.action_confirm -> write(state='unavailable') -> _action_post_confirm -> booked mail message on event_id chatter (mt_event_booth_booked subtype)",
+      "side-effect: event.booth.create(unavailable) -> _post_confirmation_message -> event chatter note",
+      "side-effect: event.event change of event_type_id -> _compute_event_booth_ids -> unlink available booths + recreate booths from event.type.booth template lines",
+      "compute: event.booth.state -> event.event.event_booth_count / event_booth_count_available / event_booth_category_available_ids (availability rollups)"
+    ],
+    "frontend_components": []
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Define Booth Catalog & Categories (event.booth.category)",
+      "Configure Booths per Event (event.booth)",
+      "Template Booths via Event Types (event.type.booth)",
+      "Assign / Book a Booth to an Exhibitor (state available->unavailable)",
+      "Capture Exhibitor / Renter Contact Details",
+      "Track Booth Availability & Counts per Event"
+    ],
+    "value_streams": [
+      "Offer-to-Booked-Booth: define booth categories -> add booths to event (manually or from event-type template) -> exhibitor reserves -> action_confirm marks booth unavailable -> booked note logged on event chatter"
+    ],
+    "information_concepts": [
+      "event.booth",
+      "event.booth.category",
+      "event.type.booth",
+      "event.event (booth-extended)",
+      "event.type (booth-extended)",
+      "res.partner (renter/exhibitor)"
+    ],
+    "organization": [
+      "event.group_event_registration_desk (read)",
+      "event.group_event_user (read/write/create booths)",
+      "event.group_event_manager (full booth + category management)"
+    ],
+    "products": [],
+    "policies": [
+      "9 access rules reusing the inherited event groups (registration_desk read-only, event_user manages booths, manager manages categories); no module-specific record rules or groups",
+      "booth state machine: available -> unavailable on confirm/book, enforced via write() override rather than a workflow",
+      "event.type.booth template whitelist (['name','booth_category_id']) governs which template fields propagate to instantiated booths",
+      "_compute_event_booth_ids re-sync only removes still-available booths, protecting already-booked (unavailable) booths from event-type changes",
+      "booth_category_id ondelete='restrict' prevents deleting a category still referenced by template lines"
+    ],
+    "stakeholders": [
+      "Exhibitor / Booth Renter (res.partner)",
+      "Event Manager (group_event_manager)",
+      "Event Officer (group_event_user)",
+      "Registration Desk operator (group_event_registration_desk)"
+    ],
+    "strategy": null,
+    "metrics": [
+      "event_booth_count / event_booth_count_available per event",
+      "booth state distribution (kanban group_expand + 1 pivot + 1 graph view)",
+      "available booth categories per event (event_booth_category_available_ids, frontend-facing)"
+    ]
+  },
+  "classification": {
+    "value_model": "network",
+    "activity_class": "primary",
+    "apqc_category": "3.0 Market and Sell Products and Services",
+    "rationale": "event_booth is an event value-network extension (Stabell & Fjeldstad): booths are an exhibitor-facing offering mediated through the event platform, not a transformation chain. The economic logic is capacity/availability mediation - a fixed set of booths per event, each toggling available->unavailable as exhibitors are matched to stands, with availability rollups (event_booth_count_available, event_booth_category_available_ids) and chatter promotion of bookings. There is no sequential make-to-deliver production (chain) and no per-case diagnostic work (shop); the module connects exhibitors to event capacity, which is mediating-technology / network logic, inherited from and reinforcing the parent event network. It is a primary, customer-facing activity. APQC 3.0 Market and Sell Products and Services is the closest PCF home because selling/allocating exhibitor booth space is a sell motion (event sponsorship/booth sales); the actual paid checkout lives in the separate event_booth_sale / website_event_booth addons, so this base module covers the catalog + assignment portion of that sell process."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "booth categories with image, description, sequence (event.booth.category)",
+      "per-event booth list with available/unavailable status and group_expand kanban",
+      "booth templating from event types (auto-instantiate booths when an event uses a type)",
+      "renter assignment with auto-filled but editable contact name/email/phone",
+      "booth booking that flips status to unavailable and logs a tracked note on the event chatter",
+      "available-booth counters and pivot/graph analysis per event"
+    ],
+    "typical_fits": [
+      "exhibitions / trade shows offering a fixed set of sellable stands per event",
+      "sponsor/exhibitor management where booths are reserved and tracked by category",
+      "organizers reusing a standard booth layout across recurring events via event types"
+    ],
+    "common_gaps": [
+      "paid booth checkout / invoicing and pricing per category (needs event_booth_sale)",
+      "public website booth selection and online exhibitor registration UX (needs website_event_booth)",
+      "booth floor-plan / spatial layout and a visual stand picker (not in standard)",
+      "approval workflow beyond the binary available/unavailable state"
+    ],
+    "drive_hints": [
+      "odoo shell: env['event.booth'].search([], limit=5).mapped(('name','state','partner_id.name','event_id.name'))",
+      "odoo shell: env['event.booth.category'].search([]).mapped(('name','sequence'))",
+      "odoo shell: e = env['event.event'].search([('event_booth_ids','!=',False)], limit=1); (e.event_booth_count, e.event_booth_count_available)",
+      "odoo shell: b = env['event.booth'].search([('state','=','available')], limit=1); b.action_confirm({'partner_id': env['res.partner'].search([],limit=1).id}); (b.state, b.is_available)"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Whether booth pricing/checkout (event_booth_sale) materially changes the available->unavailable transition (e.g. a reserved/pending intermediate state) once installed.",
+    "How website_event_booth exposes event_booth_category_available_ids to public exhibitors and whether selection happens before or after partner assignment.",
+    "Whether multi-company scoping is expected on booths given event_booth adds no module-specific record rules (relying solely on inherited event groups)."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/event_booth.facts.json",
+    "tools": [
+      "code-read",
+      "extract_frontend.py",
+      "extract_module.py"
+    ],
+    "odoo_version": "19.0"
+  }
+}

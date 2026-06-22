@@ -1,0 +1,251 @@
+{
+  "subsystem": "hr_org_chart",
+  "evidence": {
+    "manifest": {
+      "name": "HR Org Chart",
+      "category": "Human Resources",
+      "depends": [
+        "hr",
+        "web_hierarchy"
+      ],
+      "auto_install": [
+        "hr"
+      ],
+      "application": false
+    },
+    "models": [
+      {
+        "_inherit": "hr.employee",
+        "_description": "Employee (org-chart extension)",
+        "fields": "child_all_count (Integer, Indirect Subordinates Count), child_count (Integer, Direct Subordinates Count), department_color (Integer related department_id.color), subordinate_ids (One2many hr.employee, direct+indirect), is_subordinate (Boolean, searchable)",
+        "relations": [
+          "parent_id->hr.employee (manager, inherited from hr)",
+          "child_ids->hr.employee (direct reports, inherited from hr)",
+          "subordinate_ids->hr.employee (computed, direct+indirect)"
+        ]
+      },
+      {
+        "_inherit": "hr.employee.public",
+        "_description": "Public Employee (org-chart extension)",
+        "fields": "child_all_count (Integer computed from employee), child_count (Integer computed), department_color (Integer computed), subordinate_ids (related employee_id.subordinate_ids), is_subordinate (related employee_id.is_subordinate)",
+        "relations": [
+          "employee_id->hr.employee",
+          "parent_id->hr.employee.public (inherited from hr)",
+          "child_ids->hr.employee.public (inherited from hr)"
+        ]
+      }
+    ],
+    "routes": [
+      {
+        "paths": [
+          "/hr/get_redirect_model"
+        ],
+        "auth": "user",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/hr/get_org_chart"
+        ],
+        "auth": "user",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/hr/get_subordinates"
+        ],
+        "auth": "user",
+        "type": "jsonrpc"
+      }
+    ],
+    "security": {
+      "access_rules": 0,
+      "record_rules": 0,
+      "groups": 0
+    },
+    "views": {
+      "form": 0,
+      "list": 0,
+      "kanban": 0,
+      "search": 0,
+      "pivot": 0,
+      "graph": 0,
+      "hierarchy": 1
+    },
+    "frontend": {
+      "present": true,
+      "js_files": 5,
+      "xml_templates": 3,
+      "owl_components": [
+        "HrOrgChart",
+        "HrOrgChartPopover"
+      ],
+      "registry_adds": [
+        "fields:hr_org_chart",
+        "views:hr_employee_hierarchy"
+      ],
+      "patches": [],
+      "services": [],
+      "asset_bundles": {
+        "web._assets_primary_variables": 1,
+        "web.assets_backend": 1,
+        "web.assets_backend_lazy": 1,
+        "web.assets_tests": 1,
+        "web.assets_unit_tests": 1
+      }
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": false,
+      "endpoints": [],
+      "files": []
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    },
+    "behavioral_notes": [
+      {
+        "element": "HrEmployee._get_subordinates / _compute_subordinates (models/hr_employee.py + hr_org_chart_mixin.py)",
+        "observation": "_get_subordinates recursively walks child_ids to collect ALL (direct + indirect) reports, carrying a 'parents' accumulator set so the recursion handles the cyclic case where a manager is also a member of a sub-department managed by their own report (e.g. CEO is everyone's manager but sits in an R&D dept under the CTO) — such a manager is excluded from their own subordinate set to avoid infinite recursion. _compute_subordinates then sets subordinate_ids and child_all_count = len(subordinate_ids). All compute methods use compute_sudo=True so subordinate counts are visible even when the current user cannot read individual employee records.",
+        "source": "code-read"
+      },
+      {
+        "element": "child_count vs child_all_count compute (hr_org_chart_mixin.py)",
+        "observation": "child_count (Direct Subordinates Count) is computed via a single _read_group on parent_id over self.ids (one batched query, not per-record), giving direct-report counts; child_all_count (Indirect Subordinates Count) is a recursive=True field equal to the size of the full subordinate_ids closure. The two integers feed the 'X direct / Y indirect' badges the org-chart widget shows on each node.",
+        "source": "code-read"
+      },
+      {
+        "element": "/hr/get_org_chart JSON-RPC route (controllers/hr_org_chart.py) — manager-chain builder",
+        "observation": "get_org_chart loads the employee as hr.employee.public (with has_access('read') gating), then walks parent_id upward in a while-loop bounded by _managers_level=5 (+1) to build the 'ancestors' manager chain, breaking on self-cycles and already-seen ancestors; it returns {self, managers (reversed, capped, plus managers_more flag), children}. Each node is shaped by _prepare_employee_data which exposes id, name, job, a /mail/view redirect link, direct_sub_count (len(child_ids - self)) and indirect_sub_count (child_all_count). get_subordinates returns direct, indirect, or all subordinate ids for the 'see all subordinates' drill-down. get_redirect_model returns 'hr.employee' or 'hr.employee.public' depending on read access, so the widget redirects to the model the user is allowed to open.",
+        "source": "code-read"
+      },
+      {
+        "element": "parent_id / child_ids hierarchy reuse + web_hierarchy dependency",
+        "observation": "The module defines NO new business model (0 _name); it only _inherits hr.employee and hr.employee.public to add org-chart compute fields and reuses the existing parent_id (manager) / child_ids self-relation from hr as the hierarchy backbone. It depends on web_hierarchy and registers a hierarchy view (hr_employee_hierarchy) plus an employee-form field widget, auto-installing whenever hr is present.",
+        "source": "code-read"
+      },
+      {
+        "element": "frontend (OWL/JS) — the org chart IS a client-side OWL component (gap #3)",
+        "observation": "The org chart itself is rendered entirely client-side: OWL components HrOrgChart (the 'hr_org_chart' field widget on the employee form) and HrOrgChartPopover (per-node hover popover) under static/src/fields, plus a custom hr_employee_hierarchy view (card + renderer) under static/src/views. HrOrgChart uses useRecordObserver to refetch when the record's parent_id/resId changes and calls the /hr/get_org_chart RPC to populate managers/self/children; node clicks call get_formview_action to redirect to the employee form. None of this rendering/interaction logic is visible in Python metadata — it lives only in the JS/XML assets (gap #3).",
+        "source": "static"
+      }
+    ]
+  },
+  "it_architecture": {
+    "application": "hr_org_chart (Org-chart widget extension of the Employees application; auto-installed with hr)",
+    "software_services": [
+      "/hr/get_redirect_model (jsonrpc, user)",
+      "/hr/get_org_chart (jsonrpc, user)",
+      "/hr/get_subordinates (jsonrpc, user)"
+    ],
+    "data_objects": [
+      "hr.employee (inherited; org-chart fields)",
+      "hr.employee.public (inherited; org-chart fields)"
+    ],
+    "logical_data_erm": [
+      "hr.employee -> hr.employee (parent_id manager, reused from hr)",
+      "hr.employee -> hr.employee (child_ids direct reports, reused from hr)",
+      "hr.employee -> hr.employee (subordinate_ids computed direct+indirect closure)",
+      "hr.employee.public -> hr.employee (employee_id; mirrors the same org-chart fields)",
+      "hr.employee -> hr.department (department_color related)"
+    ],
+    "information_flows": [
+      "depends: hr, web_hierarchy",
+      "read-flow: OWL HrOrgChart widget -> /hr/get_org_chart RPC -> walks parent_id chain + child_ids -> returns managers/self/children",
+      "read-flow: 'see subordinates' -> /hr/get_subordinates RPC -> subordinate_ids (direct|indirect|all)",
+      "access-flow: /hr/get_redirect_model -> picks hr.employee vs hr.employee.public per read access; compute_sudo exposes counts without exposing records",
+      "no side-effects: read-only visualization; no records created/written, no external HTTP/SDK calls"
+    ],
+    "frontend_components": [
+      "HrOrgChart",
+      "HrOrgChartPopover"
+    ]
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Visualize Employee Reporting Hierarchy (managers up / subordinates down)",
+      "Compute Direct & Indirect Subordinate Counts",
+      "Navigate the Org Chart (drill into managers, peers, subordinates)",
+      "Access-aware Org Visualization (public vs private employee model)"
+    ],
+    "value_streams": [],
+    "information_concepts": [
+      "hr.employee (manager/subordinate hierarchy)",
+      "hr.employee.public (access-gated mirror)"
+    ],
+    "organization": [],
+    "products": [],
+    "policies": [
+      "compute_sudo=True on org-chart fields: subordinate counts computed bypassing per-record ACLs",
+      "controller gates each node on hr.employee.public.has_access('read') and redirects to the readable model via /hr/get_redirect_model",
+      "manager-chain walk capped at _managers_level=5 with cycle-breaking on recursive hierarchies"
+    ],
+    "stakeholders": [
+      "Employee (viewing own place in the org)",
+      "Manager (viewing their reporting line and team)",
+      "HR Officer / HR Manager (org-structure analysis)"
+    ],
+    "strategy": null,
+    "metrics": [
+      "child_count (direct subordinates per employee)",
+      "child_all_count (indirect/total subordinates per employee)"
+    ]
+  },
+  "classification": {
+    "value_model": "support",
+    "activity_class": "support",
+    "apqc_category": "7.0 Develop and Manage Human Capital",
+    "rationale": "hr_org_chart is firm-infrastructure / HR support: an org-visualization widget bolted onto the employee record. Under Stabell & Fjeldstad it is a support value configuration, not a primary chain/shop/network flow — it converts no demand into product and owns no business object of its own (0 new models; it only inherits hr.employee/hr.employee.public to add computed hierarchy fields). It belongs to APQC PCF category 7.0 Develop and Manage Human Capital, specifically organization-structure management and workforce visualization (reporting-line / span-of-control display). It auto-installs with hr and exists purely to make the existing parent_id/child_ids manager hierarchy navigable."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "Interactive org-chart widget on the employee form (managers above, direct reports below, hover popover per node)",
+      "Direct and indirect (recursive) subordinate counts per employee",
+      "Dedicated hr_employee_hierarchy view (web_hierarchy) for browsing the whole tree",
+      "Access-aware rendering: routes through hr.employee.public and redirects to whichever model the user may read",
+      "Cycle-safe recursion handling managers who are also members of their own sub-departments"
+    ],
+    "typical_fits": [
+      "Show an employee their reporting line and team on the standard employee form",
+      "Let HR explore span of control / department structure without custom reporting",
+      "Auto-enable org charts on any database that has the Employees app"
+    ],
+    "common_gaps": [
+      "No matrix/dotted-line reporting (single parent_id only)",
+      "No headcount/FTE roll-up analytics on the chart itself",
+      "No printable/exportable org-chart document out of the box",
+      "Manager-chain depth fixed at _managers_level=5 (code constant, not configurable per company)"
+    ],
+    "drive_hints": [
+      "odoo shell: e = env['hr.employee'].search([('child_ids','!=',False)], limit=1); print(e.name, e.child_count, e.child_all_count, e.subordinate_ids.mapped('name'))",
+      "curl -s -X POST http://localhost:8069/hr/get_org_chart -H 'Content-Type: application/json' -d '{\"jsonrpc\":\"2.0\",\"method\":\"call\",\"params\":{\"employee_id\":1,\"context\":{\"max_level\":5}}}'  # (authenticated session)",
+      "odoo shell: env['hr.employee'].browse(1)._get_subordinates().mapped('name')  # full recursive subordinate closure"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "How presence/status overlays from hr bridges (hr_attendance, hr_holidays) decorate org-chart nodes, if at all.",
+    "Whether downstream apps (hr_recruitment, hr_appraisal) reuse subordinate_ids for approval routing.",
+    "Live performance of the recursive subordinate_ids/child_all_count compute on very large hierarchies."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/hr_org_chart.facts.json",
+    "tools": [
+      "code-read",
+      "extract_frontend.py",
+      "extract_module.py"
+    ],
+    "odoo_version": "19.0"
+  }
+}

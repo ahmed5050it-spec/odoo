@@ -1,0 +1,269 @@
+{
+  "subsystem": "sale_management",
+  "evidence": {
+    "manifest": {
+      "name": "Sales",
+      "category": "Sales/Sales",
+      "summary": "From quotations to invoices",
+      "depends": [
+        "sale",
+        "digest"
+      ],
+      "auto_install": false,
+      "application": true
+    },
+    "models": [
+      {
+        "_name": "sale.order.template",
+        "_description": "Quotation Template",
+        "fields": 12,
+        "relations": [
+          "company_id->res.company",
+          "mail_template_id->mail.template",
+          "sale_order_template_line_ids->sale.order.template.line",
+          "journal_id->account.journal"
+        ]
+      },
+      {
+        "_name": "sale.order.template.line",
+        "_description": "Quotation Template Line",
+        "fields": 11,
+        "relations": [
+          "sale_order_template_id->sale.order.template",
+          "product_id->product.product",
+          "product_uom_id->uom.uom",
+          "parent_id->sale.order.template.line"
+        ]
+      },
+      {
+        "_name": "sale.order",
+        "_description": "(extension) adds sale_order_template_id",
+        "fields": 1,
+        "relations": [
+          "sale_order_template_id->sale.order.template"
+        ]
+      },
+      {
+        "_name": "sale.order.line",
+        "_description": "(extension) adds is_optional",
+        "fields": 1,
+        "relations": []
+      },
+      {
+        "_name": "digest.digest",
+        "_description": "(extension) adds kpi_all_sale_total",
+        "fields": 2,
+        "relations": []
+      }
+    ],
+    "routes": [
+      {
+        "paths": [
+          "/my/orders/<int:order_id>/update_line_dict"
+        ],
+        "auth": "public",
+        "type": "jsonrpc"
+      }
+    ],
+    "security": {
+      "access_rules": 5,
+      "record_rules": 1,
+      "groups": 1
+    },
+    "views": {
+      "form": 2,
+      "list": 2,
+      "search": 1
+    },
+    "frontend": {
+      "present": true,
+      "js_files": 4,
+      "xml_templates": 2,
+      "owl_components": [],
+      "registry_adds": [
+        "fields:so_template_line_o2m",
+        "public.interactions:sale_management.sale_update_line_button"
+      ],
+      "patches": [
+        "SaleOrderLineListRenderer.prototype",
+        "SaleOrderLineProductField.prototype"
+      ],
+      "services": [],
+      "asset_bundles": {
+        "web.assets_backend": 1,
+        "web.assets_frontend": 1,
+        "web.assets_tests": 1,
+        "web.assets_unit_tests": 1
+      }
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": true,
+      "endpoints": [
+        "https://www.odoo.com/app/sales"
+      ],
+      "files": [
+        "__manifest__.py"
+      ]
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    },
+    "behavioral_notes": [
+      {
+        "element": "sale.order._onchange_sale_order_template_id",
+        "observation": "Selecting a quotation template on a sale.order clears existing order_line (Command.clear()) then materialises one sale.order.line per sale.order.template.line via line._prepare_order_line_values() (product_id, product_uom_qty, product_uom_id, display_type, is_optional, sequence, optional name); the first real line is forced to sequence -99 so a resequence on page 1 does not mix in page-2 lines. This is the core 'instantiate a quotation from a template' behaviour and lives entirely in Python, not metadata. _onchange_partner_id re-runs it for unsaved orders whose lines still equal the template lines.",
+        "source": "code-read"
+      },
+      {
+        "element": "sale.order.line.is_optional + portal /update_line_dict (sale.order.option add-to-order equivalent)",
+        "observation": "Optional products are not a distinct model here: a sale.order.line is optional when it sits under an optional (sub)section (sale.order.line._is_line_optional walks parent_id/display_type). The public jsonrpc controller CustomerPortal.portal_quote_option_update (/my/orders/<int>/update_line_dict) lets a customer add / remove (1 unit) / set the quantity of an optional line on their own quotation from the portal, guarded by access_token via _document_check_access and _can_be_edited_on_portal; for combo products it syncs the linked combo-item line quantities, and protects discount/price_unit while writing product_uom_qty. This is the optional-product add-to-order flow the app layer contributes on top of the sale engine.",
+        "source": "code-read"
+      },
+      {
+        "element": "sale.order template compute cascade + action_confirm override",
+        "observation": "Template fields propagate onto the sale.order through overridden @api.depends('sale_order_template_id') computes: note (terms), require_signature, require_payment, prepayment_percent, validity_date (today + number_of_days), journal_id, and confirmation _get_confirmation_template returns the template mail_template_id. action_confirm is overridden so that when an order is confirmed from the backend (send_email=False) and the template carries a mail_template_id, that confirmation mail is sent via _send_order_notification_mail. Template constrains require_payment to 0 < prepayment_percent <= 1.0 and forbids cross-company products on a shared template.",
+        "source": "code-read"
+      },
+      {
+        "element": "digest/onboarding glue (digest.digest KPI + Sales app menu hooks)",
+        "observation": "This application module wires the Sales app into the periodic digest and onboarding: digest.digest gains kpi_all_sale_total / kpi_all_sale_total_value computed from sale.report (state not in draft/cancel/sent, sum price_total, date field) plus a _compute_kpis_actions link to sale.report_all_channels_sales_action under sale.sale_menu_root; data/digest_data.xml enables the KPI by default and adds two digest.tips (configurable products, product matrix). post_init_hook activates and uninstall_hook deactivates the 'sale' module ir.ui.menu entries, and pre_init_hook pre-creates the sale_order_template_id column to avoid recompute on existing SOs -- i.e. this module is what actually surfaces the Sales application menu/app.",
+        "source": "code-read"
+      },
+      {
+        "element": "frontend (OWL/JS)",
+        "observation": "4 JS files, 2 XML templates, 0 OWL components; 2 registry registrations (fields:so_template_line_o2m widget for editing template lines, public.interactions:sale_management.sale_update_line_button portal interaction driving the optional-line +/- buttons); 2 patches (SaleOrderLineListRenderer.prototype, SaleOrderLineProductField.prototype) extending the sale order line list/product field; asset bundles web.assets_backend (fields), web.assets_frontend (interactions), web.assets_tests (tours), web.assets_unit_tests.",
+        "source": "static"
+      }
+    ]
+  },
+  "it_architecture": {
+    "application": "sale_management (Sales application bundle / quotation-template app component)",
+    "software_services": [
+      "/my/orders/<int>/update_line_dict"
+    ],
+    "data_objects": [
+      "sale.order.template",
+      "sale.order.template.line",
+      "sale.order (ext)",
+      "sale.order.line (ext)",
+      "digest.digest (ext)"
+    ],
+    "logical_data_erm": [
+      "sale.order.template -> sale.order.template.line",
+      "sale.order.template.line -> product.product",
+      "sale.order.template.line -> sale.order.template.line (parent section)",
+      "sale.order -> sale.order.template",
+      "sale.order.template -> mail.template",
+      "sale.order.template -> account.journal",
+      "res.company -> sale.order.template (default template)"
+    ],
+    "information_flows": [
+      "depends: sale, digest",
+      "side-effect: sale.order._onchange_sale_order_template_id -> populate sale.order.line[] from sale.order.template.line[]",
+      "side-effect: portal /update_line_dict -> mutate optional sale.order.line.product_uom_qty (+ combo children)",
+      "side-effect: sale.order.action_confirm -> send template mail_template_id on backend confirmation",
+      "side-effect: digest.digest.kpi_all_sale_total -> aggregate sale.report; post_init_hook -> activate sale.sale_menu_root"
+    ],
+    "frontend_components": [
+      "fields:so_template_line_o2m",
+      "public.interactions:sale_management.sale_update_line_button",
+      "SaleOrderLineListRenderer.prototype (patch)",
+      "SaleOrderLineProductField.prototype (patch)"
+    ]
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Manage Quotation Templates",
+      "Build Quotations from Templates",
+      "Offer Optional Products on Quotations",
+      "Surface Sales App (menu, digest KPI & onboarding)"
+    ],
+    "value_streams": [
+      "Quote-to-Cash (app layer): pick template -> generate quotation lines -> customer adds optional products in portal -> confirm order"
+    ],
+    "information_concepts": [
+      "sale.order.template",
+      "sale.order.template.line",
+      "sale.order (quotation)",
+      "sale.order.line (optional line)"
+    ],
+    "organization": [
+      "group_sale_order_template"
+    ],
+    "products": [],
+    "policies": [
+      "1 record rule: quotation template visibility scoping",
+      "feature gate: implied_group sale_management.group_sale_order_template enables Quotation Templates",
+      "constraint: template prepayment_percent in (0,1] when require_payment; template-vs-product company consistency"
+    ],
+    "stakeholders": [
+      "Salesperson (res.users)",
+      "Sales Manager (sales_team.group_sale_manager)",
+      "Customer (res.partner, portal)"
+    ],
+    "strategy": null,
+    "metrics": [
+      "digest.digest kpi_all_sale_total / kpi_all_sale_total_value (period sales total from sale.report)"
+    ]
+  },
+  "classification": {
+    "value_model": "chain",
+    "activity_class": "primary",
+    "apqc_category": "3.0 Market and Sell Products and Services",
+    "rationale": "sale_management is the application bundle that turns the sale order engine into the Sales app, sitting in the Marketing & Sales primary activity of the value chain and supporting quote creation/revision (APQC 3.5.3 manage sales orders / 3.5.3.14 revise quote). It adds reusable quotation templates that materialise sale.order.line[], portal optional-product selection, and the digest KPI + Sales menu that present the app. It produces no new downstream document of its own; the confirmed sale.order it helps build flows downstream (stock delivery, account invoice) through the parent sale engine."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "reusable quotation templates with lines, sections/subsections and optional lines",
+      "one-click instantiation of a quotation from a template",
+      "template-driven defaults: validity, online signature/payment, prepayment %, terms, confirmation mail, invoicing journal",
+      "customer self-service add/remove of optional products on the portal quotation",
+      "per-company default quotation template + settings feature gate",
+      "Sales digest KPI (period sales total) and onboarding tips, Sales app menu"
+    ],
+    "typical_fits": [
+      "standardised quotations for repeatable offers / catalogues",
+      "upsell via optional products selectable by the customer in the portal",
+      "online quote signature & prepayment to auto-confirm orders"
+    ],
+    "common_gaps": [
+      "complex template selection logic (eligibility, channel/website-specific templates)",
+      "approval thresholds or discount governance on template-generated lines",
+      "richer optional-product / cross-sell recommendation logic beyond flat optional lines"
+    ],
+    "drive_hints": [
+      "odoo shell: env['sale.order.template'].search([]).mapped(('name','number_of_days','require_payment'))",
+      "odoo shell: so = env['sale.order'].new({'partner_id': env['res.partner'].search([],limit=1).id, 'sale_order_template_id': env['sale.order.template'].search([],limit=1).id}); so._onchange_sale_order_template_id(); so.order_line.mapped(('product_id','product_uom_qty','is_optional'))",
+      "curl jsonrpc /my/orders/<id>/update_line_dict (auth=public, needs access_token + line_id of an optional line)"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Exact precedence when both a company default template and a website/eCommerce order apply (the website_id branch in _compute_sale_order_template_id skips the company template).",
+    "How template line descriptions vs product-variant descriptions resolve for configured products (_use_template_name override points).",
+    "Downstream effect of template require_signature/require_payment on the portal auto-confirmation path (handled in the parent sale engine)."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/sale_management.facts.json",
+    "tools": [
+      "code-read",
+      "extract_frontend.py",
+      "extract_module.py",
+      "extract_runtime.sh",
+      "run-odoo (odoo shell)"
+    ],
+    "odoo_version": "19.0"
+  }
+}

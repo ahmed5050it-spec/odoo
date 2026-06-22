@@ -1,0 +1,330 @@
+{
+  "subsystem": "payment_razorpay",
+  "evidence": {
+    "manifest": {
+      "name": "Payment Provider: Razorpay",
+      "category": "Accounting/Payment Providers",
+      "summary": "A payment provider covering India.",
+      "version": "1.0",
+      "author": "Odoo S.A.",
+      "license": "LGPL-3",
+      "depends": [
+        "payment"
+      ],
+      "auto_install": false,
+      "application": false
+    },
+    "models": [
+      {
+        "_name": "payment.provider (inherit)",
+        "_description": "Payment Provider (Razorpay credentials: Key Id/Secret + OAuth tokens + webhook secret)",
+        "fields": 8,
+        "relations": [
+          "code (Selection selection_add 'razorpay', ondelete set default)",
+          "razorpay_key_id (Char, account identifier)",
+          "razorpay_key_secret (Char, groups=base.group_system)",
+          "razorpay_webhook_secret (Char, groups=base.group_system)",
+          "razorpay_account_id (Char OAuth, groups=base.group_system)",
+          "razorpay_refresh_token (Char OAuth, groups=base.group_system)",
+          "razorpay_public_token (Char OAuth, groups=base.group_system)",
+          "razorpay_access_token (Char OAuth, groups=base.group_system)",
+          "razorpay_access_token_expiry (Datetime OAuth, groups=base.group_system)"
+        ]
+      },
+      {
+        "_name": "payment.transaction (inherit)",
+        "_description": "Payment Transaction (Razorpay Order/Payment/Refund flow; card/UPI/netbanking/wallet)",
+        "fields": 0,
+        "relations": [
+          "no new fields; 16 methods overriding payment's request/processing/notification hooks"
+        ]
+      },
+      {
+        "_name": "payment.token (inherit)",
+        "_description": "Payment Token (saved Razorpay card/UPI eMandate; provider_ref = 'customer_id,token_id')",
+        "fields": 0,
+        "relations": [
+          "no new fields; 1 method (_razorpay_get_limit_exceed_warning, eMandate cap)"
+        ]
+      }
+    ],
+    "routes": [
+      {
+        "paths": [
+          "/payment/razorpay/return"
+        ],
+        "auth": "public",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/payment/razorpay/webhook"
+        ],
+        "auth": "public",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/payment/razorpay/oauth/return"
+        ],
+        "auth": "user",
+        "type": "http"
+      }
+    ],
+    "security": {
+      "access_rules": 0,
+      "record_rules": 0,
+      "groups": 0,
+      "note": "No own ACL/rules; relies on payment's security and on base.group_system field groups guarding razorpay_key_secret, razorpay_webhook_secret and all OAuth-token fields (account_id/refresh/public/access tokens + expiry)."
+    },
+    "views": {
+      "form": 0,
+      "list": 0,
+      "kanban": 0,
+      "search": 0,
+      "pivot": 0,
+      "graph": 0,
+      "note": "No own model views; xml_loc=132 is view inheritance (payment.provider form: razorpay_key_id + 'Connect'/OAuth onboarding button + 'Generate Webhook' action), QWeb templates (payment_razorpay_templates.xml inline form + authorization_error page), and data/payment_provider_data.xml (the Razorpay payment.provider + payment.method records)."
+    },
+    "behavioral_notes": [
+      {
+        "element": "payment.transaction._get_specific_processing_values / _razorpay_create_customer / _razorpay_create_order -> outbound POST to api.razorpay.com (Customers, Orders)",
+        "observation": "On a first online_direct/validation payment, _get_specific_processing_values POSTs 'customers' (name/email/contact) then 'orders' (_razorpay_create_order -> _razorpay_prepare_order_payload: amount in minor units via payment_utils.to_minor_currency_units, currency, method=payment-method code unless in const.FALLBACK_PAYMENT_METHOD_CODES, customer_id, and for tokenize a 'token' block with max_amount/expire_at[+10y]/frequency='as_presented') and returns razorpay_key_id + razorpay_order_id + razorpay_customer_id to the browser Razorpay Checkout SDK. All outbound HTTP is delegated to payment.provider._send_api_request, which payment_razorpay points at https://api.razorpay.com/{api_version}/{endpoint} (default v1) via _build_request_url and authenticates with HTTP Basic (razorpay_key_id, razorpay_key_secret) in _build_request_auth -- OR, when OAuth is configured (access token, no key_id), an 'Authorization: Bearer <razorpay_access_token>' header built in _build_request_headers that auto-refreshes via _razorpay_refresh_access_token when expired. capture_manually adds a payment.capture='manual' block (manual_expiry_period 7200, refund_speed normal). None of this server-to-server HTTP is visible in Python field/model metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "payment.transaction._send_payment_request (token/recurring charge) + _send_capture_request / _send_refund_request / _send_void_request",
+        "observation": "_send_payment_request (operation online_token/offline) first guards against a duplicate token charge for the same document within 36 hours (RBI 24h-processing window, searching pending same-prefix txs), then creates an Order and POSTs 'payments/create/recurring' with email/contact/amount/order_id/customer_id/token (token_id split from token_id.provider_ref 'customer_id,token_id') and recurring='1', folding the response into payment's state machine via _process('razorpay', ...). _send_capture_request POSTs 'payments/<provider_reference>/capture' (full only -- support_manual_capture='full_only'); _send_refund_request POSTs 'payments/<provider_reference>/refund' (partial supported, negative amount, notes.reference for webhook correlation) and tags entity_type='refund'; _send_void_request raises UserError -- Razorpay transactions cannot be voided from Odoo. _apply_updates maps Razorpay status (const.PAYMENT_STATUS_MAPPING created/authorized/captured/failed) onto _set_pending/_set_authorized/_set_done/_set_error, fetching full payment data with GET 'payments/<id>' when only a redirect razorpay_payment_id is available. These cross-system calls and the state transitions are invisible to metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "RazorpayController.razorpay_webhook (/payment/razorpay/webhook) + razorpay_return_from_checkout (/payment/razorpay/return) -> HMAC-SHA256 signature verification + tx state update",
+        "observation": "The public, csrf=False POST webhook at /payment/razorpay/webhook parses the JSON event; for events in const.HANDLED_WEBHOOK_EVENTS (payment.authorized, payment.captured, payment.failed, refund.failed, refund.processed) it extracts the payment/refund entity, locates the tx via payment.transaction._search_by_reference (by the payment's 'description'=Odoo reference, or for refunds by notes.reference, else by provider_reference creating a child refund tx) and calls _verify_signature BEFORE acting. _verify_signature (controllers/main.py) reads the X-Razorpay-Signature header, rejects a missing signature with werkzeug Forbidden, then HMAC-SHA256s the raw body with razorpay_webhook_secret (_razorpay_calculate_signature is_redirect=False) and compares with hmac.compare_digest (constant-time). The redirect-return route /payment/razorpay/return (save_session=False) instead signs '<razorpay_order_id>|<razorpay_payment_id>' with razorpay_key_secret (is_redirect=True) before _process and redirect to /payment/status. Signature trust, constant-time compare, and inbound state transition are all invisible to metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "OAuth self-onboarding via Odoo proxy (action_start_onboarding / RazorpayController.razorpay_return_from_authorization / _razorpay_refresh_access_token) + action_razorpay_create_webhook",
+        "observation": "action_start_onboarding (override of payment) gates on const.SUPPORTED_CURRENCIES (RedirectWarning if the company currency is unsupported), then redirects to the Razorpay OAuth authorize URL ({OAUTH_URL}/authorize) carrying a return_url, provider_id and CSRF token. Razorpay sends the merchant back to /payment/razorpay/oauth/return (auth=user, website=True); the controller validates the CSRF token (Forbidden on failure), then POSTs '/get_access_token' through Odoo's Razorpay proxy at https://razorpay.api.odoo.com/api/razorpay/1 (is_proxy_request=True, payload wrapped by _prepare_json_rpc_payload), stores razorpay_account_id + public/refresh/access tokens (+expiry), clears the classical key fields, sets state=enabled/is_published, and auto-registers the webhook. action_razorpay_create_webhook mints a random secret, POSTs 'accounts/<account_id>/webhooks' (api_version=v2) with const.HANDLED_WEBHOOK_EVENTS, and stores the returned signing secret. _razorpay_refresh_access_token re-mints the access token via the proxy '/refresh_access_token' when expired. A @api.constrains forbids enabling a provider without either an OAuth account_id or both key_id+key_secret.",
+        "source": "code-read"
+      },
+      {
+        "element": "tokenization / eMandate for saved cards & UPI (recurring) (_extract_token_values / _razorpay_get_mandate_max_amount / payment.token._razorpay_get_limit_exceed_warning)",
+        "observation": "When tx.tokenize is set (or a token_id is returned provider-side and provider.allow_tokenization), the order payload carries an eMandate 'token' block and _extract_token_values vaults a payment.token: payment_details = card last4 or UPI vpa tail or the pm code, and provider_ref = '<customer_id>,<token_id>' (both Razorpay ids needed for later recurring charges). _razorpay_get_mandate_max_amount caps the mandate using const.MANDATE_MAX_AMOUNT (card 1,000,000 INR / upi 100,000 INR), converted from INR via _razorpay_convert_inr_to_currency and bounded by the linked document's amount*1.5 / MRR*5. payment.token._razorpay_get_limit_exceed_warning surfaces a portal warning when a token charge would exceed that mandate cap. Subsequent off-session charges go through _send_payment_request -> payments/create/recurring. This Indian recurring-mandate flow (RBI rules) is entirely in code, invisible to metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "external integration surface (gap #7) -- endpoints, keys, SDK",
+        "observation": "Static gap-#7 facts (extract_frontend.py): uses_api_keys=true; two outbound endpoints -- https://api.razorpay.com/{api_version}/{endpoint} (direct REST, HTTP Basic key_id/key_secret OR OAuth Bearer access-token auth) and https://razorpay.api.odoo.com/api/razorpay/1 (Odoo's Razorpay OAuth proxy, jsonrpc) -- declared in const.py and models/payment_provider.py. No 'requests' import here: HTTP is delegated to payment.provider._send_api_request in the parent engine, which payment_razorpay configures via the _build_request_url / _build_request_headers / _build_request_auth / _parse_response_* hook overrides. On the browser side the Razorpay Checkout SDK is opened on the payment-form page (PaymentForm.prototype patch) -- a second, client-side channel to Razorpay. This dual server-to-server + client-side acquirer link is the canonical metadata gap #7: none of it is reachable from model/field metadata.",
+        "source": "static"
+      },
+      {
+        "element": "frontend (static) -- Razorpay Checkout inline form patch",
+        "observation": "1 JS file, 0 OWL components, 0 registry adds (gap #3). The module patches the shared PaymentForm.prototype (static/src/interactions/payment_form.js) rather than registering a new component: it consumes the inline-form processing values from payment.transaction._get_specific_processing_values (razorpay_key_id, razorpay_public_token, razorpay_customer_id, razorpay_order_id, is_tokenize_request, optional callback_url) to open the Razorpay Checkout SDK in the browser and drive the card/UPI/netbanking/wallet payment. Assets load into web.assets_frontend (manifest entry payment_razorpay/static/src/interactions/payment_form.js). This browser interaction and the Razorpay Checkout SDK are invisible to Python metadata (gap #3).",
+        "source": "static"
+      }
+    ],
+    "frontend": {
+      "present": true,
+      "js_files": 1,
+      "xml_templates": 0,
+      "owl_components": [],
+      "registry_adds": [],
+      "patches": [
+        "PaymentForm.prototype"
+      ],
+      "services": [],
+      "asset_bundles": {
+        "web.assets_frontend": 1
+      }
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": true,
+      "endpoints": [
+        "https://api.razorpay.com/{api_version}/{endpoint}",
+        "https://razorpay.api.odoo.com/api/razorpay/1"
+      ],
+      "files": [
+        "const.py",
+        "models/payment_provider.py"
+      ]
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    }
+  },
+  "it_architecture": {
+    "application": "payment_razorpay (Razorpay acquirer adapter for the payment engine; _inherit-only, no own models/views)",
+    "software_services": [
+      "/payment/razorpay/return (redirect-return: verify HMAC of order_id|payment_id with key_secret, _process; csrf=False, save_session=False)",
+      "/payment/razorpay/webhook (signed async notifications, csrf=False, X-Razorpay-Signature)",
+      "/payment/razorpay/oauth/return (OAuth onboarding return: exchange authorization code for tokens, auth=user)"
+    ],
+    "data_objects": [
+      "payment.provider (+razorpay_key_id, razorpay_key_secret, razorpay_webhook_secret, razorpay_account_id, razorpay_refresh_token, razorpay_public_token, razorpay_access_token, razorpay_access_token_expiry)",
+      "payment.transaction (Razorpay Order/Payment/Refund flow; no new fields)",
+      "payment.token (saved Razorpay card/UPI eMandate; provider_ref='customer_id,token_id'; no new fields)"
+    ],
+    "logical_data_erm": [
+      "payment.transaction -> payment.provider (provider_id; provider_code=='razorpay' gates every override)",
+      "payment.transaction -> payment.token (token_id; recurring charges read provider_ref customer_id,token_id)",
+      "payment.token -> payment.provider (provider_id)",
+      "payment.provider.code selection_add 'razorpay'",
+      "payment.transaction self -> child refund payment.transaction (_create_child_transaction on Razorpay-initiated refunds)",
+      "external: payment.transaction.provider_reference == Razorpay Payment/Refund id (cross-system key)",
+      "external: payment.token.provider_ref == 'Razorpay Customer id,Razorpay Token id'"
+    ],
+    "information_flows": [
+      "depends: payment (inherits the provider/transaction/token engine + _send_api_request)",
+      "outbound: _razorpay_create_customer / _razorpay_create_order / _send_{payment,refund,capture}_request -> POST https://api.razorpay.com/{v1,v2}/ (HTTP Basic key_id/key_secret OR OAuth Bearer access-token)",
+      "outbound: OAuth onboarding + token refresh -> POST https://razorpay.api.odoo.com/api/razorpay/1 proxy (get_access_token, refresh_access_token, jsonrpc)",
+      "client-side: Razorpay Checkout SDK opened on payment-form pages (PaymentForm.prototype patch) with razorpay_key_id/order_id/customer_id/public_token",
+      "inbound (redirect): Razorpay -> /payment/razorpay/return -> verify HMAC(order_id|payment_id, key_secret) -> _process -> /payment/status",
+      "inbound (webhook): Razorpay -> /payment/razorpay/webhook -> _verify_signature (HMAC-SHA256 of raw body with razorpay_webhook_secret) -> _process -> payment state machine",
+      "side-effect: successful done payment + tokenize/allow_tokenization -> _extract_token_values -> payment.token vault (Customer id + Token id, eMandate)",
+      "side-effect: refund.* webhook or Razorpay-initiated refund -> _razorpay_create_refund_tx_from_payment_data -> child refund payment.transaction -> _process"
+    ],
+    "frontend_components": [
+      "PaymentForm.prototype (patch; opens the Razorpay Checkout SDK from _get_specific_processing_values, drives card/UPI/netbanking/wallet payment client-side)",
+      "Razorpay Checkout SDK (loaded client-side on payment-form pages)"
+    ],
+    "external_integrations": {
+      "sdk": "Razorpay Checkout (browser SDK); server side uses no python SDK -- HTTP via payment.provider._send_api_request",
+      "uses_api_keys": true,
+      "endpoints": [
+        "https://api.razorpay.com/{api_version}/{endpoint}",
+        "https://razorpay.api.odoo.com/api/razorpay/1"
+      ],
+      "auth": "HTTP Basic (razorpay_key_id, razorpay_key_secret) OR OAuth Bearer <razorpay_access_token> (direct API); Odoo jsonrpc proxy (OAuth onboarding)",
+      "files": [
+        "const.py",
+        "models/payment_provider.py",
+        "models/payment_transaction.py",
+        "models/payment_token.py",
+        "controllers/main.py",
+        "controllers/onboarding.py"
+      ],
+      "pattern": "Concrete realization of metadata gap #7: a real external acquirer integration for the Indian market. Outbound server-to-server REST to api.razorpay.com (Customers / Orders / Payments / recurring / capture / refund / webhooks) authenticated with an API key pair (HTTP Basic) or OAuth Bearer token; merchant OAuth self-onboarding routed through Odoo's razorpay.api.odoo.com proxy; a parallel client-side Razorpay Checkout SDK channel; and inbound settlement via an X-Razorpay-Signature-verified webhook plus a redirect-return route. The base 'payment' engine flags uses_api_keys but ships no live acquirer -- this module is exactly that override.",
+      "note": "Prime gap-#7 example: none of the Razorpay endpoints, the Basic/OAuth auth, the webhook HMAC trust, or the browser Checkout SDK channel are derivable from Python model/field metadata; they were established only by reading const.py + the model/controller code."
+    }
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Accept Card / UPI / Netbanking / Wallet Payments via Razorpay (India)",
+      "Hosted Razorpay Checkout collection (client-side SDK)",
+      "Tokenization / Saved Cards & UPI with RBI eMandate (recurring) support",
+      "Authorize / Manual Capture (full only)",
+      "Partial & Full Refunds (incl. Razorpay-initiated refund reconciliation)",
+      "Merchant OAuth Self-Onboarding & automatic Webhook registration",
+      "Multi-currency international acceptance (const.SUPPORTED_CURRENCIES)"
+    ],
+    "value_streams": [
+      "Collect-Payment (Razorpay): initiate tx -> create Customer + Order (api.razorpay.com) -> open Razorpay Checkout SDK in browser -> redirect /payment/razorpay/return (HMAC) OR async /payment/razorpay/webhook (signed) -> _process -> state machine done/error -> downstream post-process settlement",
+      "Tokenize-and-Recharge: successful payment + tokenize -> vault payment.token (Customer+Token id, eMandate cap) -> later off-session POST payments/create/recurring for card-not-present / subscription (with 36h RBI duplicate guard)",
+      "Refund: backend refund -> POST payments/<id>/refund (or refund.* webhook / Razorpay-initiated) -> child refund payment.transaction -> _process -> immediate post-process cron",
+      "Onboard-Merchant: action_start_onboarding -> Razorpay OAuth authorize via odoo proxy -> /payment/razorpay/oauth/return exchanges code for tokens -> provider enabled + webhook auto-created"
+    ],
+    "information_concepts": [
+      "payment.provider (Razorpay credentials: key id/secret, webhook secret, OAuth account + tokens)",
+      "payment.transaction (mapped to a Razorpay Order / Payment / Refund)",
+      "payment.token (saved Razorpay card/UPI: Customer id + Token id + eMandate cap)",
+      "Razorpay merchant account (external; referenced via OAuth account_id)"
+    ],
+    "organization": [
+      "(no module-owned res.groups; razorpay_key_secret, razorpay_webhook_secret and all OAuth-token fields are restricted to base.group_system; everything else inherits payment's groups/record rules)"
+    ],
+    "products": [],
+    "policies": [
+      "Webhook authenticity: events must pass _verify_signature (X-Razorpay-Signature HMAC-SHA256 of the raw body with razorpay_webhook_secret, constant-time compare) or are rejected with HTTP 403 Forbidden",
+      "Redirect-return authenticity: razorpay_order_id|razorpay_payment_id must HMAC-match with razorpay_key_secret or HTTP 403 Forbidden",
+      "A Razorpay provider cannot be enabled without an OAuth account_id or both key_id and key_secret (@api.constrains)",
+      "Razorpay only offered for companies whose currency is in const.SUPPORTED_CURRENCIES (else RedirectWarning)",
+      "Token charges blocked if a same-document token payment is pending within 36 hours (RBI 24h processing window)",
+      "eMandate amount capped per payment method (const.MANDATE_MAX_AMOUNT card 1,000,000 / upi 100,000 INR, bounded by linked-document amount*1.5 / MRR*5)",
+      "Razorpay transactions cannot be voided from Odoo (UserError)",
+      "Manual capture is full-only (support_manual_capture='full_only'); refunds are partial-capable",
+      "OAuth return guarded by a CSRF token (Forbidden on failure)",
+      "Secret/webhook/OAuth-token keys gated by base.group_system field groups"
+    ],
+    "stakeholders": [
+      "Payer / Cardholder / UPI user (res.partner)",
+      "Merchant / Company (res.company, holds the Razorpay account & keys)",
+      "Razorpay (external acquirer / PSP, India)",
+      "Odoo Razorpay proxy (razorpay.api.odoo.com, mediates OAuth onboarding)",
+      "Accountant (consumes settled payments via account_payment downstream)"
+    ],
+    "strategy": null,
+    "metrics": [
+      "(no own reports; transaction volumes/amounts/state surfaced by the parent payment.transaction pivot/graph)"
+    ]
+  },
+  "classification": {
+    "value_model": "network",
+    "activity_class": "support",
+    "apqc_category": "9.0 Manage Financial Resources (9.5 process payments / collect cash; manage external payment provider)",
+    "rationale": "payment_razorpay is a value-NETWORK (Stabell & Fjeldstad mediating-technology) component: a concrete acquirer adapter whose purpose is to interconnect two parties who would not otherwise transact directly -- the cardholder/UPI payer and the merchant -- by linking the merchant to Razorpay's card/UPI/netbanking/wallet network for the Indian market. It exhibits the three mediating-technology activities: network promotion & contract management (Razorpay OAuth self-onboarding, automatic webhook registration, key/token management, eMandate setup), service provisioning (creating the Customer/Order and capturing/refunding per transaction), and infrastructure operation (the server-to-server api.razorpay.com link, the Razorpay Checkout client channel, and the signed-webhook settlement loop). It does not transform inputs into outputs (chain) nor solve a bespoke customer problem (shop). It inherits the parent 'payment' engine's value_model exactly: the engine is the generic mediator and this module is its Razorpay realization. activity_class is 'support' because, from the enterprise value-chain perspective, payment acceptance is an infrastructure/finance support function (category Accounting/Payment Providers, application=False, no end-user app) sitting under 9.0 Manage Financial Resources -- specifically 9.5 process payments / collect cash, with the side of 'manage an external payment provider'. So value_model=network (its own internal logic is mediation, an acquirer integration -- gap #7), activity_class=support (its place on the enterprise value chain). This mirrors the sibling payment_stripe.metamodel.json (network/support) and the parent payment engine, and contrasts with account_payment (support/support), whose own logic is ledger record-keeping rather than mediation."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "card / UPI / netbanking / wallet payment via Razorpay Orders + client-side Razorpay Checkout SDK",
+      "tokenization / saved cards & UPI (Razorpay Customer + Token) including off-session recurring under RBI eMandates",
+      "full manual capture and full + partial refunds (incl. Razorpay-initiated refund reconciliation)",
+      "asynchronous settlement via an X-Razorpay-Signature-verified webhook plus a redirect-return HMAC confirmation route",
+      "merchant OAuth quick self-onboarding and one-click webhook creation",
+      "multi-currency international acceptance bounded by const.SUPPORTED_CURRENCIES"
+    ],
+    "typical_fits": [
+      "online shop / portal checkout collecting card/UPI/netbanking/wallet payments through Razorpay in India",
+      "save-card-or-UPI-for-later and tokenized recurring/subscription charges (payments/create/recurring under eMandate)",
+      "send-a-payment-link or pay-an-invoice-online collection (with account_payment / sale downstream)",
+      "merchant self-onboarding to Razorpay via OAuth rather than manual API-key entry",
+      "multi-currency acceptance for cross-border Indian merchants (const.SUPPORTED_CURRENCIES)"
+    ],
+    "common_gaps": [
+      "manual capture is full-only (support_manual_capture='full_only'); partial manual capture is not implemented",
+      "voiding a Razorpay transaction from Odoo is explicitly unsupported (_send_void_request raises UserError)",
+      "the public-URL requirement for webhooks means local/dev instances need a tunnel; without a webhook secret signature verification fails (_razorpay_calculate_signature returns None -> Forbidden)",
+      "the RBI 36h duplicate-token guard can defer legitimate quick re-charges by design",
+      "eMandate caps are pinned in const.MANDATE_MAX_AMOUNT (card/upi); other methods fall back to defaults",
+      "bespoke reconciliation / settlement document chains live downstream (account_payment, sale), not here"
+    ],
+    "drive_hints": [
+      "odoo shell: env['payment.provider'].search([('code','=','razorpay')]).mapped(('name','state','razorpay_key_id'))",
+      "odoo shell: p=env['payment.provider'].search([('code','=','razorpay')],limit=1); print(p.support_manual_capture, p.support_refund, p.support_tokenization)",
+      "odoo shell: tx=env['payment.transaction'].search([('provider_code','=','razorpay')],limit=1); print(tx.reference, tx.state, tx.provider_reference)",
+      "odoo shell: print([m for m in dir(env['payment.transaction']) if m.startswith('_razorpay_')])",
+      "curl -X POST https://<host>/payment/razorpay/webhook (csrf=False, auth=public) with a missing/invalid X-Razorpay-Signature header -> expect HTTP 403 Forbidden from _verify_signature",
+      "Razorpay test mode: UPI success@razorpay / test card 4111111111111111, any future expiry, any CVC (Razorpay docs)"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Exact request/response payloads of the Razorpay OAuth proxy (razorpay.api.odoo.com) get_access_token / refresh_access_token, and the proxy_data it injects.",
+    "Real-world distribution of Razorpay transaction states, payment-method mix (card vs UPI vs netbanking vs wallet), tokenization/eMandate usage, and refund rates (no runtime row counts captured).",
+    "Which downstream modules consume the settled Razorpay transactions (account_payment, sale, subscription) and how recurring eMandate charges drive subscription renewals.",
+    "Whether instances actually register the webhook (razorpay_webhook_secret set) vs rely solely on the redirect-return route, since webhook signature checks fail (Forbidden) when the secret is empty."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/payment_razorpay.facts.json",
+    "tools": [
+      "apqc_odoo_map.tsv",
+      "code-read (models/payment_provider.py, models/payment_transaction.py, models/payment_token.py, controllers/main.py, controllers/onboarding.py, const.py, __manifest__.py)",
+      "extract_frontend.py (frontend/payment_razorpay.frontend.json)",
+      "extract_module.py (facts/payment_razorpay.facts.json)",
+      "Grep",
+      "Read"
+    ],
+    "odoo_version": "19.0"
+  }
+}

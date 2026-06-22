@@ -1,0 +1,161 @@
+{
+  "subsystem": "l10n_vn_edi_viettel",
+  "evidence": {
+    "manifest": {
+      "name": "Vietnam - E-invoicing",
+      "category": "Accounting/Localizations/EDI",
+      "depends": [
+        "l10n_vn"
+      ],
+      "auto_install": false,
+      "application": false
+    },
+    "models": [
+      {
+        "_name": "l10n_vn_edi_viettel.cancellation",
+        "_description": "E-invoice cancellation wizard",
+        "fields": 4
+      },
+      {
+        "_name": "l10n_vn_edi_viettel.sinvoice.symbol",
+        "_description": "SInvoice symbol",
+        "fields": 2
+      },
+      {
+        "_name": "l10n_vn_edi_viettel.sinvoice.template",
+        "_description": "SInvoice template",
+        "fields": 3
+      }
+    ],
+    "routes": [],
+    "security": {
+      "access_rules": 5,
+      "record_rules": 0,
+      "groups": 0
+    },
+    "views": {
+      "form": 0,
+      "list": 0,
+      "tree": 0,
+      "kanban": 0,
+      "search": 0,
+      "pivot": 0,
+      "graph": 0,
+      "calendar": 0,
+      "activity": 0
+    },
+    "frontend": {
+      "present": false,
+      "js_files": 0,
+      "xml_templates": 0,
+      "owl_components": [],
+      "registry_adds": [],
+      "patches": [],
+      "services": [],
+      "asset_bundles": {}
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [
+        "requests"
+      ],
+      "uses_api_keys": true,
+      "endpoints": [
+        "https://api-vinvoice.viettel.vn/auth/login",
+        "https://api-vinvoice.viettel.vn/services/einvoiceapplication/api/"
+      ],
+      "files": [
+        "models/account_move.py"
+      ]
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    },
+    "behavioral_notes": [
+      {
+        "element": "external integrations",
+        "observation": "0 HTTP call sites; SDKs ['requests']; api_keys=True.",
+        "source": "static"
+      },
+      {
+        "element": "thin module",
+        "observation": "3 models, 0 routes, 2109 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
+        "source": "ast"
+      }
+    ]
+  },
+  "it_architecture": {
+    "application": "l10n_vn_edi_viettel (Vietnam - E-invoicing)",
+    "software_services": [],
+    "data_objects": [
+      "l10n_vn_edi_viettel.cancellation",
+      "l10n_vn_edi_viettel.sinvoice.symbol",
+      "l10n_vn_edi_viettel.sinvoice.template"
+    ],
+    "logical_data_erm": [
+      "l10n_vn_edi_viettel.cancellation -> account.move",
+      "l10n_vn_edi_viettel.sinvoice.symbol -> l10n_vn_edi_viettel.sinvoice.template",
+      "l10n_vn_edi_viettel.sinvoice.template -> l10n_vn_edi_viettel.sinvoice.symbol"
+    ],
+    "information_flows": [
+      "depends: l10n_vn"
+    ],
+    "frontend_components": []
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Vietnam - E-invoicing"
+    ],
+    "value_streams": [],
+    "information_concepts": [
+      "l10n_vn_edi_viettel.cancellation",
+      "l10n_vn_edi_viettel.sinvoice.symbol",
+      "l10n_vn_edi_viettel.sinvoice.template"
+    ],
+    "organization": [],
+    "products": [],
+    "policies": [],
+    "stakeholders": [],
+    "strategy": null,
+    "metrics": []
+  },
+  "classification": {
+    "value_model": "support",
+    "activity_class": "support",
+    "apqc_category": "9.0 Manage Financial Resources",
+    "rationale": "l10n_vn_edi_viettel: thin support/support module (auto-architect baseline)."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "Vietnam - E-invoicing"
+    ],
+    "typical_fits": [],
+    "common_gaps": [],
+    "drive_hints": [
+      "odoo shell: env['l10n_vn_edi_viettel.cancellation'].search([],limit=3)"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/l10n_vn_edi_viettel.facts.json",
+    "tools": [
+      "extract_module.py",
+      "extract_frontend.py",
+      "gen_thin.py"
+    ],
+    "odoo_version": "19.0"
+  }
+}

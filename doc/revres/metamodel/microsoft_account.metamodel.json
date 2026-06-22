@@ -1,0 +1,232 @@
+{
+  "subsystem": "microsoft_account",
+  "evidence": {
+    "manifest": {
+      "name": "Microsoft Users",
+      "category": "Hidden/Tools",
+      "depends": [
+        "base_setup"
+      ],
+      "auto_install": false,
+      "application": false
+    },
+    "models": [
+      {
+        "_name": "microsoft.service",
+        "_description": "Microsoft Service (AbstractModel: generic Microsoft OAuth2 + REST helper, no persisted fields)",
+        "fields": 0,
+        "relations": []
+      },
+      {
+        "_name": "res.users",
+        "_description": "(extension) stores Microsoft OAuth tokens (microsoft_calendar_rtoken/token/token_validity)",
+        "fields": 3,
+        "relations": []
+      }
+    ],
+    "routes": [
+      {
+        "paths": [
+          "/microsoft_account/authentication"
+        ],
+        "auth": "public",
+        "type": "http"
+      }
+    ],
+    "security": {
+      "access_rules": 0,
+      "record_rules": 0,
+      "groups": 0
+    },
+    "views": {
+      "form": 0,
+      "list": 0,
+      "kanban": 0,
+      "search": 0
+    },
+    "behavioral_notes": [
+      {
+        "element": "microsoft.service._get_authorize_uri / _get_microsoft_tokens / _refresh_microsoft_token (generic OAuth2 authorization-code flow against login.microsoftonline.com)",
+        "observation": "microsoft.service is an AbstractModel with no fields: it is a parameterized OAuth2 client shared by every Microsoft integration. _get_authorize_uri(from_url, service, scope, redirect_uri) builds the consent URL against the v2.0 authorize endpoint (microsoft_account.auth_endpoint ICP, default https://login.microsoftonline.com/common/oauth2/v2.0/authorize) with response_type=code, access_type=offline (so Microsoft returns a refresh_token) and a JSON state carrying {'d': dbname, 's': service, 'f': from_url, 'u': database.uuid}. The client_id is read per service from the ir.config_parameter microsoft_<service>_client_id (treated as public, leakable in clear in the authorize URI), and the client_secret from microsoft_<service>_client_secret via the module-level _get_microsoft_client_secret(ICP_sudo, service) hook -- a deliberate indirection so the secret is only ever read inside a request and never returned to a caller in clear. _get_microsoft_tokens(authorize_code, service, redirect_uri) POSTs grant_type=authorization_code (with the default calendar scope 'offline_access openid Calendars.ReadWrite' from _get_calendar_scope) to the token endpoint (microsoft_account.token_endpoint ICP, default .../oauth2/v2.0/token) and returns (access_token, refresh_token, ttl); on requests.HTTPError it raises res.config.settings.get_config_warning. _refresh_microsoft_token(service, rtoken) POSTs grant_type=refresh_token to the same token endpoint and returns (access_token, expires_in). None of this token lifecycle is visible from field/model metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "microsoft.service._do_request (host-allow-listed outbound HTTP wrapper for all Microsoft API calls)",
+        "observation": "_do_request(uri, params, headers, method='POST', preuri=DEFAULT_MICROSOFT_GRAPH_ENDPOINT, timeout=20) is the single choke-point through which token exchange/refresh and every downstream Microsoft Graph call make outbound HTTPS requests (via python-requests). It hard-asserts that the resolved host of preuri+uri is one of the hosts of DEFAULT_MICROSOFT_TOKEN_ENDPOINT (login.microsoftonline.com) or DEFAULT_MICROSOFT_GRAPH_ENDPOINT (graph.microsoft.com) -- a static SSRF/host allow-list. GET/DELETE pass params as query string; POST/PATCH/PUT send them as form data with the given headers. It returns a (status, response_json, ask_time) tuple where ask_time is parsed from the response Date header (used by callers for clock-skew-tolerant token-expiry math), maps the 204/404 RESOURCE_NOT_FOUND_STATUSES to an empty body, and swallows those statuses while re-raising every other HTTPError (logging the response content). This generic request/error behavior is pure code, absent from metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "/microsoft_account/authentication public controller (MicrosoftAuth.oauth2callback) -- shared OAuth2 redirect endpoint",
+        "observation": "The single route (controllers/main.py, type=http auth=public) is the OAuth2 redirect_uri that Microsoft calls back after the user accepts/refuses consent. It JSON-decodes the round-tripped state param into {'s': service, 'f': url_return, ...} and raises werkzeug BadRequest if no service is present (or a code arrives without a return url). On success it reconstructs the redirect_uri from request.httprequest.url_root (falling back to user.get_base_url()), calls microsoft.service._get_microsoft_tokens(code, service, redirect_uri) to exchange the auth code, then hands the returned (access_token, refresh_token, ttl) to request.env.user._set_microsoft_auth_tokens(...) and redirects back to url_return. On an OAuth error it appends ?error=<reason> (or ?error=Unknown_error) to url_return. The module is thus a generic, service-agnostic token broker.",
+        "source": "code-read"
+      },
+      {
+        "element": "res.users._set_microsoft_auth_tokens convention + downstream consumption by microsoft_calendar / microsoft_outlook",
+        "observation": "Unlike its google_account sibling (which persists nothing), microsoft_account itself defines the base token store: res.users is extended with microsoft_calendar_rtoken / microsoft_calendar_token (both groups='base.group_system') and microsoft_calendar_token_validity, and _set_microsoft_auth_tokens(access_token, refresh_token, ttl) writes those three fields, computing validity as now + timedelta(seconds=ttl). _set_microsoft_auth_tokens is the callback contract the controller invokes and the seam downstream modules override/extend: microsoft_calendar consumes microsoft.service for its calendar OAuth/refresh and reuses these res.users token fields and the /microsoft_account/authentication callback; microsoft_outlook reuses the same microsoft.service helpers and microsoft_<service>_client_id/client_secret ICP convention for SMTP/IMAP OAuth on mail servers. The per-service 'service' string is the parameter that lets one generic microsoft.service serve every integration with distinct client credentials and scopes. This callback/override convention is runtime behavior absent from metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "external integration -> Microsoft identity platform + Microsoft Graph (gap #7, static)",
+        "observation": "Outbound HTTPS integration via python-requests to Microsoft, host allow-listed by assertion in microsoft.service._do_request to login.microsoftonline.com (v2.0 oauth2 authorize + token endpoints) and graph.microsoft.com (Microsoft Graph REST reached by downstream modules). The OAuth2 client_id (microsoft_<service>_client_id ICP, public, in clear) and client_secret (microsoft_<service>_client_secret ICP, never returned in clear, read only inside a request via the _get_microsoft_client_secret hook) are admin-supplied per Microsoft Azure app registration. The auth/token endpoints are overridable via the microsoft_account.auth_endpoint / microsoft_account.token_endpoint ICPs (sovereign/national clouds). A seed ICP microsoft_redirect_uri = urn:ietf:wg:oauth:2.0:oob is shipped in data. No vendored SDK -- the OAuth2/REST client is hand-rolled in models/microsoft_service.py with a 20s timeout. This external SaaS dependency (Microsoft identity + Graph) is invisible to Python model/field metadata and is the defining trait of the module.",
+        "source": "static"
+      }
+    ],
+    "frontend": {
+      "present": false,
+      "js_files": 0,
+      "xml_templates": 0,
+      "owl_components": [],
+      "registry_adds": [],
+      "patches": [],
+      "services": [],
+      "asset_bundles": {}
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [
+        "requests"
+      ],
+      "uses_api_keys": true,
+      "endpoints": [
+        "https://graph.microsoft.com",
+        "https://login.microsoftonline.com/common/oauth2/v2.0/authorize",
+        "https://login.microsoftonline.com/common/oauth2/v2.0/token"
+      ],
+      "files": [
+        "models/microsoft_service.py"
+      ]
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    }
+  },
+  "it_architecture": {
+    "application": "microsoft_account (shared Microsoft OAuth2 / identity base component -- token & credential plumbing for all Microsoft integrations)",
+    "software_services": [
+      "/microsoft_account/authentication (http, public) - OAuth2 redirect callback: exchanges auth code and hands tokens to res.users._set_microsoft_auth_tokens"
+    ],
+    "data_objects": [
+      "microsoft.service",
+      "res.users"
+    ],
+    "logical_data_erm": [
+      "microsoft.service (AbstractModel, no persisted fields -- pure OAuth2/REST helper)",
+      "res.users -> microsoft_calendar_rtoken/token (groups=base.group_system) + microsoft_calendar_token_validity (base OAuth token store, set by _set_microsoft_auth_tokens)",
+      "credentials stored as ir.config_parameter microsoft_<service>_client_id (public) + microsoft_<service>_client_secret (secret)",
+      "endpoints overridable via ir.config_parameter microsoft_account.auth_endpoint / microsoft_account.token_endpoint"
+    ],
+    "information_flows": [
+      "depends: base_setup (Settings UI host for client id/secret config)",
+      "outbound: Odoo -> login.microsoftonline.com/common/oauth2/v2.0/token (code exchange + refresh, POST form-encoded)",
+      "outbound: Odoo -> graph.microsoft.com (all downstream Microsoft Graph calls funnel through microsoft.service._do_request, host allow-listed)",
+      "inbound: Microsoft -> /microsoft_account/authentication?code&state -> _get_microsoft_tokens -> res.users._set_microsoft_auth_tokens",
+      "side-effect: consent URL built by _get_authorize_uri with access_type=offline yields a refresh_token for long-lived access",
+      "side-effect: _refresh_microsoft_token renews an expired access_token from the stored refresh_token on demand",
+      "consumers: microsoft_calendar, microsoft_outlook reuse microsoft.service + the callback + the microsoft_<service>_client_* ICP convention and the res.users token fields"
+    ],
+    "frontend_components": []
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Provide Microsoft OAuth2 Authorization-Code Flow (build consent URL, exchange code, refresh token)",
+      "Broker the OAuth2 Redirect Callback for all Microsoft integrations (/microsoft_account/authentication)",
+      "Store and Refresh Per-User Microsoft Tokens on res.users (_set_microsoft_auth_tokens)",
+      "Manage Per-Service Microsoft API Credentials (microsoft_<service>_client_id / client_secret)",
+      "Mediate Outbound Microsoft API Requests (host-allow-listed HTTP wrapper)"
+    ],
+    "value_streams": [
+      "Connect-Microsoft-Account: admin configures per-service client id/secret -> user is redirected to the Microsoft identity platform consent -> Microsoft calls back /microsoft_account/authentication -> microsoft.service exchanges the code for access+refresh tokens -> tokens stored on res.users for the consuming module to use and refresh"
+    ],
+    "information_concepts": [
+      "microsoft.service (generic Microsoft OAuth2 + REST helper, AbstractModel, no business data)",
+      "res.users (Microsoft OAuth refresh/access token store: microsoft_calendar_rtoken/token/token_validity)"
+    ],
+    "organization": [],
+    "products": [],
+    "policies": [
+      "no access rules / record rules / groups of its own",
+      "OAuth token fields microsoft_calendar_rtoken / microsoft_calendar_token guarded by groups=base.group_system",
+      "client_secret read only inside a request via the _get_microsoft_client_secret hook and never returned to a caller in clear",
+      "microsoft.service._do_request asserts the target host is login.microsoftonline.com or graph.microsoft.com (static allow-list)",
+      "OAuth2 redirect endpoint is auth=public (must be reachable by Microsoft) but only acts on a JSON state round-trip and a valid auth code (else BadRequest)",
+      "access_type=offline requested so Microsoft issues a refresh_token for long-lived, unattended access",
+      "auth/token endpoints overridable via ICP (microsoft_account.auth_endpoint / .token_endpoint) for sovereign clouds"
+    ],
+    "stakeholders": [
+      "ERP manager / system admin (configures the Microsoft Azure app registration client id/secret per service)",
+      "Internal user (grants OAuth consent for their account; tokens stored on their res.users record)",
+      "Microsoft identity platform / Microsoft Graph (external system / token authority)",
+      "Downstream Microsoft modules (microsoft_calendar, microsoft_outlook) consuming the base"
+    ],
+    "strategy": null,
+    "metrics": [
+      "is_configured per service (presence of microsoft_<service>_client_id + client_secret)",
+      "per-user token validity (microsoft_calendar_token_validity = now + expires_in)",
+      "token-expiry math derived by callers from expires_in + the Date-header ask_time"
+    ]
+  },
+  "classification": {
+    "value_model": "support",
+    "activity_class": "support",
+    "apqc_category": "8.0 Manage Information Technology",
+    "rationale": "microsoft_account is shared OAuth2/identity infrastructure: it owns no business object (an AbstractModel microsoft.service with zero persisted fields, plus three OAuth token fields grafted onto res.users; no security groups, no views) and produces no sellable output. It is the generic Microsoft OAuth2 + REST plumbing -- consent-URL building, authorization-code exchange, refresh-token renewal, a base per-user token store (_set_microsoft_auth_tokens) and a host-allow-listed outbound request wrapper -- on which microsoft_calendar and microsoft_outlook build by supplying a per-service 'service' string and microsoft_<service>_client_id/secret credentials. It is the direct sibling of google_account (same support/firm-infrastructure role). Per Stabell & Fjeldstad this is a support / firm-infrastructure function (activity_class=support). For APQC it maps to 8.0 Manage Information Technology -- specifically the external-system-integration / credential-lifecycle band: the module's entire reason to exist is third-party SaaS integration (gap #7: it talks to login.microsoftonline.com and graph.microsoft.com) and OAuth2 credential and token lifecycle management, which are IT-management concerns rather than business-capability development. This matches the 8.0 classification of google_account and of the downstream microsoft_calendar / google_calendar connectors. This is a deliberate departure from the inherited/baseline 13.0 'Develop and Manage Business Capabilities': 13.0 was considered but rejected because nothing here develops a new business capability -- it operates an external authentication interface and brokers tokens; 9.0 'Acquire, Construct, and Manage Assets' was also rejected since no physical/IT asset is managed, only API credentials and an OAuth2 token exchange."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "generic Microsoft OAuth2 authorization-code flow reusable by any Microsoft service (calendar/outlook)",
+      "access_type=offline consent so Microsoft returns a long-lived refresh_token",
+      "authorization-code -> token exchange and refresh-token renewal against login.microsoftonline.com v2.0/token",
+      "single public OAuth2 redirect callback (/microsoft_account/authentication) that exchanges the code and stores tokens",
+      "base per-user token store on res.users + _set_microsoft_auth_tokens callback for downstream modules to extend",
+      "per-service client id/secret configuration via ir.config_parameter (microsoft_<service>_client_id / client_secret)",
+      "overridable auth/token endpoints for sovereign/national Microsoft clouds",
+      "host-allow-listed outbound HTTP wrapper (_do_request) for all Microsoft API traffic"
+    ],
+    "typical_fits": [
+      "downstream Microsoft modules (calendar, outlook) reusing one OAuth2 base instead of each re-implementing the flow",
+      "self-registered Microsoft Azure app registration: admin sets client id/secret per service in Settings",
+      "single shared res.users token store consumed and refreshed by the integrating module"
+    ],
+    "common_gaps": [
+      "token fields are calendar-named (microsoft_calendar_rtoken/token/token_validity) -- the base store is effectively single-credential, not cleanly per-service",
+      "no built-in UI: client id/secret config and any connect button live in base_setup / the downstream module",
+      "no automatic refresh scheduling -- _refresh_microsoft_token must be invoked lazily by the caller on expiry",
+      "no token-revocation endpoint call -- 'disconnect' is handled by the downstream module wiping the stored tokens",
+      "single-app credentials per service; no multi-tenant / per-company client credential isolation",
+      "_get_calendar_scope hard-defaults the token-exchange scope to Calendars.ReadWrite, biasing the generic base toward calendar"
+    ],
+    "drive_hints": [
+      "odoo shell: env['ir.config_parameter'].sudo().get_param('microsoft_calendar_client_id')  # is the service configured",
+      "odoo shell: env['microsoft.service']._get_authorize_uri('/odoo', 'calendar', scope='offline_access openid Calendars.ReadWrite', redirect_uri='.../microsoft_account/authentication')  # build the consent URL",
+      "odoo shell: env['microsoft.service']._refresh_microsoft_token('calendar', '<refresh_token>')  # -> (access_token, expires_in)",
+      "curl '<host>/microsoft_account/authentication?state=%7B%22s%22%3A%22calendar%22%2C%22f%22%3A%22/odoo%22%7D&code=...'  # simulate Microsoft's OAuth2 redirect callback",
+      "external endpoints hit by microsoft.service: https://login.microsoftonline.com/common/oauth2/v2.0/token (exchange/refresh), https://graph.microsoft.com (downstream API calls)"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "stakeholders": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Exact set of downstream 'service' strings in production (calendar / outlook / ...) and which still route their callback through /microsoft_account/authentication vs a module-local one.",
+    "Whether the calendar-named res.users token fields are reused as-is by microsoft_outlook or whether outlook keeps its own credential store on outgoing/incoming mail servers.",
+    "How clock skew is handled across services: ask_time is parsed from the Microsoft Date header in _do_request, but token-validity math (now + expires_in) lives in _set_microsoft_auth_tokens / each caller."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/microsoft_account.facts.json",
+    "tools": [
+      "code-read",
+      "extract_frontend.py",
+      "extract_module.py"
+    ],
+    "odoo_version": "19.0"
+  }
+}

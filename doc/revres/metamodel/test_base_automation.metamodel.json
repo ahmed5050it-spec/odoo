@@ -1,0 +1,207 @@
+{
+  "subsystem": "test_base_automation",
+  "evidence": {
+    "manifest": {
+      "name": "Test - Base Automation",
+      "category": "Hidden",
+      "depends": [
+        "base_automation"
+      ],
+      "auto_install": false,
+      "application": false
+    },
+    "models": [
+      {
+        "_name": "base.automation.lead.test",
+        "_description": "Automated Rule Test",
+        "fields": 13
+      },
+      {
+        "_name": "base.automation.lead.thread.test",
+        "_description": "Automated Rule Test With Thread",
+        "fields": 1
+      },
+      {
+        "_name": "base.automation.lead.thread.test",
+        "_description": "Threaded Lead Test",
+        "fields": 0
+      },
+      {
+        "_name": "base.automation.line.test",
+        "_description": "Automated Rule Line Test",
+        "fields": 3
+      },
+      {
+        "_name": "base.automation.link.test",
+        "_description": "Automated Rule Link Test",
+        "fields": 2
+      },
+      {
+        "_name": "base.automation.linked.test",
+        "_description": "Automated Rule Linked Test",
+        "fields": 2
+      },
+      {
+        "_name": "base.automation.model.with.recname.char",
+        "_description": "Model with Char as _rec_name",
+        "fields": 2
+      },
+      {
+        "_name": "base.automation.model.with.recname.m2o",
+        "_description": "Model with Many2one as _rec_name and name_create",
+        "fields": 1
+      },
+      {
+        "_name": "test_base_automation.project",
+        "_description": "test_base_automation.project",
+        "fields": 6
+      },
+      {
+        "_name": "test_base_automation.stage",
+        "_description": "test_base_automation.stage",
+        "fields": 1
+      },
+      {
+        "_name": "test_base_automation.tag",
+        "_description": "test_base_automation.tag",
+        "fields": 1
+      },
+      {
+        "_name": "test_base_automation.task",
+        "_description": "test_base_automation.task",
+        "fields": 7
+      }
+    ],
+    "routes": [],
+    "security": {
+      "access_rules": 11,
+      "record_rules": 0,
+      "groups": 0
+    },
+    "views": {},
+    "frontend": {
+      "present": false,
+      "js_files": 0,
+      "xml_templates": 0,
+      "owl_components": [],
+      "registry_adds": [],
+      "patches": [],
+      "services": [],
+      "asset_bundles": {
+        "web.assets_tests": 1
+      }
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": false,
+      "endpoints": [],
+      "files": []
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    },
+    "behavioral_notes": [
+      {
+        "element": "thin module",
+        "observation": "12 models, 0 routes, 2499 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
+        "source": "ast"
+      }
+    ]
+  },
+  "it_architecture": {
+    "application": "test_base_automation (Test - Base Automation)",
+    "software_services": [],
+    "data_objects": [
+      "base.automation.lead.test",
+      "base.automation.lead.thread.test",
+      "base.automation.lead.thread.test",
+      "base.automation.line.test",
+      "base.automation.link.test",
+      "base.automation.linked.test",
+      "base.automation.model.with.recname.char",
+      "base.automation.model.with.recname.m2o",
+      "test_base_automation.project",
+      "test_base_automation.stage",
+      "test_base_automation.tag",
+      "test_base_automation.task"
+    ],
+    "logical_data_erm": [
+      "base.automation.lead.test -> base.automation.line.test",
+      "base.automation.lead.test -> res.partner",
+      "base.automation.lead.test -> res.users",
+      "base.automation.lead.test -> test_base_automation.stage",
+      "base.automation.lead.test -> test_base_automation.tag",
+      "base.automation.lead.thread.test -> res.users",
+      "base.automation.line.test -> base.automation.lead.test",
+      "base.automation.line.test -> res.users",
+      "base.automation.link.test -> base.automation.linked.test",
+      "base.automation.model.with.recname.char -> res.users",
+      "base.automation.model.with.recname.m2o -> base.automation.model.with.recname.char",
+      "test_base_automation.project -> res.users"
+    ],
+    "information_flows": [
+      "depends: base_automation"
+    ],
+    "frontend_components": []
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Test - Base Automation"
+    ],
+    "value_streams": [],
+    "information_concepts": [
+      "base.automation.lead.test",
+      "base.automation.lead.thread.test",
+      "base.automation.lead.thread.test",
+      "base.automation.line.test",
+      "base.automation.link.test",
+      "base.automation.linked.test"
+    ],
+    "organization": [],
+    "products": [],
+    "policies": [],
+    "stakeholders": [],
+    "strategy": null,
+    "metrics": []
+  },
+  "classification": {
+    "value_model": "support",
+    "activity_class": "support",
+    "apqc_category": "13.0 Develop and Manage Business Capabilities",
+    "rationale": "test_base_automation: thin support/support module (auto-architect baseline)."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "Test - Base Automation"
+    ],
+    "typical_fits": [],
+    "common_gaps": [],
+    "drive_hints": [
+      "odoo shell: env['base.automation.lead.test'].search([],limit=3)"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/test_base_automation.facts.json",
+    "tools": [
+      "extract_module.py",
+      "extract_frontend.py",
+      "gen_thin.py"
+    ],
+    "odoo_version": "19.0"
+  }
+}

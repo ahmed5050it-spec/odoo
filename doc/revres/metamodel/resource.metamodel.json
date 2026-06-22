@@ -1,0 +1,263 @@
+{
+  "subsystem": "resource",
+  "evidence": {
+    "manifest": {
+      "name": "Resource",
+      "category": "Hidden",
+      "depends": [
+        "base",
+        "web"
+      ],
+      "auto_install": false,
+      "application": false
+    },
+    "models": [
+      {
+        "_name": "resource.calendar",
+        "_description": "Resource Working Time",
+        "fields": 21,
+        "relations": [
+          "attendance_ids->resource.calendar.attendance",
+          "leave_ids->resource.calendar.leaves",
+          "global_leave_ids->resource.calendar.leaves",
+          "company_id->res.company"
+        ]
+      },
+      {
+        "_name": "resource.calendar.attendance",
+        "_description": "Work Detail",
+        "fields": 13,
+        "relations": [
+          "calendar_id->resource.calendar"
+        ]
+      },
+      {
+        "_name": "resource.calendar.leaves",
+        "_description": "Resource Time Off Detail",
+        "fields": 7,
+        "relations": [
+          "calendar_id->resource.calendar",
+          "resource_id->resource.resource",
+          "company_id->res.company"
+        ]
+      },
+      {
+        "_name": "resource.mixin",
+        "_description": "Resource Mixin",
+        "fields": 4,
+        "relations": [
+          "resource_id->resource.resource",
+          "resource_calendar_id->resource.calendar",
+          "company_id->res.company"
+        ]
+      },
+      {
+        "_name": "resource.resource",
+        "_description": "Resources",
+        "fields": 12,
+        "relations": [
+          "calendar_id->resource.calendar",
+          "user_id->res.users",
+          "company_id->res.company"
+        ]
+      }
+    ],
+    "routes": [],
+    "security": {
+      "access_rules": 8,
+      "record_rules": 5,
+      "groups": 0
+    },
+    "views": {
+      "form": 4,
+      "list": 4,
+      "tree": 0,
+      "kanban": 0,
+      "search": 3,
+      "pivot": 0,
+      "graph": 0,
+      "calendar": 1,
+      "activity": 0
+    },
+    "frontend": {
+      "present": true,
+      "js_files": 5,
+      "xml_templates": 2,
+      "owl_components": [],
+      "registry_adds": [
+        "fields:section_one2many",
+        "views:form_description_expander"
+      ],
+      "patches": [],
+      "services": [],
+      "asset_bundles": {
+        "web.assets_backend": 1,
+        "web.assets_unit_tests": 1
+      }
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": false,
+      "endpoints": [],
+      "files": []
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    },
+    "behavioral_notes": [
+      {
+        "element": "resource.calendar._attendance_intervals_batch (the working-hours engine)",
+        "observation": "Turns a calendar's weekly attendance_ids (resource.calendar.attendance: dayofweek + hour_from/hour_to per morning/lunch/afternoon period) into concrete (begin_dt, end_dt, attendance) tuples for any datetime range, using a dateutil rrule over the requested weekdays. It handles the two-week alternating calendar (week_type via get_week_type = parity of the ordinal-week number), per-resource timezones (it groups resources by tz and localizes the generic UTC interval skeleton once per tz), and flexible / duration-based schedules (fully-flexible resources get the whole range as one dummy attendance; flexible calendars synthesise daily intervals centred on 12:00 until hours_per_week is met). This Intervals math is the substrate every scheduling consumer relies on and is wholly invisible in field/relation metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "resource.calendar._work_intervals_batch (attendances minus leaves = effective working time)",
+        "observation": "Effective work intervals = _attendance_intervals_batch MINUS _leave_intervals_batch (Intervals set difference), keyed per resource id (with the False key = the calendar-generic resource). This single method is THE capacity-calculation join point downstream apps call: get_work_hours_count / get_work_duration_data (hours + days for a period), plan_hours / plan_days (find the datetime N working hours/days away), _get_closest_work_time + resource.resource._adjust_to_calendar (snap a datetime to the nearest working boundary), and _unavailable_intervals (the off-hours gaps, used by enterprise planning/forecast gantt). Grep confirms hr, hr_attendance, hr_calendar, hr_holidays, hr_timesheet, hr_work_entry and mrp all call into these methods. None of this control flow is reverse-engineerable from metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "resource.calendar.leaves (global vs resource-specific time off) feeding _leave_intervals_batch",
+        "observation": "A leave row with resource_id = False is a GLOBAL company time-off (public holiday / closure) that subtracts from every resource sharing that calendar/company; a leave with resource_id set subtracts only for that one resource. time_type ('leave' vs 'other') controls whether the row counts as absence or as work-equivalent time (e.g. training). _leave_intervals_batch expresses date_from/date_to (stored naive-UTC) in each resource's tz before differencing, and routes flexible-resource leaves through _handle_flexible_leave_interval (expanded to whole days). hr_holidays's approved time off and the work-entry modules write into this exact table, so resource is the shared sink where absences become unavailable capacity.",
+        "source": "code-read"
+      },
+      {
+        "element": "timezone handling across the engine",
+        "observation": "Every public computation method asserts tzinfo on its datetimes (naive inputs are made explicit as UTC via tools.date_utils.localized), converts to the resource/calendar tz (resource.tz | calendar.tz, default 'UTC') for the interval comparison, and reverts to the caller's tz on the way out (to_timezone). resource.calendar.tz_offset is computed from the tz selection; resource.resource and resource.mixin carry a related tz so an employee / work-center inherits one. The whole module is a timezone-correctness layer so 'working hours' mean the local clock, not server UTC -- a correctness concern code-read makes visible that metadata cannot.",
+        "source": "code-read"
+      },
+      {
+        "element": "frontend (OWL/JS)",
+        "observation": "5 JS files, 2 XML templates, 0 OWL components, 2 registry adds ('fields:section_one2many' for the sectioned working-time list editor, 'views:form_description_expander'); bundles ['web.assets_backend', 'web.assets_unit_tests']. The UI is a thin form/list editor for the calendar grid, not an interactive client app -- consistent with resource being backend master-data infrastructure.",
+        "source": "static"
+      }
+    ]
+  },
+  "it_architecture": {
+    "application": "resource (Resource & Working-Schedule application component)",
+    "software_services": [],
+    "data_objects": [
+      "resource.calendar",
+      "resource.calendar.attendance",
+      "resource.calendar.leaves",
+      "resource.mixin",
+      "resource.resource"
+    ],
+    "logical_data_erm": [
+      "resource.resource -> resource.calendar (calendar_id: the resource's working schedule)",
+      "resource.calendar -> resource.calendar.attendance (attendance_ids: weekly working-time grid)",
+      "resource.calendar -> resource.calendar.leaves (leave_ids / global_leave_ids: time off)",
+      "resource.calendar.leaves -> resource.resource (resource_id: resource-specific vs global leave)",
+      "resource.resource -> res.users (user_id) / res.company (company_id)",
+      "resource.mixin -> resource.resource (resource_id) + resource.calendar (resource_calendar_id, related)",
+      "res.company -> resource.calendar (resource_calendar_id: the company default working schedule)"
+    ],
+    "information_flows": [
+      "depends: base, web",
+      "outbound (engine consumed): hr / hr_attendance / hr_calendar / hr_holidays / hr_timesheet / hr_work_entry / mrp call resource.calendar._work_intervals_batch | _attendance_intervals_batch | get_work_hours_count | plan_hours/plan_days | _get_valid_work_intervals to compute working time & capacity",
+      "inbound side-effect: hr_holidays / work-entry modules write approved absences into resource.calendar.leaves, which _leave_intervals_batch subtracts from attendance to yield effective working time",
+      "extension point: resource.mixin is inherited by hr.employee, mrp.workcenter and other schedulable records to attach a resource_id + working calendar (auto-creating the resource.resource on create)"
+    ],
+    "frontend_components": []
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Define Working Schedules (calendars, attendances, 2-week & flexible modes)",
+      "Manage Resources (human & material, with timezone & efficiency)",
+      "Record Time Off (global company closures & resource-specific leaves)",
+      "Compute Working Time & Capacity (work/leave/unavailable intervals, plan hours/days)"
+    ],
+    "value_streams": [
+      "Schedule-to-Capacity: resource.calendar.attendance grid MINUS resource.calendar.leaves time off = effective work intervals -> working hours/days & availability consumed by HR, manufacturing and project scheduling",
+      "Resource-to-Calendar: a schedulable record (resource.mixin) -> resource.resource -> resource.calendar -> per-period attendance & timezone used to place and size its work"
+    ],
+    "information_concepts": [
+      "resource.calendar (working schedule)",
+      "resource.calendar.attendance (weekly working-time period)",
+      "resource.calendar.leaves (time off / closure)",
+      "resource.resource (the schedulable resource: human or material)",
+      "resource.mixin (working-time carrier inherited by schedulable records)"
+    ],
+    "organization": [],
+    "products": [],
+    "policies": [
+      "8 access rules: read for base.group_user, full CRUD for base.group_system on calendars/attendances/resources; leaves writable by base.group_user",
+      "5 record rules (resource_security.xml) scope calendars/attendances/leaves/resources by company (multi-company visibility)",
+      "_check_overlap / _check_attendance_ids forbid overlapping attendances; CHECK(time_efficiency>0); leave date_from <= date_to constraint"
+    ],
+    "stakeholders": [
+      "HR / Schedule administrator (base.group_system maintaining calendars & resources)",
+      "Employee / Work center (the resource.resource whose working time is computed)",
+      "Downstream scheduler (hr_holidays, hr_work_entry, mrp, planning consuming the engine)"
+    ],
+    "strategy": null,
+    "metrics": [
+      "resource.calendar.hours_per_day / hours_per_week / work_time_rate / is_fulltime (capacity per calendar, inferred)",
+      "get_work_hours_count / get_work_duration_data outputs (working hours & days per period, inferred)"
+    ]
+  },
+  "classification": {
+    "value_model": "support",
+    "activity_class": "support",
+    "apqc_category": "7.0 Develop and Manage Human Capital",
+    "rationale": "resource is the working-time / capacity-calculation BACKBONE of Odoo, not a primary value-creating activity: it owns the working-schedule master data (resource.calendar + attendance grid + time off) and the interval engine (_work_intervals_batch / _attendance_intervals_batch / plan_hours / get_work_hours_count) that other modules call to know WHEN and HOW MUCH a resource works. It is value-model 'support' and activity_class 'support' under Stabell & Fjeldstad / Porter -- firm infrastructure, exactly analogous to analytic for costs: where analytic is the shared vessel for cost/revenue, resource is the shared vessel for working-time and availability. Grep confirms hr, hr_attendance, hr_calendar, hr_holidays, hr_timesheet, hr_work_entry and mrp all depend on its engine. APQC mapping = 7.0 Develop and Manage Human Capital, the same category as the hr module, because the dominant use is workforce scheduling and time/absence management (manage employee work schedules and time off via resource.calendar / resource.calendar.leaves) and resource.resource models the workforce/work-center whose capacity HR and operations plan. It is NOT 8.0 Manage Information Technology (this is business scheduling data, not IT infrastructure/services) and NOT merely 13.0 Develop and Manage Business Capabilities (too generic -- 13.0 is knowledge/program management, whereas resource's concrete domain is the human-capital working calendar). Its material-resource / work-center reuse (mrp) means it also underpins manufacturing capacity planning, but human-capital working-time is the defining, original purpose, so 7.0 is the primary APQC home."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "weekly working-time calendars with morning/lunch/afternoon periods and per-day hours",
+      "two-week alternating calendars and flexible / duration-based schedules (hours_per_week target)",
+      "company default calendar + per-resource override, with timezone per calendar/resource",
+      "global company time off (closures/holidays) vs resource-specific leaves (time_type leave/other)",
+      "working-time computation: work / attendance / leave / unavailable intervals, work hours & days for a period, plan-hours / plan-days, snap-to-calendar (_adjust_to_calendar)",
+      "resource.mixin to make any record schedulable (auto-creates its resource.resource)",
+      "human and material resource types with an efficiency factor (work-center duration scaling)"
+    ],
+    "typical_fits": [
+      "standard 40h/week 5-day office calendar as the company default",
+      "part-time / alternating-week / flexible employee schedules driving FTE and overtime math",
+      "public holidays as global leaves automatically removing capacity for everyone on the calendar",
+      "work centers (mrp) and employees (hr) sharing the same calendar engine for scheduling",
+      "multi-company calendars scoped by the record rules"
+    ],
+    "common_gaps": [
+      "contract-dated calendar validity (which calendar applies on which date) -- base resource treats validity as the whole period; left for hr/contract modules to override _get_calendars_validity_within_period",
+      "absence approval workflow, allocation balances and leave types -- provided by hr_holidays, not resource itself",
+      "shift planning / gantt assignment UI -- enterprise planning/forecast; resource only supplies _unavailable_intervals",
+      "skills / capacity-by-competency and finite-capacity scheduling beyond the simple efficiency factor"
+    ],
+    "drive_hints": [
+      "odoo shell: env['resource.calendar'].search([], limit=5).mapped(('name','hours_per_day','hours_per_week','tz'))",
+      "odoo shell: from datetime import datetime; cal = env.company.resource_calendar_id; cal.get_work_hours_count(datetime(2026,6,1), datetime(2026,6,30))  # working hours in June",
+      "odoo shell: cal.plan_hours(8, datetime(2026,6,22,8,0))  # datetime 8 working hours from a Monday 08:00 start",
+      "odoo shell: env['resource.resource'].search([], limit=5).mapped(('name','resource_type','calendar_id.name','tz'))",
+      "odoo shell: env['resource.calendar.leaves'].search([('resource_id','=',False)], limit=5).mapped(('name','date_from','date_to'))  # global company time off"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Exact contract/date-validity overrides: how hr / contract modules replace _get_calendars_validity_within_period so the right calendar applies per date range.",
+    "How mrp work-order scheduling consumes plan_hours / _adjust_to_calendar and applies resource.resource.time_efficiency to operation durations.",
+    "Performance of _attendance_intervals_batch / _work_intervals_batch over long horizons and many resources (the rrule + Intervals math and per-tz localization).",
+    "Precise flexible / duration-based interval synthesis edge cases (centring on 12:00, capping at hours_per_week) versus how downstream time-off and overtime calculations interpret them."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/resource.facts.json",
+    "tools": [
+      "code-read",
+      "extract_module.py",
+      "extract_frontend.py",
+      "run-odoo (odoo shell)"
+    ],
+    "odoo_version": "19.0"
+  }
+}

@@ -1,0 +1,367 @@
+{
+  "subsystem": "mrp_account",
+  "evidence": {
+    "manifest": {
+      "name": "Accounting - MRP",
+      "category": "Supply Chain/Manufacturing",
+      "summary": "Analytic accounting in Manufacturing",
+      "depends": [
+        "mrp",
+        "stock_account"
+      ],
+      "auto_install": true,
+      "application": false
+    },
+    "models": [
+      {
+        "_name": "mrp.account.wip.accounting",
+        "_description": "Wizard to post Manufacturing WIP account move",
+        "fields": 6,
+        "relations": [
+          "journal_id->account.journal",
+          "line_ids->mrp.account.wip.accounting.line",
+          "mo_ids->mrp.production"
+        ]
+      },
+      {
+        "_name": "mrp.account.wip.accounting.line",
+        "_description": "Account move line to be created when posting WIP account move",
+        "fields": 6,
+        "relations": [
+          "account_id->account.account",
+          "currency_id->res.currency",
+          "wip_accounting_id->mrp.account.wip.accounting"
+        ]
+      },
+      {
+        "_name": "mrp.workcenter",
+        "_description": "Work Center (analytic.mixin extension)",
+        "_inherit": [
+          "mrp.workcenter",
+          "analytic.mixin"
+        ],
+        "fields": 2,
+        "relations": [
+          "costs_hour_account_ids->account.analytic.account",
+          "expense_account_id->account.account"
+        ]
+      },
+      {
+        "_name": "account.analytic.account",
+        "_description": "Analytic Account (MRP extension)",
+        "_inherit": "account.analytic.account",
+        "fields": 6,
+        "relations": [
+          "production_ids->mrp.production",
+          "bom_ids->mrp.bom",
+          "workcenter_ids->mrp.workcenter"
+        ]
+      },
+      {
+        "_name": "account.analytic.line",
+        "_description": "Analytic Line (+ 'manufacturing_order' category)",
+        "_inherit": "account.analytic.line",
+        "fields": 1,
+        "relations": []
+      },
+      {
+        "_name": "mrp.production",
+        "_description": "Manufacturing Order (cost / WIP / valuation extension)",
+        "_inherit": "mrp.production",
+        "fields": 4,
+        "relations": [
+          "wip_move_ids->account.move"
+        ]
+      },
+      {
+        "_name": "mrp.workorder",
+        "_description": "Work Order (analytic line carrier)",
+        "_inherit": "mrp.workorder",
+        "fields": 2,
+        "relations": [
+          "mo_analytic_account_line_ids->account.analytic.line",
+          "wc_analytic_account_line_ids->account.analytic.line"
+        ]
+      },
+      {
+        "_name": "mrp.workcenter.productivity",
+        "_description": "Workcenter Productivity Log (links labour move line)",
+        "_inherit": "mrp.workcenter.productivity",
+        "fields": 1,
+        "relations": [
+          "account_move_line_id->account.move.line"
+        ]
+      },
+      {
+        "_name": "account.move",
+        "_description": "Journal Entry (WIP entry link)",
+        "_inherit": "account.move",
+        "fields": 2,
+        "relations": [
+          "wip_production_ids->mrp.production"
+        ]
+      },
+      {
+        "_name": "product.category",
+        "_description": "Product Category (Production Account)",
+        "_inherit": "product.category",
+        "fields": 1,
+        "relations": [
+          "property_stock_account_production_cost_id->account.account"
+        ]
+      },
+      {
+        "_name": "stock.move",
+        "_description": "Stock Move (production valuation override)",
+        "_inherit": "stock.move",
+        "fields": 0,
+        "relations": []
+      }
+    ],
+    "routes": [],
+    "security": {
+      "access_rules": 6,
+      "record_rules": 0,
+      "groups": 0
+    },
+    "views": {
+      "form": 0,
+      "list": 0,
+      "tree": 0,
+      "kanban": 0,
+      "search": 0,
+      "pivot": 0,
+      "graph": 0,
+      "calendar": 0,
+      "activity": 0
+    },
+    "behavioral_notes": [
+      {
+        "element": "mrp.production._cal_price (manufacturing cost roll-up)",
+        "observation": "Overrides mrp's _cal_price: after super() values the consumed component moves, it sums work_order._cal_cost() across all workorder_ids (labour = duration x workcenter.costs_hour) plus extra_cost x qty, giving total_cost = sum(consumed move.value) + work_center_cost + extra_cost. It then splits total_cost onto byproducts by their cost_share % and sets price_unit on the finished move_finished_ids to (total_cost x (1 - byproduct_cost_share/100)) / quantity. Only applies for fifo/average cost_method (standard-cost products keep standard_price). This price_unit is what stock_account then writes into the finished-goods stock.valuation.layer.",
+        "source": "code-read"
+      },
+      {
+        "element": "mrp.production._post_inventory -> _post_labour",
+        "observation": "After stock_account's _post_inventory creates the component-consumption and finished-goods stock.valuation.layers, _post_labour fires for MOs that reach state 'done' (real_time valuation + a production-location valuation_account_id required). It buckets each workorder's _cal_cost() by workcenter.expense_account_id (fallback product expense account), then creates and _post()s a single balanced account.move on the product's stock_journal: debit per expense account, credit the production location's valuation_account_id (workcenter_cost capitalised into the produced goods). Each resulting account.move.line is written back onto the workorder's mrp.workcenter.productivity.account_move_line_id (idempotency guard: skipped if time_ids already linked). This is the labour-cost GL posting metadata cannot show.",
+        "source": "code-read"
+      },
+      {
+        "element": "stock.move._get_value_from_production",
+        "observation": "Override on production moves: returns value = quantity x price_unit (the price_unit set by _cal_price) with a production-scoped description ('<value> for <qty> <unit> from <MO>'). This is the hook stock_account calls to compute the finished/byproduct stock.valuation.layer amount for a manufacturing output, replacing the generic incoming-cost logic. _get_kit_price_unit / _get_all_related_sm additionally value phantom (kit) BoM outputs by exploding the kit and summing component price_units so kits are not double-counted.",
+        "source": "code-read"
+      },
+      {
+        "element": "mrp.workorder._create_or_update_analytic_entry (analytic cost tracking)",
+        "observation": "On _compute_duration / _set_duration the workorder recomputes value = -(duration/60) x workcenter.costs_hour and, when the workcenter carries an analytic_distribution, creates/updates account.analytic.line rows via account.analytic.account._perform_analytic_distribution. Lines are tagged category='manufacturing_order', product_uom hours, ref=production.name, and stored on wc_analytic_account_line_ids; they are unlinked on workorder action_cancel/unlink. This posts shop-floor labour cost onto the analytic (cost-centre) ledger independently of the financial GL postings.",
+        "source": "code-read"
+      },
+      {
+        "element": "mrp.account.wip.accounting.confirm (WIP / period-cut entry)",
+        "observation": "The WIP wizard (account.group_account_manager) collects in-progress MOs (state progress/to_close/confirmed) and posts a Work-In-Progress journal entry: credit stock valuation account for picked component value (lot/standard_price x qty), credit the overhead account for workorder _cal_cost, and debit the company account_production_wip_account_id for the total. It immediately books a reversing entry on reversal_date (default next day) so the WIP sits on the balance sheet only at the cut-off date. Both moves carry wip_production_ids back to the MOs and surface on mrp.production.wip_move_ids.",
+        "source": "code-read"
+      },
+      {
+        "element": "product.product._compute_bom_price / _set_price_from_bom (standard-cost roll-up)",
+        "observation": "Recomputes a manufactured product's standard_price from its BoM: sums operation costs (opt.cost) + each bom_line component standard_price x qty, recursing into child BoMs, then nets byproduct cost_share and divides by bom.product_qty. Exposed via the product/template 'Compute Price from BoM' button (button_bom_cost) and list action. product.category gains property_stock_account_production_cost_id (the production valuation counterpart account used for both components and finished goods); res.company excludes kits from valuation and product._compute_value zeroes kit valuation to avoid double counting.",
+        "source": "code-read"
+      },
+      {
+        "element": "report.mrp.report_mo_overview._get_unit_cost + stock_account.stock.valuation.report",
+        "observation": "MO Overview shows the real done-move unit cost (move._get_price_unit) instead of the planned cost. The stock valuation report is patched to add a 'Cost of Production' section aggregating the valuation of production-usage stock locations (the WIP/labour capitalised value) when any production location has a valuation account.",
+        "source": "code-read"
+      },
+      {
+        "element": "frontend (OWL/JS)",
+        "observation": "2 JS files, 1 XML template, 0 OWL components, 0 registry adds; patches StockValuationReport.prototype + StockValuationReportController.prototype to render the added 'Cost of Production' block; bundle ['web.assets_backend'].",
+        "source": "static"
+      }
+    ],
+    "frontend": {
+      "present": true,
+      "js_files": 2,
+      "xml_templates": 1,
+      "owl_components": [],
+      "registry_adds": [],
+      "patches": [
+        "StockValuationReport.prototype",
+        "StockValuationReportController.prototype"
+      ],
+      "services": [],
+      "asset_bundles": {
+        "web.assets_backend": 1
+      }
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": false,
+      "endpoints": [
+        "https://www.odoo.com/app/manufacturing"
+      ],
+      "files": [
+        "__manifest__.py"
+      ]
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    }
+  },
+  "it_architecture": {
+    "application": "mrp_account (Accounting - MRP bridge component)",
+    "software_services": [],
+    "data_objects": [
+      "mrp.account.wip.accounting",
+      "mrp.account.wip.accounting.line",
+      "mrp.workcenter",
+      "account.analytic.account",
+      "account.analytic.line",
+      "mrp.production",
+      "mrp.workorder",
+      "mrp.workcenter.productivity",
+      "account.move",
+      "product.category",
+      "stock.move"
+    ],
+    "logical_data_erm": [
+      "mrp.production -> account.move (wip_move_ids: WIP journal entries)",
+      "mrp.workorder -> account.analytic.line (mo/wc analytic cost lines)",
+      "mrp.workcenter -> account.analytic.account (costs_hour_account_ids)",
+      "mrp.workcenter -> account.account (expense_account_id)",
+      "mrp.workcenter.productivity -> account.move.line (labour move line)",
+      "account.move -> mrp.production (wip_production_ids)",
+      "account.analytic.account -> mrp.production / mrp.bom / mrp.workcenter",
+      "product.category -> account.account (property_stock_account_production_cost_id)",
+      "mrp.account.wip.accounting -> account.journal / mrp.production"
+    ],
+    "information_flows": [
+      "depends: mrp, stock_account",
+      "side-effect: mrp.production._cal_price -> sets finished move price_unit (component value + workcenter cost + extra_cost, byproduct cost_share split) feeding stock.valuation.layer",
+      "side-effect: mrp.production._post_inventory/_post_labour -> posts labour account.move (DR expense, CR production valuation account) + links mrp.workcenter.productivity.account_move_line_id",
+      "side-effect: stock.move._get_value_from_production -> values finished/byproduct/kit stock.valuation.layer at production price_unit",
+      "side-effect: mrp.workorder._compute_duration/_set_duration -> creates account.analytic.line (category manufacturing_order) from workcenter analytic_distribution x costs_hour",
+      "side-effect: mrp.account.wip.accounting.confirm -> posts + reverses a WIP account.move (component + overhead vs production_wip account)",
+      "side-effect: product.product._set_price_from_bom -> rolls BoM component + operation cost into product standard_price"
+    ],
+    "frontend_components": []
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Manufacturing Cost Roll-up (component + workcenter + extra cost)",
+      "Finished-Goods & Byproduct Inventory Valuation from MO",
+      "Labour / Workcenter Cost Capitalisation to the GL",
+      "Analytic (Cost-Centre) Tracking of Work Orders",
+      "Work-In-Progress (WIP) Period-End Accounting",
+      "Standard-Cost Computation from Bill of Material",
+      "Kit (Phantom) Valuation Handling",
+      "Cost-of-Production Stock Valuation Reporting"
+    ],
+    "value_streams": [
+      "Manufacture-to-Ledger (cost): MO marked done -> _cal_price rolls component+labour+extra cost onto finished move -> stock_account writes component-consumption & finished-goods stock.valuation.layer -> _post_labour posts workcenter cost account.move (DR expense / CR production valuation) -> mrp.workorder analytic.lines record cost-centre labour -> (period cut) WIP wizard posts reversing WIP entry"
+    ],
+    "information_concepts": [
+      "mrp.production (Manufacturing Order — cost carrier)",
+      "mrp.workorder (Work Order — analytic cost lines)",
+      "mrp.workcenter (Work Center — expense + analytic accounts)",
+      "mrp.workcenter.productivity (labour time -> move line)",
+      "account.move (WIP / labour journal entry)",
+      "account.analytic.line (manufacturing_order cost line)",
+      "account.analytic.account (MRP cost centre)",
+      "product.category (production valuation account)",
+      "mrp.account.wip.accounting (WIP posting wizard)"
+    ],
+    "organization": [
+      "account.group_account_manager (WIP wizard create/post)",
+      "account.group_account_invoice (BoM read access)",
+      "account.group_account_readonly (BoM read access)"
+    ],
+    "products": [],
+    "policies": [
+      "Real-time (automated) valuation gate: labour/valuation GL postings only when product valuation == 'real_time' and a production-location valuation account is set",
+      "Production valuation counterpart account resolved from product.category.property_stock_account_production_cost_id (company-dependent)",
+      "Byproduct cost_share % governs how total manufacturing cost is split between main product and byproducts",
+      "Kits (phantom BoMs) excluded from valuation to avoid double counting (res.company._get_valuation_product_domain, product._compute_value)",
+      "WIP entry must balance (credit == debit) and reversal_date must be after posting date (UserError guards)",
+      "Labour posting idempotency: skipped if workorder time logs already carry account_move_line_id"
+    ],
+    "stakeholders": [
+      "Cost Accountant / Accounting Manager (group_account_manager)",
+      "Manufacturing Manager (MO cost & valuation)",
+      "Controller / FP&A (analytic cost-centre reporting)",
+      "Auditor (WIP & inventory valuation)"
+    ],
+    "strategy": null,
+    "metrics": [
+      "report.mrp.report_mo_overview (real done-move unit cost vs planned)",
+      "stock_account.stock.valuation.report 'Cost of Production' section",
+      "account.analytic.account balance per MO / workcenter / BoM (manufacturing cost centre)",
+      "WIP balance at period cut-off (mrp.production.wip_move_ids)"
+    ]
+  },
+  "classification": {
+    "value_model": "support",
+    "activity_class": "support",
+    "apqc_category": "9.0 Manage Financial Resources",
+    "rationale": "mrp_account is a cost-accounting bridge, not a primary transform: it does not move material or convert inputs (that is mrp + stock), it records the financial consequences of manufacturing into the ledger and the cost (analytic) accounting layer. It is the support glue between the 'make' value chain (mrp) and the financial system of record (account / stock_account): _cal_price values the finished-goods stock.valuation.layer, _post_labour capitalises workcenter cost into the GL, work-order analytic lines feed the cost-centre ledger, and the WIP wizard books work-in-progress at period cut-off. Under Stabell & Fjeldstad / Porter this is firm-infrastructure support (auto_install=true onto mrp+stock_account). It maps to APQC 9.0 Manage Financial Resources — specifically 9.3 Perform cost / management accounting (analytic manufacturing cost) and 9.x inventory/product costing & valuation — feeding, not performing, the 4.3 Produce/Manufacture primary activity its parent mrp owns."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "manufacturing cost roll-up: component value + workcenter (labour) cost + extra unit cost onto finished goods",
+      "byproduct cost-share split of total manufacturing cost",
+      "finished-goods / byproduct / kit valuation from the MO into stock.valuation.layer",
+      "automated GL labour posting (workcenter cost -> expense vs production valuation account) on MO done",
+      "analytic cost-centre tracking of work orders (account.analytic.line, manufacturing_order category)",
+      "standard-cost computation from BoM (components + operations, recursive, byproduct-aware)",
+      "Work-In-Progress period-end journal entry with automatic reversal",
+      "Cost-of-Production block on the stock valuation report"
+    ],
+    "typical_fits": [
+      "real-time (automated) inventory valuation of manufactured goods (FIFO / average)",
+      "capturing direct labour / workcenter overhead into product cost",
+      "cost-centre / project profitability on manufacturing via analytic distribution",
+      "month-end WIP recognition for in-progress manufacturing orders"
+    ],
+    "common_gaps": [
+      "multi-tier overhead absorption / activity-based costing beyond single workcenter rate",
+      "standard-cost variance accounting (purchase price / efficiency / rate variances) split into dedicated accounts",
+      "subcontracting cost postings (handled by mrp_subcontracting_account)",
+      "landed-cost allocation onto manufactured output (stock_landed_costs integration)",
+      "automatic (scheduled) WIP posting — the WIP entry is a manual wizard, not an automated period close",
+      "by-product revenue / scrap-credit accounting models"
+    ],
+    "drive_hints": [
+      "odoo shell: mo = env['mrp.production'].search([('state','=','done')], limit=1); mo.read(['extra_cost','wip_move_count']); mo.move_finished_ids.mapped(('price_unit','quantity'))",
+      "odoo shell --log-handler=odoo.sql_db:DEBUG: mo.button_mark_done()  # trace _cal_price + _post_labour labour account.move and finished-goods stock.valuation.layer",
+      "odoo shell: env['account.analytic.line'].search([('category','=','manufacturing_order')], limit=5).mapped(('name','amount','account_id.display_name'))  # workcenter analytic cost lines",
+      "odoo shell: w = env['mrp.account.wip.accounting'].with_context(active_ids=env['mrp.production'].search([('state','=','progress')]).ids).create({}); w.line_ids.mapped(('label','debit','credit'))  # preview WIP entry",
+      "odoo shell: p = env['product.product'].search([('bom_count','>',0)], limit=1); p.button_bom_cost(); p.standard_price  # BoM cost roll-up"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Exact split of total_cost when fifo/average vs standard cost_method coexist across main product and byproducts in a single MO.",
+    "How _post_labour interacts with backorders and partial MO completion (re-posting vs idempotency guard over multiple _post_inventory calls).",
+    "Whether/when the WIP wizard is run in practice vs left to manual period close, and how its reversal interacts with the real labour move posted at MO done.",
+    "Interplay with stock_account anglo-saxon vs continental valuation configs for the production valuation counterpart account."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/mrp_account.facts.json",
+    "tools": [
+      "apqc_odoo_map.tsv",
+      "code-read (mrp_production.py, stock_move.py, analytic_account.py, product.py, mrp_workorder.py, mrp_workcenter.py, account_move.py, wizard/mrp_wip_accounting.py, report/stock_valuation_report.py)",
+      "extract_frontend.py",
+      "extract_module.py"
+    ],
+    "odoo_version": "19.0"
+  }
+}

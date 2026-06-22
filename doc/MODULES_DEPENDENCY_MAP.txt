@@ -1,0 +1,251 @@
+ODOO MODULE DEPENDENCY MAP (Odoo 19.0 — 625 modules)
+=====================================================
+
+This is a text-based dependency map showing:
+- Core kernel modules (no or base-only dependencies)
+- Key hub modules (heavily depended on)
+- Sample dependent modules
+- Load order phases and depth
+
+Legend:
+  ─ dependency arrow (flows from dependents TO dependencies)
+  [n] = depth from base
+  (auto) = auto_install=True
+
+
+═══════════════════════════════════════════════════════════════════════════════
+TIER 0: FOUNDATION MODULES (depth 0 — no dependencies)
+═══════════════════════════════════════════════════════════════════════════════
+
+                              ┌──────────────┐
+                              │    base      │ [0]
+                              │  (auto)      │
+                              └──────────────┘
+
+
+═══════════════════════════════════════════════════════════════════════════════
+TIER 1: IMMEDIATE DEPENDENTS OF BASE (depth 1)
+═══════════════════════════════════════════════════════════════════════════════
+
+      ┌─────────────────┬──────────────────┬─────────────────┐
+      │                 │                  │                 │
+   ┌──┴────────┐   ┌───┴─────────┐   ┌───┴────────┐   ┌──┴──────────┐
+   │   web     │   │    rpc      │   │social_media│   │   uom       │
+   │ (auto)    │   │  (auto)     │   │            │   │             │
+   │  [1]      │   │   [1]       │   │    [1]     │   │    [1]      │
+   └──┬────────┘   └───┬─────────┘   └───┬────────┘   └──┬──────────┘
+      │                │                  │               │
+      └────────────────┼──────────────────┴───────────────┘
+                       │
+            (31 dependents on web)
+            (1 dependent on rpc, social_media, uom)
+
+
+═══════════════════════════════════════════════════════════════════════════════
+TIER 2: KEY HUB MODULES (depth 2+)
+═══════════════════════════════════════════════════════════════════════════════
+
+           account [2]  (151 dependents)
+                │
+      ┌─────────┼──────────┬──────────────┬─────────┬──────────┐
+      │         │          │              │         │          │
+  account_    mail [2]  payment [2]   base_vat  base_iban   base_setup
+  edi_ubl_cii (42 dep)  (23 dep)      [2]       [2]         [2]
+  [2]                                (43 dep)   (25 dep)     (19 dep)
+  (44 dep)
+      │
+      │
+   account_edi      account_lock    account_payment    account_fiscal_country_region
+   (5 dep)          (15 dep)        (19 dep)           (8 dep)
+
+
+                        sale [2]  (21 dependents)
+                          │
+            ┌─────────────┼──────────────┐
+            │             │              │
+        sale_crm      sale_management  sale_account
+        (8 dep)       (12 dep)         (18 dep)
+
+
+                    hr [2]  (18 dependents)
+                      │
+            ┌─────────┼──────────┐
+            │         │          │
+         hr_org    hr_timesheet  hr_expense
+         (2 dep)   (8 dep)       (6 dep)
+
+
+                    point_of_sale [2]  (44 dependents)
+                            │
+            ┌───────────────┼────────────┐
+            │               │            │
+        pos_cache      pos_restaurant  pos_iot
+        (3 dep)        (2 dep)         (4 dep)
+
+
+═══════════════════════════════════════════════════════════════════════════════
+TIER 3+: SPECIALIZED MODULES (depth 3+)
+═══════════════════════════════════════════════════════════════════════════════
+
+                    stock [3]  (25 dependents)
+                       │
+         ┌─────────────┼──────────────────┐
+         │             │                  │
+    stock_account  stock_picking_batch  stock_intrastat
+    (15 dep)       (5 dep)              (2 dep)
+
+
+                    mrp [3]  (15 dependents)
+                       │
+         ┌─────────────┼──────────────────┐
+         │             │                  │
+    mrp_account    mrp_byproduct    mrp_workorder
+    (8 dep)        (2 dep)          (3 dep)
+
+
+                    purchase [3]  (12 dependents)
+                        │
+         ┌──────────────┼──────────────────┐
+         │              │                  │
+    purchase_account  purchase_requisition purchase_mrp
+    (9 dep)           (4 dep)             (4 dep)
+
+
+═══════════════════════════════════════════════════════════════════════════════
+TIER 4+: DEEP COMPOSITIONS (complex dependencies)
+═══════════════════════════════════════════════════════════════════════════════
+
+Examples of deep chains (10+ levels):
+
+  test_event_full [16]
+    ├─ event [4]
+    ├─ event_booth [5]
+    ├─ event_crm [5]
+    ├─ event_crm_sale [6]
+    ├─ event_sale [5]
+    ├─ event_sms [5]
+    ├─ payment_demo [4]
+    ├─ website_event_booth_sale_exhibitor [7]
+    ├─ website_event_exhibitor [7]
+    ├─ website_event_sale [6]
+    ├─ website_event_track [6]
+    ├─ website_event_track_live [7]
+    └─ website_event_track_quiz [7]
+
+
+  sale_project_stock_account [14]
+    ├─ sale_project [7]
+    │   ├─ sale [2]
+    │   └─ project [6]
+    │       ├─ project_mail [5]
+    │       ├─ project_todo [5]
+    │       └─ project_todo_sync [6]
+    ├─ project_stock_account [10]
+    │   ├─ project_stock [9]
+    │   │   └─ stock [3]
+    │   └─ account [2]
+    └─ sale_stock [5]
+
+
+═══════════════════════════════════════════════════════════════════════════════
+LOADING PHASES (Install/Update Mode)
+═══════════════════════════════════════════════════════════════════════════════
+
+Phase 0:  base
+
+Phase 1:  web, rpc, social_media, uom, base_sparse_field, l10n_us, l10n_fr, …
+          (all modules with only 'base' dependencies, sorted by depth then name)
+
+Phase 2:  account, payment, mail, hr, sale, purchase, stock, mrp, website, …
+          (modules depending on phase 1, that don't need init)
+
+Phase 3:  account_edi_ubl_cii, account_payment, sale_management, sale_account, …
+          (modules to be installed, depending on phase 2)
+
+Phase 4+: Deeper compositions, organized by dependency chains
+
+
+═══════════════════════════════════════════════════════════════════════════════
+LOAD MODE (Simple Start)
+═══════════════════════════════════════════════════════════════════════════════
+
+Phase 0:  base
+
+Phase 1:  All other modules (sorted by depth, then name)
+          - Depth 1: web, rpc, social_media, uom, …
+          - Depth 2: account, payment, mail, …
+          - Depth 3: stock, mrp, purchase, …
+          - …
+          - Depth 16: test_event_full, …
+
+
+═══════════════════════════════════════════════════════════════════════════════
+DEPENDENCY STATISTICS
+═══════════════════════════════════════════════════════════════════════════════
+
+Total modules:                625
+  - Installable:              ~600
+  - Auto-install:             ~10 (web, rpc, …)
+  - Non-installable:          ~25 (test modules, platform-specific, …)
+
+Hub modules (10+ dependents):  ~40
+  - account:                  151 dependents
+  - account_edi_ubl_cii:      44 dependents
+  - point_of_sale:            44 dependents
+  - base_vat:                 43 dependents
+  - mail:                     42 dependents
+  - [rest: 20-30 dependents]
+
+Max depth:                     16 (test_event_full)
+Typical depth (median):        3-5
+Max phase (update mode):       ~8-10
+
+Common dependency patterns:
+  - Localization packs: depend on account (add country-specific accounts)
+  - Feature modules: depend on 2-5 core modules (account, sale, hr, …)
+  - Test modules: depend on feature module + related tests
+  - Website modules: depend on website + feature modules
+
+
+═══════════════════════════════════════════════════════════════════════════════
+MODULE CATEGORIES
+═══════════════════════════════════════════════════════════════════════════════
+
+Accounting/Accounting              (~80 modules)  [account, payroll, …]
+Sales/Sales                        (~40 modules)  [sale, sales_team, …]
+Inventory/Inventory                (~30 modules)  [stock, …]
+Manufacturing/Manufacturing        (~30 modules)  [mrp, …]
+Human Resources/Employees          (~20 modules)  [hr, …]
+Website/Website                    (~25 modules)  [website, website_*, …]
+Productivity/Discuss               (~10 modules)  [mail, …]
+Hidden                             (~50 modules)  [base, web, rpc, internals]
+Marketing/Social Marketing         (~20 modules)  [social_media, …]
+[Other: Localizations, integrations, tools, services]
+
+
+═══════════════════════════════════════════════════════════════════════════════
+KEY OBSERVATIONS
+═══════════════════════════════════════════════════════════════════════════════
+
+1. **Accounting is the core:** account module has 151 direct dependents.
+   This reflects Odoo's ERP nature — financials = mandatory business layer.
+
+2. **Web framework is essential:** web module (31 dependents) is auto-installed.
+   Almost all interactive features depend on it.
+
+3. **Feature modules form hubs:** sale, hr, purchase, mrp, stock each collect
+   5-20 specialized modules (sales_team, sale_management, sale_account, etc.).
+   This is a clean architecture: core + feature + specialization.
+
+4. **Test modules are deep:** test_event_full chains 13 module dependencies.
+   Complex workflows (event booking + sales + website + payment) are well-tested.
+
+5. **Localization adds depth:** l10n_* modules depend on account, adding
+   4-6 levels per country (e.g., l10n_be_intrastat depends on stock, account, …).
+   A production DB might have 5-10 country packs.
+
+6. **Safe loading order:** Dependency graph ensures no module loads before its
+   dependencies. Phases in update mode ensure new modules don't interfere with
+   upgrades of existing modules.
+
+═══════════════════════════════════════════════════════════════════════════════

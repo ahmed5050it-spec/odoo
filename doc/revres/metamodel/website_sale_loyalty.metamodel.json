@@ -1,0 +1,354 @@
+{
+  "subsystem": "website_sale_loyalty",
+  "evidence": {
+    "manifest": {
+      "name": "Coupons, Promotions, Gift Card and Loyalty for eCommerce",
+      "category": "Website/Website",
+      "summary": "Use coupon, promotion, gift cards and loyalty programs in your eCommerce store",
+      "depends": [
+        "website_sale",
+        "website_links",
+        "sale_loyalty"
+      ],
+      "auto_install": [
+        "website_sale",
+        "sale_loyalty"
+      ],
+      "application": false
+    },
+    "models": [
+      {
+        "_name": "coupon.share",
+        "_description": "Create links that apply a coupon and redirect to a specific page",
+        "fields": 7,
+        "relations": [
+          "website_id->website",
+          "coupon_id->loyalty.card",
+          "program_id->loyalty.program",
+          "program_website_id->website (related program_id.website_id)"
+        ]
+      },
+      {
+        "_name": "loyalty.program",
+        "_description": "Loyalty Program (extended)",
+        "_inherit": [
+          "loyalty.program",
+          "website.multi.mixin"
+        ],
+        "fields": 2,
+        "relations": [
+          "ecommerce_ok (Boolean 'Available on Website')",
+          "show_non_published_product_warning (Boolean, computed)"
+        ]
+      },
+      {
+        "_name": "loyalty.card (extension)",
+        "_inherit": "loyalty.card",
+        "fields": 0,
+        "relations": [
+          "adds action_coupon_share() -> coupon.share wizard"
+        ]
+      },
+      {
+        "_name": "loyalty.rule (extension)",
+        "_inherit": "loyalty.rule",
+        "fields": 1,
+        "relations": [
+          "website_id->website (related program_id.website_id, store=True)"
+        ]
+      },
+      {
+        "_name": "product.product (extension)",
+        "_inherit": "product.product",
+        "fields": 0,
+        "relations": [
+          "overrides _can_return_content / _get_product_placeholder_filename for reward products"
+        ]
+      },
+      {
+        "_name": "sale.order (extension)",
+        "_inherit": "sale.order",
+        "fields": 1,
+        "relations": [
+          "disabled_auto_rewards->loyalty.reward (Many2many)"
+        ]
+      },
+      {
+        "_name": "sale.order.line (extension)",
+        "_inherit": "sale.order.line",
+        "fields": 0,
+        "relations": [
+          "reward / discount-line display & sellability overrides"
+        ]
+      }
+    ],
+    "routes": [
+      {
+        "paths": [
+          "/wallet/top_up"
+        ],
+        "auth": "user",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/coupon/<string:code>"
+        ],
+        "auth": "public",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/shop/claimreward"
+        ],
+        "auth": "public",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/shop/pricelist (override: promo/coupon code entry)"
+        ],
+        "auth": "public",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/shop/cart (override: recompute programs & rewards)"
+        ],
+        "auth": "public",
+        "type": "http"
+      }
+    ],
+    "security": {
+      "access_rules": 1,
+      "record_rules": 0,
+      "groups": 0
+    },
+    "views": {
+      "form": 1,
+      "list": 0,
+      "tree": 0,
+      "kanban": 0,
+      "search": 0,
+      "pivot": 0,
+      "graph": 0,
+      "calendar": 0,
+      "activity": 0
+    },
+    "frontend": {
+      "present": true,
+      "js_files": 4,
+      "xml_templates": 2,
+      "owl_components": [],
+      "registry_adds": [
+        "public.interactions:website_sale_loyalty.coupon_toaster",
+        "public.interactions:website_sale_loyalty.gift_card_copy"
+      ],
+      "patches": [
+        "Checkout.prototype"
+      ],
+      "services": [],
+      "asset_bundles": {
+        "web.assets_frontend": 2,
+        "web.assets_tests": 1,
+        "website.website_builder_assets": 1
+      }
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": true,
+      "endpoints": [],
+      "files": []
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    },
+    "behavioral_notes": [
+      {
+        "element": "sale.order._try_apply_code / _update_programs_and_rewards / _try_pending_coupon (cart code application)",
+        "observation": "When a shopper enters a promo/coupon code, the overridden WebsiteSale.pricelist controller calls order_sudo._try_apply_code(promo) (defined in sale_loyalty). That base method resolves the code to a loyalty.rule (program) or a loyalty.card coupon under the website-scoped _get_trigger_domain/_get_program_domain -- this module swaps the 'sale_ok' leaf for 'ecommerce_ok' and AND-adds a website_id filter so only ecommerce-published, website-matching programs apply -- then row-locks loyalty_program (SELECT ... FOR UPDATE NOWAIT) to serialize concurrent carts, rejects loyalty/ewallet programs from code entry, appends any coupon to applied_coupon_ids, and returns {'error'/'not_found'} or a {coupon: rewards} dict. The website layer adds _try_pending_coupon(): a code captured by the /coupon/<code> share link is stashed in request.session['pending_coupon_code'] and replayed on the next cart recompute, auto-applying it when it yields a single non-multi-product reward. Errors/successes flow into session keys (error_promo_code / successful_code / pending_coupon_code) that the storefront templates surface. This code resolution, session replay and row-locking are invisible in field metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "sale.order._update_programs_and_rewards + _auto_apply_rewards recomputed on every cart change",
+        "observation": "Reward and automatic-discount lines are NOT stored statically -- they are recomputed whenever the cart mutates. The module hooks every website_sale recompute path: _recompute_cart, _verify_cart_after_update, the Cart.cart controller, _set_delivery_method and _remove_delivery_line all call order._update_programs_and_rewards() (re-evaluates applicable programs/points and rewrites reward lines) then _auto_apply_rewards() (claims any program whose single reward is non-nominative, non-multi-product, not in disabled_auto_rewards and not already on the order). _cart_find_product_line filters out is_reward_line so standard add-to-cart never touches a reward line; deleting a reward line via _cart_update_order_line(qty<=0) sets context website_sale_loyalty_delete=True so sale.order.line.unlink() records the reward into disabled_auto_rewards (blocking immediate re-auto-claim). _compute_website_order_line merges multiple per-tax discount lines from one program into a single tax-free display line (one '10% discount' row), and _compute_cart_info subtracts reward-line quantities from cart_quantity. The reward set is thus a continuously derived projection of programs x current cart -- not in metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "controllers/main.py routes: /coupon/<code>, /shop/claimreward, pricelist override (coupon entry & reward claim)",
+        "observation": "Three public storefront entry points drive promotions. (1) The overridden pricelist route is the coupon-entry endpoint behind the cart's 'Gift card or discount code' form (input name='promo'): it runs _try_apply_code, calls _apply_reward on a single resolved reward, and redirects to post['r'] (default /shop/cart) with a success/error session flag. (2) /coupon/<string:code> (auth=public) is the shareable link built by the coupon.share wizard (base_url/coupon/<code>?r=<redirect>): it stores the code as pending and applies it immediately if a cart exists, else defers it until the cart is non-empty, encoding notify_coupon / coupon_error into the redirect query. (3) /shop/claimreward (auth=public) backs the per-reward 'Claim' buttons in the cart: it browses loyalty.reward sudo, validates against _get_claimable_and_showable_rewards() (which also surfaces the partner's nominative loyalty/gift cards holding enough unexpired points), captures product_id for multi-product rewards, and applies the reward (routing code-triggered programs back through pricelist). _apply_reward also re-rates free-over shipping after a non-payment reward. These controller flows and their session-error plumbing are not in Python field metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "gift-card / eWallet balance use at checkout (/wallet/top_up, payment override, delivery discount)",
+        "observation": "Gift cards and eWallets are loyalty payment programs (program.is_payment_program) consumed as cart discount/payment lines. /wallet/top_up (auth=user) adds the eWallet trigger product (by trigger_product_id) to the cart so the customer can buy/recharge a wallet, then redirects to /shop/cart. At payment time PaymentPortal._validate_transaction_for_order re-runs _update_programs_and_rewards just before finalizing and raises ValidationError ('applied reward was changed or has expired') if the order total moved -- guarding a gift-card/discount whose value changed mid-checkout. _get_non_delivery_lines excludes shipping reward lines and _get_free_shipping_lines isolates 'shipping'-type rewards so free-shipping promos discount the carrier line; the delivery controller and the Checkout.prototype patch feed amount_delivery_discounted / discount_reward_amounts into the order summary so wallet, gift-card and discount amounts render live in the cart. product.product overrides expose unpublished reward/gift-card images and a gift_card.png placeholder to public users. _gc_abandoned_coupons (autovacuum) strips applied_coupon_ids from draft website orders idle > N days. These payment-time guards and balance mechanics are invisible in metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "frontend (JS public.interactions + Checkout patch + website-builder option)",
+        "observation": "4 JS files, 2 XML templates, 0 OWL components. The storefront uses two public.interactions rather than OWL: CouponToaster (selector .coupon-message) turns the templates' hidden coupon-info/error/warning divs into success/danger/warning notifications after a code attempt, and GiftCardCopy (.o_purchased_gift_card .copy-to-clipboard) copies a purchased gift-card code to the clipboard. Checkout.prototype is patched (_updateCartSummary) to live-update the shipping-reward and discount-reward amounts in the cart summary, reloading the page when the number of discount lines changes. A coupon_option website-builder plugin (website.website_builder_assets) lets editors toggle the promo-code box on the cart. Asset bundles: web.assets_frontend (2), web.assets_tests (1), website.website_builder_assets (1). These JS surfaces and the registry registrations are not in Python metadata.",
+        "source": "static"
+      }
+    ]
+  },
+  "it_architecture": {
+    "application": "website_sale_loyalty (eCommerce coupons, promotions, gift cards & loyalty -- the promotions layer of the website storefront)",
+    "software_services": [
+      "/wallet/top_up",
+      "/coupon/<string:code>",
+      "/shop/claimreward",
+      "/shop/pricelist (override: promo/coupon code entry)",
+      "/shop/cart (override: recompute programs & rewards)"
+    ],
+    "data_objects": [
+      "coupon.share",
+      "loyalty.program (ecommerce_ok, website-scoped)",
+      "loyalty.card (extension)",
+      "loyalty.rule (website_id)",
+      "product.product (extension)",
+      "sale.order (extension)",
+      "sale.order.line (extension)"
+    ],
+    "logical_data_erm": [
+      "sale.order -> loyalty.reward (disabled_auto_rewards)",
+      "sale.order -> applied_coupon_ids (loyalty.card) [from sale_loyalty]",
+      "sale.order.line -> loyalty.reward / loyalty.card (reward_id / coupon_id, is_reward_line) [from sale_loyalty]",
+      "coupon.share -> loyalty.card (coupon_id)",
+      "coupon.share -> loyalty.program (program_id)",
+      "coupon.share -> website (website_id)",
+      "loyalty.program -> website (website.multi.mixin, ecommerce_ok)",
+      "loyalty.rule -> website (related program_id.website_id, stored)",
+      "loyalty.reward -> product.product (discount_line_product_id reward backing product)"
+    ],
+    "information_flows": [
+      "depends: website_sale, website_links, sale_loyalty (auto_install with website_sale + sale_loyalty)",
+      "inbound: shopper enters promo/coupon code at /shop cart -> sale.order._try_apply_code resolves rule/coupon -> applied_coupon_ids + reward lines",
+      "inbound: /coupon/<code> share link (built by coupon.share + website_links link.tracker) -> session pending_coupon_code -> replayed on next cart recompute",
+      "side-effect: every cart mutation -> _update_programs_and_rewards + _auto_apply_rewards rewrite reward & automatic-discount lines",
+      "side-effect: /wallet/top_up -> adds eWallet trigger product to cart; gift-card/eWallet balance applied as discount/payment line",
+      "guard: PaymentPortal._validate_transaction_for_order re-applies programs pre-payment and blocks the tx if the total changed",
+      "outbound display: delivery controller + Checkout.prototype patch -> amount_delivery_discounted / discount_reward_amounts into cart summary",
+      "autovacuum: _gc_abandoned_coupons clears applied_coupon_ids from idle draft website orders",
+      "delegates rule-matching, point debit/credit and reward math to sale_loyalty / loyalty (not re-implemented here)"
+    ],
+    "frontend_components": [
+      "CouponToaster (public.interaction)",
+      "GiftCardCopy (public.interaction)",
+      "Checkout.prototype patch (_updateCartSummary)",
+      "coupon_option website-builder plugin"
+    ]
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Apply Coupons & Promo Codes in the Online Cart (code entry, validation, auto-replay of shared codes)",
+      "Auto-Apply & Recompute Promotions on Cart Change (automatic discounts, reward lines)",
+      "Claim Rewards in the Storefront (discounts, free products, free shipping)",
+      "Pay / Top-up with Gift Cards & eWallets at eCommerce Checkout",
+      "Publish & Scope Promotion Programs to a Website (ecommerce_ok, website_id)",
+      "Generate Shareable Coupon Links for Marketing Campaigns"
+    ],
+    "value_streams": [
+      "Shop-to-Conversion (promotions): browse -> add to cart -> enter/auto-apply code or claim reward -> programs & rewards recomputed -> gift-card/eWallet/discount reduces total -> checkout & pay",
+      "Campaign-to-Cart: configure website program -> share /coupon/<code> link -> shopper lands on /shop -> pending code applied on first cart add",
+      "(realized end-to-end with website_sale checkout + sale_loyalty/loyalty rule engine + payment)"
+    ],
+    "information_concepts": [
+      "sale.order (eCommerce cart, applied coupons & reward lines)",
+      "sale.order.line (reward / discount / shipping reward lines)",
+      "loyalty.program (website-published promotion / gift card / eWallet / loyalty)",
+      "loyalty.card (coupon / gift card / eWallet balance)",
+      "loyalty.rule (website-scoped promo code / earning rule)",
+      "coupon.share (shareable coupon link)"
+    ],
+    "organization": [],
+    "products": [
+      "product.product (reward / gift-card backing product, image & placeholder exposed to public users)",
+      "product.product (eWallet trigger / top-up product added via /wallet/top_up)"
+    ],
+    "policies": [
+      "1 access rule (coupon.share wizard); no record rules / groups of its own (inherits website + loyalty scoping)",
+      "promo-code uniqueness per website: _constrains_code allows the same code on different websites but not two reachable from one website, and bars coupon/program code clash",
+      "website scoping: only ecommerce_ok programs matching website_id (or website_id=False) apply in the cart",
+      "checkout integrity: payment blocked (ValidationError) if the applied reward/total changed after re-evaluation",
+      "deleting an auto-reward line disables its re-auto-claim (disabled_auto_rewards)",
+      "abandoned-cart hygiene: _gc_abandoned_coupons autovacuum strips coupons from idle draft website orders",
+      "nominative programs only for logged-in (non-public) shoppers (_allow_nominative_programs)"
+    ],
+    "stakeholders": [
+      "Online shopper (res.partner / public user) entering codes & redeeming gift cards/eWallets",
+      "Marketing user designing website promotions and sharing coupon links",
+      "Website editor toggling the promo-code box (website builder)",
+      "Upstream engines: sale_loyalty / loyalty (rules & points) and payment (transactions)"
+    ],
+    "strategy": null,
+    "metrics": [
+      "applied_coupon_ids count / reward-line count per cart (conversion levers)",
+      "loyalty.program.total_order_count / coupon usage vs max_usage (program uptake, from loyalty)",
+      "gift-card / eWallet balance consumed at checkout (from loyalty.history)"
+    ]
+  },
+  "classification": {
+    "value_model": "network",
+    "activity_class": "primary",
+    "apqc_category": "3.0 Market and Sell Products and Services",
+    "rationale": "website_sale_loyalty is the promotions / mediation layer of the website_sale value network -- it lives inside the eCommerce storefront and exists to drive conversion, not merely to configure rules. Where the parent loyalty module is a cross-cutting rule engine (support), this module wires that engine into the live two-sided storefront (shoppers <-> the merchant's catalogue), mediating the buy decision with promo codes, auto-applied discounts, claimable rewards, shareable coupon links and gift-card/eWallet tender at checkout. That promotion/mediation role -- lowering the price barrier and creating switching-cost ties (stored-value wallets, points, shareable campaign links) to grow and retain the customer base -- is value-network logic (Stabell & Fjeldstad), and because it acts directly in the customer-facing sell channel it is a primary activity rather than firm infrastructure. APQC maps it to 3.0 Market and Sell (manage promotions / pricing applied at the online point of sale), distinct from the 3.5 order-management groups that website_sale / sale own; the actual money movement only lands on account.move downstream."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "Promo-code / coupon entry box in the online cart with success/error toasts (input name='promo')",
+      "Automatic application & live recomputation of discounts and reward lines on every cart change",
+      "Per-reward 'Claim' buttons in the cart (/shop/claimreward) incl. free product, free shipping, multi-product choice",
+      "Shareable /coupon/<code> links (coupon.share wizard + website_links shortener) that pre-load a code into the cart",
+      "Gift cards and eWallets usable as payment at checkout, with /wallet/top_up to buy/recharge a wallet",
+      "Website-published & website-scoped programs (ecommerce_ok, website.multi.mixin), with editor toggle for the code box",
+      "Payment-time guard that re-validates rewards/total before finalizing the transaction"
+    ],
+    "typical_fits": [
+      "Percentage / fixed discount codes and auto-applied promotions in the storefront",
+      "Gift-card sale and redemption fully online; eWallet top-up & spend",
+      "Free-shipping promotions discounting the carrier line",
+      "Multi-website stores with per-website promotion scoping and campaign coupon links"
+    ],
+    "common_gaps": [
+      "Requires website_sale + sale_loyalty + payment installed and configured; does nothing standalone",
+      "Loyalty (points-earning nominative) cards apply but cannot be entered by code in the cart -- claimed only when logged in",
+      "Bespoke storefront promo UI/UX (banners, tiered offers) beyond the built-in cart box needs theme/dev work",
+      "External coupon-platform / affiliate-network or marketplace promotion sync (no outbound integration here)",
+      "Complex stacking / exclusivity rules beyond loyalty's built-in program logic"
+    ],
+    "drive_hints": [
+      "odoo shell: env['loyalty.program'].search([('ecommerce_ok','=',True)]).mapped(('name','program_type','website_id'))",
+      "odoo shell: so = env['sale.order'].search([('website_id','!=',False)], limit=1); print(so._try_apply_code('YOURCODE'))",
+      "curl -s -c cj 'http://localhost:8069/coupon/TESTCODE?r=/shop'  # share-link entry (public)",
+      "curl: POST /shop/claimreward with reward_id (+ product_id for multi-product) after building a cart session",
+      "odoo shell: print(env['coupon.share'].create_share_action(program=env['loyalty.program'].search([('ecommerce_ok','=',True)], limit=1)))"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Exact stacking / priority order in which multiple website programs and auto-rewards combine on one cart (resolved inside sale_loyalty._update_programs_and_rewards, not here).",
+    "Whether a pending shared coupon (pending_coupon_code) can silently expire between landing on /shop and the first cart add.",
+    "How eWallet / gift-card partial balances are tracked across multiple website orders (loyalty.history vs. card points) and any double-spend protection beyond the pre-payment re-validation.",
+    "Interaction of website-scoped _constrains_code uniqueness with multi-website portals sharing one loyalty.program."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/website_sale_loyalty.facts.json",
+    "tools": [
+      "code-read",
+      "extract_frontend.py",
+      "extract_module.py"
+    ],
+    "odoo_version": "19.0"
+  }
+}

@@ -1,0 +1,274 @@
+{
+  "subsystem": "account_edi",
+  "evidence": {
+    "manifest": {
+      "name": "Import/Export Invoices From XML/PDF",
+      "category": "Accounting/Accounting",
+      "summary": null,
+      "depends": [
+        "account"
+      ],
+      "auto_install": false,
+      "application": false
+    },
+    "models": [
+      {
+        "_name": "account.edi.document",
+        "_description": "Electronic Document for an account.move",
+        "fields": 9,
+        "relations": [
+          "move_id->account.move",
+          "edi_format_id->account.edi.format",
+          "attachment_id->ir.attachment"
+        ]
+      },
+      {
+        "_name": "account.edi.format",
+        "_description": "EDI format",
+        "fields": 2,
+        "relations": []
+      },
+      {
+        "_name": "account.journal (inherit)",
+        "_description": "Journal — EDI format selection",
+        "fields": 2,
+        "relations": [
+          "edi_format_ids->account.edi.format",
+          "compatible_edi_ids->account.edi.format"
+        ]
+      },
+      {
+        "_name": "account.move (inherit)",
+        "_description": "Journal Entry — EDI lifecycle fields",
+        "fields": 9,
+        "relations": [
+          "edi_document_ids->account.edi.document"
+        ]
+      },
+      {
+        "_name": "account.move.send (inherit)",
+        "_description": "Send & Print — EDI attachment hook",
+        "fields": 0,
+        "relations": []
+      },
+      {
+        "_name": "ir.actions.report (inherit)",
+        "_description": "Report — embed EDI XML in invoice PDF",
+        "fields": 0,
+        "relations": []
+      },
+      {
+        "_name": "ir.attachment (inherit)",
+        "_description": "Attachment — EDI file handling",
+        "fields": 0,
+        "relations": []
+      }
+    ],
+    "routes": [],
+    "security": {
+      "access_rules": 4,
+      "record_rules": 0,
+      "groups": 0
+    },
+    "views": {
+      "form": 0,
+      "list": 2,
+      "tree": 0,
+      "kanban": 0,
+      "search": 0,
+      "pivot": 0,
+      "graph": 0,
+      "calendar": 0,
+      "activity": 0
+    },
+    "frontend": {
+      "present": false,
+      "js_files": 0,
+      "xml_templates": 0,
+      "owl_components": [],
+      "registry_adds": [],
+      "patches": [],
+      "services": [],
+      "asset_bundles": {}
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": false,
+      "endpoints": [],
+      "files": []
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    },
+    "behavioral_notes": [
+      {
+        "element": "account.move._post (override)",
+        "observation": "On posting an invoice, for every account.edi.format enabled on the journal (journal.edi_format_ids) whose _get_move_applicability(move) is truthy, the override creates or resets an account.edi.document in state 'to_send' (one per (move, format), enforced by the UNIQUE(edi_format_id, move_id) constraint). It first runs _check_move_configuration and raises UserError on missing data, then immediately processes synchronous formats via _process_documents_no_web_services and triggers the account_edi.ir_cron_edi_network cron for web-service formats. This is the entry point that turns a posted accounting move into pending electronic documents — invisible in metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "account.edi.format._get_move_applicability / _post_invoice_edi pluggable hooks",
+        "observation": "account.edi.format is a near-empty abstract base (only name/code fields) whose behavioral methods — _get_move_applicability (returns a dict of post/cancel/post_batching/cancel_batching/edi_content callables), _needs_web_services, _is_compatible_with_journal, _check_move_configuration, _prepare_invoice_report — are stubs explicitly marked 'TO OVERRIDE'. Country localization modules (l10n_*) subclass this model to register concrete e-invoice formats (UBL, Factur-X, FatturaPA, etc.); the framework itself ships no format. The format object is therefore a pluggable strategy: the move-to-XML generation, schema choice and acknowledgement parsing all live in the subclasses, not here.",
+        "source": "code-read"
+      },
+      {
+        "element": "account.edi.document._process_documents_web_services + _cron_process_documents_web_services",
+        "observation": "account.edi.document.state drives a per-(move,format) state machine: to_send -> sent (post flow) and to_cancel -> cancelled (cancel flow), with blocking_level info/warning/error gating retries. _prepare_jobs groups documents by (format,state,company,batching-key) into jobs; _process_job calls the format's post/cancel callable, then _postprocess_post_edi_results writes the returned attachment onto attachment_id (the EDI XML attached to the invoice) and flips state to 'sent', or records the error/blocking_level. The _cron_process_documents_web_services cron searches posted moves with documents in to_send/to_cancel and non-error blocking, locks rows (lock_for_update), commits between jobs, and re-triggers itself while jobs remain — this is the asynchronous send/ack loop. A fully-approved cancel even drives the underlying move to button_draft()+button_cancel().",
+        "source": "code-read"
+      },
+      {
+        "element": "account.move cancel/draft EDI gating (button_cancel / button_draft / button_cancel_posted_moves)",
+        "observation": "Once an EDI document is 'sent' via a web service, the move can no longer be freely reset: button_draft raises UserError telling the user to use 'Request EDI Cancellation' instead, button_cancel flips sent documents to 'to_cancel' (request) and others straight to 'cancelled', and button_cancel_posted_moves / button_abandon_cancel_posted_moves manage the cancellation-request lifecycle with chatter messages. _is_ready_to_be_sent is overridden to block the customer email until the EDI document leaves 'to_send'. These legal-immutability couplings between e-invoice transmission state and accounting document state are not expressible in metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "frontend (OWL/JS)",
+        "observation": "No frontend assets: 0 JS files, 0 XML templates, 0 OWL components, 0 registry registrations, 0 patches, no asset bundles. The module is pure server-side EDI plumbing; its UI surfaces (cancel/retry buttons, EDI state, error messages) are rendered through inherited account.move views, not through new OWL components.",
+        "source": "static"
+      },
+      {
+        "element": "external integrations",
+        "observation": "0 outbound HTTP call sites, no SDK imports, uses_api_keys=False, no endpoints. The base framework defines the web-service hooks (_needs_web_services / _process_documents_web_services) but performs no external calls itself — the actual government/clearance-platform connectivity lives in the localization subclasses.",
+        "source": "static"
+      }
+    ]
+  },
+  "it_architecture": {
+    "application": "account_edi (Electronic Data Interchange framework for invoices — application component extending account)",
+    "software_services": [],
+    "data_objects": [
+      "account.edi.document",
+      "account.edi.format",
+      "account.journal",
+      "account.move",
+      "account.move.send",
+      "ir.actions.report",
+      "ir.attachment"
+    ],
+    "logical_data_erm": [
+      "account.edi.document -> account.move",
+      "account.edi.document -> account.edi.format",
+      "account.edi.document -> ir.attachment",
+      "account.journal -> account.edi.format (edi_format_ids)",
+      "account.move -> account.edi.document (edi_document_ids)"
+    ],
+    "information_flows": [
+      "depends: account",
+      "side-effect: account.move._post -> creates account.edi.document(state=to_send) per applicable journal format, runs synchronous formats, triggers EDI cron",
+      "side-effect: account.edi.document._process_documents_web_services -> calls format post/cancel callables, attaches generated EDI XML (attachment_id) to the move, advances state to_send->sent / to_cancel->cancelled",
+      "side-effect: account.move.button_cancel/button_cancel_posted_moves -> requests EDI cancellation (to_cancel); a fully-approved cancel drives the move to draft+cancel",
+      "control: ir_cron_edi_network cron re-triggers itself while web-service jobs remain (async send/ack loop)",
+      "extension point: account.edi.format subclassed by l10n_* localizations to implement concrete e-invoice formats and clearance-platform calls"
+    ],
+    "frontend_components": [],
+    "external_integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "endpoints": []
+    }
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Generate Structured E-Invoice Documents (move -> XML/EDI)",
+      "Transmit E-Invoices via Pluggable Formats & Web Services",
+      "Track E-Invoice Lifecycle & Acknowledgements (to_send/sent/to_cancel/cancelled)",
+      "Request & Manage E-Invoice Cancellation",
+      "Attach EDI Documents to Invoices and Outgoing Mail",
+      "Enable Country-Specific E-Invoicing Compliance (via l10n_* extensions)"
+    ],
+    "value_streams": [
+      "E-Invoice Issue: post invoice -> generate EDI document(to_send) -> transmit (sync or via cron web service) -> sent + XML attached",
+      "E-Invoice Cancellation: request cancellation (to_cancel) -> web-service ack -> cancelled (and underlying move drafted/cancelled)"
+    ],
+    "information_concepts": [
+      "account.edi.document (electronic document for a move)",
+      "account.edi.format (EDI format definition)",
+      "account.move (invoice/journal entry being interchanged)",
+      "account.journal (carries enabled EDI formats)",
+      "ir.attachment (generated EDI file)"
+    ],
+    "organization": [],
+    "products": [],
+    "policies": [
+      "UNIQUE(edi_format_id, move_id): at most one EDI document per move per format",
+      "Posted invoice with a 'sent' web-service EDI cannot be reset to draft — must go through 'Request EDI Cancellation'",
+      "Customer email blocked (_is_ready_to_be_sent) until the EDI document leaves 'to_send'",
+      "blocking_level=error halts processing/retry of a document until cleared",
+      "EDI cron only processes posted moves with non-error documents and locks rows to prevent double transmission"
+    ],
+    "stakeholders": [
+      "Accountant / Billing user (posts invoices, triggers EDI)",
+      "Customer / Vendor (recipient of the structured e-invoice)",
+      "Tax authority / clearance platform (e-invoicing compliance endpoint, via l10n_*)",
+      "Localization developer (subclasses account.edi.format)"
+    ],
+    "strategy": null,
+    "metrics": [
+      "edi_error_count (number of EDIs in error per move)",
+      "edi_state aggregated per move (to_send/sent/to_cancel/cancelled)",
+      "edi_web_services_to_process (pending web-service documents)"
+    ]
+  },
+  "classification": {
+    "value_model": "support",
+    "activity_class": "support",
+    "apqc_category": "9.0 Manage Financial Resources",
+    "rationale": "account_edi is financial-document interchange infrastructure that extends the accounting backbone (depends solely on account); it has no value stream of its own and creates no primary value — it merely encodes and transmits the invoices that primary activities (sale -> customer invoice) already produced. It is a support activity in Porter/APQC terms, mapping to APQC 9.0 Manage Financial Resources, specifically the invoice-processing / e-invoicing-compliance facet of 9.2.x Process accounts receivable (the structured electronic delivery and legal acknowledgement of the account.move customer invoice). The module is a pluggable framework: account.edi.format is an abstract strategy subclassed by country localizations, so account_edi itself is plumbing, not a revenue- or production-bearing process."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "per-(move,format) electronic document lifecycle: to_send -> sent -> to_cancel -> cancelled",
+      "automatic EDI document creation on invoice posting for each format enabled on the journal",
+      "synchronous and asynchronous (cron/web-service) transmission flows with batching",
+      "pluggable account.edi.format strategy (post/cancel/edi_content/applicability/web-service hooks) for localizations",
+      "generated EDI XML attached to the invoice and added to outgoing 'Send & Print' mail",
+      "error/blocking-level handling, retry, and EDI cancellation-request workflow",
+      "journal-level configuration of compatible / enabled EDI formats"
+    ],
+    "typical_fits": [
+      "country e-invoicing via l10n_* modules that subclass account.edi.format (UBL, Factur-X, FatturaPA, etc.)",
+      "embedding the structured invoice XML into the invoice PDF for hybrid delivery",
+      "asynchronous clearance/transmission via the EDI cron without blocking posting"
+    ],
+    "common_gaps": [
+      "no concrete EDI format ships in the base framework — a localization module is required to do anything",
+      "no inbound EDI import/parsing pipeline beyond the report/attachment hooks (vendor-bill capture lives elsewhere)",
+      "direct connectivity to specific government clearance platforms (auth, certificates, endpoints) is localization-specific",
+      "no dedicated frontend/dashboard — status surfaces only through inherited account.move views"
+    ],
+    "drive_hints": [
+      "odoo shell: env['account.edi.format'].search([]).mapped(('code','name'))  # which formats are installed (empty without l10n_*)",
+      "odoo shell: env['account.edi.document'].search([]).mapped(('state','edi_format_id.code'))  # lifecycle states in play",
+      "odoo shell: env.ref('account_edi.ir_cron_edi_network').method_direct_trigger()  # run the web-service processing cron",
+      "odoo shell: m = env['account.move'].search([('move_type','=','out_invoice'),('state','=','posted')], limit=1); print(m.edi_state, m.edi_document_ids.mapped('state'))"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Which l10n_* modules subclass account.edi.format and what concrete formats / clearance endpoints they implement (not in this module's code).",
+    "Exact batching semantics (post_batching/cancel_batching keys) used by real localization formats.",
+    "How inbound structured invoices (vendor bills) are parsed — only the report/attachment-side hooks exist here.",
+    "Interaction with the newer account.move.send / account_edi_ubl_cii stack versus this legacy EDI framework."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/account_edi.facts.json",
+    "tools": [
+      "apqc_odoo_map.tsv",
+      "code-read (account_edi_document.py, account_edi_format.py, account_move.py)",
+      "extract_frontend.py",
+      "extract_module.py"
+    ],
+    "odoo_version": "19.0"
+  }
+}

@@ -1,0 +1,449 @@
+{
+  "subsystem": "im_livechat",
+  "evidence": {
+    "manifest": {
+      "name": "Live Chat",
+      "category": "Website/Live Chat",
+      "summary": "Chat with your website visitors",
+      "depends": [
+        "mail",
+        "rating",
+        "digest",
+        "utm"
+      ],
+      "auto_install": false,
+      "application": true
+    },
+    "models": [
+      {
+        "_name": "im_livechat.channel",
+        "_description": "Livechat Channel",
+        "fields": 22,
+        "relations": [
+          "user_ids->res.users",
+          "channel_ids->discuss.channel",
+          "rule_ids->im_livechat.channel.rule",
+          "available_operator_ids->res.users"
+        ]
+      },
+      {
+        "_name": "discuss.channel",
+        "_description": "Chat Session (livechat extension of discuss.channel)",
+        "fields": 31,
+        "relations": [
+          "livechat_channel_id->im_livechat.channel",
+          "livechat_operator_id->res.partner",
+          "livechat_channel_member_history_ids->im_livechat.channel.member.history",
+          "chatbot_current_step_id->chatbot.script.step",
+          "livechat_conversation_tag_ids->im_livechat.conversation.tag"
+        ]
+      },
+      {
+        "_name": "im_livechat.channel.rule",
+        "_description": "Livechat Channel Rules",
+        "fields": 8,
+        "relations": [
+          "channel_id->im_livechat.channel",
+          "chatbot_script_id->chatbot.script",
+          "country_ids->res.country"
+        ]
+      },
+      {
+        "_name": "im_livechat.channel.member.history",
+        "_description": "Keep the channel member history",
+        "fields": 26,
+        "relations": [
+          "member_id->discuss.channel.member",
+          "channel_id->discuss.channel",
+          "partner_id->res.partner",
+          "rating_id->rating.rating",
+          "agent_expertise_ids->im_livechat.expertise"
+        ]
+      },
+      {
+        "_name": "chatbot.script",
+        "_description": "Chatbot Script",
+        "fields": 7,
+        "relations": [
+          "script_step_ids->chatbot.script.step",
+          "operator_partner_id->res.partner"
+        ]
+      },
+      {
+        "_name": "chatbot.script.step",
+        "_description": "Chatbot Script Step",
+        "fields": 10,
+        "relations": [
+          "chatbot_script_id->chatbot.script",
+          "answer_ids->chatbot.script.answer",
+          "operator_expertise_ids->im_livechat.expertise"
+        ]
+      },
+      {
+        "_name": "im_livechat.expertise",
+        "_description": "Live Chat Expertise",
+        "fields": 2,
+        "relations": [
+          "user_ids->res.users"
+        ]
+      },
+      {
+        "_name": "im_livechat.report.channel",
+        "_description": "Livechat Support Channel Report",
+        "fields": 33,
+        "relations": [
+          "channel_id->discuss.channel",
+          "livechat_channel_id->im_livechat.channel",
+          "chatbot_script_id->chatbot.script"
+        ]
+      }
+    ],
+    "routes": [
+      {
+        "paths": [
+          "/im_livechat/support/<int:channel_id>",
+          "/im_livechat/loader/<int:channel_id>"
+        ],
+        "auth": "public",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/im_livechat/get_session",
+          "/im_livechat/feedback",
+          "/im_livechat/history",
+          "/im_livechat/visitor_leave_session"
+        ],
+        "auth": "public",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/chatbot/restart",
+          "/chatbot/answer/save",
+          "/chatbot/step/trigger",
+          "/chatbot/step/validate_email"
+        ],
+        "auth": "public",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/im_livechat/cors/get_session",
+          "/im_livechat/cors/init",
+          "/im_livechat/cors/message/post",
+          "/im_livechat/cors/feedback"
+        ],
+        "auth": "public",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/im_livechat/email_livechat_transcript",
+          "/im_livechat/session/update_note",
+          "/im_livechat/session/update_status",
+          "/im_livechat/conversation/update_tags"
+        ],
+        "auth": "user",
+        "type": "jsonrpc"
+      }
+    ],
+    "security": {
+      "access_rules": 15,
+      "record_rules": 3,
+      "groups": 2
+    },
+    "views": {
+      "form": 8,
+      "list": 12,
+      "kanban": 5,
+      "search": 6,
+      "pivot": 2,
+      "graph": 2
+    },
+    "frontend": {
+      "present": true,
+      "js_files": 102,
+      "xml_templates": 31,
+      "owl_components": [
+        "CloseConfirmation",
+        "ColorsResetButton",
+        "ConversationTagEdit",
+        "ExpertiseTagsAutocomplete",
+        "FeedbackPanel",
+        "LivechatButton",
+        "LivechatChannelCommand",
+        "LivechatChannelInfoList",
+        "LivechatCommandDialog",
+        "LivechatRoot",
+        "TranscriptSender"
+      ],
+      "registry_adds": [
+        "command_provider:im_livechat.channel_join_leave",
+        "discuss.channel_commands:history",
+        "fields:boolean_phone",
+        "fields:im_livechat.one2many_names",
+        "formatters:im_livechat.rating_percentage",
+        "services:im_livechat.autopopup",
+        "services:im_livechat.boot",
+        "services:im_livechat.history_service",
+        "services:im_livechat.livechat",
+        "view_widgets:colors_reset_button",
+        "views:im_livechat.discuss_channel_kanban",
+        "views:im_livechat.discuss_channel_list",
+        "views:im_livechat.discuss_channel_looking_for_help_kanban",
+        "views:im_livechat.livechat_channel_kanban",
+        "views:livechat_session_form"
+      ],
+      "patches": [
+        "AttachmentUploadService.prototype",
+        "ChannelMemberList.prototype",
+        "ChatBubble.prototype",
+        "ChatHub.prototype",
+        "ChatWindow.prototype",
+        "Composer.prototype",
+        "DiscussApp.prototype",
+        "DiscussSidebarCategory.prototype",
+        "DiscussSidebarChannel.prototype",
+        "Message.prototype",
+        "MessagingMenu.prototype",
+        "ResPartner.prototype",
+        "ResUsers.prototype",
+        "Store.prototype",
+        "SuggestionService.prototype",
+        "Thread.prototype",
+        "ThreadIcon.prototype",
+        "busParametersService",
+        "chatHubService",
+        "loader",
+        "mailPopoutService"
+      ],
+      "services": [
+        "display_name"
+      ],
+      "asset_bundles": {
+        "web.assets_frontend": 4,
+        "web.assets_backend": 11,
+        "im_livechat.assets_embed_core": 12,
+        "im_livechat.assets_embed_external": 26,
+        "im_livechat.assets_embed_cors": 2,
+        "im_livechat.assets_livechat_support_tours": 7,
+        "mail.assets_public": 2
+      }
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": true,
+      "endpoints": [
+        "https://www.odoo.com/app/live-chat"
+      ],
+      "files": [
+        "__manifest__.py"
+      ]
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    },
+    "behavioral_notes": [
+      {
+        "element": "im_livechat.channel._get_operator / _get_less_active_operator",
+        "observation": "Visitor-to-operator matching is a multi-criteria load balancer, not visible in metadata. _compute_available_operator_ids first filters res.users by live presence (presence_ids.status=='online'), max_sessions limit, and block_assignment_during_call (skip agents in a call). _get_operator then runs a raw SQL query over im_livechat.channel.member.history + discuss_channel_rtc_session to rank agents by active-chat count and in-call status, applies a preference ladder (same_language -> all/one expertise -> same_country -> least-active), honours a 120s BUFFER_TIME between two sessions for the same operator, sticks to previous_operator_id when still suitable, and otherwise picks the least-active via random tie-break.",
+        "source": "code-read"
+      },
+      {
+        "element": "im_livechat.channel._get_livechat_discuss_channel_vals",
+        "observation": "Channel routing: a live chat session is materialized as a discuss.channel with channel_type='livechat'. The vals builder assembles channel_member_ids (one 'agent'/'bot' member for the operator plus a 'visitor' member for the mail.guest or logged-in res.users), sets livechat_operator_id, livechat_channel_id, livechat_status='in_progress', livechat_failure ('no_answer' for human agent else 'no_failure'), and—when the operator_model is 'chatbot.script'—seeds chatbot_current_step_id from the script's welcome steps. A CHECK constraint enforces livechat_operator_id is non-null for livechat channels. The controller (/im_livechat/get_session) then _broadcast()s the channel to the operator over the bus.",
+        "source": "code-read"
+      },
+      {
+        "element": "discuss.channel (livechat) ratings & escalation via rating.mixin",
+        "observation": "discuss.channel inherits rating.mixin with _rating_get_parent_field_name()='livechat_channel_id' so each session's rating rolls up to its im_livechat.channel (rating.parent.mixin, _rating_satisfaction_days=14). The /im_livechat/feedback controller creates exactly ONE rating.rating per session (1/3/5 = bad/ok/good), posts a o_mail_notification feedback message, and sets rated_partner_id to the operator. Escalation is derived: livechat_is_escalated = (len(agent history) > 1) and livechat_outcome computes to 'escalated' / 'no_answer' / 'no_agent' / 'no_failure'; _forward_human_operator hands a chatbot/AI conversation off to a live agent (adds the agent member, removes the bot, rebroadcasts).",
+        "source": "code-read"
+      },
+      {
+        "element": "session lifecycle, bus push & autovacuum GC",
+        "observation": "Closing is event-driven, not state-machine metadata: _close_livechat_session / _action_unfollow set livechat_end_dt when the visitor or the last operator leaves, leave any RTC call, post a 'Visitor left' notification, and bus_send the update. write() pushes 'need_help' (looking-for-help) deltas to the im_livechat_group_user bus subchannel so any operator can claim the chat (livechat_join_channel_needing_help). Two @api.autovacuum crons garbage-collect empty livechat sessions older than 1h and bot-only idle sessions older than 1 day.",
+        "source": "code-read"
+      },
+      {
+        "element": "embeddable livechat OWL widget (Shadow DOM) + CORS routing",
+        "observation": "The visitor-facing UI is an OWL app, LivechatRoot, rendering ChatHub + LivechatButton inside a Shadow DOM (styles isolated from the host site). External sites embed it via a <script> tag pointing at /im_livechat/loader/<channel_id>, which boots from the im_livechat.assets_embed_external bundle; the LivechatController._is_cors_request() detects cross-origin requests (referer host/scheme mismatch) and swaps to im_livechat.assets_embed_cors so all RPCs route to the /im_livechat/cors/* public endpoints with cors='*'. The im_livechat.livechat OWL service holds session state and persists the previous operator in expirableStorage.",
+        "source": "static"
+      }
+    ]
+  },
+  "it_architecture": {
+    "application": "im_livechat (Live Chat application component; real-time customer-service layer on mail/discuss + bus)",
+    "software_services": [
+      "/im_livechat/support/<channel_id>",
+      "/im_livechat/loader/<channel_id>",
+      "/im_livechat/get_session",
+      "/im_livechat/feedback",
+      "/im_livechat/history",
+      "/im_livechat/visitor_leave_session",
+      "/chatbot/restart|answer/save|step/trigger|step/validate_email",
+      "/im_livechat/cors/* (cross-origin embed mirror)",
+      "/im_livechat/email_livechat_transcript",
+      "/im_livechat/session/update_note|update_status",
+      "/im_livechat/conversation/update_tags|write_expertises"
+    ],
+    "data_objects": [
+      "im_livechat.channel",
+      "discuss.channel",
+      "im_livechat.channel.rule",
+      "im_livechat.channel.member.history",
+      "chatbot.script",
+      "chatbot.script.step",
+      "chatbot.script.answer",
+      "chatbot.message",
+      "im_livechat.expertise",
+      "im_livechat.conversation.tag",
+      "im_livechat.report.channel"
+    ],
+    "logical_data_erm": [
+      "im_livechat.channel -> res.users (operators / user_ids)",
+      "im_livechat.channel -> im_livechat.channel.rule (rule_ids)",
+      "discuss.channel -> im_livechat.channel (livechat_channel_id)",
+      "discuss.channel -> res.partner (livechat_operator_id)",
+      "discuss.channel -> im_livechat.channel.member.history (member history)",
+      "discuss.channel -> chatbot.script.step (chatbot_current_step_id)",
+      "im_livechat.channel.rule -> chatbot.script (chatbot_script_id)",
+      "im_livechat.channel.member.history -> rating.rating (rating_id)",
+      "chatbot.script -> chatbot.script.step -> chatbot.script.answer"
+    ],
+    "information_flows": [
+      "depends: mail (discuss.channel + mail.message + bus), rating, digest, utm",
+      "side-effect: /im_livechat/get_session -> creates discuss.channel(type='livechat') + members + _broadcast to operator over bus",
+      "side-effect: _get_operator -> SQL over im_livechat.channel.member.history + discuss_channel_rtc_session to pick the operator",
+      "side-effect: /im_livechat/feedback -> creates one rating.rating per session, rolled up to im_livechat.channel via rating.mixin",
+      "side-effect: _forward_human_operator -> chatbot/AI hand-off to a live agent (add agent member, drop bot, rebroadcast)",
+      "side-effect: write(livechat_status='need_help') -> bus push to im_livechat_group_user LOOKING_FOR_HELP subchannel",
+      "side-effect: _email_livechat_transcript -> mail.mail; /im_livechat/download_transcript -> QWeb PDF report",
+      "side-effect: digest.digest KPIs (livechat rating / conversations / response time) feed periodic digest emails"
+    ],
+    "frontend_components": [
+      "CloseConfirmation",
+      "ColorsResetButton",
+      "ConversationTagEdit",
+      "ExpertiseTagsAutocomplete",
+      "FeedbackPanel",
+      "LivechatButton",
+      "LivechatChannelCommand",
+      "LivechatChannelInfoList",
+      "LivechatCommandDialog",
+      "LivechatRoot",
+      "TranscriptSender"
+    ]
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Operate Real-Time Live Chat Support",
+      "Route & Match Visitors to Operators (availability, language, expertise, country, load)",
+      "Automate First-Line Support with Chatbot Scripts",
+      "Capture Customer Satisfaction Ratings & Feedback",
+      "Qualify & Escalate Conversations (tags, notes, looking-for-help, human hand-off)",
+      "Analyze Live Chat Performance (sessions, response time, ratings)"
+    ],
+    "value_streams": [
+      "Visitor-to-Resolution: website visitor opens chat -> rule/chatbot match -> operator assignment (or bot) -> live conversation over bus -> optional escalation/hand-off -> session close -> rating + transcript"
+    ],
+    "information_concepts": [
+      "im_livechat.channel (live chat channel / button)",
+      "discuss.channel (live chat session)",
+      "im_livechat.channel.member.history (operator/visitor session record)",
+      "chatbot.script (automated operator)",
+      "rating.rating (visitor satisfaction)",
+      "res.partner / mail.guest (visitor)",
+      "res.users (operator/agent)"
+    ],
+    "organization": [
+      "im_livechat.im_livechat_group_user (Live Chat operator)",
+      "im_livechat.im_livechat_group_manager (Live Chat administrator)"
+    ],
+    "products": [],
+    "policies": [
+      "3 record rules + 15 ACLs scoping operator vs manager vs public/guest access to channels and sessions",
+      "CHECK constraints: livechat_operator_id required for livechat channels; closed session has no status; max_sessions > 0",
+      "im_livechat.channel.rule: per-URL/per-country display/auto-popup/hide button and chatbot-enable conditions",
+      "BUFFER_TIME (120s) anti-flood between two sessions for the same operator; max_sessions / block_assignment_during_call capacity caps",
+      "autovacuum GC of empty (1h) and bot-only idle (1d) sessions"
+    ],
+    "stakeholders": [
+      "Website visitor (res.partner / mail.guest)",
+      "Live Chat operator (res.users in im_livechat_group_user)",
+      "Live Chat manager (im_livechat_group_manager)",
+      "Chatbot (chatbot.script operator_partner_id)"
+    ],
+    "strategy": null,
+    "metrics": [
+      "im_livechat.report.channel (sessions, time-to-answer, duration, ratings, bot vs agent, calls)",
+      "digest KPIs: kpi_livechat_rating, kpi_livechat_conversations, kpi_livechat_response",
+      "im_livechat.channel rating satisfaction (last 14 days), ongoing_session_count, remaining_session_capacity"
+    ]
+  },
+  "classification": {
+    "value_model": "network",
+    "activity_class": "primary",
+    "apqc_category": "6.0 Manage Customer Service",
+    "rationale": "im_livechat is a value-network (Stabell & Fjeldstad mediating technology): its core value is connecting website visitors with operators/chatbots in real time over the bus, and the central asset is the matching/routing layer (_get_operator: availability, language, expertise, country, load balancing) that mediates between two populations of customers (visitors and agents). It runs the network-infrastructure-operation activity (provisioning + operating the chat service) and the network-promotion/contract-management activity (channel rules, auto-popup, chatbot gating). It is the primary customer-service provisioning activity (APQC 6.0 Manage Customer Service), building on mail/discuss + bus rather than moving a document down a chain."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "Embeddable live chat widget (Shadow-DOM OWL) for Odoo and external/CORS sites",
+      "Operator assignment by availability + language + expertise + country + least-active load balancing",
+      "Channel rules (per-URL regex, per-country, auto-popup timer, show/hide button)",
+      "Scripted chatbots with steps/answers, email validation, forward-to-operator hand-off",
+      "Per-session satisfaction rating, feedback message, review-link redirect",
+      "Conversation tags, internal notes, looking-for-help / escalation queue over the bus",
+      "Email + PDF conversation transcript",
+      "Live chat analytics (im_livechat.report.channel) and digest KPIs"
+    ],
+    "typical_fits": [
+      "Website customer support / pre-sales chat out of the box",
+      "Mixed bot-then-human first-line support",
+      "Multi-operator teams with language/expertise-based routing",
+      "Embedding the widget on a non-Odoo marketing site via the loader + CORS endpoints"
+    ],
+    "common_gaps": [
+      "Custom routing/SLA logic beyond the built-in preference ladder and buffer",
+      "Advanced AI/LLM agents beyond scripted chatbot.script (separate module/integration)",
+      "Deep CRM/helpdesk hand-off (lead/ticket creation) requires bridge modules (crm_livechat, helpdesk)",
+      "Channel-specific working-hours / availability calendars beyond live presence",
+      "Custom satisfaction surveys beyond the 3-point good/ok/bad rating"
+    ],
+    "drive_hints": [
+      "odoo shell: env['im_livechat.channel'].search([]).mapped(lambda c: (c.name, c.available_operator_ids.mapped('name')))",
+      "odoo shell: env['discuss.channel'].search([('channel_type','=','livechat')], limit=5).mapped(('name','livechat_status','livechat_outcome'))",
+      "curl jsonrpc POST /im_livechat/get_session with {channel_id, persisted:false} (auth=public) to see operator matching",
+      "odoo shell: env['im_livechat.report.channel'].read_group([], ['duration:avg','rating:avg'], ['livechat_channel_id'])"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "stakeholders": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Exact tie-break and fairness behaviour of _get_operator under high concurrent load (random.choice among least-active).",
+    "How AI-agent operators (beyond scripted chatbot.script) plug into _get_operator_info / _forward_human_operator in enterprise.",
+    "Precise bus subchannel topology for cross-origin (CORS) embedded visitors vs in-Odoo sessions."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/im_livechat.facts.json",
+    "tools": [
+      "code-read",
+      "extract_frontend.py",
+      "extract_module.py",
+      "Grep/Read on addons/im_livechat"
+    ],
+    "odoo_version": "19.0"
+  }
+}

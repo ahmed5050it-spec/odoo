@@ -1,0 +1,362 @@
+{
+  "subsystem": "website_crm_partner_assign",
+  "evidence": {
+    "manifest": {
+      "name": "Resellers",
+      "category": "Website/Website",
+      "summary": "Publish your resellers/partners and forward leads to them",
+      "version": "1.2",
+      "depends": [
+        "base_geolocalize",
+        "crm",
+        "account",
+        "partnership",
+        "website_partner",
+        "website_google_map",
+        "portal"
+      ],
+      "auto_install": false,
+      "application": false
+    },
+    "models": [
+      {
+        "_name": "crm.lead.forward.to.partner",
+        "_description": "Lead forward to partner",
+        "fields": 4,
+        "relations": [
+          "partner_id->res.partner",
+          "assignation_lines->crm.lead.assignation"
+        ]
+      },
+      {
+        "_name": "crm.lead.assignation",
+        "_description": "Lead Assignation",
+        "fields": 6,
+        "relations": [
+          "forward_id->crm.lead.forward.to.partner",
+          "lead_id->crm.lead",
+          "partner_assigned_id->res.partner"
+        ]
+      },
+      {
+        "_name": "crm.partner.report.assign",
+        "_description": "CRM Partnership Analysis",
+        "fields": 10,
+        "relations": [
+          "partner_id->res.partner",
+          "grade_id->res.partner.grade",
+          "activation->res.partner.activation",
+          "user_id->res.users",
+          "country_id->res.country"
+        ]
+      },
+      {
+        "_name": "res.partner.activation",
+        "_description": "Partner Activation",
+        "fields": 3,
+        "relations": []
+      },
+      {
+        "_name": "res.partner.grade",
+        "_description": "Partner Level (inherits res.partner.grade from partnership + website.published.mixin)",
+        "fields": 1,
+        "relations": []
+      },
+      {
+        "_name": "crm.lead (inherit)",
+        "_description": "Lead/Opportunity extended with partner assignment + geo-localization",
+        "fields": 5,
+        "relations": [
+          "partner_assigned_id->res.partner",
+          "partner_declined_ids->res.partner"
+        ]
+      },
+      {
+        "_name": "res.partner (inherit)",
+        "_description": "Partner extended with level weight, activation, partnership/review dates, implementation refs",
+        "fields": 9,
+        "relations": [
+          "activation->res.partner.activation",
+          "assigned_partner_id->res.partner",
+          "implemented_partner_ids->res.partner"
+        ]
+      },
+      {
+        "_name": "website (inherit)",
+        "_description": "Website extended with /partners suggested controller",
+        "fields": 0,
+        "relations": []
+      }
+    ],
+    "routes": [
+      {
+        "paths": ["/my/leads", "/my/leads/page/<int:page>"],
+        "auth": "user",
+        "type": "http"
+      },
+      {
+        "paths": ["/my/opportunities", "/my/opportunities/page/<int:page>"],
+        "auth": "user",
+        "type": "http"
+      },
+      {
+        "paths": ["/my/lead/<model('crm.lead'):lead>"],
+        "auth": "user",
+        "type": "http"
+      },
+      {
+        "paths": ["/my/opportunity/<model('crm.lead'):opp>"],
+        "auth": "user",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/partners",
+          "/partners/page/<int:page>",
+          "/partners/grade/<model('res.partner.grade'):grade>",
+          "/partners/country/<model('res.country'):country>",
+          "/partners/grade/<grade>/country/<country>"
+        ],
+        "auth": "public",
+        "type": "http"
+      },
+      {
+        "paths": ["partners_detail (/partners/<partner>)"],
+        "auth": "public",
+        "type": "http"
+      }
+    ],
+    "security": {
+      "access_rules": 11,
+      "record_rules": 4,
+      "groups": 0
+    },
+    "views": {
+      "form": 7,
+      "list": 1,
+      "tree": 0,
+      "kanban": 0,
+      "search": 1,
+      "pivot": 0,
+      "graph": 0,
+      "calendar": 0,
+      "activity": 0
+    },
+    "frontend": {
+      "present": true,
+      "js_files": 4,
+      "xml_templates": 2,
+      "owl_components": [],
+      "registry_adds": [
+        "public.interactions:website_crm_partner_assign.crm_partner_assign"
+      ],
+      "patches": [],
+      "services": [],
+      "asset_bundles": {
+        "web.assets_frontend": 1,
+        "website.website_builder_assets": 1,
+        "html_builder.assets_inside_builder_iframe": 1,
+        "web.assets_tests": 1
+      }
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": true,
+      "endpoints": [],
+      "files": []
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    },
+    "behavioral_notes": [
+      {
+        "element": "crm.lead.assign_partner / search_geo_partner / assign_geo_localize",
+        "observation": "Automatic geographic lead-to-reseller matching. assign_partner (called by action_assign_partner and the forward wizard) geo-localizes the lead via res.partner._geo_localize (street/zip/city/state/country -> partner_latitude/longitude), then search_geo_partner runs a cascade of progressively wider bounding-box searches in the SAME country (lat +/-2 lng +/-1.5, then +/-4/+/-3, then +/-8/+/-8 degrees), falling back to all-in-country, then a raw SQL nearest-neighbour query (point(lng,lat) <-> point) as a last resort. Eligible partners must have partner_weight>0 and not be in partner_declined_ids. The winner is chosen by random.choices weighted by partner_weight, so higher partner levels statistically win more leads. On a match it writes partner_assigned_id and _handle_salesmen_assignment to the partner's user_id; on no match it tags the lead tag_portal_lead_partner_unavailable. Pure code logic, invisible to metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "res.partner.grade (Partner Level) + res.partner._compute_partner_weight + partner_weight",
+        "observation": "res.partner.grade is the partner-program 'Level' (defined in the partnership dependency); this module grafts website.published.mixin onto it (so a level is publishable on /partners) and adds partner_weight (default 1, 'gives the probability to assign a lead to this partner; 0 means no assignment'). res.partner.partner_weight is a stored compute copying grade_id.partner_weight, so a partner's grade drives BOTH its public-directory ranking (grade_sequence ASC) and its weighted contention for incoming leads. res.partner.activation + date_partnership / date_review / date_review_next track the partner-program lifecycle (activated, periodically reviewed). res.partner.grade._compute_website_url points each level at /partners/grade/<slug>.",
+        "source": "code-read"
+      },
+      {
+        "element": "crm.lead.forward.to.partner.action_forward + crm.lead.assignation (wizard)",
+        "observation": "The 'Forward to Partner' wizard is the manual hand-off path. forward_type='single' forwards selected leads to one manually chosen partner; forward_type='assigned' computes partners automatically via search_geo_partner using GPS + grades. action_forward validates each target partner has an email, then per partner renders email_template_lead_forward_mail with a portal deep-link (/my/<type>/<id>) and send_mail, writes partner_assigned_id + user_id onto the leads (mail_auto_subscribe_no_notify) and message_subscribe's the partner. Side effects: outbound emails to resellers, lead ownership reassignment, chatter subscription.",
+        "source": "code-read"
+      },
+      {
+        "element": "crm.lead.partner_interested / partner_desinterested / create_opp_portal (portal reseller actions)",
+        "observation": "Portal-facing reseller workflow on an assigned lead, all gated by _assert_portal_write_access (the user's commercial_partner must be a parent of partner_assigned_id) and run sudo. partner_interested posts a message then convert_opportunity(partner_id) -> turns the forwarded lead into the reseller's opportunity. partner_desinterested clears partner_assigned_id, unsubscribes the partner, appends them to partner_declined_ids (so search_geo_partner skips them on re-assignment) and optionally tags spam. create_opp_portal lets a graded partner self-create an opportunity (requires grade_id), assigning it to their commercial_partner_id and converting it. update_lead_portal / update_stage_from_portal / update_contact_details_from_portal let the reseller edit revenue/probability/activities/stage/contact from the portal.",
+        "source": "code-read"
+      },
+      {
+        "element": "crm.partner.report.assign (CRM Partnership Analysis, _auto=False SQL view)",
+        "observation": "A read-only SQL view (no real table) joining res.partner against account.invoice.report (posted out_invoice/out_refund only) to expose, per partner: grade_id, activation, partnership/review dates, country (the first child contact with a country), nbr_opportunities (count of crm_lead where partner_assigned_id=partner) and turnover (invoice price_subtotal). It is the partner-program KPI/reporting surface measuring channel performance (opportunities forwarded vs invoiced turnover per reseller).",
+        "source": "code-read"
+      },
+      {
+        "element": "frontend (static, public OWL/JS interaction)",
+        "observation": "One public Interaction (CRMPartnerAssign, selector #wrapwrap) bound to the /partners + portal pages: it wires the 'I am interested' / 'not interested' confirm buttons (orm.call crm.lead.partner_interested / partner_desinterested), the opportunity stage buttons, the new-opportunity dialog (create_opp_portal) and the contact/opportunity edit forms, redirecting to /my/leads. Plus website_builder snippet options for the partner-directory page (partner_page_option) and a publish tour. No OWL components or backend patches; 4 asset bundles (web.assets_frontend, website.website_builder_assets, html_builder.assets_inside_builder_iframe, web.assets_tests).",
+        "source": "static"
+      }
+    ]
+  },
+  "it_architecture": {
+    "application": "website_crm_partner_assign (Resellers / partner-program lead-assignment component on top of crm + website)",
+    "software_services": [
+      "/my/leads",
+      "/my/opportunities",
+      "/my/lead/<lead>",
+      "/my/opportunity/<opp>",
+      "/partners",
+      "/partners/grade/<grade>",
+      "/partners/country/<country>",
+      "partners_detail (/partners/<partner>)"
+    ],
+    "data_objects": [
+      "crm.lead.forward.to.partner",
+      "crm.lead.assignation",
+      "crm.partner.report.assign",
+      "res.partner.activation",
+      "res.partner.grade",
+      "crm.lead (inherit)",
+      "res.partner (inherit)",
+      "website (inherit)"
+    ],
+    "logical_data_erm": [
+      "crm.lead -> res.partner (partner_assigned_id)",
+      "crm.lead -> res.partner (partner_declined_ids)",
+      "res.partner -> res.partner.grade (grade_id, via partnership)",
+      "res.partner -> res.partner.activation (activation)",
+      "res.partner -> res.partner (assigned_partner_id / implemented_partner_ids)",
+      "res.partner.grade -> website.published.mixin (publishable level)",
+      "crm.lead.forward.to.partner -> crm.lead.assignation -> crm.lead / res.partner",
+      "crm.partner.report.assign -> res.partner + account.invoice.report"
+    ],
+    "information_flows": [
+      "depends: crm (lead/opportunity), partnership (res.partner.grade levels), account (invoice turnover), base_geolocalize (geo), website_partner + website_google_map (public directory + map), portal",
+      "side-effect: crm.lead.assign_partner -> geo-localize + weighted-random partner match -> partner_assigned_id + salesman assignment",
+      "side-effect: crm.lead.forward.to.partner.action_forward -> outbound reseller email (portal link) + lead reassignment + subscription",
+      "side-effect: crm.lead.partner_interested -> convert_opportunity (lead becomes reseller opportunity); partner_desinterested -> declined_ids + unsubscribe",
+      "side-effect: res.partner.grade.write(partner_weight) -> res.partner.partner_weight recompute -> changes lead-assignment contention + directory rank",
+      "flow: res.partner.grade.website_published + partner.website_published -> public /partners directory listing"
+    ],
+    "frontend_components": [
+      "CRMPartnerAssign (public.interaction)"
+    ]
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Maintain Reseller/Partner Program (levels, weights, activation, review cadence)",
+      "Publish Partner Directory (public /partners listing by grade & country)",
+      "Geographic Lead-to-Partner Assignment (geo-localize + weighted match)",
+      "Forward Leads/Opportunities to Partners",
+      "Partner Self-Service Portal (accept/decline lead, create & manage opportunity)",
+      "Channel Performance Analysis (opportunities & turnover per partner)"
+    ],
+    "value_streams": [
+      "Lead-to-reseller mediation: capture -> geo-localize -> weighted partner match -> forward (email + portal) -> partner accepts -> convert to opportunity -> won/turnover",
+      "Partner onboarding & publication: set level/grade + activation -> publish on /partners directory -> periodic review (date_review_next)",
+      "Decline/reroute loop: partner not interested -> partner_declined_ids -> re-assign to next eligible reseller"
+    ],
+    "information_concepts": [
+      "res.partner.grade (partner level)",
+      "res.partner.activation (partner activation state)",
+      "res.partner (reseller / implementing partner)",
+      "crm.lead (forwarded lead / partner opportunity)",
+      "crm.lead.forward.to.partner (forward wizard)",
+      "crm.partner.report.assign (channel analysis)"
+    ],
+    "organization": [
+      "base.group_portal (graded reseller portal users)",
+      "base.group_public (public directory visitors)",
+      "sales_team.group_sale_salesman (forwarding + report)",
+      "sales_team.group_sale_salesman_all_leads (all assignations report)",
+      "base.group_partner_manager (manage activation)"
+    ],
+    "products": [],
+    "policies": [
+      "4 record rules: portal graded partner reads/writes only leads child_of its commercial partner; portal/public read only website_published grades; salesman report scoping (all vs personal/global)",
+      "_assert_portal_write_access: only a commercial partner that is parent of partner_assigned_id may edit the lead",
+      "partner_weight>0 eligibility + weighted-random selection governs which reseller gets a lead (0 = excluded)",
+      "directory visibility policy: is_company + grade_id set + website_published + grade.website_published + grade.active"
+    ],
+    "stakeholders": [
+      "Reseller / Channel Partner (res.partner with grade)",
+      "Prospect / Lead (res.partner)",
+      "Channel / Partner Manager (sales_team manager, base.group_partner_manager)",
+      "Salesperson forwarding leads (group_sale_salesman)",
+      "Public website visitor (finds a local reseller)"
+    ],
+    "strategy": null,
+    "metrics": [
+      "crm.partner.report.assign: nbr_opportunities + turnover per partner/grade/activation/country",
+      "res.partner.implemented_partner_count (published implementation references)",
+      "partner_weight (level-derived assignment contention)"
+    ]
+  },
+  "classification": {
+    "value_model": "network",
+    "activity_class": "primary",
+    "apqc_category": "3.0 Market and Sell Products and Services (3.x channel / partner management - reseller program & lead distribution)",
+    "rationale": "This module is a value-network (Stabell & Fjeldstad): its core function is mediation - linking customers (inbound leads/opportunities) to a network of reseller/channel partners and linking those partners back to the vendor. The defining mechanics are network ones: a published partner directory (a mediating layer that lets parties find each other), geo-spatial matching of a lead to the nearest eligible partner, and weighted-random distribution where a partner's 'level' (grade / partner_weight) sets its share of the mediated flow. Value derives from the size and quality of the partner network and from the intermediation infrastructure (the /partners directory, the forward wizard, the partner portal), not from transforming inputs (chain) or solving a single client's problem (shop). It does not own the underlying sell - crm (shop) qualifies the lead and sale (chain) fulfils it - it sits between them as a partner-program mediation layer routing demand to third parties. It is a primary activity feeding APQC 3.0 Market and Sell (channel / partner management); the accepted lead converts to a partner opportunity and the channel report ties it to invoiced turnover."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "partner levels (grades) with weight + activation states and review dates",
+      "public, SEO-sitemapped reseller directory at /partners filterable by grade, country, industry and free-text search, with Google Maps",
+      "automatic geo-localization of leads and weighted geographic assignment to the nearest eligible partner",
+      "manual 'Forward to Partner' wizard (single or auto/GPS) emailing resellers a portal link",
+      "partner portal to accept (convert to opportunity), decline (reroute), self-create and manage opportunities",
+      "CRM Partnership Analysis report (opportunities + turnover per partner)"
+    ],
+    "typical_fits": [
+      "vendor-with-reseller / channel sales model publishing 'find a partner' pages",
+      "tiered partner programs (Gold/Silver/Bronze levels) that should win leads proportionally to tier",
+      "geographic territory routing of inbound leads to local partners",
+      "letting partners self-serve their forwarded pipeline without backend access"
+    ],
+    "common_gaps": [
+      "assignment rules beyond geo + weighted-random (round-robin fairness, capacity caps, industry/skill routing)",
+      "partner-program governance: contracts, certification, commission/rebate accounting",
+      "richer partner scorecards / SLA tracking beyond opportunities + turnover",
+      "non-geographic or multi-criteria matching (the cascade is country-bounded and lat/long-driven)",
+      "geocoding backend choice/keys (base_geolocalize provider) and Google Maps API-key configuration"
+    ],
+    "drive_hints": [
+      "odoo shell: env['res.partner.grade'].search([]).mapped(('name','partner_weight','website_published'))",
+      "odoo shell: l = env['crm.lead'].search([('country_id','!=',False)], limit=1); l.assign_partner(); l.partner_assigned_id.display_name",
+      "odoo shell: env['res.partner'].search([('partner_weight','>',0),('is_company','=',True),('website_published','=',True)]).mapped('display_name')",
+      "odoo shell: env['crm.partner.report.assign'].read_group([], ['nbr_opportunities','turnover'], ['grade_id'])",
+      "curl http://localhost:8069/partners (auth=public) - render the reseller directory; /partners/grade/<id> to filter by level"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Which geocoding provider base_geolocalize uses at runtime (Nominatim / Google) and whether a Google Maps API key is configured for the directory map.",
+    "Real-world fairness of weighted-random geo assignment under volume and overlapping territories (no capacity cap is enforced in code).",
+    "Exact partner-program lifecycle automation (if any) driving date_review_next / activation transitions - none found as a cron in this module.",
+    "Interaction between the base crm lead-assignment cron (crm.ir_cron_crm_lead_assign) and this module's partner-assignment path."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/website_crm_partner_assign.facts.json",
+    "tools": [
+      "code-read",
+      "extract_module.py",
+      "extract_frontend.py",
+      "Grep/Read"
+    ],
+    "odoo_version": "19.0"
+  }
+}

@@ -1,0 +1,279 @@
+{
+  "subsystem": "base_import",
+  "evidence": {
+    "manifest": {
+      "name": "Base import",
+      "category": "Hidden/Tools",
+      "depends": [
+        "web"
+      ],
+      "auto_install": true,
+      "application": false,
+      "version": "2.0",
+      "license": "LGPL-3"
+    },
+    "models": [
+      {
+        "_name": "base_import.import",
+        "_description": "Base Import",
+        "fields": 4,
+        "relations": [],
+        "note": "TransientModel (wizard). Fields: res_model (Char), file (Binary, raw not base64), file_name (Char), file_type (Char). ~31 methods: the whole parse/map/coerce/load engine. _transient_max_hours=12.0."
+      },
+      {
+        "_name": "base_import.mapping",
+        "_description": "Base Import Mapping",
+        "fields": 3,
+        "relations": [],
+        "note": "Persistent model. Fields: res_model (Char, indexed), column_name (Char), field_name (Char). Remembers external-column -> Odoo-field choices per model so repeat imports from the same source auto-map."
+      },
+      {
+        "_name": "base (extension)",
+        "_description": "AbstractModel _inherit='base' adds get_import_templates() hook returning [{label, template}] used to surface per-model sample templates in the wizard.",
+        "fields": 0,
+        "relations": []
+      },
+      {
+        "_name": "res.users (extension)",
+        "_description": "Adds _can_import_remote_urls() gate (admin-only by default) controlling whether a user may pull binary/image fields from remote URLs (DOS guard).",
+        "fields": 0,
+        "relations": []
+      }
+    ],
+    "routes": [
+      {
+        "paths": [
+          "/base_import/set_file"
+        ],
+        "auth": "user (default)",
+        "type": "http (POST)"
+      }
+    ],
+    "security": {
+      "access_rules": 2,
+      "record_rules": 0,
+      "groups": 0
+    },
+    "views": {
+      "form": 0,
+      "list": 0,
+      "kanban": 0,
+      "pivot": 0,
+      "graph": 0,
+      "calendar": 0,
+      "activity": 0,
+      "note": "No Python/XML business views: the entire wizard UI is an OWL client action (tag 'import'), see frontend."
+    },
+    "behavioral_notes": [
+      {
+        "element": "base_import.import.parse_preview (+ _read_file / _read_csv / _read_xlsx / _read_ods)",
+        "observation": "The file-sniffing + mapping-suggestion entrypoint. _read_file dispatches by guessed mimetype (guess_mimetype) then by user-provided type then by file extension to format readers. _read_csv uses chardet.detect to auto-guess encoding (rectifying BOM-marked utf-16/32), then auto-detects the delimiter by trying ',',';','tab',' ','|' and unit-separator and keeping the candidate that yields uniform-width rows >=2 cols. XLS/XLSX/ODS go through xlrd/openpyxl/odf readers that coerce numbers/dates per cell type. parse_preview then builds the importable-fields tree (get_fields_tree, recursive to depth 3 over relations), extracts per-column candidate types from the 10-row preview (_extract_header_types heuristics: __export__ -> id/relational, digits -> int/float/monetary/bool, true/false -> bool, float patterns, date/datetime pattern matching), and proposes a column->field mapping. None of this dialect/encoding sniffing is visible in metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "_get_mapping_suggestion / _get_mapping_suggestions / _deduplicate_mapping_suggestions",
+        "observation": "Three-tier column-to-field matching: (1) look up a previously saved base_import.mapping for this res_model (distance forced to -1 so it always wins); (2) exact case-folded match on field technical name, on the model's @string label, and on the en_US label; (3) fuzzy match using word distance (1 - difflib.SequenceMatcher ratio) against fields pre-filtered by the column's inferred types, accepting the closest below FUZZY_MATCH_DISTANCE=0.2. Deduplication then guarantees at most one column per simple field (smallest distance wins), while '/'-joined relational paths (e.g. partner_id/name) are matched recursively and exempt from dedup. This fuzzy/translation-aware matching is pure runtime behaviour.",
+        "source": "code-read"
+      },
+      {
+        "element": "_convert_import_data + _parse_import_data (type coercion)",
+        "observation": "_convert_import_data drops unmapped columns (itemgetter on the kept indices), validates that every row width equals the header width (else a 'change the separator' UserError), strips the header row, removes empty rows, and applies the 'skip' offset. _parse_import_data recurses the field tree and coerces in place: dates/datetimes via strptime against the chosen/guessed format; floats via _parse_float_from_data which strips currency symbols (_remove_currency_symbol checks res.currency symbols), infers thousand/decimal separators, and handles ()-negatives and scientific notation; binary/attachment columns are validated as URL vs base64 vs filename. Coercion failures raise ImportValidationError carrying field + field_type so the client can attach the error to the right column. This data-cleaning layer is the core value metadata cannot show.",
+        "source": "code-read"
+      },
+      {
+        "element": "execute_import -> model.load() (transactional load, dryrun, relational name-resolution)",
+        "observation": "Wraps the load in a savepoint. Calls _convert_import_data + _parse_import_data, _extract_binary_filenames, _handle_multi_mapping (concatenates multiple columns mapped to one char/text/html field by space/newline/<br>, many2many by comma), and _handle_fallback_values (substitutes a chosen default when a selection/boolean value is out of range). It then calls self.env[res_model].load(import_fields, data) with context import_file=True, name_create_enabled_fields (lets unknown many2one/many2many values be name_create'd on the fly), import_set_empty_fields, import_skip_records and _import_limit (batching). The ORM load() does the relational name-search resolution (matching 'Acme' to a res.partner id, or External/Database IDs). dryrun=True rolls the savepoint back and clears caches so a 'Test' run surfaces every row error without writing. On success it persists base_import.mapping rows for reuse. Returns {ids, messages:[{type,message,record,rows,field_path}], nextrow, name, binary_filenames} which the OWL client renders per-column / per-row.",
+        "source": "code-read"
+      },
+      {
+        "element": "frontend: ImportAction OWL client action (static/src) -- THE wizard UI (gap #3)",
+        "observation": "The entire Import Records experience is OWL/JS, not Python views (10 JS / 8 XML files). registry.category('actions').add('import', ImportAction) registers a client action; ImportRecords adds an 'Import records' item to the cogMenu of every list/kanban view (gated on the view's import= and create= attributes). ImportAction hosts FileInput + dropzone upload (csv/xls/xlsx), ImportDataContent (per-column field pickers populated from get_fields_tree, sorted into Basic/Suggested/Additional/Relational), ImportDataSidepanel (CSV options: encoding, separator, quoting, date/datetime/thousands/decimal formats, skip, limit, sheet), ImportDataProgress (batched progress + pause/resume), ImportDataColumnError, ImportBlockUI. BaseImportModel (import_model.js) drives the round-trips: POST /base_import/set_file to upload, orm.call base_import.import.parse_preview for the preview+mapping, then chunked orm.call execute_import with dryrun for 'Test' then real import, translating human date formats to Python strftime and back. This is the canonical metadata-gap-#3 subsystem: zero business views, all behaviour in static assets.",
+        "source": "code-read"
+      }
+    ],
+    "frontend": {
+      "present": true,
+      "js_files": 10,
+      "xml_templates": 8,
+      "owl_components": [
+        "ImportAction",
+        "ImportBlockUI",
+        "ImportDataColumnError",
+        "ImportDataContent",
+        "ImportDataOptions",
+        "ImportDataProgress",
+        "ImportDataSidepanel",
+        "ImportRecords"
+      ],
+      "registry_adds": [
+        "actions:import"
+      ],
+      "patches": [],
+      "services": [],
+      "asset_bundles": {
+        "web.assets_backend": 3,
+        "web.assets_unit_tests": 1
+      }
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [
+        "requests"
+      ],
+      "uses_api_keys": false,
+      "endpoints": [],
+      "files": [
+        "models/base_import.py"
+      ],
+      "note": "The only outbound HTTP is _import_file_by_url: when a binary/image column holds a URL, requests.Session().get() fetches it (admin-gated via res.users._can_import_remote_urls, size/timeout/pixel-capped via import_file_maxbytes / import_file_timeout / import_url_regex config). No third-party SDK or API key."
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": [],
+      "note": "base_import.import is a transient (wizard) model (rows are ephemeral, GC'd after 12h); base_import.mapping rows accrue only as users perform imports. Not run live in this pass."
+    }
+  },
+  "it_architecture": {
+    "application": "base_import (CSV/XLS/XLSX/ODS data-import framework: file-sniffing parser, fuzzy column->field matcher, type-coercion engine, transactional loader, and the OWL 'Import Records' wizard reused by every list/kanban view)",
+    "software_services": [
+      "/base_import/set_file (HTTP POST: upload raw file bytes onto the base_import.import wizard record)",
+      "base_import.import.parse_preview (RPC: sniff dialect/encoding, build field tree, suggest mapping, return preview)",
+      "base_import.import.execute_import (RPC: coerce + load via model.load(), dryrun test or real import, return per-row/per-column errors)",
+      "base_import.import.get_fields_tree (RPC: recursive importable-field tree for a model)",
+      "base.get_import_templates (RPC hook: per-model sample import templates)"
+    ],
+    "data_objects": [
+      "base_import.import",
+      "base_import.mapping"
+    ],
+    "logical_data_erm": [
+      "base_import.import.res_model -> (any ir.model, by name) target model being imported into",
+      "base_import.mapping (res_model, column_name) -> field_name : remembered column->field mapping per model",
+      "execute_import -> <res_model>.load() : writes records into ANY target model (no FK; dynamic by res_model)"
+    ],
+    "information_flows": [
+      "depends: web (OWL client action, registries, orm service, FileInput/dropzone)",
+      "upload: browser -> POST /base_import/set_file -> write file bytes onto base_import.import",
+      "preview: OWL BaseImportModel -> parse_preview -> chardet/csv/xlrd/openpyxl/odf readers + get_fields_tree + fuzzy matcher -> preview+mapping back to client",
+      "load: OWL -> execute_import -> _convert/_parse/_handle_multi_mapping/_handle_fallback -> env[res_model].load() -> ORM create/write + relational name resolution",
+      "outbound (optional): _parse_import_data -> requests.get(url) for remote binary/image columns (admin-gated)",
+      "feedback: load() returns {ids, messages, nextrow, name, binary_filenames} -> OWL renders per-column ImportDataColumnError + per-row messages; successful mapping persisted to base_import.mapping"
+    ],
+    "frontend_components": [
+      "ImportAction (OWL client action, registry tag 'import', mounts the wizard)",
+      "ImportRecords (cogMenu 'Import records' entry on every list/kanban view)",
+      "ImportDataContent (per-column field mapping pickers)",
+      "ImportDataSidepanel (CSV/format options panel)",
+      "ImportDataOptions",
+      "ImportDataProgress (batched progress + pause/resume)",
+      "ImportDataColumnError (per-column error display)",
+      "ImportBlockUI",
+      "BaseImportModel (import_model.js client-side engine)",
+      "BinaryFileManager (local image/file upload batching)"
+    ]
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Ingest tabular data files (CSV / XLS / XLSX / ODS) with auto encoding & delimiter detection",
+      "Auto-suggest & remember column-to-field mappings (exact + translation + fuzzy matching)",
+      "Coerce & validate import values (dates, floats/currency, booleans, selection, binary/URL/base64)",
+      "Resolve relational references on load (External ID, Database ID, name-search, on-the-fly name_create)",
+      "Dry-run ('Test') import with full error reporting before committing",
+      "Batched / resumable bulk load with per-column and per-row error feedback",
+      "Provide the reusable 'Import Records' UI surfaced on every list/kanban view"
+    ],
+    "value_streams": [
+      "File-to-Records: upload file -> sniff & preview -> map columns -> Test (dryrun) -> resolve errors -> commit load -> open imported records",
+      "Map-Reuse: successful import -> persist base_import.mapping -> next import from same source auto-maps columns"
+    ],
+    "information_concepts": [
+      "base_import.import (import session / wizard state)",
+      "base_import.mapping (saved column->field mapping)",
+      "field tree (importable fields of the target model)",
+      "import options (encoding/separator/quoting/date/float formats, skip, limit, sheet)",
+      "import result (ids, per-column/per-row messages, nextrow)"
+    ],
+    "organization": [],
+    "products": [],
+    "policies": [
+      "res.users._can_import_remote_urls(): URL-based binary/image import restricted to admin by default (worker-DOS guard)",
+      "Remote-fetch caps: import_file_maxbytes / import_file_timeout / import_url_regex config; 42 MP image ceiling",
+      "Test-before-commit: dryrun rolls back the savepoint and clears caches so no partial writes leak",
+      "readonly/magic-column fields excluded from the importable field tree"
+    ],
+    "stakeholders": [
+      "Data-migration / onboarding consultant (loads legacy master data into a new database)",
+      "Functional / power user (bulk-updates records from a spreadsheet)",
+      "System administrator (governs remote-URL imports and file-size limits)",
+      "Module developer (exposes get_import_templates / import= view attribute)"
+    ],
+    "strategy": null,
+    "metrics": [
+      "Rows imported per run (import_result ids count) and nextrow resume offset",
+      "Mapping match quality (fuzzy distance vs FUZZY_MATCH_DISTANCE threshold)",
+      "Error counts surfaced per column/row in the test run"
+    ]
+  },
+  "classification": {
+    "value_model": "support",
+    "activity_class": "support",
+    "apqc_category": "8.0 Manage Information Technology",
+    "rationale": "base_import is a cross-cutting data-management framework, not a value-creating primary activity of any chain/shop/network. It owns no business object of its own (its only persistent model, base_import.mapping, is mapping metadata; base_import.import is a transient wizard) and instead acts ON every other model via a dynamic res_model + env[model].load(). It is firm IT infrastructure (Porter support activity; Stabell & Fjeldstad 'support'): auto_install=true and depends only on web, and the cogMenu 'Import Records' entry is injected into every list/kanban view. APQC 8.0 'Manage Information Technology' fits because the work is data management / master-data loading -- the IT-delivery capability of ingesting, cleansing, mapping and loading data into the application platform. 13.0 'Develop and Manage Business Capabilities' was considered (it underpins onboarding of every other capability) but rejected: base_import is a concrete running data-loading utility, not a governance/portfolio capability; its substance is IT data-management, squarely 8.0. Mirrors the 'web' classification (support / 8.0): both are data-bearing-inverse framework modules whose substance is plumbing reused by all apps."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "Import CSV / XLS / XLSX / ODS into ANY importable model out of the box",
+      "Automatic encoding (chardet) and CSV delimiter detection",
+      "Exact + translation-aware + fuzzy column-to-field mapping with saved-mapping reuse",
+      "Type coercion: dates/datetimes (format guessing), floats with currency symbol & separator inference, booleans, selection fallbacks",
+      "Relational resolution by External ID, Database ID, name-search, and on-the-fly name_create",
+      "Multi-column concatenation (char/text/html/many2many) onto one field",
+      "Test (dryrun) import with full per-column / per-row error reporting before committing",
+      "Batched, resumable bulk import with progress + pause/resume",
+      "Remote-URL and base64 binary/image import (admin-gated)"
+    ],
+    "typical_fits": [
+      "Initial data migration / onboarding: load partners, products, contacts, BoMs, etc. from spreadsheets",
+      "Recurring loads from a third-party system (saved mappings auto-apply)",
+      "Bulk record updates by importing with id / External ID columns"
+    ],
+    "common_gaps": [
+      "Complex transformations / cleansing beyond format coercion (needs ETL or pre-processing)",
+      "Cross-record deduplication / upsert logic beyond id-based matching",
+      "Custom OWL wizard steps or bespoke validation (requires JS dev, gap #3)",
+      "Scheduled / unattended imports (the wizard is interactive; no built-in cron import here)",
+      "Very large files: batching helps but worker memory / timeout limits still apply"
+    ],
+    "drive_hints": [
+      "odoo shell: imp = env['base_import.import'].create({'res_model':'res.partner'}); imp.write({'file': b'name,email\\nAcme,info@acme.com', 'file_name':'p.csv', 'file_type':'text/csv'}); imp.parse_preview({'quoting':'\"','separator':',','has_headers':True}) -- inspect the suggested mapping",
+      "odoo shell: imp.execute_import(['name','email'], ['name','email'], {'quoting':'\"','separator':',','has_headers':True}, dryrun=True) -- Test-run and read returned messages/ids",
+      "UI: open any list view (e.g. Contacts) -> cog menu -> 'Import records' -> upload a CSV to exercise the OWL wizard",
+      "curl -F ufile=@p.csv -F id=<import_id> /base_import/set_file (auth=user) to drive the upload route"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Live volume of base_import.mapping rows and how often saved mappings actually win vs fuzzy matching (needs runtime).",
+    "Real-world batch sizes / memory ceilings at which large-file imports fail in this deployment.",
+    "Full OWL component/template inventory beyond the 8 catalogued (extract_frontend caps the list).",
+    "Interaction with module-specific import overrides (models extending load() / get_import_templates) across the codebase."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/base_import.facts.json",
+    "tools": [
+      "code-read",
+      "extract_module.py",
+      "extract_frontend.py"
+    ],
+    "odoo_version": "19.0"
+  }
+}

@@ -1,0 +1,517 @@
+{
+  "subsystem": "stock",
+  "evidence": {
+    "manifest": {
+      "name": "Inventory",
+      "category": "Supply Chain/Inventory",
+      "depends": [
+        "product",
+        "barcodes_gs1_nomenclature",
+        "digest"
+      ],
+      "auto_install": false,
+      "application": true,
+      "version": "1.1"
+    },
+    "models": [
+      {
+        "_name": "stock.picking",
+        "_description": "Transfer",
+        "fields": 57,
+        "relations": [
+          "partner_id->res.partner",
+          "picking_type_id->stock.picking.type",
+          "location_id->stock.location",
+          "location_dest_id->stock.location",
+          "move_ids->stock.move",
+          "backorder_id->stock.picking",
+          "return_id->stock.picking"
+        ]
+      },
+      {
+        "_name": "stock.move",
+        "_description": "Stock Move",
+        "fields": 76,
+        "relations": [
+          "picking_id->stock.picking",
+          "product_id->product.product",
+          "location_id->stock.location",
+          "location_dest_id->stock.location",
+          "move_line_ids->stock.move.line",
+          "move_dest_ids->stock.move",
+          "move_orig_ids->stock.move",
+          "rule_id->stock.rule"
+        ]
+      },
+      {
+        "_name": "stock.move.line",
+        "_description": "Product Moves (Stock Move Line)",
+        "fields": 44,
+        "relations": [
+          "move_id->stock.move",
+          "picking_id->stock.picking",
+          "product_id->product.product",
+          "lot_id->stock.lot",
+          "quant_id->stock.quant",
+          "package_id->stock.package",
+          "location_id->stock.location"
+        ]
+      },
+      {
+        "_name": "stock.quant",
+        "_description": "Quants",
+        "fields": 29,
+        "relations": [
+          "product_id->product.product",
+          "location_id->stock.location",
+          "lot_id->stock.lot",
+          "package_id->stock.package",
+          "owner_id->res.partner",
+          "warehouse_id->stock.warehouse"
+        ]
+      },
+      {
+        "_name": "stock.location",
+        "_description": "Inventory Locations",
+        "fields": 26,
+        "relations": [
+          "location_id->stock.location (parent)",
+          "warehouse_id->stock.warehouse",
+          "removal_strategy_id->product.removal",
+          "storage_category_id->stock.storage.category",
+          "quant_ids->stock.quant"
+        ]
+      },
+      {
+        "_name": "stock.warehouse",
+        "_description": "Warehouse",
+        "fields": 28,
+        "relations": [
+          "lot_stock_id->stock.location",
+          "in_type_id/out_type_id/int_type_id->stock.picking.type",
+          "route_ids->stock.route",
+          "resupply_wh_ids->stock.warehouse"
+        ]
+      },
+      {
+        "_name": "stock.rule",
+        "_description": "Stock Rule",
+        "fields": 22,
+        "relations": [
+          "route_id->stock.route",
+          "location_src_id->stock.location",
+          "location_dest_id->stock.location",
+          "picking_type_id->stock.picking.type"
+        ]
+      },
+      {
+        "_name": "stock.route",
+        "_description": "Inventory Routes",
+        "fields": 15,
+        "relations": [
+          "rule_ids->stock.rule",
+          "product_ids->product.template",
+          "warehouse_ids->stock.warehouse"
+        ]
+      },
+      {
+        "_name": "stock.warehouse.orderpoint",
+        "_description": "Minimum Inventory Rule",
+        "fields": 33,
+        "relations": [
+          "product_id->product.product",
+          "warehouse_id->stock.warehouse",
+          "location_id->stock.location",
+          "route_id->stock.route"
+        ]
+      },
+      {
+        "_name": "stock.lot",
+        "_description": "Lot/Serial",
+        "fields": 14,
+        "relations": [
+          "product_id->product.product",
+          "quant_ids->stock.quant",
+          "delivery_ids->stock.picking"
+        ]
+      },
+      {
+        "_name": "stock.package",
+        "_description": "Package",
+        "fields": 24,
+        "relations": [
+          "quant_ids->stock.quant",
+          "package_type_id->stock.package.type",
+          "location_id->stock.location",
+          "parent_package_id->stock.package"
+        ]
+      },
+      {
+        "_name": "stock.picking.type",
+        "_description": "Picking Type",
+        "fields": 49,
+        "relations": [
+          "warehouse_id->stock.warehouse",
+          "default_location_src_id/dest_id->stock.location",
+          "return_picking_type_id->stock.picking.type"
+        ]
+      },
+      {
+        "_name": "stock.scrap",
+        "_description": "Scrap",
+        "fields": 19,
+        "relations": [
+          "product_id->product.product",
+          "move_ids->stock.move",
+          "location_id->stock.location",
+          "scrap_location_id->stock.location"
+        ]
+      },
+      {
+        "_name": "report.stock.quantity",
+        "_description": "Stock Quantity Report",
+        "fields": 7,
+        "relations": [
+          "product_id->product.product",
+          "warehouse_id->stock.warehouse"
+        ]
+      }
+    ],
+    "routes": [
+      {
+        "paths": [
+          "/stock/<string:output_format>/<string:report_name>"
+        ],
+        "auth": "user",
+        "type": "http"
+      }
+    ],
+    "security": {
+      "access_rules": 77,
+      "record_rules": 16,
+      "groups": 13
+    },
+    "views": {
+      "form": 20,
+      "list": 37,
+      "kanban": 9,
+      "search": 17,
+      "pivot": 3,
+      "graph": 2,
+      "calendar": 1,
+      "activity": 1
+    },
+    "behavioral_notes": [
+      {
+        "element": "stock.picking.button_validate",
+        "observation": "Confirms draft pickings, runs sanity checks and pre-action wizards, then calls _action_done. On partial fulfillment it splits demand and creates a backorder stock.picking (governed by picking_type_id.create_backorder = never/ask/always); the backorder wizard (stock.backorder.confirmation) is raised when _check_backorder finds unfulfilled demand. May also surface the reception report and trigger auto-print report actions. None of this is visible in metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "stock.quant._apply_inventory / _update_available_quantity",
+        "observation": "Inventory adjustments do not edit a quantity in place: _apply_inventory generates compensating stock.move records between the location and the product's inventory-loss location, validates them via _action_done, then re-triggers reservation. _update_available_quantity is the single sudo entry point that increments/decrements quant quantity and reserved_quantity; all stock level changes funnel through quant writes. Stock is thus an append-only move ledger, not a mutable balance.",
+        "source": "code-read"
+      },
+      {
+        "element": "stock.rule._run_pull / _run_push",
+        "observation": "stock.rule is the procurement engine: _run_pull turns a procurement (product, qty, dest location) into a sudo-created stock.move with the configured procure_method (make_to_stock vs make_to_order / mts_else_mto) and confirms it, which recursively launches upstream procurements; _run_push applies push rules after a move arrives. This is how stock.route chains multi-step flows (e.g. input->QC->stock, pick->pack->ship) and how an upstream sale/purchase demand pulls a delivery into being.",
+        "source": "code-read"
+      },
+      {
+        "element": "stock.move._action_assign (reservation)",
+        "observation": "Reservation matches move demand against available stock.quant, creating/updating stock.move.line records and moving quantity into reserved_quantity; a move becomes 'assigned' or 'partially_available'. button_validate marks lines 'picked' and _action_done commits the physical move, updating both source and destination quants.",
+        "source": "code-read"
+      },
+      {
+        "element": "stock.warehouse / stock.warehouse.orderpoint automation",
+        "observation": "Creating a warehouse auto-generates its location tree, picking types (in/out/int/pick/pack/qc/store/xdock) and reception/delivery routes per the multi-step reception_steps/delivery_steps settings (44 methods on stock.warehouse). Orderpoints (min/max reordering rules) run on a scheduler to compute qty_to_order and launch replenishment procurements through stock.rule.",
+        "source": "code-read"
+      },
+      {
+        "element": "frontend (OWL/JS)",
+        "observation": "40 JS files, 20 OWL components, 29 registry registrations, 1 patches; asset bundles ['web.report_assets_common', 'web.assets_backend', 'web.assets_backend_lazy'].",
+        "source": "static"
+      }
+    ],
+    "frontend": {
+      "present": true,
+      "js_files": 40,
+      "xml_templates": 26,
+      "owl_components": [
+        "ForcedPlaceholderField",
+        "ForecastedButtons",
+        "ForecastedDetails",
+        "ForecastedHeader",
+        "ForecastedWarehouseFilter",
+        "GenerateDialog",
+        "GenerateSerials",
+        "ImportLots",
+        "JsonPopOver",
+        "PopoverComponent",
+        "PopoverWidgetField",
+        "ReceptionReportLine",
+        "ReceptionReportMain",
+        "ReceptionReportTable",
+        "StockActionField",
+        "StockActionHelper",
+        "StockForecasted",
+        "StockPackageMany2One",
+        "StockPickFrom",
+        "TraceabilityReport"
+      ],
+      "registry_adds": [
+        "actions:do_multi_print",
+        "actions:reception_report",
+        "actions:stock_forecasted",
+        "actions:stock_report_generic",
+        "fields:counted_quantity_widget",
+        "fields:forecast_widget",
+        "fields:lead_days_widget",
+        "fields:many2many_barcode_tags",
+        "fields:move_product_label_field",
+        "fields:package_m2m",
+        "fields:package_m2o",
+        "fields:pick_from",
+        "fields:picking_type_dashboard_graph",
+        "fields:popover_widget",
+        "fields:replenishment_graph_widget",
+        "fields:sml_x2_many",
+        "fields:stock.forced_placeholder",
+        "fields:stock_move_one2many",
+        "fields:stock_rescheduling_popover",
+        "services:stock_warehouse",
+        "view_widgets:generate_serials",
+        "view_widgets:import_lots",
+        "views:inventory_report_list",
+        "views:stock_add_package_list_view",
+        "views:stock_dashboard_kanban",
+        "views:stock_forecasted_graph",
+        "views:stock_list_view",
+        "views:stock_orderpoint_list",
+        "views:stock_report_list_view"
+      ],
+      "patches": [
+        "MovesListRenderer.prototype"
+      ],
+      "services": [
+        "action_name",
+        "location_dest_id",
+        "location_id",
+        "name",
+        "owner_id",
+        "package_id",
+        "state"
+      ],
+      "asset_bundles": {
+        "web.report_assets_common": 3,
+        "web.assets_backend": 4,
+        "web.assets_backend_lazy": 1,
+        "web.assets_frontend": 1,
+        "web.assets_tests": 1,
+        "web.assets_unit_tests": 1
+      }
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": false,
+      "endpoints": [
+        "https://www.odoo.com/app/inventory"
+      ],
+      "files": [
+        "__manifest__.py"
+      ]
+    }
+  },
+  "it_architecture": {
+    "application": "stock (Inventory application component)",
+    "software_services": [
+      "/stock/<output_format>/<report_name> (HTTP report download, auth=user)"
+    ],
+    "data_objects": [
+      "stock.picking",
+      "stock.move",
+      "stock.move.line",
+      "stock.quant",
+      "stock.location",
+      "stock.warehouse",
+      "stock.rule",
+      "stock.route",
+      "stock.warehouse.orderpoint",
+      "stock.lot",
+      "stock.package",
+      "stock.picking.type",
+      "stock.scrap",
+      "report.stock.quantity"
+    ],
+    "logical_data_erm": [
+      "stock.picking -> stock.move (1..n)",
+      "stock.move -> stock.move.line (1..n)",
+      "stock.move.line -> stock.quant",
+      "stock.quant -> stock.location + product.product + stock.lot",
+      "stock.location -> stock.warehouse",
+      "stock.rule -> stock.route + stock.picking.type",
+      "stock.warehouse.orderpoint -> product.product + stock.route",
+      "stock.move -> stock.move (move_dest_ids/move_orig_ids chain)"
+    ],
+    "information_flows": [
+      "depends: product, barcodes_gs1_nomenclature, digest",
+      "side-effect: stock.picking.button_validate -> stock.move.line + stock.quant updates + optional backorder stock.picking",
+      "side-effect: stock.rule._run_pull -> recursive stock.move creation across stock.route steps",
+      "side-effect: stock.quant._apply_inventory -> compensating stock.move (inventory loss)",
+      "upstream: sale/purchase/mrp procurement -> stock.rule -> stock.picking"
+    ],
+    "frontend_components": [
+      "ForcedPlaceholderField",
+      "ForecastedButtons",
+      "ForecastedDetails",
+      "ForecastedHeader",
+      "ForecastedWarehouseFilter",
+      "GenerateDialog",
+      "GenerateSerials",
+      "ImportLots",
+      "JsonPopOver",
+      "PopoverComponent",
+      "PopoverWidgetField",
+      "ReceptionReportLine",
+      "ReceptionReportMain",
+      "ReceptionReportTable",
+      "StockActionField"
+    ]
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Manage Warehouses & Locations",
+      "Receive Goods (inbound logistics)",
+      "Ship Goods (outbound logistics)",
+      "Internal Transfers & Putaway",
+      "Stock Reservation & Availability",
+      "Inventory Adjustment / Cycle Counting",
+      "Lot & Serial Traceability",
+      "Packaging & Package Management",
+      "Replenishment (reordering rules / routes)",
+      "Scrap Management"
+    ],
+    "value_streams": [
+      "Procure-to-Stock: procurement -> receipt (stock.picking in) -> putaway -> on-hand quant",
+      "Order-to-Delivery: demand -> reservation -> pick/pack -> ship (button_validate) -> backorder on shortfall",
+      "Replenish: orderpoint trigger -> stock.rule pull -> upstream procurement",
+      "Count-to-Reconcile: request count -> inventory adjustment -> compensating move -> updated quant"
+    ],
+    "information_concepts": [
+      "stock.picking (transfer)",
+      "stock.move (planned move)",
+      "stock.move.line (executed move)",
+      "stock.quant (on-hand balance)",
+      "stock.location",
+      "stock.warehouse",
+      "stock.lot (lot/serial)",
+      "stock.package",
+      "stock.route / stock.rule (logistics policy)"
+    ],
+    "organization": [
+      "group_stock_user",
+      "group_stock_manager",
+      "group_stock_multi_locations",
+      "group_stock_multi_warehouses",
+      "group_stock_production_lot",
+      "group_stock_tracking_lot",
+      "group_stock_tracking_owner",
+      "group_stock_adv_location",
+      "group_production_lot",
+      "group_reception_report",
+      "group_stock_sign_delivery",
+      "group_warning_stock",
+      "group_stock_lot_print_gs1"
+    ],
+    "products": [],
+    "policies": [
+      "16 record rules: multi-company scoping on locations/quants/pickings",
+      "stock.route + stock.rule: configurable procurement/push-pull logistics policy",
+      "putaway rules + removal strategies (FIFO/LIFO/FEFO): where goods land and which are picked",
+      "reordering rules (orderpoints): min/max replenishment automation",
+      "picking_type.create_backorder: backorder policy (never/ask/always)"
+    ],
+    "stakeholders": [
+      "Warehouse Operator (res.users / stock.picking.user_id)",
+      "Inventory Manager (group_stock_manager)",
+      "Customer (res.partner, delivery destination)",
+      "Supplier (res.partner, receipt source)",
+      "Owner (res.partner on quant/package, consignment)"
+    ],
+    "strategy": null,
+    "metrics": [
+      "report.stock.quantity (on-hand over time)",
+      "stock.forecasted_product_product (replenishment/forecast report)",
+      "report.stock.report_reception (reception report)",
+      "stock.traceability.report (lot/serial traceability)",
+      "picking type kanban dashboard counts (draft/ready/late/backorders)"
+    ]
+  },
+  "classification": {
+    "value_model": "chain",
+    "activity_class": "primary",
+    "apqc_category": "4.0 Deliver Physical Products",
+    "rationale": "stock is the inbound and outbound logistics primary activity of the value chain (Porter): it physically receives, stores, moves and ships goods. The append-only stock.move ledger reconciled into stock.quant balances is classic value-chain transformation/flow. APQC 4.0 'Deliver Physical Products' covers it directly: 4.3.2.1 manage raw material inventory (stock.quant moves/valuation), 4.4.1.4 delivery service policy (stock.picking.type), and 4.4.x operate outbound transportation / ship (stock.picking.button_validate); replenishment touches 4.1.2.1 demand forecasts (stock.warehouse.orderpoint). It is primary, not support: goods physically flow through it to the customer."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "multi-step receipts and deliveries (1/2/3-step) via warehouse routes",
+      "double-entry stock moves with on-hand/forecast quants",
+      "lot & serial traceability with expiry hooks",
+      "reservation/availability + backorders",
+      "putaway rules, removal strategies (FIFO/LIFO/FEFO), storage categories",
+      "reordering rules & route-based replenishment",
+      "packages/package types & put-in-pack",
+      "inventory adjustments & cyclic counting",
+      "scrap, returns, barcode (GS1) labels"
+    ],
+    "typical_fits": [
+      "standard in/out/internal transfer flows per picking type",
+      "single- or multi-warehouse with multi-step routes",
+      "lot/serial tracking and traceability reports",
+      "min/max reordering automation",
+      "multi-company stock scoping via record rules"
+    ],
+    "common_gaps": [
+      "carrier integration & shipping rates (separate delivery_* modules)",
+      "barcode scanning UX (stock_barcode), batch picking (stock_picking_batch)",
+      "stock valuation/accounting entries (stock_account)",
+      "quality control gates (quality_control)",
+      "dropshipping / cross-dock specifics (stock_dropshipping)",
+      "industry-specific putaway/removal beyond FIFO/LIFO/FEFO"
+    ],
+    "drive_hints": [
+      "odoo shell: env['stock.quant'].search([('quantity','>',0)], limit=5).mapped(('product_id.display_name','location_id.complete_name','quantity'))",
+      "odoo shell: p = env['stock.picking'].search([('state','=','assigned')], limit=1); p.button_validate()  # observe move.line + quant + possible backorder",
+      "odoo shell: env['stock.warehouse'].search([]).mapped(('name','reception_steps','delivery_steps'))",
+      "curl HTTP /stock/pdf/<report_name> (auth=user) to pull a stock report"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Exact stock.move state machine (draft/waiting/confirmed/partially_available/assigned/done/cancel) and the full _action_confirm -> _action_assign -> _action_done transition triggers.",
+    "How stock.route step counts (reception_steps/delivery_steps) generate the concrete stock.rule chains per warehouse.",
+    "mts_else_mto procure_method resolution and how MTO propagates upstream procurement across modules (purchase/mrp).",
+    "Valuation/accounting impact is out of scope here (lives in stock_account) - confirm boundary."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/stock.facts.json",
+    "tools": [
+      "code-read",
+      "extract_frontend.py",
+      "extract_module.py",
+      "run-odoo (odoo shell)"
+    ],
+    "odoo_version": "19.0"
+  }
+}

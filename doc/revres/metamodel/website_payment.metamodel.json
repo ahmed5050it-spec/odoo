@@ -1,0 +1,309 @@
+{
+  "subsystem": "website_payment",
+  "evidence": {
+    "manifest": {
+      "name": "Website Payment",
+      "category": "Website/Website",
+      "summary": "Payment integration with website",
+      "version": "1.0",
+      "depends": [
+        "website",
+        "account_payment",
+        "portal"
+      ],
+      "auto_install": true,
+      "application": false,
+      "description": "Bridge module that adds multi-website support for payment providers plus the public /donation pages."
+    },
+    "models": [
+      {
+        "_name": "payment.provider (inherit)",
+        "_description": "Payment Provider (multi-website extension)",
+        "fields": 1,
+        "relations": [
+          "website_id->website (check_company, ondelete=restrict)"
+        ]
+      },
+      {
+        "_name": "payment.transaction (inherit)",
+        "_description": "Payment Transaction (donation extension)",
+        "fields": 1,
+        "relations": []
+      },
+      {
+        "_name": "account.payment (inherit)",
+        "_description": "Account Payment (donation flag, related to tx)",
+        "fields": 1,
+        "relations": [
+          "is_donation (related=payment_transaction_id.is_donation)"
+        ]
+      },
+      {
+        "_name": "res.config.settings (inherit)",
+        "_description": "Settings (website-aware provider onboarding)",
+        "fields": 0,
+        "relations": []
+      }
+    ],
+    "routes": [
+      {
+        "paths": [
+          "/donation/pay"
+        ],
+        "auth": "public",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/donation/transaction/<minimum_amount>"
+        ],
+        "auth": "public",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/website_payment/snippet/supported_payment_methods"
+        ],
+        "auth": "public",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/payment/pay (override: website-aware provider filtering)"
+        ],
+        "auth": "public",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/my/payment_method (override: website-aware provider filtering)"
+        ],
+        "auth": "user",
+        "type": "http"
+      }
+    ],
+    "security": {
+      "access_rules": 0,
+      "record_rules": 0,
+      "groups": 0
+    },
+    "views": {
+      "form": 2,
+      "list": 0,
+      "kanban": 0,
+      "search": 0,
+      "qweb_templates": "donation_pay payment page + s_donation / s_supported_payment_methods snippets"
+    },
+    "frontend": {
+      "present": true,
+      "js_files": 8,
+      "xml_templates": 4,
+      "owl_components": [],
+      "registry_adds": [
+        "public.interactions.edit:website.supported_payment_methods",
+        "public.interactions.edit:website_payment.donation_snippet",
+        "public.interactions:website_payment.donation_form",
+        "public.interactions:website_payment.donation_snippet",
+        "public.interactions:website_sale.supported_payment_methods"
+      ],
+      "patches": [
+        "PaymentForm.prototype"
+      ],
+      "services": [],
+      "asset_bundles": {
+        "web.assets_frontend": 3,
+        "website.assets_inside_builder_iframe": 1,
+        "web.assets_tests": 1,
+        "web.assets_unit_tests": 1,
+        "website.website_builder_assets": 1
+      }
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": true,
+      "endpoints": [],
+      "files": []
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    },
+    "behavioral_notes": [
+      {
+        "element": "PaymentPortal.donation_pay (/donation/pay) + donation_transaction (/donation/transaction/<minimum_amount>)",
+        "observation": "donation_pay is the public storefront entry: it forces is_donation=True, defaults currency to the company currency and amount to 25.0, seeds a customAmount=freeAmount donation_options blob, and for a public (anonymous) visitor assigns the public partner and mints an access_token via payment_utils.generate_access_token(partner, amount, currency) before delegating to the inherited payment_pay to render the form. donation_transaction is the JSON-RPC that actually builds the payment.transaction from the visitor-typed free amount: it enforces amount >= minimum_amount, requires name/email/country for anonymous donors (attached as partner_name/email/country_id on the tx), calls _create_transaction (engine), sets tx.is_donation, then RECOMPUTES the access_token against the final amount (because the donor can change the amount on the page) and updates the landing route, finally calling _send_donation_email as an internal recipient notification. The free-amount-to-transaction binding and access-token re-issue are pure controller logic invisible to metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "PaymentPortal.payment_pay / payment_method overrides (controllers/payment.py) — website-aware provider scoping",
+        "observation": "controllers/payment.py is a thin override of account_payment.PaymentPortal that re-dispatches the generic 'pay' page and the manage-payment-methods portal page (/my/payment_method) passing website_id=request.website.id. This propagates into payment.provider._get_compatible_providers (models/payment_provider.py), which filters the provider set to those whose website_id is unset OR equals the current website, logging the rest into the availability report as 'incompatible_website'. The result: the public pay page and the portal payment-method manager only expose providers published/scoped to the website the visitor is on — multi-website provider isolation that no field metadata reveals. PortalAccount._invoice_get_page_view_values is likewise made website-aware.",
+        "source": "code-read"
+      },
+      {
+        "element": "PaymentPortal.get_supported_payment_methods (/website_payment/snippet/supported_payment_methods)",
+        "observation": "Public readonly endpoint feeding the 'supported payment methods' website snippet: it computes the website's compatible providers with_user(website.user_id).sudo() (so editors preview exactly what customers see, scoped to website.company_id rather than the visitor's company), then selects brand payment.methods (e.g. Amex under Card) plus brandless primary methods (e.g. PayPal), returning [{name, image_url}] where image_url is a cacheable website image URL. It sets Cache-Control to no-cache for internal users but 'public, max-age=604800, stale-while-revalidate=86400' (7 days) for public/portal — a client-cache strategy entirely in controller code.",
+        "source": "code-read"
+      },
+      {
+        "element": "payment.transaction._post_process / _send_donation_email (models/payment_transaction.py)",
+        "observation": "On settlement, _post_process (override of the engine hook) filters the done donation transactions and, per tx, sends a donor confirmation email and logs a chatter message on tx.payment_id (the account.payment) listing company/partner/name/country/email of the donation. _send_donation_email renders website_payment.donation_mail_body (encapsulated in mail.mail_notification_light) in the recipient's language and sends via mail.mail; it is invoked twice in the flow — once at transaction creation as an internal notification to donation_recipient_email, and again on done as the donor confirmation. This couples the donation payment to mail + account.payment chatter, invisible to metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "static/src/interactions/payment_form.js (patch of @payment PaymentForm) + donation_form.js (public interaction)",
+        "observation": "The donation pay page is driven on the client by a patch of the engine's PaymentForm: it wires the free-amount radio/'other amount' inputs into paymentContext.amount, validates the minimum on submitForm, and in _prepareTransactionRouteParams injects partner_id, currency_id, reference_prefix, partner_details {name,email,country_id}, donation_comment and donation_recipient_email into the JSON-RPC to /donation/transaction. A separate DonationForm public interaction handles snippet UX (amount selection, comment toggle, min-amount warnings). This is the static-asset half of the free-amount donation flow.",
+        "source": "static"
+      }
+    ]
+  },
+  "it_architecture": {
+    "application": "website_payment (Website Payment bridge — exposes the payment engine on the public website / portal)",
+    "software_services": [
+      "/donation/pay",
+      "/donation/transaction/<minimum_amount>",
+      "/website_payment/snippet/supported_payment_methods",
+      "/payment/pay (website-scoped override)",
+      "/my/payment_method (website-scoped override)"
+    ],
+    "data_objects": [
+      "payment.provider (+website_id)",
+      "payment.transaction (+is_donation)",
+      "account.payment (+is_donation)",
+      "res.config.settings (website-aware onboarding)"
+    ],
+    "logical_data_erm": [
+      "payment.provider -> website (website_id, check_company)",
+      "payment.transaction -> account.payment (payment_id; is_donation propagated)",
+      "account.payment.is_donation = related(payment_transaction_id.is_donation)",
+      "payment.transaction -> res.partner (donor; anonymous donors use website public partner)"
+    ],
+    "information_flows": [
+      "depends: website, account_payment, portal (no new models; 4 inherit-only extensions)",
+      "inbound: visitor free-amount donation -> /donation/transaction -> _create_transaction -> payment.transaction (is_donation)",
+      "scoping: website_id -> payment.provider._get_compatible_providers -> provider set filtered to current website on pay / manage-method pages",
+      "side-effect: donation done -> _post_process -> _send_donation_email (mail.mail) + chatter log on account.payment",
+      "snippet: /website_payment/snippet/supported_payment_methods -> website-scoped payment.method brands -> cached JSON to s_supported_payment_methods snippet"
+    ],
+    "frontend_components": [
+      "PaymentForm.prototype patch (donation amount binding + transaction route params)",
+      "website_payment.donation_form (public interaction)",
+      "website_payment.donation_snippet (public interaction + edit)",
+      "website.supported_payment_methods / website_sale.supported_payment_methods (public interactions)",
+      "donation_pay QWeb payment page; s_donation + s_supported_payment_methods website snippets"
+    ],
+    "external_integrations": {
+      "sdk": null,
+      "uses_api_keys": true,
+      "files": [],
+      "pattern": "No direct outbound HTTP in this bridge: actual acquirer communication is delegated to the inherited payment engine (payment.provider._send_api_request) and per-acquirer override modules. This module only adds website-scoping and the donation storefront on top of that engine.",
+      "note": "uses_api_keys=true is inherited from the payment stack; website_payment itself opens no new external endpoints (gap #7 lives in the base payment + provider modules)."
+    }
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Collect Online Payments on the Website (public pay page)",
+      "Accept Donations from a Free Amount (storefront donation form)",
+      "Manage Saved Payment Methods on the Portal (website-scoped)",
+      "Scope Payment Providers per Website (multi-website isolation)",
+      "Display Supported Payment Methods Snippet (website builder)"
+    ],
+    "value_streams": [
+      "Donate: visitor sets free amount on /donation/pay -> /donation/transaction creates payment.transaction -> acquirer redirect/inline -> done -> donor + internal confirmation email + chatter",
+      "Collect-on-Website: pay page (website-scoped providers) -> engine transaction -> settlement",
+      "Manage-Methods: portal /my/payment_method shows only providers published to the website"
+    ],
+    "information_concepts": [
+      "payment.transaction (donation)",
+      "payment.provider (website-scoped)",
+      "payment.method",
+      "account.payment (donation)",
+      "website",
+      "res.partner (donor)"
+    ],
+    "organization": [
+      "(no module-owned res.groups; relies on portal/public users and website.user_id for public-facing scoping)"
+    ],
+    "products": [],
+    "policies": [
+      "provider website-scoping: _get_compatible_providers excludes providers whose website_id != current website (report reason 'incompatible_website')",
+      "donation minimum-amount enforcement (server-side amount >= minimum_amount; client-side warnings)",
+      "anonymous donors must supply name/email/country; tokenization disabled for public donors",
+      "access-token re-issued against the final donor-chosen amount (tamper guard on free amount)",
+      "snippet PM list cached 7 days for public/portal, no-cache for internal users"
+    ],
+    "stakeholders": [
+      "Website Visitor / Donor (public res.partner)",
+      "Portal Customer (manages saved payment methods)",
+      "Website Editor / Merchant (configures donation + supported-methods snippets, scopes providers)",
+      "Donation Recipient (internal notification email)",
+      "Accountant (consumes settled account.payment downstream)"
+    ],
+    "strategy": null,
+    "metrics": [
+      "donation transaction volume / amounts (payment.transaction where is_donation, via payment engine pivot/graph)"
+    ]
+  },
+  "classification": {
+    "value_model": "network",
+    "activity_class": "primary",
+    "apqc_category": "3.0 Market and Sell Products and Services (online payment collection / donations via the public website)",
+    "rationale": "This is a storefront/portal mediation bridge: it implements no payment processing itself (no new models, only inherit-only extensions and public controllers) — it EXPOSES the underlying payment value-network on the public website. Stabell & Fjeldstad value_model = 'network' (mediating technology): like the base payment engine it interconnects a paying party (website visitor / donor) and the merchant/acquirer, here by provisioning that mediation through the public web channel (network promotion = the donation + supported-methods snippets that advertise the means to transact; service provisioning = the /donation/transaction that binds a free amount to a payment.transaction; infrastructure operation = the website-scoped provider selection routing the visitor to the right acquirer). We diverge from the base payment record on activity_class: payment.metamodel set it 'support' (back-office engine, category Hidden). Here the module is a CUSTOMER-FACING website surface (category Website/Website) whose function is online collection of money / donations from the public — a revenue-facing, market-and-sell activity — so activity_class = 'primary'. APQC 3.0 (Market and Sell) is chosen over 9.0 (Manage Financial Resources, where the back-office engine sits) precisely because the value here is collecting payment from a customer at the point of sale/solicitation on the website, not internal treasury processing; a 9.5 'process payments' reading would understate that this is the public collection front end. activity_class=primary + value_model=network captures both that it is revenue-facing and that its internal logic is mediation, not transformation."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "public /donation/pay page with prefilled + free-amount options",
+      "donation transaction creation from a visitor free amount with minimum-amount enforcement",
+      "donor + recipient confirmation emails on settlement, chatter log on the payment",
+      "per-website payment provider scoping on the pay page and the portal manage-methods page",
+      "drag-and-drop website snippets: Donation (s_donation) and Supported Payment Methods (s_supported_payment_methods)",
+      "anonymous donation via website public partner (tokenization suppressed)"
+    ],
+    "typical_fits": [
+      "non-profit / fundraising site collecting one-off donations of arbitrary amount",
+      "multi-website group routing each site's checkout to its own acquirer set",
+      "showing accepted card brands / wallets as a trust snippet on a landing page",
+      "logged-in portal customers managing saved cards scoped to the current website"
+    ],
+    "common_gaps": [
+      "no live acquirer ships here — a payment_<provider> module is still required to actually charge",
+      "recurring / pledged donations (this module is one-off free-amount only)",
+      "donation tax receipts / gift-aid style fiscal documents (beyond the confirmation email)",
+      "bespoke donation analytics dashboards (only the generic payment.transaction reporting exists)",
+      "custom landing-route / post-settlement document creation beyond the donation email + chatter"
+    ],
+    "drive_hints": [
+      "odoo shell: env['payment.provider'].search([]).mapped(lambda p: (p.name, p.website_id.name))",
+      "odoo shell: env['payment.transaction'].search([('is_donation','=',True)], limit=5).mapped(('reference','amount','state'))",
+      "curl -i 'http://localhost:8069/website_payment/snippet/supported_payment_methods' (public; returns JSON PM list + Cache-Control)",
+      "curl GET /donation/pay on a published website to render the donation form",
+      "odoo shell: env['payment.provider']._get_compatible_providers(env.company.id, None, 0, website_id=<wid>)"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Which downstream/sibling modules (website_sale, website_event) reuse /donation or the website-scoped provider filtering, and how donations reconcile in accounting.",
+    "Real-world donation volumes and how often anonymous-vs-logged-in donation paths are used (no runtime row counts captured).",
+    "Exact acquirer endpoints/auth remain in per-provider override modules, not in this bridge."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/website_payment.facts.json",
+    "tools": [
+      "code-read",
+      "extract_module.py",
+      "extract_frontend.py",
+      "Grep",
+      "Read"
+    ],
+    "odoo_version": "19.0"
+  }
+}

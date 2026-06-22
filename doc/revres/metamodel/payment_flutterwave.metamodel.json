@@ -1,0 +1,303 @@
+{
+  "subsystem": "payment_flutterwave",
+  "evidence": {
+    "manifest": {
+      "name": "Payment Provider: Flutterwave",
+      "category": "Accounting/Payment Providers",
+      "summary": "A Nigerian payment provider covering several African countries.",
+      "version": "1.0",
+      "depends": [
+        "payment"
+      ],
+      "auto_install": false,
+      "application": false
+    },
+    "models": [
+      {
+        "_name": "payment.provider (inherit)",
+        "_description": "Payment Provider (Flutterwave credentials)",
+        "fields": 4,
+        "relations": [
+          "code (Selection selection_add 'flutterwave')",
+          "flutterwave_public_key (Char, required_if_provider=flutterwave)",
+          "flutterwave_secret_key (Char, groups=base.group_system)",
+          "flutterwave_webhook_secret (Char, groups=base.group_system)"
+        ]
+      },
+      {
+        "_name": "payment.transaction (inherit)",
+        "_description": "Payment Transaction (Flutterwave hosted-checkout / tokenized-charge flow)",
+        "fields": 0,
+        "relations": [
+          "no new fields; 9 methods overriding payment's reference/rendering/request/notification hooks"
+        ]
+      },
+      {
+        "_name": "payment.token (inherit)",
+        "_description": "Payment Token (saved Flutterwave card token)",
+        "fields": 1,
+        "relations": [
+          "flutterwave_customer_email (Char, email tied to the saved Flutterwave card token)"
+        ]
+      }
+    ],
+    "routes": [
+      {
+        "paths": [
+          "/payment/flutterwave/return"
+        ],
+        "auth": "public",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/payment/flutterwave/auth_return"
+        ],
+        "auth": "public",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/payment/flutterwave/webhook"
+        ],
+        "auth": "public",
+        "type": "http"
+      }
+    ],
+    "security": {
+      "access_rules": 0,
+      "record_rules": 0,
+      "groups": 0,
+      "note": "No own ACL/rules; relies on payment's security and on base.group_system field groups guarding flutterwave_secret_key / flutterwave_webhook_secret."
+    },
+    "views": {
+      "form": 2,
+      "list": 0,
+      "kanban": 0,
+      "search": 0,
+      "pivot": 0,
+      "graph": 0,
+      "note": "No own model views; xml_loc=47 is view inheritance (payment.provider form: Flutterwave public/secret/webhook keys) plus QWeb: a redirect_form template (POST self-submitting form to the Flutterwave hosted payment link) and an authorization redirect_form (redirect_form_view_id, used by _get_specific_processing_values to bounce the payer to the 3-D Secure auth_url), plus payment_provider_data.xml."
+    },
+    "behavioral_notes": [
+      {
+        "element": "payment.transaction._get_specific_rendering_values / _send_payment_request -> outbound POST to api.flutterwave.com (payments / tokenized-charges)",
+        "observation": "The outbound acquirer call (gap #7) is centralized through payment's payment.provider._send_api_request, which payment_flutterwave targets at https://api.flutterwave.com/v3/ via _build_request_url and authenticates with 'Authorization: Bearer <flutterwave_secret_key>' (_build_request_headers; secret stored on the provider, group_system-guarded). _get_specific_rendering_values (redirect/hosted-checkout flow) POSTs to 'payments' a payload of tx_ref(=self.reference), amount, currency, redirect_url(=/payment/flutterwave/return), customer{email,name,phonenumber}, customizations{title=company,logo} and payment_options (const.PAYMENT_METHODS_MAPPING), then embeds the returned data['link'] as the api_url of a self-submitting redirect form -- the payer is sent off-site to Flutterwave's hosted checkout. _send_payment_request (saved-token / online_token charge) POSTs to 'tokenized-charges' with token(=token_id.provider_ref), email(=token_id.flutterwave_customer_email), amount, currency, country, tx_ref, first/last name, customer ip and an auth redirect_url(=/payment/flutterwave/auth_return), then folds the response into _process('flutterwave', ...). _parse_response_content returns response.json()['data']; _parse_response_error returns json['message']. None of this server-to-server HTTP is visible in Python field/model metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "payment.transaction._get_specific_processing_values -> 3-D Secure authorization redirect for pending token charges",
+        "observation": "After a tokenized charge, if _flutterwave_is_authorization_pending() matches (provider_code=flutterwave, operation=online_token, state=pending, provider_reference ilike 'https'), _apply_updates has stashed the bank's 3-D Secure authorization URL into provider_reference (meta.authorization.redirect from the charge response). _get_specific_processing_values then renders provider_id.redirect_form_view_id with {auth_url: provider_reference} to bounce the payer to the issuer's 3DS page; on success Flutterwave returns to /payment/flutterwave/auth_return. The provider_reference is later overwritten with the real Flutterwave transaction id once the tx leaves pending. This stateful overloading of provider_reference (URL while pending, transaction id afterwards) is pure runtime behavior invisible to metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "FlutterwaveController return / auth_return / webhook routes -> verify-by-reference + verif-hash signature + state mapping",
+        "observation": "Three public routes settle the transaction. /payment/flutterwave/return (GET) handles the browser redirect from hosted checkout: unless status=='cancelled' it calls _verify_and_process(data), which locates the tx via payment.transaction._search_by_reference('flutterwave', data) and then makes a server-side GET 'transactions/verify_by_reference' (params tx_ref=tx.reference) to re-fetch the authoritative result from Flutterwave before _process('flutterwave', verified_data) -- never trusting the redirect payload. /payment/flutterwave/auth_return (GET) parses the stringified JSON 'response' arg and delegates to the same return handler. /payment/flutterwave/webhook (POST, csrf=False) handles event=='charge.completed': it _search_by_reference, and IF a tx is found, verifies the inbound 'verif-hash' header against provider.flutterwave_webhook_secret with hmac.compare_digest (constant-time; missing/mismatched -> werkzeug Forbidden 403) before tx_sudo._process(...). Status mapping (_apply_updates) folds Flutterwave statuses into payment's state machine via const.PAYMENT_STATUS_MAPPING: pending/'pending auth'->_set_pending, successful->_set_done, cancelled->_set_canceled, failed->_set_error, unknown->_set_error+warning. Signature trust, the verify-by-reference round-trip, and the inbound state transitions are all invisible to metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "payment.transaction._compute_reference -> singularized unique tx_ref",
+        "observation": "Override of payment's _compute_reference singularizes the prefix with the current datetime (payment_utils.singularize_reference_prefix) because Flutterwave requires the tx_ref to be unique per merchant account; if no prefix is supplied it manually calls _compute_reference_prefix first so the reference is still named after the source document. This shapes the cross-system key (Odoo reference == Flutterwave tx_ref) and is not derivable from field metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "payment.transaction._extract_token_values -> vault Flutterwave card token",
+        "observation": "When the charge response carries card.token, _extract_token_values vaults a payment.token: provider_ref = card.token, payment_details = card.last_4digits, flutterwave_customer_email = customer.email. Subsequent off-session charges (_send_payment_request) read token_id.provider_ref + token_id.flutterwave_customer_email to POST tokenized-charges. The token lifecycle and the email-tied vaulting are runtime side-effects beyond metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "external integration surface (gap #7) -- endpoints, keys, SDK",
+        "observation": "Static gap-#7 facts (extract_frontend.py): uses_api_keys=true; one outbound endpoint -- https://api.flutterwave.com/v3/ (direct REST, Bearer secret-key auth) -- declared/used in models/payment_provider.py (_build_request_url/_build_request_headers). No 'requests' import here: HTTP is delegated to payment.provider._send_api_request in the parent engine, which payment_flutterwave configures via the _build_request_url / _build_request_headers / _parse_response_content / _parse_response_error hook overrides. There is no client-side acquirer SDK: payment is collected via Flutterwave's HOSTED checkout page (server returns a payment link the browser is redirected to), so the only external channel is server-to-server REST plus the redirect/webhook return loop. This is the canonical metadata gap #7: none of it is reachable from model/field metadata.",
+        "source": "static"
+      }
+    ],
+    "frontend": {
+      "present": true,
+      "js_files": 1,
+      "xml_templates": 0,
+      "owl_components": [],
+      "registry_adds": [],
+      "patches": [
+        "PaymentForm.prototype"
+      ],
+      "services": [],
+      "asset_bundles": {
+        "web.assets_frontend": 1
+      }
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": true,
+      "endpoints": [
+        "https://api.flutterwave.com/v3/"
+      ],
+      "files": [
+        "models/payment_provider.py"
+      ]
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    }
+  },
+  "it_architecture": {
+    "application": "payment_flutterwave (Flutterwave acquirer adapter for the payment engine; _inherit-only, no own models/views)",
+    "software_services": [
+      "/payment/flutterwave/return (redirect-return: re-verify the tx server-side, confirm state)",
+      "/payment/flutterwave/auth_return (3-D Secure authorization return -> delegates to the return handler)",
+      "/payment/flutterwave/webhook (signed async notification, csrf=False, verif-hash)"
+    ],
+    "data_objects": [
+      "payment.provider (+flutterwave_public_key, flutterwave_secret_key, flutterwave_webhook_secret)",
+      "payment.transaction (Flutterwave hosted-checkout / tokenized-charge flow; no new fields)",
+      "payment.token (+flutterwave_customer_email)"
+    ],
+    "logical_data_erm": [
+      "payment.transaction -> payment.provider (provider_id; provider_code=='flutterwave' gates every override)",
+      "payment.transaction -> payment.token (token_id; off-session charges read provider_ref + flutterwave_customer_email)",
+      "payment.token -> payment.provider (provider_id)",
+      "payment.provider.code selection_add 'flutterwave'",
+      "external: payment.transaction.reference == Flutterwave tx_ref (singularized unique key); payment.transaction.provider_reference == Flutterwave transaction id (or, while pending, the 3DS auth URL)",
+      "external: payment.token.provider_ref == Flutterwave card token; payment.token.flutterwave_customer_email == vaulted customer email"
+    ],
+    "information_flows": [
+      "depends: payment (inherits the provider/transaction/token engine + _send_api_request)",
+      "outbound: _get_specific_rendering_values -> POST https://api.flutterwave.com/v3/payments (Bearer secret-key) -> returns hosted payment link",
+      "outbound: _send_payment_request -> POST https://api.flutterwave.com/v3/tokenized-charges (saved-token / off-session charge)",
+      "outbound: controller _verify_and_process -> GET https://api.flutterwave.com/v3/transactions/verify_by_reference (authoritative re-verify before _process)",
+      "redirect: browser -> Flutterwave hosted checkout page (self-submitting redirect form to data['link']); no client-side acquirer SDK",
+      "inbound (redirect): Flutterwave -> /payment/flutterwave/return (and /auth_return for 3DS) -> verify_by_reference -> _process -> /payment/status",
+      "inbound (webhook): Flutterwave -> /payment/flutterwave/webhook -> verif-hash compare_digest vs flutterwave_webhook_secret -> _process -> payment state machine",
+      "side-effect: charge response carrying card.token + tx.tokenize -> _extract_token_values -> payment.token vault (token + customer email)"
+    ],
+    "frontend_components": [
+      "PaymentForm.prototype (patch; shared payment widget that posts the inline form / triggers the redirect to the Flutterwave hosted payment link -- no provider-specific OWL component, no client-side acquirer SDK)"
+    ],
+    "external_integrations": {
+      "sdk": "none (hosted-checkout redirect model); server side uses no python SDK -- HTTP via payment.provider._send_api_request",
+      "uses_api_keys": true,
+      "endpoints": [
+        "https://api.flutterwave.com/v3/"
+      ],
+      "auth": "Bearer <flutterwave_secret_key> (direct REST API); inbound webhook authenticated by a 'verif-hash' header compared against flutterwave_webhook_secret",
+      "files": [
+        "models/payment_provider.py",
+        "models/payment_transaction.py",
+        "models/payment_token.py",
+        "controllers/main.py",
+        "const.py"
+      ],
+      "pattern": "Concrete realization of metadata gap #7: a real external acquirer integration. Outbound server-to-server REST to api.flutterwave.com/v3 (payments / tokenized-charges / transactions/verify_by_reference) authenticated with a secret API key; payment collected via Flutterwave's HOSTED checkout page (the browser is redirected to a Flutterwave-hosted link, optionally through an issuer 3-D Secure page); inbound settlement via a verif-hash-verified webhook plus a redirect-return route that re-verifies the result server-side. The base 'payment' engine flags uses_api_keys but ships no live acquirer -- this module is exactly that override.",
+      "note": "Prime gap-#7 example: none of the Flutterwave endpoints, the Bearer-key auth, the verif-hash webhook trust, or the verify-by-reference round-trip are derivable from Python model/field metadata; they were established only by reading models/payment_provider.py + models/payment_transaction.py + controllers/main.py + const.py."
+    }
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Accept Card / Mobile-Money / Online Payments via Flutterwave (hosted-checkout redirect flow)",
+      "African / multi-currency acceptance (card, M-Pesa, bank transfer, Visa/Mastercard/Amex/Discover across const.SUPPORTED_CURRENCIES)",
+      "3-D Secure authentication (redirect to the issuer authorization page)",
+      "Tokenization / Saved Cards (vault Flutterwave card token + customer email; off-session tokenized-charges)",
+      "Server-side result verification (transactions/verify_by_reference) before confirming state"
+    ],
+    "value_streams": [
+      "Collect-Payment (Flutterwave): initiate tx -> POST payments (api.flutterwave.com) -> redirect to Flutterwave hosted checkout (optional 3DS) -> redirect /payment/flutterwave/return OR async /payment/flutterwave/webhook (verif-hash) -> verify_by_reference -> _process -> state machine done/error -> downstream post-process settlement",
+      "Tokenize-and-Recharge: successful charge + card.token -> vault payment.token (token + email) -> later off-session POST tokenized-charges (online_token), with 3DS auth_return bounce if the issuer requires it",
+      "Authorize-3DS: tokenized charge returns pending + auth URL -> _get_specific_processing_values redirects payer to issuer 3DS page -> /payment/flutterwave/auth_return -> verify -> _process"
+    ],
+    "information_concepts": [
+      "payment.provider (Flutterwave credentials: public / secret / webhook-secret keys)",
+      "payment.transaction (mapped to a Flutterwave payment / tokenized-charge; reference == tx_ref)",
+      "payment.token (saved Flutterwave card: card token + customer email)"
+    ],
+    "organization": [
+      "(no module-owned res.groups; flutterwave_secret_key and flutterwave_webhook_secret are restricted to base.group_system; everything else inherits payment's groups/record rules)"
+    ],
+    "products": [],
+    "policies": [
+      "Webhook authenticity: charge.completed events must pass _verify_signature (verif-hash header compared to flutterwave_webhook_secret with constant-time hmac.compare_digest) or are rejected with HTTP 403 Forbidden",
+      "Redirect results are never trusted directly: the controller re-fetches the authoritative result via GET transactions/verify_by_reference before _process",
+      "Flutterwave is excluded from validation operations (_get_compatible_providers filters it out when is_validation)",
+      "Only currencies in const.SUPPORTED_CURRENCIES are offered (_get_supported_currencies override)",
+      "References must be unique per merchant account -> tx_ref singularized with the current datetime (_compute_reference)",
+      "Secret/webhook keys gated by base.group_system field groups"
+    ],
+    "stakeholders": [
+      "Payer / Cardholder / Mobile-money user (res.partner)",
+      "Merchant / Company (res.company, holds the Flutterwave account & keys)",
+      "Flutterwave (external acquirer / PSP, African card & mobile-money network)",
+      "Card issuer (3-D Secure authorization authority)",
+      "Accountant (consumes settled payments via account_payment downstream)"
+    ],
+    "strategy": null,
+    "metrics": [
+      "(no own reports; transaction volumes/amounts/state surfaced by the parent payment.transaction pivot/graph)"
+    ]
+  },
+  "classification": {
+    "value_model": "network",
+    "activity_class": "support",
+    "apqc_category": "9.0 Manage Financial Resources (9.5 process payments / collect cash; manage external payment provider)",
+    "rationale": "payment_flutterwave is a value-NETWORK (Stabell & Fjeldstad mediating-technology) component: a concrete acquirer adapter whose purpose is to interconnect two parties who would not otherwise transact directly -- the cardholder/mobile-money payer and the merchant -- by linking the merchant to Flutterwave's African card & mobile-money network. It exhibits the three mediating-technology activities: network promotion & contract management (API-key/webhook-secret management, currency & payment-method enablement, exclusion from validation flows), service provisioning (creating the hosted payment link / tokenized charge per transaction and re-verifying the result), and infrastructure operation (the server-to-server api.flutterwave.com link, the hosted-checkout redirect, and the verif-hash-verified settlement loop). It does not transform inputs into outputs (chain) nor solve a bespoke customer problem (shop). It inherits the parent 'payment' engine's value_model exactly: the engine is the generic mediator and this module is its Flutterwave realization. activity_class is 'support' because, from the enterprise value-chain perspective, payment acceptance is an infrastructure/finance support function (category Accounting/Payment Providers, application=False, no end-user app) sitting under 9.0 Manage Financial Resources -- specifically 9.5 process payments / collect cash, with the side of 'manage an external payment provider'. So value_model=network (its own internal logic is mediation, an acquirer integration -- gap #7), activity_class=support (its place on the enterprise value chain). This mirrors the sibling payment_stripe.metamodel.json (network/support) and the parent payment.metamodel.json (network/support)."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "card / mobile-money / bank-transfer payment via Flutterwave's hosted checkout page (redirect flow)",
+      "multi-currency African acceptance bounded by const.SUPPORTED_CURRENCIES",
+      "tokenization / saved cards (Flutterwave card token + customer email) and off-session tokenized-charges",
+      "3-D Secure issuer authorization via redirect (auth_return route)",
+      "server-side result re-verification (transactions/verify_by_reference) before confirming",
+      "asynchronous settlement via a verif-hash-verified webhook plus a redirect-return confirmation route"
+    ],
+    "typical_fits": [
+      "online shop / portal checkout collecting card or mobile-money payments through Flutterwave in a supported African market",
+      "save-card-for-later and tokenized recurring charges (online_token tokenized-charges)",
+      "send-a-payment-link or pay-an-invoice-online collection (with account_payment / sale downstream)",
+      "multi-currency acceptance across the 22 currencies in const.SUPPORTED_CURRENCIES"
+    ],
+    "common_gaps": [
+      "no manual capture / authorize-only / void: Flutterwave here is a direct charge + (full) refund acquirer; partial/manual capture is not implemented",
+      "hosted-checkout redirect only -- no inline (PCI-light) client-side card Element; the payer always leaves the site to Flutterwave",
+      "the public-URL requirement for webhooks means local/dev instances need a tunnel; the redirect-return + verify_by_reference path is the primary settlement guarantee",
+      "currency support is bounded by const.SUPPORTED_CURRENCIES (a static list last refreshed Nov 2022); newer currencies/methods need code changes",
+      "no Connect-style merchant self-onboarding: API keys are entered manually on the provider form",
+      "bespoke reconciliation / settlement document chains live downstream (account_payment, sale), not here"
+    ],
+    "drive_hints": [
+      "odoo shell: env['payment.provider'].search([('code','=','flutterwave')]).mapped(('name','state','flutterwave_public_key'))",
+      "odoo shell: p=env['payment.provider'].search([('code','=','flutterwave')],limit=1); print(p.support_tokenization, p._get_supported_currencies().mapped('name'))",
+      "odoo shell: tx=env['payment.transaction'].search([('provider_code','=','flutterwave')],limit=1); print(tx.reference, tx.state, tx.provider_reference)",
+      "odoo shell: print([m for m in dir(env['payment.transaction']) if '_flutterwave' in m])",
+      "curl -X POST https://<host>/payment/flutterwave/webhook (csrf=False, auth=public) with a missing/invalid 'verif-hash' header on a charge.completed event for a known tx -> expect HTTP 403 Forbidden from _verify_signature",
+      "Flutterwave test cards / OTP per their docs (https://developer.flutterwave.com/docs/test-cards)"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Real-world distribution of Flutterwave transaction states, tokenization usage, and refund rates (no runtime row counts captured).",
+    "Exact payload/response shape of refunds and whether partial refunds are exercised (no refund-request override observed in the read files).",
+    "Which downstream modules consume the settled Flutterwave transactions (account_payment, sale, subscription).",
+    "Whether instances actually register the webhook (flutterwave_webhook_secret set) vs rely on the redirect-return + verify_by_reference path."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/payment_flutterwave.facts.json",
+    "tools": [
+      "apqc_odoo_map.tsv",
+      "code-read (models/payment_provider.py, models/payment_transaction.py, models/payment_token.py, controllers/main.py, const.py, __manifest__.py)",
+      "extract_frontend.py (frontend/payment_flutterwave.frontend.json)",
+      "extract_module.py (facts/payment_flutterwave.facts.json)",
+      "Grep",
+      "Read"
+    ],
+    "odoo_version": "19.0"
+  }
+}

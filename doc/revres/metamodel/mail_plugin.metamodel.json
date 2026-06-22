@@ -1,0 +1,342 @@
+{
+  "subsystem": "mail_plugin",
+  "evidence": {
+    "manifest": {
+      "name": "Mail Plugin",
+      "category": "Sales/CRM",
+      "depends": [
+        "web",
+        "contacts",
+        "iap"
+      ],
+      "auto_install": false,
+      "application": false
+    },
+    "models": [
+      {
+        "_name": "res.partner.iap",
+        "_description": "Partner IAP",
+        "fields": 3,
+        "relations": [
+          "partner_id->res.partner"
+        ]
+      },
+      {
+        "_name": "res.partner",
+        "_description": "(extension)",
+        "fields": 2,
+        "relations": []
+      },
+      {
+        "_name": "ir.http",
+        "_description": "(extension)",
+        "fields": 0,
+        "relations": []
+      }
+    ],
+    "routes": [
+      {
+        "paths": [
+          "/mail_plugin/partner/get",
+          "/mail_client_extension/partner/get"
+        ],
+        "auth": "outlook",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/mail_plugin/partner/search"
+        ],
+        "auth": "outlook",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/mail_plugin/partner/create",
+          "/mail_client_extension/partner/create"
+        ],
+        "auth": "outlook",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/mail_plugin/partner/enrich_and_create_company"
+        ],
+        "auth": "outlook",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/mail_plugin/partner/enrich_and_update_company"
+        ],
+        "auth": "outlook",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/mail_plugin/log_mail_content"
+        ],
+        "auth": "outlook",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/mail_plugin/get_translations"
+        ],
+        "auth": "outlook",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/mail_plugin/modules/get",
+          "/mail_client_extension/modules/get"
+        ],
+        "auth": "outlook",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/mail_plugin/auth",
+          "/mail_client_extension/auth"
+        ],
+        "auth": "user",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/mail_plugin/auth/confirm",
+          "/mail_client_extension/auth/confirm"
+        ],
+        "auth": "user",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/mail_plugin/auth/check_version"
+        ],
+        "auth": "none",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/mail_plugin/auth/access_token",
+          "/mail_client_extension/auth/access_token"
+        ],
+        "auth": "none",
+        "type": "jsonrpc"
+      }
+    ],
+    "security": {
+      "access_rules": 1,
+      "record_rules": 0,
+      "groups": 0
+    },
+    "views": {
+      "form": 2,
+      "list": 1,
+      "tree": 0,
+      "kanban": 0,
+      "search": 0,
+      "pivot": 0,
+      "graph": 0,
+      "calendar": 0,
+      "activity": 0
+    },
+    "frontend": {
+      "present": true,
+      "js_files": 0,
+      "xml_templates": 2,
+      "owl_components": [],
+      "registry_adds": [],
+      "patches": [],
+      "services": [],
+      "asset_bundles": {}
+    },
+    "integrations": {
+      "http_call_sites": 2,
+      "sdk_imports": [
+        "requests"
+      ],
+      "uses_api_keys": true,
+      "endpoints": [],
+      "files": [
+        "controllers/mail_plugin.py"
+      ]
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    },
+    "behavioral_notes": [
+      {
+        "element": "MailPluginController._iap_enrich / _create_company_from_iap",
+        "observation": "On an unknown sender the partner/get and enrich_* routes call request.env['iap.enrich.api']._request_enrich({domain}) (paid IAP service) to fetch company name/address/phone/logo, then create or update a res.partner company. iap_tools._MAIL_PROVIDERS and _MAIL_DOMAIN_BLACKLIST block enriching free-mail domains (gmail.com/outlook.com). InsufficientCreditError is caught and surfaced as an enrichment_info hint. Not visible in metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "_create_company_from_iap / res_partner_enrich_and_update_company (logo fetch)",
+        "observation": "After IAP enrichment the controller issues an outbound requests.get(logo_url, timeout=2) to download the company logo and stores it base64 in image_1920; failures are swallowed (logged/ignored). This is a second external HTTP egress beyond the IAP RPC. Not visible in metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "ir.http._auth_method_outlook + Authenticate.auth_confirm/auth_access_token",
+        "observation": "auth='outlook' is a custom auth method: it reads the Bearer Authorization header and validates it via res.users.apikeys._check_credentials(scope='odoo.plugin.outlook'), then impersonates that user. Tokens are minted by a 2-leg flow: /auth/confirm generates an HMAC-signed auth code (3-min TTL) and /auth/access_token exchanges it for a res.users.apikeys key valid 1 day. Pure code/headers, invisible to metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "MailPluginController.log_mail_content",
+        "observation": "Logs an email into Odoo by calling message_post(body=Markup(message), attachments=...) on the target record, restricted to models in _mail_content_logging_models_whitelist() (res.partner only by default); off-whitelist models raise Forbidden. This writes a mail.message + mail.thread side-effect not declared in metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "res.partner.iap (side-table) + res.partner.create/write sync",
+        "observation": "IAP responses are cached in a dedicated res.partner.iap model keyed by iap_search_domain with UNIQUE(partner_id) so the same company is never enriched twice and the heavy JSON field stays off res.partner. res.partner.iap_enrich_info/iap_search_domain are compute fields mirrored from it, and res.partner.create/write transparently upsert the side-table. Relationship semantics not derivable from metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "external integrations",
+        "observation": "2 HTTP call sites; SDKs ['requests']; api_keys=True. Outbound to IAP enrich service + third-party logo URLs; inbound auth via res.users.apikeys. This module is an outward-facing integration boundary.",
+        "source": "static"
+      },
+      {
+        "element": "frontend (static assets)",
+        "observation": "No OWL/JS shipped (js_files=0): only 2 XML translation bundles (static/src/to_translate/translations_gmail.xml, translations_outlook.xml) served to the external Outlook/Gmail add-ins via /mail_plugin/get_translations. The UI lives in the third-party add-in, not in this Odoo module.",
+        "source": "static"
+      }
+    ]
+  },
+  "it_architecture": {
+    "application": "mail_plugin (Mail Plugin integration backend exposing Odoo CRM/contacts to email clients)",
+    "software_services": [
+      "/mail_plugin/partner/get",
+      "/mail_plugin/partner/search",
+      "/mail_plugin/partner/create",
+      "/mail_plugin/partner/enrich_and_create_company",
+      "/mail_plugin/partner/enrich_and_update_company",
+      "/mail_plugin/log_mail_content",
+      "/mail_plugin/get_translations",
+      "/mail_plugin/auth",
+      "/mail_plugin/auth/confirm",
+      "/mail_plugin/auth/access_token",
+      "/mail_plugin/auth/check_version"
+    ],
+    "data_objects": [
+      "res.partner.iap",
+      "res.partner",
+      "ir.http"
+    ],
+    "logical_data_erm": [
+      "res.partner.iap -> res.partner",
+      "res.partner -> res.partner.iap (compute mirror: iap_enrich_info, iap_search_domain)",
+      "res.users.apikeys -> res.users (outlook access token)"
+    ],
+    "information_flows": [
+      "depends: web, contacts, iap",
+      "inbound: Outlook/Gmail add-in -> jsonrpc routes (auth=outlook Bearer apikey)",
+      "outbound: _iap_enrich -> iap.enrich.api._request_enrich (paid IAP enrichment service)",
+      "outbound: requests.get(logo_url) -> third-party logo image fetch",
+      "side-effect: log_mail_content -> message_post (mail.message on res.partner)",
+      "side-effect: enrich_* -> res.partner company create/update + res.partner.iap cache write"
+    ],
+    "frontend_components": [],
+    "external_integrations": [
+      "iap.enrich.api._request_enrich -> Odoo IAP company-enrichment web service (paid, credit-metered)",
+      "requests.get(logo_url) -> third-party company logo download (timeout=2s)",
+      "res.users.apikeys (scope odoo.plugin.outlook) -> inbound Bearer-token auth for the add-ins"
+    ]
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Expose Contacts/CRM to Email Clients (Outlook/Gmail add-in API)",
+      "Contact Lookup & Search from the Inbox",
+      "Company Data Enrichment (IAP)",
+      "Log Emails to Records",
+      "External App Authorization (token issuance)"
+    ],
+    "value_streams": [
+      "Email-to-CRM: open email -> resolve/enrich contact -> create partner/company -> log message back to the record"
+    ],
+    "information_concepts": [
+      "res.partner (contact/company)",
+      "res.partner.iap (enrichment cache)",
+      "res.users.apikeys (access token)",
+      "mail.message (logged email)"
+    ],
+    "organization": [
+      "base.group_system (sole ACL on res.partner.iap)"
+    ],
+    "products": [],
+    "policies": [
+      "Custom auth method 'outlook' gates all data routes on a scoped API key (odoo.plugin.outlook)",
+      "Mail-content logging restricted by _mail_content_logging_models_whitelist (res.partner only)",
+      "Free-mail / blacklisted domains excluded from IAP enrichment (_MAIL_PROVIDERS / _MAIL_DOMAIN_BLACKLIST)"
+    ],
+    "stakeholders": [
+      "Internal User (res.users, links their inbox)",
+      "Email client add-in (Outlook / Gmail)",
+      "IAP enrichment service (Odoo S.A.)",
+      "Contact / Company (res.partner)"
+    ],
+    "strategy": null,
+    "metrics": []
+  },
+  "classification": {
+    "value_model": "support",
+    "activity_class": "support",
+    "apqc_category": "8.0 Manage Information Technology",
+    "rationale": "mail_plugin is not a primary line-of-business activity: it ships no business documents, no products, one technical model (res.partner.iap) plus two res.partner fields, and zero OWL/JS. It is an integration backend (a value-shop/network style support function, Stabell & Fjeldstad) whose job is to develop and operate an external-facing JSON API surface and token-based authorization that connects third-party systems (Outlook/Gmail add-ins) to Odoo's existing CRM/contacts data. That places it in APQC 8.0 'Manage Information Technology' (develop/operate IT solutions and integrations), not 3.0 'Market and Sell': it re-exposes data owned by the contacts/CRM (3.0) subsystems rather than performing the selling itself, and its own assets are auth, routes and an enrichment cache. The IAP company-enrichment feature is the one business-leaning capability, but it is delivered as a technical enrichment service over the integration boundary, reinforcing the IT-enablement (support) classification."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "JSON API for the official Outlook & Gmail mail plugins (partner get/search/create)",
+      "OAuth-style 2-leg authorization: HMAC auth code -> scoped res.users.apikeys access token",
+      "Custom 'outlook' auth method validating Bearer tokens",
+      "IAP-backed company enrichment (name/address/phone/logo) with domain de-duplication cache",
+      "Log email body + attachments onto a record as a mail.message",
+      "Translation feed for the add-in UI (get_translations)"
+    ],
+    "typical_fits": [
+      "Out-of-the-box install of the Odoo-published Outlook/Gmail add-in against this backend",
+      "Contact/company auto-creation and enrichment from the inbox using IAP credits",
+      "Single-database contact lookup scoped to the authenticated user's companies"
+    ],
+    "common_gaps": [
+      "Whitelisting more models for log_mail_content (override _mail_content_logging_models_whitelist) — e.g. crm.lead, helpdesk.ticket",
+      "Returning extra record context with a contact (override _get_contact_data) — done by crm/helpdesk plugin layers",
+      "Replacing IAP enrichment with a different/self-hosted data provider",
+      "Tightening token lifetime / scope policy beyond the default 1-day apikey"
+    ],
+    "drive_hints": [
+      "curl -X POST $ODOO/mail_plugin/auth/check_version (auth=none) -> expects 1 if module installed",
+      "curl -X POST $ODOO/mail_plugin/partner/search -H 'Authorization: Bearer <apikey>' -d '{\"params\":{\"search_term\":\"odoo\"}}' (auth=outlook)",
+      "odoo shell: env['res.partner.iap'].search([], limit=5).read(['partner_id','iap_search_domain'])",
+      "odoo shell: env['res.users.apikeys']._check_credentials(scope='odoo.plugin.outlook', key='<token>')"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Exact IAP enrichment payload/contract (iap.enrich.api._request_enrich response shape) and credit consumption per call.",
+    "Which downstream modules extend _get_contact_data / _mail_content_logging_models_whitelist (crm, helpdesk) and what extra data they surface.",
+    "Operational token lifecycle: revocation, the 1-day apikey expiry handling, and refresh behavior in the add-ins."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/mail_plugin.facts.json",
+    "tools": [
+      "code-read",
+      "extract_frontend.py",
+      "extract_module.py",
+      "extract_runtime.sh",
+      "run-odoo (odoo shell)"
+    ],
+    "odoo_version": "19.0"
+  }
+}

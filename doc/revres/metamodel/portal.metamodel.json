@@ -1,0 +1,337 @@
+{
+  "subsystem": "portal",
+  "evidence": {
+    "manifest": {
+      "name": "Customer Portal",
+      "category": "Hidden",
+      "depends": [
+        "web",
+        "html_editor",
+        "http_routing",
+        "mail",
+        "auth_signup"
+      ],
+      "auto_install": false,
+      "application": false
+    },
+    "models": [
+      {
+        "_name": "portal.mixin",
+        "_description": "Portal Mixin",
+        "fields": 3,
+        "relations": []
+      },
+      {
+        "_name": "portal.share",
+        "_description": "Portal Sharing",
+        "fields": 7,
+        "relations": [
+          "partner_ids->res.partner"
+        ]
+      },
+      {
+        "_name": "portal.wizard",
+        "_description": "Grant Portal Access",
+        "fields": 3,
+        "relations": [
+          "partner_ids->res.partner",
+          "user_ids->portal.wizard.user"
+        ]
+      },
+      {
+        "_name": "portal.wizard.user",
+        "_description": "Portal User Config",
+        "fields": 8,
+        "relations": [
+          "wizard_id->portal.wizard",
+          "partner_id->res.partner",
+          "user_id->res.users"
+        ]
+      }
+    ],
+    "routes": [
+      {
+        "paths": [
+          "/my",
+          "/my/home"
+        ],
+        "auth": "user",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/my/counters"
+        ],
+        "auth": "user",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/my/account",
+          "/my/addresses",
+          "/my/address",
+          "/my/address/submit"
+        ],
+        "auth": "user",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/my/address/archive",
+          "/my/address/country_info/<model('res.country')>"
+        ],
+        "auth": "user",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/my/security",
+          "/my/deactivate_account"
+        ],
+        "auth": "user",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/portal/attachment/remove",
+          "/portal/chatter_init"
+        ],
+        "auth": "public",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/mail/chatter_fetch",
+          "/mail/update_is_internal"
+        ],
+        "auth": "public",
+        "type": "jsonrpc"
+      }
+    ],
+    "security": {
+      "access_rules": 3,
+      "record_rules": 0,
+      "groups": 0
+    },
+    "views": {
+      "form": 5,
+      "list": 0,
+      "kanban": 0,
+      "pivot": 0,
+      "graph": 0,
+      "calendar": 0,
+      "activity": 0
+    },
+    "behavioral_notes": [
+      {
+        "element": "portal.mixin._compute_access_url / _portal_ensure_token / get_portal_url",
+        "observation": "_compute_access_url returns '#' by default and is overridden on each business document (sale.order, account.move, ...). _portal_ensure_token lazily mints a uuid4 access_token via a sudo write (forcing cache clear), and get_portal_url / _get_share_url append '?access_token=...' so an emailed link bypasses the recipient's ACLs. Not visible in metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "CustomerPortal._document_check_access",
+        "observation": "Controller helper used by every /my/* document route: tries document.check_access('read'); on AccessError it falls back to a constant-time consteq(access_token) comparison against the record's signed token, returning the SUDOED record. This is the mechanism that lets unauthenticated/public visitors view a shared document without backend rights.",
+        "source": "code-read"
+      },
+      {
+        "element": "mail.thread._sign_token / website_message_ids (portal extension)",
+        "observation": "_sign_token builds an HMAC-SHA256 of (dbname, access_token, pid) keyed by ir.config_parameter 'database.secret', so an emailed recipient identified by pid+hash can post in the portal chatter as a known author. _notify_get_recipients_groups injects a 'portal_customer' button-access link; website_message_ids exposes the public (comment/email) communication history on any portal.mixin record.",
+        "source": "code-read"
+      },
+      {
+        "element": "portal.wizard.user.action_grant_access / action_revoke_access",
+        "observation": "Provisions external access: if the partner has no user it creates a res.users via _create_user_from_template, then writes group_ids += base.group_portal and -= base.group_public, runs signup_prepare() and sends the auth_signup.portal_set_password_email invitation. Revoke archives the user (active=False) but keeps it in group_portal. These side-effects (user creation, group membership, signup mail) are pure Python, invisible to metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "frontend (OWL/JS)",
+        "observation": "27 JS files, 6 XML templates, 2 OWL components (PortalChatter, SignatureForm); 11 registry registrations and 7 patches of core web/mail prototypes (Chatter, Composer, Message, Thread, AttachmentUploadService, SuggestionService, chatHubService). Dedicated frontend chatter bundles (portal.assets_chatter*, 21 files each) re-host the backend mail chatter inside the public /my surface.",
+        "source": "static"
+      }
+    ],
+    "frontend": {
+      "present": true,
+      "js_files": 27,
+      "xml_templates": 6,
+      "owl_components": [
+        "PortalChatter",
+        "SignatureForm"
+      ],
+      "registry_adds": [
+        "fields:portal_wizard_user_one2many",
+        "public.interactions:portal.address_card",
+        "public.interactions:portal.customer_address",
+        "public.interactions:portal.portal_composer",
+        "public.interactions:portal.portal_details",
+        "public.interactions:portal.portal_home_counters",
+        "public.interactions:portal.portal_search_panel",
+        "public.interactions:portal.portal_security",
+        "public_components:portal.signature_form",
+        "services:portal.chatter",
+        "services:portal.chatter.boot"
+      ],
+      "patches": [
+        "AttachmentUploadService.prototype",
+        "Chatter.prototype",
+        "Composer.prototype",
+        "Message.prototype",
+        "SuggestionService.prototype",
+        "Thread.prototype",
+        "chatHubService"
+      ],
+      "services": [],
+      "asset_bundles": {
+        "web._assets_primary_variables": 1,
+        "web._assets_frontend_helpers": 1,
+        "web.assets_backend": 1,
+        "web.assets_frontend": 6,
+        "web.assets_unit_tests_setup": 3,
+        "web.assets_tests": 1,
+        "portal.assets_chatter_helpers": 21,
+        "portal.assets_chatter": 10,
+        "portal.assets_chatter_style": 21,
+        "website.assets_inside_builder_iframe": 1
+      }
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": true,
+      "endpoints": [],
+      "files": []
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    }
+  },
+  "it_architecture": {
+    "application": "portal (Customer Portal application component)",
+    "software_services": [
+      "/my, /my/home (portal dashboard)",
+      "/my/counters (badge counts)",
+      "/my/account, /my/addresses, /my/address/* (self-service contact & address)",
+      "/my/security, /my/deactivate_account (credentials)",
+      "/portal/attachment/remove, /portal/chatter_init, /mail/chatter_fetch (public chatter)"
+    ],
+    "data_objects": [
+      "portal.mixin",
+      "portal.share",
+      "portal.wizard",
+      "portal.wizard.user"
+    ],
+    "logical_data_erm": [
+      "portal.share -> res.partner (recipients)",
+      "portal.wizard -> portal.wizard.user",
+      "portal.wizard.user -> res.partner",
+      "portal.wizard.user -> res.users",
+      "portal.mixin <abstract>-> business documents (sale.order, account.move, ...)"
+    ],
+    "information_flows": [
+      "depends: web, html_editor, http_routing, mail, auth_signup",
+      "side-effect: portal.wizard.user.action_grant_access -> res.users + base.group_portal + signup email",
+      "side-effect: portal.share.action_send_mail -> mail.message (share link) on the target document",
+      "side-effect: portal.mixin._portal_ensure_token -> signed access_token bypassing recipient ACLs"
+    ],
+    "frontend_components": [
+      "PortalChatter",
+      "SignatureForm"
+    ]
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Provision External (Portal) Access",
+      "Self-Service Account, Address & Security Management",
+      "Secure Document Sharing (signed access tokens)",
+      "Portal Chatter / Customer Communication"
+    ],
+    "value_streams": [
+      "Invite-to-Self-Service: grant portal access -> signup email -> customer logs in to /my -> views shared documents & posts in chatter"
+    ],
+    "information_concepts": [
+      "portal.mixin (shareable document)",
+      "portal.share (sharing invitation)",
+      "portal.wizard / portal.wizard.user (access grant)",
+      "res.partner (customer)",
+      "res.users (portal user)"
+    ],
+    "organization": [
+      "base.group_portal",
+      "base.group_public",
+      "base.group_partner_manager"
+    ],
+    "products": [],
+    "policies": [
+      "3 ACL rows scope portal.share / portal.wizard(.user) to base.group_partner_manager (no unlink)",
+      "token policy: consteq(access_token) + HMAC(dbname, token, pid) keyed by database.secret gate public document & chatter access",
+      "portal.allow_api_keys config flag toggles whether portal users may create API keys"
+    ],
+    "stakeholders": [
+      "Customer / external partner (res.partner, portal user)",
+      "Account / Contact Manager (base.group_partner_manager)",
+      "Internal document owner (salesperson, accountant, ...)"
+    ],
+    "strategy": null,
+    "metrics": [
+      "portal.wizard.user.login_date (latest authentication of granted users)",
+      "/my/counters badge counts (per-document self-service activity)"
+    ]
+  },
+  "classification": {
+    "value_model": "network",
+    "activity_class": "support",
+    "apqc_category": "6.0 Manage Customer Service",
+    "rationale": "portal is a mediating (network) value model: it provides the infrastructure that connects external customers to the organisation's documents and conversations, with no production of its own. It is model-light / route-heavy (4 own models vs 18 /my/* routes) — a web access surface rather than a transactional engine. As an enabler it is a support activity that provisions and secures the self-service channel; its closest APQC anchor is 6.0 Manage Customer Service (post-order self-service / inquiry handling, cf. apqc 3.5.4.8). The mediation is realised through portal.mixin's signed access tokens, the portal.wizard user-provisioning flow, and the shared portal chatter."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "self-service portal dashboard (/my) with per-app document counters",
+      "grant/revoke portal access wizard (auto-creates res.users + signup email)",
+      "signed-token document sharing & 'Share' action on any portal.mixin record",
+      "customer account / multi-address / billing-delivery self-management",
+      "password change, account deactivation, optional API-key management",
+      "portal chatter (post & read messages on shared documents)"
+    ],
+    "typical_fits": [
+      "B2B/B2C customers viewing their own quotations/orders/invoices online",
+      "contact manager inviting partners to the portal in batch",
+      "emailed share links that authenticate the recipient into the document chatter"
+    ],
+    "common_gaps": [
+      "branding/theming of /my pages (usually needs website + custom QWeb)",
+      "exposing additional document types (each needs its own controller + portal.mixin mixin-in)",
+      "custom self-service workflows beyond view/comment (e.g. portal-side approvals)",
+      "fine-grained per-document visibility beyond owner + access_token"
+    ],
+    "drive_hints": [
+      "odoo shell: env['portal.wizard'].create({}).user_ids — inspect computed portal user states",
+      "odoo shell: rec = env['sale.order'].search([], limit=1); rec.get_portal_url() — mint & read the signed access_token URL",
+      "curl -s '<base>/my' (expects redirect to /web/login when unauthenticated; auth=user)",
+      "curl jsonrpc /my/counters with a portal user session to fetch badge counts"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Exact set of business documents that mix in portal.mixin is defined in downstream modules (sale, account, project, ...), not in portal itself.",
+    "Live row counts unavailable (transient wizards + abstract mixin store no persistent portal-owned data).",
+    "How each app overrides _compute_access_url and which /my/<app> sub-routes it registers."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/portal.facts.json",
+    "tools": [
+      "code-read",
+      "extract_frontend.py",
+      "extract_module.py"
+    ],
+    "odoo_version": "19.0"
+  }
+}

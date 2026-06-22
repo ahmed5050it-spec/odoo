@@ -1,0 +1,382 @@
+{
+  "subsystem": "pos_hr",
+  "evidence": {
+    "manifest": {
+      "name": "POS - HR",
+      "category": "Sales/Point of Sale",
+      "summary": "Link module between Point of Sale and HR",
+      "author": "Odoo S.A.",
+      "license": "LGPL-3",
+      "depends": [
+        "point_of_sale",
+        "hr"
+      ],
+      "auto_install": true,
+      "application": false
+    },
+    "models": [
+      {
+        "_name": "hr.employee",
+        "_inherit": [
+          "hr.employee",
+          "pos.load.mixin"
+        ],
+        "_description": "Employee (POS-loadable: cashier identity, barcode/PIN, role)",
+        "fields": 0,
+        "relations": [
+          "user_id->res.users",
+          "work_contact_id->res.partner"
+        ]
+      },
+      {
+        "_name": "pos.config",
+        "_inherit": [
+          "hr.mixin",
+          "pos.config"
+        ],
+        "_description": "Point of Sale Configuration (+ tiered allowed-employee lists)",
+        "fields": 3,
+        "relations": [
+          "minimal_employee_ids->hr.employee",
+          "basic_employee_ids->hr.employee",
+          "advanced_employee_ids->hr.employee"
+        ]
+      },
+      {
+        "_name": "report.pos_hr.single_employee_sales_report",
+        "_inherit": [
+          "report.point_of_sale.report_saledetails"
+        ],
+        "_description": "Session sales details for a single employee",
+        "fields": 0,
+        "relations": []
+      },
+      {
+        "_name": "pos.order",
+        "_inherit": [
+          "pos.order"
+        ],
+        "_description": "Point of Sale Orders (+ owning cashier employee)",
+        "fields": 2,
+        "relations": [
+          "employee_id->hr.employee"
+        ]
+      },
+      {
+        "_name": "pos.payment",
+        "_inherit": [
+          "pos.payment"
+        ],
+        "_description": "Point of Sale Payments (+ cashier employee, related from order)",
+        "fields": 1,
+        "relations": [
+          "employee_id->hr.employee"
+        ]
+      },
+      {
+        "_name": "pos.session",
+        "_inherit": [
+          "pos.session"
+        ],
+        "_description": "Point of Sale Session (+ currently logged-in cashier)",
+        "fields": 1,
+        "relations": [
+          "employee_id->hr.employee"
+        ]
+      },
+      {
+        "_name": "account.bank.statement.line",
+        "_inherit": [
+          "account.bank.statement.line"
+        ],
+        "_description": "Bank Statement Line (+ employee who did the cash move)",
+        "fields": 1,
+        "relations": [
+          "employee_id->hr.employee"
+        ]
+      },
+      {
+        "_name": "report.pos.order",
+        "_inherit": [
+          "report.pos.order"
+        ],
+        "_description": "Point of Sale Orders Report (+ employee dimension)",
+        "fields": 1,
+        "relations": [
+          "employee_id->hr.employee"
+        ]
+      },
+      {
+        "_name": "product.product",
+        "_inherit": [
+          "product.product"
+        ],
+        "_description": "Product (POS data-load extension)",
+        "fields": 0,
+        "relations": []
+      },
+      {
+        "_name": "pos.daily.sales.reports.wizard",
+        "_inherit": [
+          "pos.daily.sales.reports.wizard"
+        ],
+        "_description": "Daily Sales Report wizard (+ per-employee report option)",
+        "fields": 2,
+        "relations": [
+          "employee_ids->hr.employee"
+        ]
+      },
+      {
+        "_name": "res.config.settings",
+        "_inherit": [
+          "res.config.settings"
+        ],
+        "_description": "Settings (+ POS allowed-employee related fields)",
+        "fields": 3,
+        "relations": [
+          "pos_basic_employee_ids->hr.employee",
+          "pos_advanced_employee_ids->hr.employee",
+          "pos_minimal_employee_ids->hr.employee"
+        ]
+      }
+    ],
+    "routes": [],
+    "security": {
+      "access_rules": 0,
+      "record_rules": 0,
+      "groups": 0
+    },
+    "views": {
+      "form": 0,
+      "list": 0,
+      "tree": 0,
+      "kanban": 0,
+      "search": 0,
+      "pivot": 0,
+      "graph": 0,
+      "calendar": 0,
+      "activity": 0
+    },
+    "frontend": {
+      "present": true,
+      "js_files": 14,
+      "xml_templates": 7,
+      "owl_components": [
+        "CashierSelectionPopup"
+      ],
+      "registry_adds": [],
+      "patches": [
+        "CashMovePopup.prototype",
+        "CashierName.prototype",
+        "Chrome.prototype",
+        "ClosePosPopup.prototype",
+        "DataServiceOptions.prototype",
+        "LoginScreen.prototype",
+        "Navbar.prototype",
+        "OrderPaymentValidation.prototype",
+        "OrderSummary.prototype",
+        "PosOrder.prototype",
+        "PosStore.prototype",
+        "ProductInfoPopup.prototype"
+      ],
+      "services": [],
+      "asset_bundles": {
+        "point_of_sale._assets_pos": 1,
+        "web.assets_tests": 1,
+        "web.assets_unit_tests": 1
+      }
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": false,
+      "endpoints": [],
+      "files": []
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    },
+    "behavioral_notes": [
+      {
+        "element": "pos.config.minimal_employee_ids / basic_employee_ids / advanced_employee_ids + hr.employee._load_pos_data_domain / _load_pos_data_read",
+        "observation": "Which employees may log in to a till is governed by three Many2many lists on pos.config (minimal/basic/advanced access). If all three are empty, every employee can log in (the manifest's 'unlimited number of employees can log on to that till'); if basic_employee_ids is set, pos.config._employee_domain restricts the loaded set to the union of the three lists (plus the till's own user). hr.employee carries the pos.load.mixin contract: _load_pos_data_domain pushes only those allowed employees into the offline client, and _load_pos_data_read derives a per-employee `_role` (admin/manager/minimal/cashier) and ships a SHA1-hashed `_barcode`/`_pin` rather than plaintext. pos.config.write force-adds every group_pos_manager user's employee into advanced_employee_ids (creating an employee record via action_create_employee if the manager has none), so managers always retain till access. None of this list-merge / role-derivation / hashing logic is visible in metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "pos.session.employee_id + _load_pos_data_models / get_closing_control_data / _aggregate_payments_amounts_by_employee + pos.order.employee_id / cashier (compute) / _prepare_pos_log",
+        "observation": "Identity is stamped at three levels. pos.session.employee_id (tracking=True) records the cashier 'who currently uses the cash register' and is written by the OWL app on every cashier switch (PosStore.setCashierUpdateSession). pos.order.employee_id is the owning cashier and feeds a stored `cashier` Char (compute _compute_cashier: employee name, else user name) used as the human label on receipts/reports; pos.payment.employee_id is related=pos_order_id.employee_id (stored, indexed) so payments inherit the order's cashier. pos.session._load_pos_data_models only appends 'hr.employee' to the client payload when config.module_pos_hr is on. At close, get_closing_control_data breaks cash and each non-cash payment method down per employee (_aggregate_payments_amounts_by_employee, with an 'Others' bucket) and aggregates cash in/out moves per employee, enabling a single-employee Z-report (report.pos_hr.single_employee_sales_report). pos.order._prepare_pos_log appends 'Cashier <name>' (from context current_cashier_id) to the chatter audit line. These cross-model attributions are pure Python.",
+        "source": "code-read"
+      },
+      {
+        "element": "hr.employee.get_barcodes_and_pin_hashed / _unlink_except_active_pos_session",
+        "observation": "Badge/PIN login is enforced server-side without exposing secrets: get_barcodes_and_pin_hashed gates on group_pos_user, applies record-rule visibility, then returns SHA1 hashes of each employee's barcode and pin (never plaintext) so the browser can match a scanned badge / typed PIN locally. An @api.ondelete guard (_unlink_except_active_pos_session) blocks deleting any employee who could be used by a till with an open session (either an all-employees till or one whose allowed lists contain the employee), raising a UserError listing the offending pos.config(s). This referential-integrity rule and the hash-only credential exposure are invisible to metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "frontend (cashier-switch + login gating OWL layer) -- gap #3 exemplar",
+        "observation": "pos_hr ships almost no UI of its own (1 new component, CashierSelectionPopup) and instead patches ~12 existing POS OWL classes to graft an employee-identity layer onto the standalone offline terminal. The reusable hook useCashierSelector (utils/select_cashier_mixin.js) drives both badge login (useBarcodeReader 'cashier' handler: find employee by SHA1(barcode), prompt for PIN via NumberPopup if `_pin` set) and manual selection (CashierSelectionPopup listing allowed employees, with PIN re-check). LoginScreen is patched so opening the register sets pos.login and Enter submits the PIN; PosStore.setup forces navigation to LoginScreen until hasLoggedIn, persists the connected cashier in sessionStorage (`connected_cashier_<config.id>`), and buffers cashier->session writes while offline, replaying them on the browser 'online' event. setCashier stamps order.employee_id on empty orders and downgrades the numpad out of 'price' mode if the cashier lacks price-control rights; createNewOrder / addLineToCurrentOrder / OrderPaymentValidation.validateOrder all re-assert order.employee_id = current cashier. Per-employee gating is everywhere: Navbar.showBackend and LoginScreen.clickBack only let the cashier whose user_id == the logged-in user reach the backend; employeeIsAdmin (`_role === 'manager'`) gates product creation, payment editing and price control. None of this client-side login/switch/gating flow is reverse-engineerable from Python metadata -- it lives entirely in static/src.",
+        "source": "static"
+      }
+    ]
+  },
+  "it_architecture": {
+    "application": "pos_hr (auto-install bridge: stamps HR-employee identity onto the Point of Sale terminal -- backend fields + an OWL cashier login/switch + gating layer over the offline POS SPA)",
+    "software_services": [
+      "(no own HTTP/RPC routes; extends point_of_sale via the pos.load.mixin data-load contract and patches the OWL terminal served at /pos/ui)",
+      "hr.employee._load_pos_data_domain/_fields/_read (push allowed cashiers + hashed badge/PIN + role into the client)",
+      "pos.session.log_partner_message (chatter log keyed to the cashier's contact, called from the client)"
+    ],
+    "data_objects": [
+      "hr.employee",
+      "pos.config",
+      "pos.session",
+      "pos.order",
+      "pos.payment",
+      "account.bank.statement.line",
+      "report.pos.order",
+      "report.pos_hr.single_employee_sales_report",
+      "pos.daily.sales.reports.wizard",
+      "res.config.settings"
+    ],
+    "logical_data_erm": [
+      "pos.config -> hr.employee (minimal_employee_ids / basic_employee_ids / advanced_employee_ids: who may log in)",
+      "pos.session -> hr.employee (employee_id: currently logged-in cashier)",
+      "pos.order -> hr.employee (employee_id: owning cashier) -> cashier (stored name)",
+      "pos.payment -> hr.employee (employee_id, related from pos_order_id.employee_id)",
+      "account.bank.statement.line -> hr.employee (employee_id: who did the cash in/out)",
+      "hr.employee -> res.users (user_id, links badge identity to the till's backend user)",
+      "hr.employee -> res.partner (work_contact_id, used as chatter message author)"
+    ],
+    "information_flows": [
+      "depends: point_of_sale (the terminal/session/order it augments), hr (the employee identity it borrows)",
+      "load: pos.session._load_pos_data_models adds 'hr.employee' to the client payload only when module_pos_hr is on; _load_pos_data_domain restricts it to the allowed lists; _read ships SHA1(barcode)/SHA1(pin) + derived role",
+      "side-effect: OWL cashier switch (PosStore.setCashierUpdateSession) -> write pos.session.employee_id (buffered + replayed when offline)",
+      "side-effect: createNewOrder / addLineToCurrentOrder / validateOrder -> stamp pos.order.employee_id = current cashier -> pos.payment.employee_id (related) -> cashier Char on receipts",
+      "side-effect: close -> get_closing_control_data aggregates payments + cash moves per employee for a per-cashier Z-report",
+      "guard: hr.employee unlink blocked while an employee may be used by a till with an open session"
+    ],
+    "frontend_components": [
+      "CashierSelectionPopup",
+      "useCashierSelector (select_cashier_mixin hook: badge + PIN login)",
+      "LoginScreen.prototype (PIN entry / openRegister / clickBack -> backend gate)",
+      "PosStore.prototype (force LoginScreen until logged in, sessionStorage cashier, offline employee buffer, per-cashier gating)",
+      "Navbar.prototype (showBackend / showCreateProductButton gated by cashier user_id + admin role)",
+      "CashierName.prototype (current-cashier avatar + switch trigger)",
+      "OrderPaymentValidation.prototype (re-stamp employee_id on validate)",
+      "PosOrder.prototype (getCashierName from employee)",
+      "ClosePosPopup.prototype / CashMovePopup.prototype / OrderSummary.prototype / ProductInfoPopup.prototype (per-employee data + gating)"
+    ]
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Authenticate Cashier at the Till (badge / PIN login of an HR employee, no Odoo user per cashier)",
+      "Switch Active Cashier mid-session without re-login",
+      "Authorize Till Access by Employee (tiered minimal / basic / advanced allow-lists per pos.config)",
+      "Attribute Sales, Payments & Cash Moves to the Employee who made them",
+      "Gate POS Actions by Employee Role (price control, payment edit, product creation, backend access)",
+      "Per-Cashier Sales Reporting (single-employee Z-report / employee dimension on POS analysis)"
+    ],
+    "value_streams": [
+      "Cashier identity overlay on Sell-at-Counter: employee logs in (badge/PIN) -> rings sales stamped with employee_id -> switches cashier as shifts change -> close yields per-employee cash/payment breakdown"
+    ],
+    "information_concepts": [
+      "hr.employee (cashier)",
+      "pos.config (allowed-employee lists)",
+      "pos.session (current cashier)",
+      "pos.order (owning cashier)",
+      "pos.payment (cashier)",
+      "account.bank.statement.line (cash-move employee)",
+      "report.pos.order (employee dimension)"
+    ],
+    "organization": [
+      "point_of_sale.group_pos_user (reused; gates barcode/PIN exposure)",
+      "point_of_sale.group_pos_manager (reused; managers auto-added to advanced_employee_ids and mapped to the 'manager'/'admin' client role)"
+    ],
+    "products": [],
+    "policies": [
+      "If all employee lists are empty, every employee may log in; otherwise only the union of minimal/basic/advanced (plus the till's user) -- pos.config._employee_domain",
+      "Managers (group_pos_manager) are force-added to advanced_employee_ids on write and cannot be demoted to minimal/basic (onchange rules)",
+      "Badge/PIN are exposed to the client only as SHA1 hashes and only to group_pos_user",
+      "An employee usable by a till with an open session cannot be deleted (ondelete guard)",
+      "Only the cashier whose user_id == the logged-in backend user may exit the POS to the backend"
+    ],
+    "stakeholders": [
+      "Cashier / Sales Clerk (hr.employee, may have no Odoo user)",
+      "POS Manager (group_pos_manager; admin-role cashier)",
+      "Shift Supervisor (consumes per-employee closing breakdown)",
+      "Payroll / HR (employee mapping; not a runtime dependency here)"
+    ],
+    "strategy": null,
+    "metrics": [
+      "report.pos_hr.single_employee_sales_report (per-employee session Z-report)",
+      "report.pos.order.employee_id (employee dimension on the POS Orders analysis pivot/graph)",
+      "get_closing_control_data: cash + per-payment-method amount_per_employee and moves_per_employee at session close"
+    ]
+  },
+  "classification": {
+    "value_model": "chain",
+    "activity_class": "support",
+    "apqc_category": "3.0 Market and Sell Products and Services",
+    "rationale": "pos_hr is the staffing/identity layer of the retail Sell operation in the Point of Sale value chain: it does not itself sell, deliver or post accounting -- it overlays an HR-employee identity onto the existing pos.order/pos.session/pos.config so that the chain's primary checkout act (point_of_sale, APQC 3.0) is performed and attributed by a named cashier who logs in by badge/PIN rather than by holding an Odoo user account. Its value_model is therefore 'chain' (it augments a value-chain primary activity) but its activity_class is 'support': it is a thin (auto-install, route-less, 3-real-model) bridge whose entire contribution is cashier authentication, mid-shift cashier switching, tiered till-access authorization, per-employee sales/cash attribution and role-based action gating -- a workforce/identity enabler around the sale, not the sale or its delivery/AR side-effects. APQC 3.0 (retail operations -- cashier management) is the right home because the capability it adds (manage who staffs and operates the counter) sits squarely on the in-store sell process realized by point_of_sale; it has no inventory (4.0) or finance (9.0) logic of its own beyond stamping employee_id on the cash-move and report rows. The bulk of the module is OWL/JS in static/src patching the offline terminal (gap #3): the login screen, the cashier-selection popup and the per-employee gating live entirely in the browser and are not reverse-engineerable from Python metadata."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "Log employees into a single shared till by barcode badge and/or PIN, with no per-cashier Odoo user required",
+      "Switch the active cashier mid-session from the navbar (CashierSelectionPopup) without closing the register",
+      "Restrict till login per pos.config via tiered minimal/basic/advanced employee allow-lists (empty = all employees)",
+      "Stamp the owning employee on every pos.order, pos.payment and cash-move statement line; show the cashier name on receipts",
+      "Role-based gating in the POS: managers can create products, edit payments and control price; cashiers cannot; only the user-linked cashier reaches the backend",
+      "Per-employee closing breakdown and a single-employee daily Z-report; employee dimension on the POS Orders analysis report",
+      "Offline-safe identity: hashed badge/PIN shipped to the client, cashier-to-session writes buffered and replayed on reconnect"
+    ],
+    "typical_fits": [
+      "Retail/restaurant with several clerks sharing one register per shift and accountability per cashier",
+      "Sites that want POS staff to authenticate without provisioning an Odoo user/login for each employee",
+      "Stores needing manager-only actions (price override, payment edit, product creation) behind a PIN/role",
+      "Daily cash reconciliation that must attribute takings to the cashier who collected them"
+    ],
+    "common_gaps": [
+      "Time & attendance / clock-in tied to POS login (handled by separate hr_attendance / restaurant integrations, not core pos_hr)",
+      "Commission or incentive calculation from per-employee POS sales (needs custom or sales-commission dev)",
+      "Granular per-action permissions beyond the built-in cashier/manager (admin) split (custom OWL gating)",
+      "Strong-auth cashier identification (biometric / external SSO) instead of barcode+PIN",
+      "Enforcing the allowed-employee lists server-side for non-UI order creation (the gating is primarily client-side)"
+    ],
+    "drive_hints": [
+      "odoo shell: env['pos.config'].search([]).mapped(lambda c: (c.name, c.module_pos_hr, c.basic_employee_ids.mapped('name')))",
+      "odoo shell: env['pos.order'].search([('employee_id','!=',False)], limit=5).mapped(('name','cashier','employee_id'))",
+      "odoo shell: env['pos.session'].search([], limit=5).mapped(('name','state','employee_id'))",
+      "odoo shell: cfg = env['pos.config'].search([],limit=1); env['hr.employee'].search(cfg._employee_domain(env.uid))  # who could log into the first till",
+      "odoo shell: env['hr.employee'].search([],limit=3).get_barcodes_and_pin_hashed()  # confirm only SHA1 hashes leave the server",
+      "launch /pos/ui/<config_id> with pos_hr active -> the terminal opens on LoginScreen demanding a badge scan or PIN before any sale"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "stakeholders": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Exact precedence when an employee is added to / removed from the allowed lists while a session is open, and how the client refreshes its loaded employee set.",
+    "Whether the allowed-employee restriction and role gating are re-enforced server-side on sync_from_ui, or only in the OWL client (potential bypass for crafted RPC).",
+    "Full interaction with pos_restaurant (cashier per floor/table) and hr_attendance (clock-in on POS login) when those bridges are also installed.",
+    "Collision/handover behaviour of the sessionStorage `connected_cashier_<config.id>` token across browser tabs and devices on the same till.",
+    "Side-effects of auto-provisioning an employee for a manager with none (pos.config.write -> action_create_employee)."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/pos_hr.facts.json",
+    "tools": [
+      "code-read",
+      "extract_frontend.py",
+      "extract_module.py"
+    ],
+    "odoo_version": "19.0"
+  }
+}

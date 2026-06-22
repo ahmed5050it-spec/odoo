@@ -1,0 +1,353 @@
+{
+  "subsystem": "pos_sale",
+  "evidence": {
+    "manifest": {
+      "name": "POS - Sales",
+      "category": "Sales/Point of Sale",
+      "summary": "Link module between Point of Sale and Sales",
+      "version": "1.1",
+      "depends": [
+        "point_of_sale",
+        "sale_management"
+      ],
+      "auto_install": true,
+      "application": false
+    },
+    "models": [
+      {
+        "_name": "sale.order",
+        "_description": "Sales Order (extension + pos.load.mixin)",
+        "fields": 3,
+        "relations": [
+          "pos_order_line_ids->pos.order.line"
+        ]
+      },
+      {
+        "_name": "sale.order.line",
+        "_description": "Sales Order Line (extension + pos.load.mixin)",
+        "fields": 1,
+        "relations": [
+          "pos_order_line_ids->pos.order.line"
+        ]
+      },
+      {
+        "_name": "pos.order",
+        "_description": "Point of Sale Orders (extension)",
+        "fields": 3,
+        "relations": [
+          "crm_team_id->crm.team"
+        ]
+      },
+      {
+        "_name": "pos.order.line",
+        "_description": "Point of Sale Order Lines (extension)",
+        "fields": 4,
+        "relations": [
+          "sale_order_origin_id->sale.order",
+          "sale_order_line_id->sale.order.line"
+        ]
+      },
+      {
+        "_name": "pos.config",
+        "_description": "Point of Sale Configuration (extension)",
+        "fields": 2,
+        "relations": [
+          "crm_team_id->crm.team",
+          "down_payment_product_id->product.product"
+        ]
+      },
+      {
+        "_name": "pos.session",
+        "_description": "Point of Sale Session (extension)",
+        "fields": 1,
+        "relations": [
+          "crm_team_id->crm.team (related config_id.crm_team_id)"
+        ]
+      },
+      {
+        "_name": "crm.team",
+        "_description": "Sales Team (extension)",
+        "fields": 1,
+        "relations": [
+          "pos_config_ids->pos.config"
+        ]
+      },
+      {
+        "_name": "sale.report",
+        "_description": "Sales Analysis Report (extension: UNION POS lines into SQL view)",
+        "fields": 2,
+        "relations": [
+          "order_reference->pos.order (Reference)"
+        ]
+      },
+      {
+        "_name": "account.move",
+        "_description": "Journal Entry (extension)",
+        "fields": 0,
+        "relations": []
+      },
+      {
+        "_name": "account.move.line",
+        "_description": "Journal Item (extension)",
+        "fields": 0,
+        "relations": []
+      },
+      {
+        "_name": "product.template",
+        "_description": "Product (extension)",
+        "fields": 0,
+        "relations": []
+      },
+      {
+        "_name": "res.partner",
+        "_description": "Contact (extension)",
+        "fields": 0,
+        "relations": []
+      },
+      {
+        "_name": "res.config.settings",
+        "_description": "Settings (extension: pos_crm_team_id, pos_down_payment_product_id)",
+        "fields": 2,
+        "relations": []
+      },
+      {
+        "_name": "stock.picking",
+        "_description": "Transfer (extension)",
+        "fields": 0,
+        "relations": []
+      }
+    ],
+    "routes": [],
+    "security": {
+      "access_rules": 1,
+      "record_rules": 1,
+      "groups": 0
+    },
+    "views": {
+      "form": 0,
+      "list": 0,
+      "kanban": 0,
+      "search": 0,
+      "pivot": 0,
+      "graph": 0
+    },
+    "frontend": {
+      "present": true,
+      "js_files": 7,
+      "xml_templates": 2,
+      "owl_components": [],
+      "registry_adds": [],
+      "patches": [
+        "ControlButtons.prototype",
+        "DataServiceOptions.prototype",
+        "OrderPaymentValidation.prototype",
+        "PosOrder.prototype",
+        "PosOrderline.prototype",
+        "PosStore.prototype",
+        "TicketScreen.prototype"
+      ],
+      "services": [],
+      "asset_bundles": {
+        "point_of_sale._assets_pos": 1,
+        "web.assets_tests": 1,
+        "web.assets_unit_tests": 1
+      }
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": false,
+      "endpoints": [],
+      "files": []
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    },
+    "behavioral_notes": [
+      {
+        "element": "PosStore.onClickSaleOrder / _processSaleOrder (settle vs down-payment) + sale.order._load_pos_data_domain / sale_order.py load_sale_order_from_pos",
+        "observation": "The cashier loads an existing sale.order into the active POS order from the ticket screen. Server-side, draft sale orders (and their lines, fiscal position, partners, products) are pushed to the offline client store via pos.load.mixin: sale.order._load_pos_data_domain restricts the load bundle to orders whose pos lines are still draft, and load_sale_order_from_pos reads the order on demand. In the OWL app PosStore._processSaleOrder pops a selection popup offering 'Settle the order', 'Apply a down payment (percentage)' or '(fixed amount)'. Settling copies the SO lines (via SaleOrderLine.read_converted, converting UoM s2p) into pos.order.line, each carrying sale_order_origin_id + sale_order_line_id back-links; a down-payment instead adds a single line for pos.config.down_payment_product_id. None of this load/settle flow is in Python metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "pos.order.sync_from_ui (override) + sale.order._create_down_payment_lines_from_base_lines + sale.order.line.unlink guard",
+        "observation": "On sync, pos.order.sync_from_ui detects pos lines whose product is the config down_payment_product_id, builds tax base lines, and on the linked sale.order (sudo) calls _create_down_payment_section_line_if_needed + _create_down_payment_lines_from_base_lines so the down payment becomes a real sale.order.line linked back via pos_order_line_ids. Settled SOs in draft/sent get action_confirm() called from POS payment, and waiting stock.picking demand quantities on the SO are reduced by what the POS already shipped (so the warehouse won't deliver twice); pickings that drop to zero qty are cancelled, others re-assigned. SaleOrderLine.unlink is overridden to refuse deleting down-payment lines that came from POS.",
+        "source": "code-read"
+      },
+      {
+        "element": "sale.order.line._prepare_qty_delivered / _prepare_qty_invoiced + pos.order.line._compute_qty_delivered + sale.order._compute_amount_unpaid",
+        "observation": "Delivery and invoicing of a sale order are reconciled across both channels: SaleOrderLine._prepare_qty_delivered/_prepare_qty_invoiced add POS-sold quantities (converted p2s, refunds subtracted) into the SO's qty_delivered/qty_invoiced so the SO closes out correctly. pos.order.line.qty_delivered is itself computed from the POS order's done outgoing pickings. sale.order.amount_unpaid (stored compute) subtracts POS-paid subtotals and invoice payments from amount_total, exposing the residual to pay at the till and preventing double payment/invoicing.",
+        "source": "code-read"
+      },
+      {
+        "element": "report/sale_report.py _query / _select_pos / _from_pos / _where_pos / _group_by_pos (crm.team linkage)",
+        "observation": "sale.report (an _auto=False SQL view) is extended by UNION ALL-ing a second SELECT over pos_order_line JOIN pos_order so POS sales appear alongside sale-order sales in the same analysis pivot/graph. _where_pos filters to POS lines NOT already linked to a sale order line (l.sale_order_line_id IS NULL) to avoid double counting settled orders; team_id is taken from pos.crm_team_id (pos.config.crm_team_id, defaulted onto each pos.order via _complete_values_from_session and pos.session.crm_team_id), giving POS revenue per Sales Team. The state selection is extended with paid/invoiced/done and _get_done_states adds them.",
+        "source": "code-read"
+      },
+      {
+        "element": "frontend (POS-side load/settle UI as OWL patches) -- gap #3",
+        "observation": "pos_sale ships no new OWL components or services; it patches 7 existing POS client classes (PosStore, PosOrder, PosOrderline, TicketScreen, ControlButtons, OrderPaymentValidation, DataServiceOptions) in the point_of_sale._assets_pos bundle (7 JS / 2 XML under static/src/app). The Settle / down-payment selection popup, the orderline rendering of sale_order_origin_id, and the 'Quotation/Order' control button all live in this client JS and are invisible to Python metadata.",
+        "source": "static"
+      }
+    ]
+  },
+  "it_architecture": {
+    "application": "pos_sale (auto-install bridge component linking the Point of Sale terminal app to the Sales backend)",
+    "software_services": [],
+    "data_objects": [
+      "sale.order (ext)",
+      "sale.order.line (ext)",
+      "pos.order (ext)",
+      "pos.order.line (ext)",
+      "pos.config (ext)",
+      "pos.session (ext)",
+      "crm.team (ext)",
+      "sale.report (ext)",
+      "account.move (ext)",
+      "account.move.line (ext)",
+      "res.config.settings (ext)",
+      "stock.picking (ext)"
+    ],
+    "logical_data_erm": [
+      "pos.order.line -> sale.order (sale_order_origin_id)",
+      "pos.order.line -> sale.order.line (sale_order_line_id)",
+      "sale.order -> pos.order.line (pos_order_line_ids, inverse)",
+      "sale.order.line -> pos.order.line (pos_order_line_ids, inverse)",
+      "pos.config -> crm.team (crm_team_id)",
+      "pos.config -> product.product (down_payment_product_id)",
+      "pos.order -> crm.team (crm_team_id, defaulted from config/session)",
+      "crm.team -> pos.config (pos_config_ids, inverse)",
+      "sale.report -> pos.order (order_reference, UNION row)"
+    ],
+    "information_flows": [
+      "depends: point_of_sale, sale_management (auto_install when both present)",
+      "load: sale.order (draft) -> POS client store via pos.load.mixin (_load_pos_data_domain/_fields, load_sale_order_from_pos)",
+      "settle: sale.order.line -> pos.order.line (read_converted, UoM s2p) with sale_order_origin_id/sale_order_line_id back-links",
+      "down-payment: pos.order.line(down_payment_product_id) -> sync_from_ui -> sale.order down-payment sale.order.line (_create_down_payment_lines_from_base_lines)",
+      "side-effect: POS payment on a settled SO -> sale.order.action_confirm + reduce waiting stock.picking demand (avoid double delivery) + cancel zero-qty pickings",
+      "reconciliation: POS qty/amount folded into sale.order.line.qty_delivered/qty_invoiced and sale.order.amount_unpaid/amount_to_invoice/amount_invoiced",
+      "reporting: pos_order_line UNION ALL into sale.report SQL view, team_id = pos.crm_team_id, filtered to POS lines not linked to a SO line"
+    ],
+    "frontend_components": [
+      "PosStore.prototype (patch: onClickSaleOrder / _processSaleOrder settle+down-payment flow)",
+      "PosOrder.prototype (patch)",
+      "PosOrderline.prototype (patch: sale_order_origin_id rendering)",
+      "TicketScreen.prototype (patch: load existing quotation/order)",
+      "ControlButtons.prototype (patch: Quotation/Order button)",
+      "OrderPaymentValidation.prototype (patch)",
+      "DataServiceOptions.prototype (patch)"
+    ]
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Settle Sales Orders / Quotations at the Point of Sale",
+      "Take Down-payments on a Sale Order at the till",
+      "Reconcile POS-channel delivery & invoicing back onto the Sale Order",
+      "Avoid double payment / double delivery across POS and Sales channels",
+      "Attribute POS sales to a Sales Team (crm.team)",
+      "Unified omnichannel Sales Analysis (POS + Sales in one report)"
+    ],
+    "value_streams": [
+      "Omnichannel settle: create/confirm quotation (Sales) -> load order at POS -> settle or take down-payment -> tender payment -> confirm SO, ship remaining stock, fold qty/amount back onto the SO -> POS + SO revenue reported per Sales Team"
+    ],
+    "information_concepts": [
+      "sale.order",
+      "sale.order.line",
+      "pos.order",
+      "pos.order.line",
+      "pos.config",
+      "crm.team (Sales Team)",
+      "product.product (down-payment product)",
+      "sale.report (analysis)"
+    ],
+    "organization": [
+      "point_of_sale.group_pos_user",
+      "point_of_sale.group_pos_manager",
+      "sales_team.group_sale_salesman"
+    ],
+    "products": [],
+    "policies": [
+      "1 access rule: crm.team writable by group_pos_manager (crm.team.pos.manager)",
+      "1 record rule (pos_sale_security.xml)",
+      "down-payment sale.order.line created from POS cannot be unlinked (SaleOrderLine.unlink guard)",
+      "sale.report POS UNION excludes lines already linked to a sale.order.line to prevent double counting",
+      "sale.order.amount_unpaid clamps residual to >=0 to avoid double payment/invoicing"
+    ],
+    "stakeholders": [
+      "Cashier / POS User (point_of_sale.group_pos_user)",
+      "POS Manager (point_of_sale.group_pos_manager)",
+      "Salesperson / Sales Team (crm.team, sales_team.group_sale_salesman)",
+      "Customer (res.partner)"
+    ],
+    "strategy": null,
+    "metrics": [
+      "sale.report extended with POS lines (qty, amounts, team_id, margin) for omnichannel analysis",
+      "sale.order.amount_unpaid (residual to pay at POS)",
+      "pos.order.sale_order_count / sale.order.pos_order_count (cross-channel link counters)"
+    ]
+  },
+  "classification": {
+    "value_model": "chain",
+    "activity_class": "primary",
+    "apqc_category": "3.0 Market and Sell Products and Services",
+    "rationale": "pos_sale is a value-chain primary-activity bridge: it lets the retail Sell/Deliver step at the counter settle (and take down-payments on) sales-chain orders, then folds the POS-channel payment, delivery (qty_delivered) and invoicing back onto the originating sale.order so the chain closes once. Mapped to APQC 3.0 (Market and Sell) -- specifically the omnichannel realization of the 3.5 'manage sales orders' family (3.5.4 accept/fulfil sales orders), here a sale.order accepted/settled through a till -- because the dominant operation is order settlement at the point of sale, mirroring both parents (sale and point_of_sale). The downstream deliver (APQC 4.0 / stock: reducing SO picking demand to avoid double shipment) and revenue/AR (APQC 9.0 / account: invoicing, amount_unpaid) effects are real but are triggered consequences of settling the order, not this bridge's primary mission. Having no value logic of its own beyond linking two chain activities, it inherits the 'chain' classification of its parents rather than 'shop'/'network'."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "load an existing draft/sent sale order or quotation into the active POS order from the ticket screen",
+      "settle the order at the till (copy SO lines to POS, UoM-converted, with back-links)",
+      "take a down payment at the POS (percentage or fixed) using a configurable down-payment product",
+      "auto-confirm the sale order and reduce/cancel its waiting deliveries to prevent double shipment",
+      "reconcile POS-sold quantities into the SO's delivered/invoiced/unpaid amounts",
+      "attribute each pos.config (and its orders) to a Sales Team and surface POS sales in sale.report",
+      "down-payment invoicing alignment (account on invoice line, amount_invoiced/amount_to_invoice)"
+    ],
+    "typical_fits": [
+      "deposit-then-pickup retail (down payment taken in store, balance settled at counter)",
+      "quotation created by a salesperson then paid/collected at the POS",
+      "omnichannel reporting of POS + sale orders per Sales Team in one pivot",
+      "auto-install whenever both Point of Sale and Sales are active"
+    ],
+    "common_gaps": [
+      "custom rules for which sale orders are loadable at the POS (default: only draft pos-line orders)",
+      "bespoke down-payment percentage/tax handling beyond the standard down-payment product",
+      "multi-step / partial delivery edge cases when both channels ship the same SO line",
+      "custom OWL settle/down-payment UX (it is JS patches in static/src, not config)",
+      "non-standard cross-channel double-payment / refund reconciliation policies"
+    ],
+    "drive_hints": [
+      "odoo shell: env['pos.config'].search([]).mapped(lambda c: (c.name, c.crm_team_id.name, c.down_payment_product_id.name))",
+      "odoo shell: env['sale.order'].search([('pos_order_count','>',0)], limit=5).mapped(('name','state','amount_unpaid','pos_order_count'))",
+      "odoo shell: env['pos.order.line'].search([('sale_order_origin_id','!=',False)], limit=5).mapped(lambda l: (l.order_id.name, l.sale_order_origin_id.name, l.qty, l.qty_delivered))",
+      "odoo shell: env['sale.report'].read_group([('order_reference','like','pos.order%')], ['price_total:sum'], ['team_id'])"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "stakeholders": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Exact tax/down-payment base-line computation in sync_from_ui and how it maps to the SO down-payment section line.",
+    "Conflict handling when the same sale order is settled across two POS devices / sessions.",
+    "Precise interaction between pos.order.line.qty_delivered and SO waiting-picking demand reduction in multi-step delivery routes.",
+    "How online-payment-confirmed sale orders (action_pos_order_paid) differ from offline-settled ones in confirmation timing."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/pos_sale.facts.json",
+    "tools": [
+      "code-read",
+      "extract_frontend.py",
+      "extract_module.py",
+      "run-odoo (odoo shell)"
+    ],
+    "odoo_version": "19.0"
+  }
+}

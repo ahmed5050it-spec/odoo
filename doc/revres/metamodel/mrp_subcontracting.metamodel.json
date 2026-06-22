@@ -1,0 +1,374 @@
+{
+  "subsystem": "mrp_subcontracting",
+  "evidence": {
+    "manifest": {
+      "name": "MRP Subcontracting",
+      "category": "Supply Chain/Manufacturing",
+      "summary": "Subcontract Productions",
+      "depends": [
+        "mrp"
+      ],
+      "auto_install": false,
+      "application": false
+    },
+    "models": [
+      {
+        "_name": "mrp.bom",
+        "_inherit": "mrp.bom",
+        "_description": "Bill of Material (subcontracting extension)",
+        "fields": "+type('subcontract'), subcontractor_ids",
+        "relations": [
+          "subcontractor_ids->res.partner"
+        ]
+      },
+      {
+        "_name": "mrp.production",
+        "_inherit": "mrp.production",
+        "_description": "Manufacturing Order (subcontracting backing production)",
+        "fields": "+subcontractor_id, bom_product_ids, incoming_picking, move_line_raw_ids",
+        "relations": [
+          "subcontractor_id->res.partner",
+          "bom_product_ids->product.product",
+          "incoming_picking->stock.picking (related: move_finished_ids.move_dest_ids.picking_id)"
+        ]
+      },
+      {
+        "_name": "stock.move",
+        "_inherit": "stock.move",
+        "_description": "Stock Move (subcontract receipt move)",
+        "fields": "+is_subcontract, show_subcontracting_details_visible",
+        "relations": [
+          "move_orig_ids.production_id->mrp.production"
+        ]
+      },
+      {
+        "_name": "stock.picking",
+        "_inherit": "stock.picking",
+        "_description": "Transfer (subcontract receipt / resupply)",
+        "fields": "+show_subcontracting_details_visible",
+        "relations": []
+      },
+      {
+        "_name": "res.partner",
+        "_inherit": "res.partner",
+        "_description": "Contact (subcontractor)",
+        "fields": "+property_stock_subcontractor, is_subcontractor, bom_ids, production_ids, picking_ids",
+        "relations": [
+          "property_stock_subcontractor->stock.location",
+          "bom_ids->mrp.bom",
+          "production_ids->mrp.production",
+          "picking_ids->stock.picking"
+        ]
+      },
+      {
+        "_name": "stock.warehouse",
+        "_inherit": "stock.warehouse",
+        "_description": "Warehouse (subcontracting routes/operation types)",
+        "fields": "+subcontracting_to_resupply, subcontracting_route_id, subcontracting_pull_id, subcontracting_mto_pull_id, subcontracting_type_id, subcontracting_resupply_type_id",
+        "relations": [
+          "subcontracting_route_id->stock.route",
+          "subcontracting_pull_id->stock.rule",
+          "subcontracting_mto_pull_id->stock.rule",
+          "subcontracting_type_id->stock.picking.type",
+          "subcontracting_resupply_type_id->stock.picking.type"
+        ]
+      },
+      {
+        "_name": "res.company",
+        "_inherit": "res.company",
+        "_description": "Company (subcontracting location)",
+        "fields": "+subcontracting_location_id",
+        "relations": [
+          "subcontracting_location_id->stock.location"
+        ]
+      },
+      {
+        "_name": "stock.location",
+        "_inherit": "stock.location",
+        "_description": "Location (subcontractor location)",
+        "fields": "+subcontractor_ids",
+        "relations": [
+          "subcontractor_ids->res.partner"
+        ]
+      },
+      {
+        "_name": "product.supplierinfo",
+        "_inherit": "product.supplierinfo",
+        "_description": "Vendor Pricelist (subcontractor flag)",
+        "fields": "+is_subcontractor",
+        "relations": []
+      },
+      {
+        "_name": "stock.rule",
+        "_inherit": "stock.rule",
+        "_description": "Procurement Rule (resupply subcontractor)",
+        "fields": "(behavior only)",
+        "relations": []
+      },
+      {
+        "_name": "stock.quant",
+        "_inherit": "stock.quant",
+        "_description": "Quant (subcontracting stock at vendor)",
+        "fields": "+is_subcontract",
+        "relations": []
+      }
+    ],
+    "routes": [
+      {
+        "paths": [
+          "/my/productions",
+          "/my/productions/page/<int:page>"
+        ],
+        "auth": "user",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/my/productions/<int:picking_id>"
+        ],
+        "auth": "user",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/my/productions/<int:picking_id>/subcontracting_portal"
+        ],
+        "auth": "user",
+        "type": "http"
+      }
+    ],
+    "security": {
+      "access_rules": 18,
+      "record_rules": 13,
+      "groups": 0,
+      "note": "No new groups; 13 record rules scope subcontracting MOs/BoMs/pickings/moves to the portal subcontractor (subcontractor_id) so a vendor sees only its own work."
+    },
+    "views": {
+      "form": 2,
+      "list": 4,
+      "search": 0
+    },
+    "frontend": {
+      "present": true,
+      "js_files": 10,
+      "xml_templates": 4,
+      "owl_components": [
+        "SubcontractingPortalWebClient"
+      ],
+      "registry_adds": [
+        "views:subcontracting_portal_move_list_view",
+        "views:subcontracting_portal_picking_form_view",
+        "views:subcontracting_production_form",
+        "views:subcontracting_production_list"
+      ],
+      "patches": [
+        "BomOverviewComponentsBlock",
+        "BomOverviewLine.prototype",
+        "BomOverviewSpecialLine.prototype",
+        "SMLX2ManyField.prototype"
+      ],
+      "services": [],
+      "asset_bundles": {
+        "web.assets_tests": 1,
+        "web.assets_backend": 2,
+        "web.assets_frontend": 1,
+        "mrp_subcontracting.webclient": 84
+      }
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": false,
+      "endpoints": [
+        "https://www.odoo.com/app/manufacturing"
+      ],
+      "files": [
+        "__manifest__.py"
+      ]
+    },
+    "behavioral_notes": [
+      {
+        "element": "mrp.bom (type='subcontract' + subcontractor_ids) / _bom_subcontract_find",
+        "observation": "The module adds a 'subcontract' value to mrp.bom.type plus a subcontractor_ids Many2many to res.partner; a constraint (_check_subcontracting_no_operation) forbids operations or by-products on such BoMs. _bom_subcontract_find resolves the recipe for a (product, subcontractor) pair by AND-ing the standard _bom_find_domain with ('subcontractor_ids','parent_of',subcontractor.ids), so a vendor's commercial parent matches its contact. This BoM type is the marker that turns a vendor receipt into a backing production.",
+        "source": "code-read"
+      },
+      {
+        "element": "stock.move._action_confirm -> stock.picking._subcontracted_produce / _prepare_subcontract_mo_vals",
+        "observation": "When an incoming move from a supplier location matches a subcontract BoM (_get_subcontract_bom), the move is flagged is_subcontract=True and its source rewritten to the subcontracting_location (partner.property_stock_subcontractor or company.subcontracting_location_id). After super()._action_confirm, _subcontracted_produce groups receipt moves by company and creates one mrp.production per move (subcontractor_id = picking partner's commercial_partner, src=dest=subcontracting location, picking_type=warehouse.subcontracting_type_id), confirms it, and links the MO's finished move_dest_ids back to the receipt move. So receiving a subcontracted product auto-creates and back-links a real mrp.production invisible in field metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "stock.warehouse subcontracting (resupply) routes + stock.rule",
+        "observation": "Each warehouse gets a 'Resupply Subcontractor' route (subcontracting_route_id) plus an MTS pull rule (subcontracting_pull_id) and an MTO pull rule (subcontracting_mto_pull_id, global route route_resupply_subcontractor_mto) that move supplied components from lot_stock to the subcontracting location via an internal 'Resupply Subcontractor' operation type (subcontracting_resupply_type_id). _update_resupply_rules archives/unarchives these rules per the subcontracting_to_resupply flag. stock.move._get_partner_id stamps the subcontractor as the resupply move's partner so components ship to the vendor; _should_bypass_reservation returns True for subcontract receipt moves (the vendor holds the stock).",
+        "source": "code-read"
+      },
+      {
+        "element": "stock.picking._action_done -> production.button_mark_done (record production from the receipt)",
+        "observation": "Validating the subcontract receipt picking calls button_mark_done on each linked production (sudo), consuming supplied components out of the subcontracting location and producing the finished good into it, then dates the production raw/finished moves one second before the receipt for traceability. Tracked components/lots are recorded via stock.move.action_show_details (move_line_raw_ids 'Record Production' wizard); _sync_subcontracting_productions keeps MO quantities and per-lot productions in sync with the receipt move (splitting MOs per lot, change.production.qty for untracked).",
+        "source": "code-read"
+      },
+      {
+        "element": "Subcontracting Portal (frontend, static)",
+        "observation": "Adds 10 JS files and a dedicated mrp_subcontracting.webclient asset bundle (84 entries) plus a SubcontractingPortalWebClient OWL component and 3 portal routes (/my/productions...). The vendor logs in as a portal user to record components and lots/serials against the MO directly; record rules + _is_subcontractor/_get_writeable_fields_portal_user gate this. The module also patches the backend BoM Overview (BomOverviewLine/SpecialLine/ComponentsBlock) and SMLX2ManyField to surface subcontracting detail.",
+        "source": "static"
+      }
+    ]
+  },
+  "it_architecture": {
+    "application": "mrp_subcontracting (Subcontracted Manufacturing extension of mrp)",
+    "software_services": [
+      "/my/productions (+ /page/<int:page>)",
+      "/my/productions/<int:picking_id>",
+      "/my/productions/<int:picking_id>/subcontracting_portal"
+    ],
+    "data_objects": [
+      "mrp.bom (type=subcontract, subcontractor_ids)",
+      "mrp.production (subcontractor_id backing MO)",
+      "stock.move (is_subcontract receipt)",
+      "stock.picking (subcontract receipt / resupply)",
+      "res.partner (subcontractor)",
+      "stock.warehouse (subcontracting routes & operation types)",
+      "res.company (subcontracting_location_id)",
+      "stock.location (subcontractor_ids)",
+      "product.supplierinfo (is_subcontractor)",
+      "stock.rule (resupply subcontractor)",
+      "stock.quant (is_subcontract)"
+    ],
+    "logical_data_erm": [
+      "mrp.bom -> res.partner (subcontractor_ids)",
+      "mrp.production -> res.partner (subcontractor_id)",
+      "mrp.production -> stock.picking (incoming_picking, related)",
+      "stock.move (is_subcontract) -> mrp.production (move_orig_ids.production_id)",
+      "stock.picking -> mrp.production (_get_subcontract_production)",
+      "res.partner -> stock.location (property_stock_subcontractor)",
+      "stock.warehouse -> stock.route/stock.rule (subcontracting_route_id, subcontracting_pull_id, subcontracting_mto_pull_id)",
+      "res.company -> stock.location (subcontracting_location_id)"
+    ],
+    "information_flows": [
+      "depends: mrp (-> product, stock, resource)",
+      "side-effect: stock.move._action_confirm (incoming + subcontract BoM) -> picking._subcontracted_produce -> creates & confirms backing mrp.production, links finished move to receipt move",
+      "side-effect: stock.warehouse resupply routes -> stock.rule -> internal transfer ships supplied components to the subcontracting location (vendor)",
+      "side-effect: stock.picking._action_done (receipt validated) -> production.button_mark_done -> consumes components + produces finished good in subcontracting location + dates moves for traceability",
+      "flow: tracked components / lots recorded via stock.move.action_show_details (move_line_raw_ids wizard) or the subcontractor portal (/my/productions) -> _sync_subcontracting_productions keeps MO qty/lots in sync"
+    ],
+    "frontend_components": [
+      "SubcontractingPortalWebClient",
+      "patch:BomOverviewComponentsBlock",
+      "patch:BomOverviewLine.prototype",
+      "patch:BomOverviewSpecialLine.prototype",
+      "patch:SMLX2ManyField.prototype"
+    ]
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Define Subcontracting BoMs (type=subcontract + subcontractor_ids)",
+      "Designate Subcontractors (vendor as manufacturing partner)",
+      "Auto-create backing Manufacturing Order on subcontracted receipt",
+      "Resupply Subcontractor with supplied components (routes/rules)",
+      "Record Subcontracted Production (components, lots/serials) on receipt",
+      "Subcontractor Self-service Portal (record production remotely)",
+      "Track subcontracted stock held at the vendor location",
+      "Subcontracting BoM Overview / cost reporting"
+    ],
+    "value_streams": [
+      "Outsource-to-Receive: subcontract demand -> components resupplied to vendor location (resupply route) -> vendor produces finished good -> receive finished good (stock.move is_subcontract) -> backing mrp.production auto-created -> record components/lots (backend or portal) -> validate receipt -> button_mark_done consumes components + produces finished good + values output"
+    ],
+    "information_concepts": [
+      "mrp.bom (Subcontracting BoM)",
+      "mrp.production (backing Manufacturing Order)",
+      "res.partner (Subcontractor)",
+      "stock.move (Subcontract receipt move)",
+      "stock.picking (Subcontract receipt / Resupply transfer)",
+      "stock.location (Subcontracting / Subcontractor location)",
+      "stock.warehouse (Subcontracting routes & operation types)",
+      "product.supplierinfo (Subcontractor vendor line)",
+      "stock.quant (Stock at subcontractor)"
+    ],
+    "organization": [
+      "(no new security groups; reuses mrp groups: group_mrp_user, group_mrp_manager)",
+      "Portal subcontractor (res.users portal, gated by is_subcontractor + record rules)"
+    ],
+    "products": [],
+    "policies": [
+      "13 record rules scoping subcontracting MOs/BoMs/pickings/moves to the portal subcontractor (subcontractor_id) — a vendor sees only its own work",
+      "_check_subcontracting_no_operation: subcontract BoMs may not carry operations or by-products",
+      "_get_writeable_fields_portal_user: portal subcontractor may write only move_line_raw_ids, lot_producing_ids, qty_producing, product_qty",
+      "subcontracting_to_resupply warehouse flag: enable/disable component resupply routes & rules",
+      "_should_bypass_reservation: subcontract receipt moves bypass internal reservation (stock is held by the vendor)"
+    ],
+    "stakeholders": [
+      "Subcontractor / Vendor (portal user)",
+      "Manufacturing Manager (group_mrp_manager)",
+      "Inventory / Receiving Operator",
+      "Buyer (in combination with mrp_subcontracting_purchase)"
+    ],
+    "strategy": null,
+    "metrics": [
+      "report.mrp.report_bom_structure (subcontracting BoM cost overview, patched)",
+      "Subcontracted MO cost (component cost rolled into received finished good)",
+      "Subcontracted production status via the portal / MO list"
+    ]
+  },
+  "classification": {
+    "value_model": "chain",
+    "activity_class": "primary",
+    "apqc_category": "4.3 Produce/Manufacture/Deliver Product",
+    "rationale": "mrp_subcontracting is the outsourced segment of the Make/manufacturing value chain (Stabell & Fjeldstad 'chain'): the transform step that converts supplied component inputs into a finished-goods output is performed by an external subcontractor rather than in-house work centers, but it is still modeled as a real mrp.production that consumes raw and produces finished stock.moves, updating inventory and valuation. It is a primary activity sitting between procurement/resupply (inbound to the vendor) and the finished-good receipt (inbound to own stock). Per apqc_odoo_map.tsv it maps to APQC 4.3 Produce/Manufacture/Deliver Product, specifically 4.3.1.4 (schedule production orders: the backing mrp.production created by _subcontracted_produce) and 4.3.1.7 (release production orders: action_confirm on that MO) — subcontracted production. It has no work orders or finite scheduling (subcontract BoMs forbid operations); execution happens at the vendor and is reconciled on the receipt."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "Subcontracting BoM (type=subcontract) with one or more subcontractor partners",
+      "Automatic backing MO created and back-linked on receipt of a subcontracted product",
+      "Component resupply to the subcontractor via MTS/MTO routes and an internal operation type",
+      "Record of consumed components and lot/serial tracking on the subcontracting MO",
+      "Subcontractor self-service portal (/my/productions) to record production remotely",
+      "Subcontracting stock tracked at a dedicated per-vendor or per-company location",
+      "Component cost rolled into the value of the received finished good",
+      "BoM Overview augmented with subcontracting detail"
+    ],
+    "typical_fits": [
+      "Vendor assembles/produces a finished good from components you supply (toll/contract manufacturing)",
+      "Vendor produces from its own components (combine with mrp_subcontracting_purchase for the PO/cost flow)",
+      "Drop-ship style: supplied components shipped directly to the subcontractor on order (MTO resupply)",
+      "Outsourced production with lot/serial traceability of components and output"
+    ],
+    "common_gaps": [
+      "Purchase/cost integration (vendor pricing, PO, bill) is a separate module mrp_subcontracting_purchase",
+      "Dropship to subcontractor variants (mrp_subcontracting_dropshipping)",
+      "Quality control checks on subcontracted receipts (quality_mrp)",
+      "No work orders / finite scheduling for the outsourced step (subcontract BoMs forbid operations)",
+      "Multi-step subcontracting receipt routes / custom resupply topologies need warehouse config",
+      "Account valuation specifics (continental vs anglo-saxon) for subcontracting services"
+    ],
+    "drive_hints": [
+      "odoo shell: env['mrp.bom'].search([('type','=','subcontract')]).mapped(lambda b:(b.product_tmpl_id.display_name, b.subcontractor_ids.mapped('name')))",
+      "odoo shell: env['mrp.production'].search([('subcontractor_id','!=',False)], limit=5).mapped(('name','state','subcontractor_id'))",
+      "odoo shell --log-handler=odoo.sql_db:DEBUG: pick = receipt_of_subcontracted_product; pick.button_validate()  # trace _subcontracted_produce MO + button_mark_done component consumption",
+      "odoo shell: env['stock.warehouse'].search([],limit=1).mapped(('subcontracting_to_resupply','subcontracting_route_id','subcontracting_resupply_type_id'))"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Exact split/merge behavior of backing MOs vs receipt move lines when partially receiving tracked (lot/serial) subcontracted goods (_sync_subcontracting_productions).",
+    "How cost/valuation of the subcontracting service itself is captured (handled in mrp_subcontracting_purchase, not this module).",
+    "Behavior of subcontract returns (_is_subcontract_return) and cancellation cascades on the backing production."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/mrp_subcontracting.facts.json",
+    "tools": [
+      "code-read",
+      "extract_frontend.py",
+      "extract_module.py"
+    ],
+    "odoo_version": "19.0"
+  }
+}

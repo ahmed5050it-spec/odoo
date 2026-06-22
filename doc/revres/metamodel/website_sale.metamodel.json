@@ -1,0 +1,452 @@
+{
+  "subsystem": "website_sale",
+  "evidence": {
+    "manifest": {
+      "name": "eCommerce",
+      "category": "Website/Website",
+      "depends": [
+        "website",
+        "sale",
+        "website_payment",
+        "website_mail",
+        "portal_rating",
+        "digest",
+        "delivery",
+        "html_builder"
+      ],
+      "auto_install": false,
+      "application": true
+    },
+    "models": [
+      {
+        "_name": "product.template",
+        "_description": "(extension) eCommerce storefront product",
+        "fields": 19,
+        "relations": [
+          "public_categ_ids->product.public.category",
+          "website_ribbon_id->product.ribbon",
+          "product_template_image_ids->product.image",
+          "accessory_product_ids->product.product",
+          "alternative_product_ids->product.template"
+        ]
+      },
+      {
+        "_name": "sale.order",
+        "_description": "(extension) eCommerce cart",
+        "fields": 8,
+        "relations": [
+          "website_id->website",
+          "website_order_line->sale.order.line"
+        ]
+      },
+      {
+        "_name": "product.public.category",
+        "_description": "Website Product Category",
+        "fields": 14,
+        "relations": [
+          "parent_id->product.public.category",
+          "product_tmpl_ids->product.template"
+        ]
+      },
+      {
+        "_name": "product.image",
+        "_description": "Product Image",
+        "fields": 8,
+        "relations": [
+          "product_tmpl_id->product.template",
+          "product_variant_id->product.product"
+        ]
+      },
+      {
+        "_name": "product.feed",
+        "_description": "Product Feed (Google Merchant Center / GMC)",
+        "fields": 12,
+        "relations": [
+          "website_id->website",
+          "pricelist_id->product.pricelist",
+          "product_category_ids->product.public.category"
+        ]
+      },
+      {
+        "_name": "website.checkout.step",
+        "_description": "Website Checkout Step",
+        "fields": 6,
+        "relations": [
+          "website_id->website"
+        ]
+      }
+    ],
+    "routes": [
+      {
+        "paths": [
+          "/shop",
+          "/shop/<model(\"product.template\"):product>"
+        ],
+        "auth": "public",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/shop/cart"
+        ],
+        "auth": "public",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/shop/cart/add",
+          "/shop/cart/update",
+          "/shop/cart/quantity",
+          "/shop/cart/clear"
+        ],
+        "auth": "public",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/shop/checkout",
+          "/shop/address",
+          "/shop/extra_info"
+        ],
+        "auth": "public",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/shop/payment",
+          "/shop/payment/validate",
+          "/shop/confirmation"
+        ],
+        "auth": "public",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/shop/payment/transaction/<int:order_id>"
+        ],
+        "auth": "public",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/gmc.xml"
+        ],
+        "auth": "public",
+        "type": "http"
+      }
+    ],
+    "security": {
+      "access_rules": 71,
+      "record_rules": 6,
+      "groups": 5
+    },
+    "views": {
+      "form": 12,
+      "list": 6,
+      "kanban": 3,
+      "search": 3,
+      "graph": 1
+    },
+    "frontend": {
+      "present": true,
+      "js_files": 83,
+      "xml_templates": 33,
+      "owl_components": [
+        "AddToCartNotification",
+        "CartNotification",
+        "FieldVideoPreview",
+        "ProductPageSelectionScreen",
+        "ShopPageSelectionScreen",
+        "WarningNotification"
+      ],
+      "registry_adds": [
+        "fields:video_preview",
+        "html_builder.snippetsPreprocessor:website_sale_snippets",
+        "public.interactions.edit:website.product_variant_preview",
+        "public.interactions.edit:website.website_sale_product_grid_layout",
+        "public.interactions.edit:website.website_sale_product_sticky_col",
+        "public.interactions.edit:website_sale.carousel_product",
+        "public.interactions.edit:website_sale.dynamic_snippet_category",
+        "public.interactions.edit:website_sale.dynamic_snippet_products",
+        "public.interactions.preview:website_sale.dynamic_snippet_category",
+        "public.interactions.preview:website_sale.dynamic_snippet_products",
+        "public.interactions:website.website_sale_product_grid_layout",
+        "public.interactions:website.website_sale_product_sticky_col",
+        "public.interactions:website.website_sale_product_tile_secondary_image",
+        "public.interactions:website_sale.add_to_cart_snippet",
+        "public.interactions:website_sale.carousel_product",
+        "public.interactions:website_sale.carousel_product_card",
+        "public.interactions:website_sale.cart_line",
+        "public.interactions:website_sale.cart_suggestion",
+        "public.interactions:website_sale.checkout",
+        "public.interactions:website_sale.dynamic_snippet_category",
+        "public.interactions:website_sale.dynamic_snippet_products",
+        "public.interactions:website_sale.off_canvas",
+        "public.interactions:website_sale.portal_reorder",
+        "public.interactions:website_sale.price_range",
+        "public.interactions:website_sale.product_accordion",
+        "public.interactions:website_sale.product_sticky_col",
+        "public.interactions:website_sale.product_variant_preview",
+        "public.interactions:website_sale.product_variant_preview_image_hover",
+        "public.interactions:website_sale.quick_reorder",
+        "public.interactions:website_sale.recently_viewed_products",
+        "public.interactions:website_sale.search_modal",
+        "public.interactions:website_sale.terms_and_conditions_checkbox",
+        "public.interactions:website_sale.tracking",
+        "public.interactions:website_sale.website_sale",
+        "services:cart",
+        "services:cartNotificationService",
+        "website.form_editor_actions:create_customer"
+      ],
+      "patches": [
+        "ApplyConfiguratorScreen.prototype",
+        "ComboConfiguratorDialog",
+        "ComboConfiguratorDialog.prototype",
+        "Configurator",
+        "Configurator.prototype",
+        "CustomerAddress.prototype",
+        "FeaturesSelectionScreen",
+        "Form.prototype",
+        "Location.prototype",
+        "LocationSchedule.prototype",
+        "LocationSelectorDialog",
+        "LocationSelectorDialog.prototype",
+        "MapContainer.prototype",
+        "MegaMenuOption.prototype",
+        "MegaMenuOptionPlugin.prototype",
+        "NewContentSystrayItem.prototype",
+        "PaymentButton.prototype",
+        "PaymentForm.prototype",
+        "Popup.prototype",
+        "Product",
+        "Product.prototype",
+        "ProductConfiguratorDialog",
+        "ProductConfiguratorDialog.prototype",
+        "ProductList.prototype",
+        "ProductTemplateAttributeLine.prototype"
+      ],
+      "services": [
+        "ProductsRibbonOption",
+        "company_name",
+        "email",
+        "name",
+        "phone",
+        "replaceMediaOption"
+      ],
+      "asset_bundles": {
+        "web.assets_frontend": 46,
+        "web._assets_primary_variables": 1,
+        "web.assets_backend": 7,
+        "website.website_builder_assets": 4,
+        "website.assets_wysiwyg": 2,
+        "website.assets_editor": 3,
+        "website.assets_inside_builder_iframe": 2,
+        "web.assets_tests": 2,
+        "web.assets_unit_tests": 2,
+        "web.assets_unit_tests_setup": 6
+      }
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": true,
+      "endpoints": [
+        "https://schema.org",
+        "https://schema.org/",
+        "https://www.odoo.com/app/ecommerce"
+      ],
+      "files": [
+        "__manifest__.py",
+        "controllers/main.py",
+        "models/product_product.py",
+        "models/product_template.py"
+      ]
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    },
+    "behavioral_notes": [
+      {
+        "element": "WebsiteSale.cart / sale.order._cart_add / _cart_find_product_line",
+        "observation": "The `/shop/cart` route (http, public) renders a draft sale.order as the eCommerce cart; `request.cart` IS the cart. `/shop/cart/add` (jsonrpc) calls sale.order._cart_add(product_id, quantity), which first calls _cart_find_product_line to dedupe matching lines (same product_id, uom, no custom attrs, same linked_line/combo) and either bumps the existing line via _cart_update_line_quantity or creates a new sale.order.line via _create_new_cart_line/_prepare_order_line_values (resolving variant via _get_closest_possible_combination + _create_product_variant). Public/anonymous carts are owned by the website public user. Not visible in metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "checkout -> payment -> confirmation flow (controllers/main.py)",
+        "observation": "Storefront checkout is a multi-step state machine over one sale.order: /shop/checkout (sets sale_last_order_id, validates cart+addresses, picks delivery via _set_delivery_method) -> /shop/address -> /shop/payment (recomputes cart, lists payment.provider methods) -> /shop/payment/validate (on success calls _check_cart_is_ready_to_be_paid + _validate_order to confirm the order, i.e. transition sale.order to state 'sale', then website.sale_reset()) -> /shop/confirmation. This is the network->chain handoff: the storefront turns an anonymous session into a confirmed sale.order feeding the sale chain. Not visible in metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "sale.order abandoned-cart recovery (is_abandoned_cart / _cart_recovery_email_send)",
+        "observation": "A draft website cart older than website.cart_abandoned_delay with lines and a non-public partner is flagged is_abandoned_cart (computed + custom _search_abandoned_cart). _filter_can_send_abandoned_cart_mail + _cart_recovery_email_send send the website-specific cart_recovery_mail_template_id (deep-linking back to /shop/cart) via automation, then set cart_recovery_email_sent to avoid resending. A marketing/re-engagement side-effect invisible to metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "product.template eCommerce mixins (models/product_template.py)",
+        "observation": "product.template is extended with website.published.multi.mixin (per-website publish/visibility), website.searchable.mixin (frontend search incl. trigram GIST index on translated fields), website.seo.metadata, and rating.mixin (portal_rating reviews). This is what turns a back-office product into a storefront-published, searchable, rateable catalog item with public_categ_ids, ribbons, images and base-unit pricing. Not visible in metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "frontend (OWL/JS public interactions)",
+        "observation": "83 JS files, 6 OWL components, ~38 registry registrations dominated by public.interactions (cart, checkout, dynamic product/category snippets, search modal, recently-viewed, carousels) plus a `cart` service and `cartNotificationService`; 46 entries in web.assets_frontend. The storefront UX is delivered as website public interactions, not backend OWL views.",
+        "source": "static"
+      }
+    ]
+  },
+  "it_architecture": {
+    "application": "website_sale (eCommerce storefront application component; bridge website->sale)",
+    "software_services": [
+      "/shop, /shop/<product>",
+      "/shop/cart, /shop/cart/add, /shop/cart/update, /shop/cart/clear",
+      "/shop/checkout, /shop/address, /shop/extra_info",
+      "/shop/payment, /shop/payment/validate, /shop/confirmation",
+      "/shop/payment/transaction/<order_id>",
+      "/gmc.xml (Google Merchant Center feed)"
+    ],
+    "data_objects": [
+      "product.template",
+      "sale.order",
+      "product.public.category",
+      "product.image",
+      "product.feed",
+      "website.checkout.step"
+    ],
+    "logical_data_erm": [
+      "sale.order -> website",
+      "sale.order -> sale.order.line (website_order_line)",
+      "product.template -> product.public.category (public_categ_ids)",
+      "product.template -> product.image / product.ribbon",
+      "product.feed -> website / product.pricelist"
+    ],
+    "information_flows": [
+      "depends: website, sale, website_payment, delivery, portal_rating, digest, website_mail, html_builder",
+      "inbound: website (CMS/visitor/public user) -> /shop storefront -> draft sale.order cart",
+      "side-effect: /shop/payment/validate -> sale.order._validate_order -> state 'sale' (hands to sale chain -> delivery + invoice)",
+      "side-effect: payment.provider transaction (website_payment) confirms cart and triggers confirmation email",
+      "side-effect: abandoned draft carts -> cart_recovery_mail_template (re-engagement)"
+    ],
+    "frontend_components": [
+      "AddToCartNotification",
+      "CartNotification",
+      "FieldVideoPreview",
+      "ProductPageSelectionScreen",
+      "ShopPageSelectionScreen",
+      "WarningNotification"
+    ]
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Operate Online Storefront (publish & browse catalog)",
+      "Manage Shopping Cart (add/update/recover)",
+      "Online Checkout & Self-Service Ordering",
+      "Online Payment Collection (via website_payment)",
+      "Product Catalog Merchandising (categories, ribbons, cross/up-sell)",
+      "Abandoned Cart Recovery"
+    ],
+    "value_streams": [
+      "Browse-to-Order (eCommerce): visit storefront -> add to cart -> checkout/address -> pay -> confirmed sale.order",
+      "Confirmed order then enters the sale Quote-to-Cash chain (delivery + invoice)"
+    ],
+    "information_concepts": [
+      "product.template (storefront product)",
+      "product.public.category (website category)",
+      "sale.order (eCommerce cart)",
+      "product.image",
+      "product.feed",
+      "website.checkout.step"
+    ],
+    "organization": [
+      "group_website_publisher",
+      "group_website_designer",
+      "group_website_restricted_editor",
+      "base.group_portal (online customer)",
+      "base.group_public (anonymous visitor)"
+    ],
+    "products": [
+      "product.template (eCommerce-published)",
+      "product.product (sellable variant)",
+      "product.public.category"
+    ],
+    "policies": [
+      "6 record rules + 71 ACLs: per-website publish/visibility scoping, ecommerce_access (public/logged-in) gate",
+      "prevent_zero_price_sale, require_billing_details_for_services, account_on_checkout policy settings"
+    ],
+    "stakeholders": [
+      "Online Shopper (res.partner / public visitor)",
+      "Website Publisher / eCommerce Manager (res.users)",
+      "Salesperson & Sales Team (assigned on confirmation)",
+      "Payment Provider (via website_payment)"
+    ],
+    "strategy": null,
+    "metrics": [
+      "sale.report (with website_id, is_abandoned_cart) eCommerce sales analysis",
+      "crm.team abandoned_carts_count / abandoned_carts_amount",
+      "digest KPI kpi_website_sale_total",
+      "website.visitor product_count / recently-viewed tracking"
+    ]
+  },
+  "classification": {
+    "value_model": "network",
+    "activity_class": "primary",
+    "apqc_category": "3.0 Market and Sell Products and Services",
+    "rationale": "website_sale is a BRIDGE module: it turns the website value-network (a CMS that mediates between visitors via shared infrastructure) into an order-generating sales channel. It connects website (network) -> sale (chain) -> payment (network): the storefront mediates many anonymous/portal visitors over shared catalog/cart infrastructure (network logic, Stabell & Fjeldstad), and at /shop/payment/validate it calls sale.order._validate_order to emit a confirmed sale.order that feeds the sale chain (delivery + invoice), while website_payment provides the payment-network leg. Its own primary economic activity is the eCommerce sell-side storefront, hence APQC 3.0 Market and Sell (online channel). Classified network rather than chain because its value is mediation/matchmaking and channel infrastructure (publish, browse, search, cart, recover) over a shared platform, not the linear transform-inputs-to-order of the sale chain it feeds. Activity is primary (revenue-facing, customer-facing channel)."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "Public storefront (/shop) with categories, search, ribbons, product pages",
+      "Session-based cart on draft sale.order (add/update/clear, anonymous + portal)",
+      "Multi-step checkout (address, delivery method, extra info) and online payment",
+      "Order confirmation, e-receipt PDF and confirmation email",
+      "Abandoned-cart detection and recovery email automation",
+      "Cross-selling / up-selling (accessory & alternative products), recently viewed",
+      "Per-website publishing, pricelists, currencies and SEO metadata",
+      "Google Merchant Center product feed (/gmc.xml)"
+    ],
+    "typical_fits": [
+      "B2C catalog browse -> cart -> pay -> confirmed order",
+      "Multi-website / multi-currency storefronts on one database",
+      "Portal self-service reorder of past online orders",
+      "Optional account-on-checkout (guest vs registered) policy"
+    ],
+    "common_gaps": [
+      "Bespoke checkout steps / one-page checkout customization",
+      "Marketplace / multi-vendor selling (not standard)",
+      "Complex tax/shipping rules beyond delivery + fiscal positions",
+      "Headless/PWA storefront or 3rd-party front-end integration",
+      "Advanced promotions/loyalty beyond pricelists (needs loyalty module)"
+    ],
+    "drive_hints": [
+      "curl -s http://localhost:8069/shop  # render public storefront (auth=public)",
+      "odoo shell: env['sale.order'].search([('website_id','!=',False)], limit=5).mapped(('name','state','cart_quantity'))",
+      "odoo shell: env['sale.order'].search([('is_abandoned_cart','=',True)]).mapped('partner_id.email')",
+      "curl jsonrpc /shop/cart/add {product_id, quantity}  # add a product to the cart (auth=public)"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Exact sale.order._validate_order semantics vs sale.action_confirm (what downstream stock/account documents are created for an eCommerce order, and when invoicing is automatic).",
+    "How the website_payment payment.transaction lifecycle (authorize/capture/error) gates _validate_order and the confirmation email.",
+    "Variant-generation path: how /shop/cart/add + configurator routes resolve dynamic/no_variant combinations into the final sale.order.line product."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/website_sale.facts.json",
+    "tools": [
+      "code-read",
+      "extract_frontend.py",
+      "extract_module.py",
+      "extract_runtime.sh",
+      "run-odoo (odoo shell)"
+    ],
+    "odoo_version": "19.0"
+  }
+}

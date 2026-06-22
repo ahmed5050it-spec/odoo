@@ -1,0 +1,458 @@
+{
+  "subsystem": "test_website",
+  "evidence": {
+    "manifest": {
+      "name": "Website Test",
+      "category": "Hidden",
+      "depends": [
+        "web_unsplash",
+        "website",
+        "theme_default"
+      ],
+      "auto_install": false,
+      "application": false
+    },
+    "models": [
+      {
+        "_name": "test.model",
+        "_description": "Website Model Test",
+        "fields": 4
+      },
+      {
+        "_name": "test.model.exposed",
+        "_description": "Website Model Test Exposed",
+        "fields": 1
+      },
+      {
+        "_name": "test.model.multi.website",
+        "_description": "Multi Website Model Test",
+        "fields": 2
+      },
+      {
+        "_name": "test.submodel",
+        "_description": "Website Submodel Test",
+        "fields": 3
+      },
+      {
+        "_name": "test.tag",
+        "_description": "Website Tag Test",
+        "fields": 1
+      }
+    ],
+    "routes": [
+      {
+        "paths": [
+          "/test_view"
+        ],
+        "auth": "public",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/test_view_access_error"
+        ],
+        "auth": "public",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/ignore_args/converteronly/<string:a>"
+        ],
+        "auth": "public",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/ignore_args/none"
+        ],
+        "auth": "public",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/ignore_args/a"
+        ],
+        "auth": "public",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/ignore_args/kw"
+        ],
+        "auth": "public",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/ignore_args/converter/<string:a>"
+        ],
+        "auth": "public",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/ignore_args/converter/<string:a>/nokw"
+        ],
+        "auth": "public",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/multi_company_website"
+        ],
+        "auth": "public",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/test_lang_url/<model("
+        ],
+        "auth": null,
+        "type": null
+      },
+      {
+        "paths": [
+          "/test_get_dbname"
+        ],
+        "auth": "public",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/test_error_view"
+        ],
+        "auth": "public",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/test_user_error_http"
+        ],
+        "auth": "public",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/test_user_error_json"
+        ],
+        "auth": "public",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/test_validation_error_http"
+        ],
+        "auth": "public",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/test_validation_error_json"
+        ],
+        "auth": "public",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/test_access_error_json"
+        ],
+        "auth": "public",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/test_access_error_http"
+        ],
+        "auth": "public",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/test_missing_error_json"
+        ],
+        "auth": "public",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/test_missing_error_http"
+        ],
+        "auth": "public",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/test_internal_error_json"
+        ],
+        "auth": "public",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/test_internal_error_http"
+        ],
+        "auth": "public",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/test_access_denied_json"
+        ],
+        "auth": "public",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/test_access_denied_http"
+        ],
+        "auth": "public",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/get"
+        ],
+        "auth": "public",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/post"
+        ],
+        "auth": "public",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/get_post"
+        ],
+        "auth": "public",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/get_post_nomultilang"
+        ],
+        "auth": "public",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/empty_controller_test"
+        ],
+        "auth": "public",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/test_website/country/<model("
+        ],
+        "auth": null,
+        "type": null
+      },
+      {
+        "paths": [
+          "/test_website/200/<model("
+        ],
+        "auth": null,
+        "type": null
+      },
+      {
+        "paths": [
+          "/test_website/model_item/<int:record_id>"
+        ],
+        "auth": "public",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/test_website/model_item_sudo/<int:record_id>"
+        ],
+        "auth": "public",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/test_website/test_redirect_view_qs"
+        ],
+        "auth": "public",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/test_countries_308",
+          "/test_countries_308/<model("
+        ],
+        "auth": null,
+        "type": null
+      },
+      {
+        "paths": [
+          "/test_website_sitemap",
+          "/test_website_sitemap/something/<model("
+        ],
+        "auth": null,
+        "type": null
+      },
+      {
+        "paths": [
+          "/test_model/<model("
+        ],
+        "auth": null,
+        "type": null
+      }
+    ],
+    "security": {
+      "access_rules": 19,
+      "record_rules": 0,
+      "groups": 2
+    },
+    "views": {
+      "form": 3,
+      "list": 3,
+      "tree": 0,
+      "kanban": 2,
+      "search": 0,
+      "pivot": 0,
+      "graph": 0,
+      "calendar": 0,
+      "activity": 0
+    },
+    "frontend": {
+      "present": true,
+      "js_files": 1,
+      "xml_templates": 0,
+      "owl_components": [],
+      "registry_adds": [
+        "public.interactions:test_website.test_error"
+      ],
+      "patches": [],
+      "services": [],
+      "asset_bundles": {
+        "test_website.test_bundle": 6,
+        "web.assets_frontend": 1,
+        "web.assets_tests": 1
+      }
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": false,
+      "endpoints": [
+        "http://test.external.link/javascript1.js",
+        "http://test.external.link/javascript2.js",
+        "http://test.external.link/style1.css",
+        "http://test.external.link/style2.css"
+      ],
+      "files": [
+        "__manifest__.py"
+      ]
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    },
+    "behavioral_notes": [
+      {
+        "element": "frontend (OWL/JS)",
+        "observation": "1 JS files, 0 OWL components, 1 registry adds; bundles ['test_website.test_bundle', 'web.assets_frontend', 'web.assets_tests'].",
+        "source": "static"
+      },
+      {
+        "element": "thin module",
+        "observation": "5 models, 37 routes, 2443 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
+        "source": "ast"
+      }
+    ]
+  },
+  "it_architecture": {
+    "application": "test_website (Website Test)",
+    "software_services": [
+      "/empty_controller_test",
+      "/get",
+      "/get_post",
+      "/get_post_nomultilang",
+      "/ignore_args/a",
+      "/ignore_args/converter/<string:a>",
+      "/ignore_args/converter/<string:a>/nokw",
+      "/ignore_args/converteronly/<string:a>",
+      "/ignore_args/kw",
+      "/ignore_args/none"
+    ],
+    "data_objects": [
+      "test.model",
+      "test.model.exposed",
+      "test.model.multi.website",
+      "test.submodel",
+      "test.tag"
+    ],
+    "logical_data_erm": [
+      "test.model -> test.submodel",
+      "test.model -> test.tag",
+      "test.model.multi.website -> website",
+      "test.submodel -> test.model",
+      "test.submodel -> test.tag"
+    ],
+    "information_flows": [
+      "depends: web_unsplash, website, theme_default"
+    ],
+    "frontend_components": []
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Website Test"
+    ],
+    "value_streams": [],
+    "information_concepts": [
+      "test.model",
+      "test.model.exposed",
+      "test.model.multi.website",
+      "test.submodel",
+      "test.tag"
+    ],
+    "organization": [],
+    "products": [],
+    "policies": [],
+    "stakeholders": [],
+    "strategy": null,
+    "metrics": []
+  },
+  "classification": {
+    "value_model": "support",
+    "activity_class": "support",
+    "apqc_category": "13.0 Develop and Manage Business Capabilities",
+    "rationale": "test_website: thin support/support module (auto-architect baseline)."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "Website Test"
+    ],
+    "typical_fits": [],
+    "common_gaps": [],
+    "drive_hints": [
+      "odoo shell: env['test.model'].search([],limit=3)"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/test_website.facts.json",
+    "tools": [
+      "extract_module.py",
+      "extract_frontend.py",
+      "gen_thin.py"
+    ],
+    "odoo_version": "19.0"
+  }
+}

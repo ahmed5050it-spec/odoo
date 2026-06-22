@@ -1,0 +1,326 @@
+{
+  "subsystem": "hr_skills",
+  "evidence": {
+    "manifest": {
+      "name": "Skills Management",
+      "category": "Human Resources/Employees",
+      "summary": "Manage skills, knowledge and resume of your employees",
+      "depends": [
+        "hr"
+      ],
+      "auto_install": true,
+      "application": true
+    },
+    "models": [
+      {
+        "_name": "hr.individual.skill.mixin",
+        "_description": "Skill level (abstract base)",
+        "fields": 12,
+        "relations": [
+          "skill_id->hr.skill",
+          "skill_level_id->hr.skill.level",
+          "skill_type_id->hr.skill.type"
+        ]
+      },
+      {
+        "_name": "hr.employee.skill",
+        "_description": "Skill level for employee",
+        "fields": 13,
+        "relations": [
+          "employee_id->hr.employee",
+          "skill_id->hr.skill",
+          "skill_level_id->hr.skill.level"
+        ]
+      },
+      {
+        "_name": "hr.job.skill",
+        "_description": "Skills for job positions",
+        "fields": 13,
+        "relations": [
+          "job_id->hr.job",
+          "skill_id->hr.skill"
+        ]
+      },
+      {
+        "_name": "hr.skill.type",
+        "_description": "Skill Type",
+        "fields": 8,
+        "relations": [
+          "skill_ids->hr.skill",
+          "skill_level_ids->hr.skill.level"
+        ]
+      },
+      {
+        "_name": "hr.skill",
+        "_description": "Skill",
+        "fields": 4,
+        "relations": [
+          "skill_type_id->hr.skill.type"
+        ]
+      },
+      {
+        "_name": "hr.skill.level",
+        "_description": "Skill Level",
+        "fields": 5,
+        "relations": [
+          "skill_type_id->hr.skill.type"
+        ]
+      },
+      {
+        "_name": "hr.resume.line",
+        "_description": "Resume line of an employee",
+        "fields": 17,
+        "relations": [
+          "employee_id->hr.employee",
+          "line_type_id->hr.resume.line.type"
+        ]
+      },
+      {
+        "_name": "hr.employee.skill.history.report",
+        "_description": "Employee Skills Report (SQL view)",
+        "fields": 5,
+        "relations": [
+          "employee_id->hr.employee",
+          "skill_id->hr.skill"
+        ]
+      }
+    ],
+    "routes": [
+      {
+        "paths": [
+          "/print/cv"
+        ],
+        "auth": "user",
+        "type": "http"
+      }
+    ],
+    "security": {
+      "access_rules": 20,
+      "record_rules": 11,
+      "groups": 0
+    },
+    "views": {
+      "form": 6,
+      "list": 14,
+      "kanban": 1,
+      "search": 4,
+      "calendar": 1
+    },
+    "frontend": {
+      "present": true,
+      "js_files": 11,
+      "xml_templates": 8,
+      "owl_components": [
+        "FormattedDate",
+        "InternalResumeLineComponent"
+      ],
+      "registry_adds": [
+        "fields:boolean_toggle_load",
+        "fields:formatted_date",
+        "fields:many2many_tags_skills",
+        "fields:many2one_tags_skills",
+        "fields:resume_one2many",
+        "fields:skills_one2many",
+        "view_widgets:internal_resume_lines",
+        "views:skills_graph"
+      ],
+      "patches": [
+        "AvatarCardResourcePopover.prototype"
+      ],
+      "services": [
+        "color",
+        "company_id",
+        "day_format",
+        "default_level",
+        "month_format",
+        "resume_line_ids",
+        "year_format"
+      ],
+      "asset_bundles": {
+        "web.assets_backend": 5,
+        "web.assets_backend_lazy": 1,
+        "web.assets_unit_tests": 2,
+        "web.assets_tests": 1,
+        "web.report_assets_pdf": 1
+      }
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": false,
+      "endpoints": [],
+      "files": []
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    },
+    "behavioral_notes": [
+      {
+        "element": "hr.individual.skill.mixin._write_individual_skills / _create_individual_skills / _expire_individual_skills",
+        "observation": "Employee/job skills are append-only versioned, not edited in place. hr.employee.create/write route every command through hr.employee.skill._get_transformed_commands, which rewrites WRITE into archive (set valid_to=yesterday) + CREATE of a new record, so the full history of skill levels over time is preserved via valid_from/valid_to windows. Records younger than 24h or already expired are deleted instead of archived. None of this is visible in metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "hr.individual.skill.mixin._check_not_overlapping_regular_skill",
+        "observation": "@api.constrains enforces only one active level per (employee/job, skill_id) for regular skills (e.g. one English level at a time), while certifications (is_certification=True) may coexist if their valid_from/valid_to ranges differ. hr.job.skill overrides _can_edit_certification_validity_period to False; hr.employee.skill leaves it True, which relaxes the overlap rule for editable certification validity.",
+        "source": "code-read"
+      },
+      {
+        "element": "hr.skill.type / hr.skill.level defaulting and constraints",
+        "observation": "A skill type must contain at least one skill and one level (_check_no_null_skill_or_skill_level ValidationError). Levels carry level_progress (0-100, DB CHECK constraint) and a single default_level enforced across siblings on create/write. hr.skill.level.technical_is_new_default is a non-stored compute set only by the OWL front-end so the type onchange knows which level just became default.",
+        "source": "code-read"
+      },
+      {
+        "element": "hr.employee._add_certification_activity_to_employees (cron)",
+        "observation": "Scheduled action scans employees whose hr.job requires certification skills and schedules a mail.activity (act_type hr_skills.mail_activity_data_upload_certification) to the responsible user when a required certification is missing or expiring within 3 months (reads hr.employee.skill.valid_to). Pure cross-model side-effect, invisible in metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "hr.employee.skill.history.report (_auto = False)",
+        "observation": "SQL view, not a stored table. init() builds a point-in-time timeline by cross-joining each skill's valid_from/valid_to window against the set of change dates, so a graph of skill level over time can be drawn; the skills OWL widget opens it via doAction. hr.employee.skill.report and hr.employee.certification.report inherit hr.manager.department.report for department/manager roll-ups.",
+        "source": "code-read"
+      },
+      {
+        "element": "frontend (OWL/JS) — skills & resume widgets",
+        "observation": "11 JS files, 8 XML templates, 2 OWL components (FormattedDate, InternalResumeLineComponent); 8 registry adds incl fields skills_one2many/resume_one2many/many2{one,many}_tags_skills, view_widget internal_resume_lines and a skills_graph view; 1 patch (AvatarCardResourcePopover). skills_one2many (SkillsX2ManyField) gates a timeline/report button on HR-user-or-subordinate; internal_resume_lines calls hr.employee.get_internal_resume_lines to render job-title history derived from employee version_ids. Bundles ['web.assets_backend','web.assets_backend_lazy','web.assets_unit_tests','web.assets_tests','web.report_assets_pdf'].",
+        "source": "static"
+      }
+    ]
+  },
+  "it_architecture": {
+    "application": "hr_skills (Skills Management application component, auto-installed on hr)",
+    "software_services": [
+      "/print/cv"
+    ],
+    "data_objects": [
+      "hr.employee.skill",
+      "hr.job.skill",
+      "hr.skill.type",
+      "hr.skill",
+      "hr.skill.level",
+      "hr.resume.line",
+      "hr.employee.skill.history.report"
+    ],
+    "logical_data_erm": [
+      "hr.skill -> hr.skill.type",
+      "hr.skill.level -> hr.skill.type",
+      "hr.employee.skill -> hr.employee",
+      "hr.employee.skill -> hr.skill",
+      "hr.job.skill -> hr.job",
+      "hr.resume.line -> hr.employee"
+    ],
+    "information_flows": [
+      "depends: hr",
+      "side-effect: hr.employee.write(skills) -> _get_transformed_commands -> archive old hr.employee.skill + create new (versioned history)",
+      "side-effect: cron _add_certification_activity_to_employees -> mail.activity reminders for missing/expiring certifications",
+      "side-effect: skills OWL widget -> hr.employee.skill.history.report (SQL view) graph"
+    ],
+    "frontend_components": [
+      "FormattedDate",
+      "InternalResumeLineComponent"
+    ]
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Manage Employee Skills & Levels",
+      "Define Skill Types, Skills & Certifications",
+      "Track Skill History & Validity",
+      "Define Job Position Skill Requirements",
+      "Maintain Employee Resume / CV",
+      "Skills & Certification Reporting"
+    ],
+    "value_streams": [
+      "Competency lifecycle: define skill type/levels -> assign employee skill -> version on change (archive+create) -> expire/renew certification -> report skill-over-time"
+    ],
+    "information_concepts": [
+      "hr.skill.type",
+      "hr.skill",
+      "hr.skill.level",
+      "hr.employee.skill",
+      "hr.job.skill",
+      "hr.resume.line",
+      "hr.employee (skilled person)"
+    ],
+    "organization": [
+      "hr.group_hr_user (HR Officer: full CRUD on skills/types/levels)",
+      "base.group_user (Employee: read all, self-service on own skills)"
+    ],
+    "products": [],
+    "policies": [
+      "11 record rules scoping skill/resume visibility (own vs HR)",
+      "constraint: one active level per (employee, skill); certifications coexist by validity range",
+      "constraint: skill type requires >=1 skill and >=1 level; level_progress CHECK 0-100",
+      "automation: certification missing/expiring activity reminder (cron, 3-month horizon)"
+    ],
+    "stakeholders": [
+      "Employee (hr.employee)",
+      "HR Officer (hr.group_hr_user)",
+      "Manager (hr.manager.department.report consumers)",
+      "Job Position (hr.job)"
+    ],
+    "strategy": null,
+    "metrics": [
+      "hr.employee.skill.history.report (skill level over time)",
+      "hr.employee.skill.report (skills by department/job)",
+      "hr.employee.certification.report (certifications by department)"
+    ]
+  },
+  "classification": {
+    "value_model": "support",
+    "activity_class": "support",
+    "apqc_category": "7.0 Develop and Manage Human Capital",
+    "rationale": "hr_skills is an HR talent/competency management support activity: it does not transact with customers or move product, it maintains the firm's human-capital data (skills, levels, certifications, resumes) that primary activities draw on. As a support infrastructure module it auto_installs on hr and serves HR/manager roles. Maps to APQC 7.0 Develop and Manage Human Capital (7.3 Manage employee development / competencies). No HR row exists in apqc_odoo_map.tsv (which only covers chain/shop primary flows), consistent with this being a support subsystem."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "skill types with ordered levels and progress %",
+      "regular skills vs certifications (validity periods)",
+      "versioned skill history per employee (archive-on-change)",
+      "job-position required skills",
+      "employee resume lines + printable CV (PDF via /print/cv)",
+      "skills / certification / history analysis (graph & list)"
+    ],
+    "typical_fits": [
+      "standard competency catalog + employee self-assessment",
+      "certification expiry tracking with activity reminders",
+      "manager roll-up of team skills by department/job"
+    ],
+    "common_gaps": [
+      "weighting/scoring employee skills against job requirements (gap analysis)",
+      "approval workflow for skill/certification validation",
+      "integration of external LMS / appraisal data into resume lines",
+      "custom certification renewal SLAs beyond the 3-month cron horizon"
+    ],
+    "drive_hints": [
+      "odoo shell: env['hr.skill.type'].search([]).mapped(('name','levels_count','is_certification'))",
+      "odoo shell: env['hr.employee.skill'].search([], limit=5).mapped(('employee_id','skill_id','skill_level_id','valid_from','valid_to'))",
+      "curl http://localhost:8069/print/cv (auth=user) to render the employee CV PDF report"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "There is no dedicated hr.employee.skill.log model; skill history is reconstructed from valid_from/valid_to windows and the hr.employee.skill.history.report SQL view -- confirm no separate audit-log model is expected.",
+    "Exact set of 11 record rules and which scope own-vs-HR visibility (only counts captured by extraction).",
+    "How resume job-title history derives from hr.employee.version_ids (get_internal_resume_lines) interacts with hr_contract/employee-versioning modules."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/hr_skills.facts.json",
+    "tools": [
+      "code-read",
+      "extract_module.py",
+      "extract_frontend.py",
+      "run-odoo (odoo shell)"
+    ],
+    "odoo_version": "19.0"
+  }
+}

@@ -1,0 +1,329 @@
+{
+  "subsystem": "crm",
+  "evidence": {
+    "manifest": {
+      "name": "CRM",
+      "category": "Sales/CRM",
+      "depends": [
+        "base_setup",
+        "sales_team",
+        "mail",
+        "calendar",
+        "resource",
+        "utm",
+        "web_tour",
+        "contacts",
+        "digest",
+        "phone_validation"
+      ],
+      "auto_install": false,
+      "application": true
+    },
+    "models": [
+      {
+        "_name": "crm.lead",
+        "_description": "Lead",
+        "fields": 75,
+        "relations": [
+          "user_id->res.users",
+          "team_id->crm.team",
+          "stage_id->crm.stage",
+          "partner_id->res.partner",
+          "lost_reason_id->crm.lost.reason",
+          "recurring_plan->crm.recurring.plan",
+          "calendar_event_ids->calendar.event"
+        ]
+      },
+      {
+        "_name": "crm.stage",
+        "_description": "CRM Stages",
+        "fields": 9,
+        "relations": [
+          "team_ids->crm.team"
+        ]
+      },
+      {
+        "_name": "crm.team",
+        "_description": "Sales Team",
+        "fields": 12,
+        "relations": [
+          "alias_id->mail.alias",
+          "lead_properties_definition->(PropertiesDefinition)"
+        ]
+      },
+      {
+        "_name": "crm.lost.reason",
+        "_description": "Opp. Lost Reason",
+        "fields": 3,
+        "relations": []
+      },
+      {
+        "_name": "crm.lead.scoring.frequency",
+        "_description": "Lead Scoring Frequency",
+        "fields": 5,
+        "relations": [
+          "team_id->crm.team"
+        ]
+      },
+      {
+        "_name": "crm.activity.report",
+        "_description": "CRM Activity Analysis",
+        "fields": 20,
+        "relations": [
+          "lead_id->crm.lead",
+          "team_id->crm.team",
+          "stage_id->crm.stage"
+        ]
+      }
+    ],
+    "routes": [
+      {
+        "paths": [
+          "/lead/case_mark_won"
+        ],
+        "auth": "user",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/lead/case_mark_lost"
+        ],
+        "auth": "user",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/lead/convert"
+        ],
+        "auth": "user",
+        "type": "http"
+      }
+    ],
+    "security": {
+      "access_rules": 32,
+      "record_rules": 8,
+      "groups": 2
+    },
+    "views": {
+      "form": 4,
+      "list": 5,
+      "kanban": 2,
+      "search": 5,
+      "pivot": 2,
+      "graph": 2,
+      "calendar": 1,
+      "activity": 1
+    },
+    "behavioral_notes": [
+      {
+        "element": "crm.lead.convert_opportunity / _convert_opportunity_data",
+        "observation": "Lead->opportunity conversion is a type flip on the SAME record, not a new document: _convert_opportunity_data writes type='opportunity', stamps date_conversion, sets partner_id (creating a res.partner via _handle_partner_assignment/_create_customer when missing), and assigns an initial stage_id via _stage_find; user/team are distributed round-robin by _handle_salesmen_assignment. Won/inactive leads are skipped.",
+        "source": "code-read"
+      },
+      {
+        "element": "crm.lead._compute_probabilities / _pls_get_naive_bayes_probabilities",
+        "observation": "Predictive Lead Scoring (PLS) computes win probability with a naive-Bayes classifier over crm.lead.scoring.frequency won/lost counts (0.1 smoothing for zero-frequency). automated_probability is written, and probability follows it only while is_automated_probability is set, so a manually overridden probability is preserved. Pure Python ML — invisible to metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "crm.stage.write (is_won) + crm.lead.action_set_won / action_set_lost",
+        "observation": "Stage pipeline encodes won/lost state, not a separate state field. Flipping a stage's is_won recomputes probabilities of all leads in it (won -> probability=100, un-won -> _compute_probabilities). action_set_won moves the lead to the matching is_won stage and sets probability=100; action_set_lost archives (active=False) and sets probability=0 plus a crm.lost.reason. won_status is derived from (probability, is_won, active).",
+        "source": "code-read"
+      },
+      {
+        "element": "crm.team._action_assign_leads (_allocate_leads + _assign_and_convert_leads)",
+        "observation": "The crm.ir_cron_crm_lead_assign cron and manual action allocate unassigned leads to teams by weighted-random workload (assignment_max), deduplicate/merge duplicate leads (_get_lead_duplicates / _merge_opportunity, unlinking losers), then round-robin to members by quota and call convert_opportunity. Side effects: lead merges, deletions, opportunity conversion, mail logs.",
+        "source": "code-read"
+      },
+      {
+        "element": "frontend (OWL/JS)",
+        "observation": "23 JS files, 3 XML templates, 2 OWL components (CrmPlsTooltip, CrmPlsTooltipButton surfacing the PLS score breakdown); 10 registry adds incl. the pls_tooltip_button view widget and forecast kanban/list/pivot/graph views; patches ActivityMenu.prototype and ResPartner.prototype; asset bundles web.assets_backend(3), web.assets_backend_lazy(2), web.assets_tests(1), web.assets_unit_tests(4).",
+        "source": "static"
+      }
+    ],
+    "frontend": {
+      "present": true,
+      "js_files": 23,
+      "xml_templates": 3,
+      "owl_components": [
+        "CrmPlsTooltip",
+        "CrmPlsTooltipButton"
+      ],
+      "registry_adds": [
+        "fields:many2one_avatar_leader_user",
+        "services:fillTemporalService",
+        "view_widgets:pls_tooltip_button",
+        "views:crm_form",
+        "views:crm_kanban",
+        "views:forecast_graph",
+        "views:forecast_kanban",
+        "views:forecast_list",
+        "views:forecast_pivot",
+        "web_tour.tours:crm_tour"
+      ],
+      "patches": [
+        "ActivityMenu.prototype",
+        "ResPartner.prototype"
+      ],
+      "services": [],
+      "asset_bundles": {
+        "web.assets_backend": 3,
+        "web.assets_backend_lazy": 2,
+        "web.assets_tests": 1,
+        "web.assets_unit_tests": 4
+      }
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": false,
+      "endpoints": [
+        "https://www.odoo.com/app/crm"
+      ],
+      "files": [
+        "__manifest__.py"
+      ]
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    }
+  },
+  "it_architecture": {
+    "application": "crm (CRM application component)",
+    "software_services": [
+      "/lead/case_mark_won",
+      "/lead/case_mark_lost",
+      "/lead/convert"
+    ],
+    "data_objects": [
+      "crm.lead",
+      "crm.stage",
+      "crm.team",
+      "crm.lost.reason",
+      "crm.lead.scoring.frequency",
+      "crm.activity.report"
+    ],
+    "logical_data_erm": [
+      "crm.lead -> res.partner",
+      "crm.lead -> crm.stage",
+      "crm.lead -> crm.team",
+      "crm.lead -> crm.lost.reason",
+      "crm.lead -> calendar.event",
+      "crm.stage -> crm.team"
+    ],
+    "information_flows": [
+      "depends: sales_team, mail, calendar, utm, phone_validation, digest, contacts",
+      "side-effect: crm.lead.convert_opportunity -> type flip + res.partner create + stage/salesperson assignment",
+      "side-effect: crm.team cron -> lead allocation + dedup/merge + convert_opportunity",
+      "side-effect: crm.lead.action_set_won -> handoff to sale (account.move team_id, sale.order origin) downstream"
+    ],
+    "frontend_components": [
+      "CrmPlsTooltip",
+      "CrmPlsTooltipButton"
+    ]
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Capture & Qualify Leads",
+      "Manage Opportunity Pipeline (stages)",
+      "Predictive Lead Scoring (probability)",
+      "Lead Assignment & Deduplication",
+      "CRM Activity & Forecast Analysis"
+    ],
+    "value_streams": [
+      "Lead-to-Opportunity: capture -> qualify -> score -> convert -> won/lost",
+      "Pipeline nurture loop: stage progression with rotting + activities until won or lost reason"
+    ],
+    "information_concepts": [
+      "crm.lead (lead/opportunity)",
+      "crm.stage (pipeline stage)",
+      "crm.team (sales team)",
+      "crm.lost.reason",
+      "res.partner (customer/contact)"
+    ],
+    "organization": [
+      "group_use_lead",
+      "group_use_recurring_revenues"
+    ],
+    "products": [],
+    "policies": [
+      "8 record rules: salesperson/team + multi-company opportunity visibility scoping",
+      "crm.ir_cron_crm_lead_assign automation: rule-based weighted lead allocation",
+      "stage.is_won + lost_reason policy governs won/lost probability semantics"
+    ],
+    "stakeholders": [
+      "Lead/Prospect (res.partner)",
+      "Salesperson (res.users)",
+      "Sales Team (crm.team)",
+      "Sales Manager (group_sale_manager)"
+    ],
+    "strategy": null,
+    "metrics": [
+      "crm.activity.report (CRM Activity Analysis)",
+      "crm.lead probability / prorated_revenue / expected_revenue (forecast)",
+      "digest KPIs: kpi_crm_lead_created, kpi_crm_opportunities_won"
+    ]
+  },
+  "classification": {
+    "value_model": "shop",
+    "activity_class": "primary",
+    "apqc_category": "3.0 Market and Sell Products and Services (3.5.1 Manage leads / 3.5.2 Manage opportunities)",
+    "rationale": "CRM is a value-shop: it solves the cyclical problem of finding, qualifying and acquiring a customer rather than transforming inputs into outputs. Its core is the iterative diagnose-qualify-nurture loop (lead capture -> PLS scoring -> stage progression -> convert -> won/lost feedback that retrains scoring frequencies), and value rests on reputation/relationship, not a linear document chain. It is a primary activity feeding APQC 3.0 Market and Sell (3.5.1 leads, 3.5.2 opportunities); the won opportunity hands off to sale (chain). One could argue it is the chain's marketing-and-sell front-end, but the recursive qualify/nurture problem-solving and reputation dynamics make shop the better fit."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "lead capture (email alias, web-to-lead) and qualification",
+      "Kanban opportunity pipeline with configurable stages and rotting",
+      "lead -> opportunity conversion with partner creation",
+      "predictive lead scoring (naive-Bayes probability)",
+      "automated/manual lead assignment, dedup and merge",
+      "lost-reason tracking and win/lost reporting",
+      "activities, meetings (calendar) and forecast pivot/graph"
+    ],
+    "typical_fits": [
+      "standard lead-to-opportunity-to-won pipeline",
+      "team/salesperson ownership and round-robin assignment",
+      "email-alias inbound lead creation",
+      "UTM source/medium/campaign attribution on leads"
+    ],
+    "common_gaps": [
+      "custom qualification scoring beyond the built-in PLS fields",
+      "industry-specific lead properties and stage requirements",
+      "third-party lead enrichment / mining (separate IAP modules)",
+      "complex territory/assignment rules beyond domain + weighted quota"
+    ],
+    "drive_hints": [
+      "odoo shell: env['crm.lead'].search([], limit=5).mapped(('name','type','stage_id.name','probability'))",
+      "odoo shell: l = env['crm.lead'].create({'name':'Demo','email_from':'a@b.com'}); l.convert_opportunity(l.partner_id); l.type",
+      "odoo shell: env['crm.stage'].search([('is_won','=',True)]).mapped('name')",
+      "curl http /lead/convert (auth=user) to trigger conversion from the web action"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Exact PLS retraining cadence and how scoring frequencies are rebuilt (crm.lead.pls.update wizard vs cron).",
+    "Full crm.team weighted-random allocation fairness across overlapping assignment domains under load.",
+    "Precise downstream handoff contract from a won opportunity to sale.order / account.move (team_id propagation)."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/crm.facts.json",
+    "tools": [
+      "code-read",
+      "extract_frontend.py",
+      "extract_module.py",
+      "extract_runtime.sh",
+      "run-odoo (odoo shell)"
+    ],
+    "odoo_version": "19.0"
+  }
+}

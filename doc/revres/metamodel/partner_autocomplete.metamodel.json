@@ -1,0 +1,280 @@
+{
+  "subsystem": "partner_autocomplete",
+  "evidence": {
+    "manifest": {
+      "name": "Partner Autocomplete",
+      "category": "Hidden/Tools",
+      "depends": [
+        "iap_mail"
+      ],
+      "auto_install": true,
+      "application": false,
+      "version": "1.1",
+      "license": "LGPL-3",
+      "summary": "Auto-complete partner companies' data",
+      "author": "Odoo S.A.",
+      "data_files": 3,
+      "demo_files": 0
+    },
+    "models": [
+      {
+        "_name": "iap.autocomplete.api",
+        "_description": "IAP Partner Autocomplete API (AbstractModel)",
+        "fields": 0,
+        "relations": []
+      },
+      {
+        "_name": "res.partner (inherit)",
+        "_description": "Adds IAP autocomplete/enrich query + provider-payload mapping methods",
+        "fields": 0,
+        "relations": [
+          "country_id->res.country (resolved from country_code/name)",
+          "state_id->res.country.state",
+          "industry_id->res.partner.industry",
+          "category_id->res.partner.category (UNSPSC tags)"
+        ]
+      },
+      {
+        "_name": "res.company (inherit)",
+        "_description": "Auto-enrich the company on create; iap_enrich_auto_done flag",
+        "fields": 1,
+        "relations": [
+          "partner_id->res.partner (written with enriched data)"
+        ]
+      },
+      {
+        "_name": "res.config.settings (inherit)",
+        "_description": "Surfaces insufficient-credit state + buy-credits redirect",
+        "fields": 1,
+        "relations": []
+      },
+      {
+        "_name": "ir.http (inherit)",
+        "_description": "session_info adds iap_company_enrich flag for admins",
+        "fields": 0,
+        "relations": []
+      }
+    ],
+    "routes": [],
+    "security": {
+      "access_rules": 0,
+      "record_rules": 0,
+      "groups": 0
+    },
+    "views": {
+      "form": 0,
+      "list": 0,
+      "tree": 0,
+      "kanban": 0,
+      "search": 0,
+      "pivot": 0,
+      "graph": 0,
+      "calendar": 0,
+      "activity": 0
+    },
+    "frontend": {
+      "present": true,
+      "js_files": 5,
+      "xml_templates": 1,
+      "owl_components": [
+        "PartnerAutoCompleteMany2one"
+      ],
+      "registry_adds": [
+        "fields:field_partner_autocomplete",
+        "fields:res_partner_many2one",
+        "services:partner_autocomplete.companyAutocomplete"
+      ],
+      "patches": [],
+      "services": [],
+      "asset_bundles": {
+        "web.assets_backend": 3,
+        "web.jsvat_lib": 1,
+        "web.assets_unit_tests": 1
+      }
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [
+        "requests"
+      ],
+      "uses_api_keys": false,
+      "endpoints": [
+        "https://partner-autocomplete.odoo.com"
+      ],
+      "files": [
+        "models/iap_autocomplete_api.py"
+      ]
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    },
+    "behavioral_notes": [
+      {
+        "element": "iap.autocomplete.api._request_partner_autocomplete / _contact_iap (the outbound DnB call)",
+        "observation": "iap.autocomplete.api is an AbstractModel (no fields, no table) that is the egress wrapper for this module. _contact_iap(local_endpoint, action, params) lazily provisions env['iap.account'].get('partner_autocomplete'), refuses to proceed without account.account_token, then enriches params with db_uuid (ir.config_parameter database.uuid), db_version, db_lang, the account_token, and the requesting company's country_code + zip, before calling iap_tools.iap_jsonrpc(base_url + '/api/dnb/1/' + action). base_url is ir.config_parameter 'iap.partner_autocomplete.endpoint' defaulting to _DEFAULT_ENDPOINT 'https://partner-autocomplete.odoo.com' (a host distinct from the generic iap.odoo.com credit host), so a self-hosted proxy is a one-parameter override. If modules.module.current_test is set it raises ValidationError('Test mode') so tests never bill or hit the network. _request_partner_autocomplete catches ValidationError + iap_tools.InsufficientCreditError -> ('Insufficient Credit'), and ConnectionError/HTTPError/AccessError/UserError -> their message, returning a 2-tuple (results, error) so res.partner callers can degrade gracefully. The provider is DnB (Dun & Bradstreet) reached via the Odoo IAP broker; actions are search_by_name, search_by_vat, enrich_by_duns, enrich_by_gst, enrich_by_domain.",
+        "source": "code-read"
+      },
+      {
+        "element": "res.partner._format_data_company — mapping the provider payload onto res.partner",
+        "observation": "Every IAP suggestion/enrichment dict is normalised by _format_data_company, which calls three resolvers that translate provider codes into Odoo records the form can write: _iap_replace_location_codes pops country_code/country_name + state_code/state_name and search()es res.country / res.country.state (case-insensitive), re-emitting them as {id, display_name} dicts; when base_address_extended is installed and the country enforce_cities, it also resolves a res.city by zip then name. _iap_replace_industry_code maps a DnB industry_code to an existing base.res_partner_industry_<code> xmlid -> industry_id. _iap_replace_language_codes maps preferred_language to an installed res.lang (specific e.g. fr_BE, else generic fr). VAT returned by enrichment is sanity-checked through _validate_partner_autocomplete_response (base_vat _run_vat_checks validation='setnull') so an invalid number is nulled rather than written. The logo is NOT downloaded inside this module: the provider returns image data carried as image_1920; res.company._enrich keeps only fields that exist on res.partner and are empty (except image_1920 which always overwrites) and writes them to partner_id. autocomplete_by_vat has a VIES fallback: if IAP returns nothing it calls stdnum check_vies and parses the VIES name/address block into a partner dict.",
+        "source": "code-read"
+      },
+      {
+        "element": "res.company.iap_enrich_auto / _enrich — automatic company self-enrichment on create",
+        "observation": "res.company.create() calls iap_enrich_auto() (or, under current_test, just sets iap_enrich_auto_done=True). iap_enrich_auto, guarded so it only runs for a system user on a ready registry and not during demo install, iterates companies whose iap_enrich_auto_done is False and calls _enrich(), then flips the flag — a one-shot guard so a company is never enriched in a loop. _enrich derives the company domain from its email (via email_domain_extract, skipping generic _MAIL_PROVIDERS) or website (url_domain_extract, skipping localhost/example.com), calls res.partner.enrich_by_domain(domain, timeout=5), drops error responses, and writes back only res.partner fields that are currently empty (image_1920 excepted, always set), converting the {id,display_name} m2o dicts to bare ids first. ir.http.session_info() exposes iap_company_enrich = not company.iap_enrich_auto_done to admins so the web client can trigger the enrichment flow.",
+        "source": "code-read"
+      },
+      {
+        "element": "credit consumption & top-up (res.config.settings + iap.account)",
+        "observation": "No local credit ledger exists in this module; spend is metered on the remote partner-autocomplete service. res.config.settings._compute_partner_autocomplete_insufficient_credit probes env['iap.account'].get_credits('partner_autocomplete') <= 0 to show an 'Insufficient credit' warning in Settings, and redirect_to_buy_autocomplete_credit returns an ir.actions.act_url to iap.account.get_credits_url('partner_autocomplete') (the hashed-token buy-more deep link into the Odoo IAP portal). A paid call that the server answers with InsufficientCreditError is surfaced by _process_enriched_response as {error:True, error_message:'Insufficient Credit'}; a plain error sets 'Unable to enrich company (no credit was consumed).' so the UI can tell a billed failure from a free one.",
+        "source": "code-read"
+      },
+      {
+        "element": "external integrations (gap #7)",
+        "observation": "0 direct http_call_sites in this module (it never calls requests.post itself); SDK ['requests'] is transitive via iap_tools. uses_api_keys=False — auth is the per-account iap.account.account_token, not a global key. Endpoint: https://partner-autocomplete.odoo.com (overridable via ir.config_parameter 'iap.partner_autocomplete.endpoint'); the actual paid HTTP egress is brokered by the iap module's iap_tools.iap_jsonrpc. The upstream data provider behind the IAP service is Dun & Bradstreet (DnB), plus a VIES VAT fallback (stdnum check_vies) reached for VAT lookups.",
+        "source": "static"
+      },
+      {
+        "element": "frontend (OWL/JS)",
+        "observation": "5 JS files, 1 OWL component, 3 registry adds; bundles ['web.assets_backend','web.jsvat_lib','web.assets_unit_tests']. usePartnerAutocomplete (core) debounces typing (KeepLast), loads the jsvat lib to detect VAT/GST input format, and ORM-calls res.partner.autocomplete_by_name / autocomplete_by_vat as the user types; field_partner_autocomplete (char) and the PartnerAutoCompleteMany2one field widget render the suggestion dropdown (name, VAT, logo, address) and on select write the enriched values back; the partner_autocomplete.companyAutocomplete service drives whole-company enrichment. res.partner._get_view / res.company._get_view inject widget='field_partner_autocomplete' onto the name/vat/duns fields at view-render time so no XML view edits are needed.",
+        "source": "static"
+      }
+    ]
+  },
+  "it_architecture": {
+    "application": "partner_autocomplete (type-ahead company master-data enrichment: queries the Odoo IAP DnB/autocomplete service and maps the payload onto res.partner)",
+    "software_services": [],
+    "data_objects": [
+      "iap.autocomplete.api",
+      "res.partner (inherit)",
+      "res.company (inherit)",
+      "res.config.settings (inherit)",
+      "ir.http (inherit)"
+    ],
+    "logical_data_erm": [
+      "iap.autocomplete.api -> iap.account (get('partner_autocomplete') for token; AbstractModel, no own table)",
+      "res.partner -> res.country / res.country.state / res.city (resolved from provider location codes)",
+      "res.partner -> res.partner.industry (industry_id from DnB industry_code)",
+      "res.partner -> res.partner.category (UNSPSC tag ids)",
+      "res.company -> res.partner (partner_id written with enriched data); iap_enrich_auto_done flag on res.company"
+    ],
+    "information_flows": [
+      "depends: iap_mail (-> iap -> web, base_setup)",
+      "outbound: iap.autocomplete.api._contact_iap -> iap_tools.iap_jsonrpc -> POST https://partner-autocomplete.odoo.com/api/dnb/1/<action> (search_by_name|search_by_vat|enrich_by_duns|enrich_by_gst|enrich_by_domain)",
+      "auth: params carry iap.account('partner_autocomplete').account_token + database.uuid + company country_code/zip",
+      "inbound-map: provider payload -> res.partner._format_data_company -> country/state/city/industry/lang resolved to Odoo records; image_1920 logo carried through",
+      "VAT path: autocomplete_by_vat IAP miss -> stdnum check_vies (VIES) fallback parses name/address; enrichment VAT re-checked via base_vat _run_vat_checks (setnull)",
+      "auto-enrich: res.company.create -> iap_enrich_auto -> _enrich -> enrich_by_domain -> write empty res.partner fields (+image_1920)",
+      "credit-gate: res.config.settings -> iap.account.get_credits/get_credits_url; InsufficientCreditError -> error_message surfaced to UI",
+      "frontend: OWL usePartnerAutocomplete (jsvat-detected name/VAT/GST) -> ORM autocomplete_by_name/by_vat -> dropdown -> write enriched partner",
+      "session: ir.http.session_info -> iap_company_enrich flag drives admin enrich prompt"
+    ],
+    "frontend_components": [
+      "PartnerAutoCompleteMany2one (res_partner_many2one field widget: company suggestion dropdown with name/VAT/logo/address)",
+      "field_partner_autocomplete (char field widget injected onto name/vat/duns via _get_view)",
+      "partner_autocomplete.companyAutocomplete (service: whole-company autocomplete/enrich, jsvat VAT/GST detection)"
+    ]
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Type-ahead company lookup by name, VAT, GST, DUNS or domain against an external data provider (DnB via IAP)",
+      "Map the provider payload onto res.partner (name, VAT, address, country/state/city, industry, language, logo)",
+      "Auto-enrich a newly created company from its email/website domain (one-shot)",
+      "Validate returned VAT (base_vat setnull) and fall back to VIES for VAT lookups",
+      "Gate the feature on remaining IAP credit and offer a buy-more redirect",
+      "Post a chatter enrichment note summarising the data received from DnB"
+    ],
+    "value_streams": [
+      "Type-to-Enrich: user types a partner name/VAT -> autocomplete_by_name/by_vat -> DnB suggestions -> select -> _format_data_company -> partner fields written",
+      "Create-Company-to-Enriched: res.company.create -> iap_enrich_auto -> enrich_by_domain -> empty partner fields populated from domain"
+    ],
+    "information_concepts": [
+      "iap.autocomplete.api",
+      "res.partner (enriched master data)",
+      "res.company (iap_enrich_auto_done)",
+      "account_token / IAP credit (remote, via iap.account)",
+      "DnB company record (name, VAT, address, industry, logo — external)"
+    ],
+    "organization": [],
+    "products": [],
+    "policies": [
+      "iap_enrich_auto runs only for a system user on a ready registry, not during demo install, and only once per company (iap_enrich_auto_done guard)",
+      "modules.module.current_test -> _contact_iap raises ValidationError('Test mode'): never bills or hits the network in tests",
+      "_enrich writes only res.partner fields that are currently empty (image_1920 always overwrites)",
+      "returned VAT re-validated via base_vat _run_vat_checks(validation='setnull') before persistence"
+    ],
+    "stakeholders": [
+      "End user creating/editing a partner or company (consumes credits as they type)",
+      "System administrator (sees iap_company_enrich prompt; manages IAP credit/top-up in Settings)",
+      "Odoo S.A. IAP platform + Dun & Bradstreet (external data provider behind partner-autocomplete.odoo.com)",
+      "VIES (EU VAT validation fallback service)"
+    ],
+    "strategy": null,
+    "metrics": [
+      "Remaining partner_autocomplete IAP credit (iap.account.get_credits; insufficient-credit warning)",
+      "iap_enrich_auto_done (per-company enrichment completion flag)"
+    ]
+  },
+  "classification": {
+    "value_model": "support",
+    "activity_class": "support",
+    "apqc_category": "13.0 Develop and Manage Business Capabilities",
+    "rationale": "partner_autocomplete is a master-data enrichment utility, not a business object of its own value chain/shop/network — it owns no transactional model (1 declared AbstractModel iap.autocomplete.api with no table; the rest are res.partner/res.company/res.config.settings/ir.http inherits, 0 routes, 0 security records, ~791 py LOC). It is shared firm IT infrastructure (Porter support activity; Stabell & Fjeldstad 'support'): a type-ahead service that pulls company details (name, VAT, address, logo, industry) from an external Dun & Bradstreet provider through the iap broker and writes them onto existing partner/company master data. auto_install=true and category Hidden/Tools confirm invisible plumbing rather than a user-facing app. APQC 13.0 'Develop and Manage Business Capabilities' fits because the work is master-data management — populating and maintaining the quality/completeness of the partner master that every downstream process (sale, purchase, account, crm) reuses (13.x knowledge/data/information-asset management). 8.0 'Manage Information Technology' was considered (the sibling iap module sits there as the egress broker) but partner_autocomplete itself adds no IT-service plumbing — it consumes iap's broker, and its substance is enriching business master data, so 13.0 (master-data management) is the better fit; 11.0/3.0 were rejected as it neither owns finance/risk nor sells anything."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "Type-ahead partner/company autocomplete by name, VAT, GST, DUNS, domain (DnB via IAP)",
+      "Provider payload -> res.partner mapping (country/state/city, industry, language, logo, VAT)",
+      "Automatic one-shot company self-enrichment from email/website domain on create",
+      "VIES VAT fallback + base_vat re-validation of returned VAT",
+      "Credit-aware UX: insufficient-credit warning + buy-more-credits redirect in Settings",
+      "Configurable provider endpoint via ir.config_parameter 'iap.partner_autocomplete.endpoint'",
+      "Chatter enrichment note (iap_mail.enrich_company_by_dnb) summarising received data"
+    ],
+    "typical_fits": [
+      "Speeding up partner creation in Sales/Purchase/CRM by typing a company name and accepting suggested name/VAT/address/logo",
+      "Bootstrapping the user's own company record from its website/email domain at setup",
+      "Pointing the autocomplete at a private proxy by setting the iap.partner_autocomplete.endpoint parameter"
+    ],
+    "common_gaps": [
+      "Requires IAP credit + outbound HTTPS to partner-autocomplete.odoo.com; air-gapped deployments need a self-hosted endpoint and have no enrichment",
+      "Provider coverage is DnB-centric — non-listed/very small companies may return nothing",
+      "No local audit/ledger of what was enriched or how many credits were spent (metered remotely, gap #7)",
+      "Auto-enrich is one-shot per company (iap_enrich_auto_done) — re-enrichment needs manual action / flag reset",
+      "Mapping depends on installed res.country/state/industry/lang data; unresolved codes are silently dropped"
+    ],
+    "drive_hints": [
+      "odoo shell: env['res.partner'].autocomplete_by_name('Odoo', env.company.country_id.id)  # live DnB suggestions",
+      "odoo shell: env['res.partner'].autocomplete_by_vat('BE0477472701', False)  # VAT path (IAP then VIES fallback)",
+      "odoo shell: env['res.partner'].enrich_by_domain('odoo.com')  # domain enrichment payload",
+      "odoo shell: env['iap.account'].get_credits('partner_autocomplete')  # remaining credit for this service",
+      "odoo shell: env['ir.config_parameter'].sudo().get_param('iap.partner_autocomplete.endpoint','https://partner-autocomplete.odoo.com')  # current provider host",
+      "odoo shell: env['res.partner']._format_data_company({'country_code':'BE','industry_code':'01','preferred_language':'fr_BE'})  # see the code->record mapping"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Exact DnB response schema / field catalogue lives on partner-autocomplete.odoo.com and is not reverse-engineerable from this module (gap #7).",
+    "Server-side per-call credit pricing/metering for the partner_autocomplete service is external (gap #7).",
+    "Whether deployments override iap.partner_autocomplete.endpoint to a private proxy (runtime config, not in code)."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/partner_autocomplete.facts.json",
+    "tools": [
+      "extract_module.py",
+      "extract_frontend.py",
+      "code-read"
+    ],
+    "odoo_version": "19.0"
+  }
+}

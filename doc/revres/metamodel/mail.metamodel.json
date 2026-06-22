@@ -1,0 +1,728 @@
+{
+  "subsystem": "mail",
+  "evidence": {
+    "manifest": {
+      "name": "Discuss",
+      "category": "Productivity/Discuss",
+      "summary": "Chat, mail gateway and private channels",
+      "depends": [
+        "base",
+        "base_setup",
+        "bus",
+        "web_tour",
+        "html_editor"
+      ],
+      "auto_install": false,
+      "application": true
+    },
+    "models": [
+      {
+        "_name": "mail.thread",
+        "_description": "Email Thread",
+        "_inherit": null,
+        "fields": 10,
+        "methods": 136,
+        "relations": [
+          "message_ids->mail.message",
+          "message_follower_ids->mail.followers",
+          "message_partner_ids->res.partner"
+        ]
+      },
+      {
+        "_name": "mail.message",
+        "_description": "Message",
+        "_inherit": [
+          "bus.listener.mixin"
+        ],
+        "fields": 43,
+        "methods": 55,
+        "relations": [
+          "author_id->res.partner",
+          "subtype_id->mail.message.subtype",
+          "notification_ids->mail.notification",
+          "tracking_value_ids->mail.tracking.value",
+          "res_id->(polymorphic model+res_id)"
+        ]
+      },
+      {
+        "_name": "mail.followers",
+        "_description": "Document Followers",
+        "_inherit": null,
+        "fields": 7,
+        "methods": 12,
+        "relations": [
+          "partner_id->res.partner",
+          "subtype_ids->mail.message.subtype",
+          "res_id->(polymorphic model+res_id)"
+        ]
+      },
+      {
+        "_name": "mail.notification",
+        "_description": "Message Notifications",
+        "_inherit": null,
+        "fields": 11,
+        "methods": 6,
+        "relations": [
+          "mail_message_id->mail.message",
+          "mail_mail_id->mail.mail",
+          "res_partner_id->res.partner"
+        ]
+      },
+      {
+        "_name": "mail.mail",
+        "_description": "Outgoing Mails",
+        "_inherit": null,
+        "fields": 19,
+        "methods": 30,
+        "relations": [
+          "mail_message_id->mail.message",
+          "recipient_ids->res.partner",
+          "fetchmail_server_id->fetchmail.server"
+        ]
+      },
+      {
+        "_name": "mail.message.subtype",
+        "_description": "Message subtypes",
+        "_inherit": null,
+        "fields": 10,
+        "methods": 6,
+        "relations": [
+          "parent_id->mail.message.subtype"
+        ]
+      },
+      {
+        "_name": "mail.tracking.value",
+        "_description": "Mail Tracking Value",
+        "_inherit": null,
+        "fields": 14,
+        "methods": 7,
+        "relations": [
+          "mail_message_id->mail.message",
+          "field_id->ir.model.fields"
+        ]
+      },
+      {
+        "_name": "mail.activity",
+        "_description": "Activity",
+        "_inherit": null,
+        "fields": 25,
+        "methods": 38,
+        "relations": [
+          "res_model_id->ir.model",
+          "activity_type_id->mail.activity.type",
+          "user_id->res.users",
+          "res_id->(polymorphic model+res_id)"
+        ]
+      },
+      {
+        "_name": "mail.activity.mixin",
+        "_description": "Activity Mixin",
+        "_inherit": null,
+        "fields": 10,
+        "methods": 24,
+        "relations": [
+          "activity_ids->mail.activity"
+        ]
+      },
+      {
+        "_name": "mail.template",
+        "_description": "Email Templates",
+        "_inherit": [
+          "mail.render.mixin",
+          "template.reset.mixin"
+        ],
+        "fields": 26,
+        "methods": 34,
+        "relations": [
+          "model_id->ir.model",
+          "report_template_ids->ir.actions.report",
+          "mail_server_id->ir.mail_server"
+        ]
+      },
+      {
+        "_name": "mail.alias",
+        "_description": "Email Aliases",
+        "_inherit": null,
+        "fields": 13,
+        "methods": 20,
+        "relations": [
+          "alias_domain_id->mail.alias.domain",
+          "alias_model_id->ir.model"
+        ]
+      },
+      {
+        "_name": "discuss.channel",
+        "_description": "Discussion Channel",
+        "_inherit": [
+          "mail.thread",
+          "bus.listener.mixin"
+        ],
+        "fields": 30,
+        "methods": 83,
+        "relations": [
+          "channel_member_ids->discuss.channel.member",
+          "rtc_session_ids->discuss.channel.rtc.session",
+          "parent_channel_id->discuss.channel"
+        ]
+      },
+      {
+        "_name": "discuss.channel.member",
+        "_description": "Channel Member",
+        "_inherit": [
+          "bus.listener.mixin"
+        ],
+        "fields": 18,
+        "methods": 32,
+        "relations": [
+          "channel_id->discuss.channel",
+          "partner_id->res.partner",
+          "guest_id->mail.guest"
+        ]
+      },
+      {
+        "_name": "mail.guest",
+        "_description": "Guest",
+        "_inherit": [
+          "avatar.mixin",
+          "bus.listener.mixin"
+        ],
+        "fields": 10,
+        "methods": 13,
+        "relations": [
+          "channel_ids->discuss.channel",
+          "country_id->res.country"
+        ]
+      }
+    ],
+    "routes": [
+      {
+        "paths": [
+          "/mail/message/post"
+        ],
+        "auth": "public",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/mail/thread/messages",
+          "/mail/thread/subscribe",
+          "/mail/thread/unsubscribe"
+        ],
+        "auth": "user",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/mail/inbox/messages",
+          "/mail/history/messages",
+          "/mail/starred/messages"
+        ],
+        "auth": "user",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/mail/message/reaction",
+          "/mail/message/translate",
+          "/mail/message/update_content"
+        ],
+        "auth": "public/user",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/discuss/channel/messages",
+          "/discuss/channel/mark_as_read",
+          "/discuss/channel/notify_typing",
+          "/discuss/channel/join"
+        ],
+        "auth": "public",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/mail/rtc/channel/join_call",
+          "/mail/rtc/channel/leave_call",
+          "/mail/rtc/session/update_and_broadcast"
+        ],
+        "auth": "public",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/websocket/update_bus_presence",
+          "/discuss/channel/ping"
+        ],
+        "auth": "public",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/mail/attachment/upload",
+          "/mail/attachment/zip",
+          "/mail/view",
+          "/mail/message/<int:message_id>"
+        ],
+        "auth": "public",
+        "type": "http"
+      }
+    ],
+    "security": {
+      "access_rules": 69,
+      "record_rules": 26,
+      "groups": 0,
+      "note": "mail defines NO own res.groups; record rules reuse base.group_user / base.group_portal / base.group_public / base.group_system to scope channel + member visibility"
+    },
+    "views": {
+      "form": 30,
+      "list": 35,
+      "kanban": 8,
+      "search": 18,
+      "calendar": 1,
+      "activity": 1
+    },
+    "behavioral_notes": [
+      {
+        "element": "mail.thread.message_post",
+        "observation": "Main entry point (mail_thread.py:2182). Resolves author -> creates a mail.message row (polymorphic model+res_id) -> attaches ir.attachment -> calls _notify_thread() -> _message_post_after_hook(). Adds full chatter to ANY model that inherits mail.thread via a single _inherit line; no schema change per host model.",
+        "source": "code-read"
+      },
+      {
+        "element": "mail.thread._notify_thread",
+        "observation": "Fan-out pipeline (mail_thread.py:3262). Computes recipients (followers filtered by subtype + explicit partners), then dispatches across three channels: _notify_thread_by_inbox (creates mail.notification type=inbox + bus push to Discuss inbox), _notify_thread_by_email (creates mail.mail queue rows + mail.notification type=email, sent by cron via ir.mail_server), _notify_thread_by_web_push (browser/mobile push). Scheduled sends are deferred via mail.message.schedule.",
+        "source": "code-read"
+      },
+      {
+        "element": "mail.thread._message_track (tracking=True)",
+        "observation": "On write to fields declared tracking=True, _message_track (mail_thread.py:644) diffs initial vs new values and creates mail.tracking.value rows (old/new pairs, typed columns) linked to an auto-posted mail.message; rendered inline in the chatter. Drives 'Stage changed' style audit logs. Not visible in metadata - lives in Python.",
+        "source": "code-read"
+      },
+      {
+        "element": "mail.thread.message_process / message_route",
+        "observation": "Inbound email router (mail_thread.py:1424/1121). Parses MIME, then routes a raw email to the right record using References/In-Reply-To headers, mail.alias matching, and a signed hmac reply token; message_new/message_update hooks let a model turn an email into a new record or a reply (e.g. email -> new lead). fetchmail.server feeds it.",
+        "source": "code-read"
+      },
+      {
+        "element": "mail.notification (per-recipient/per-channel)",
+        "observation": "One mail.message fans out to many mail.notification rows (one per recipient per channel: inbox/email/sms/snail) tracking notification_status (ready/sent/bounce/exception/canceled) + failure_type. Drives the red failed-delivery envelope and the Discuss inbox counter. Decouples a single message from multi-channel delivery state.",
+        "source": "code-read"
+      },
+      {
+        "element": "discuss.channel over bus",
+        "observation": "discuss.channel itself inherits mail.thread, so chat messages are still mail.message rows. Real-time delivery rides the bus (websocket) via bus.listener.mixin; _notify_thread_by_inbox pushes posted channel messages to connected clients live. RTC voice/video uses discuss.channel.rtc.session (+ optional SFU/Twilio ICE servers).",
+        "source": "code-read"
+      },
+      {
+        "element": "frontend (OWL/JS)",
+        "observation": "383 JS files, 40 OWL components, 40 registry registrations, 40 patches; asset bundles ['web._assets_primary_variables', 'web.assets_backend', 'web.assets_backend_lazy'].",
+        "source": "static"
+      },
+      {
+        "element": "external integrations",
+        "observation": "6 outbound HTTP call sites; SDKs ['requests', 'xmlrpc']; uses_api_keys=True; endpoints ['http://www.w3.org/2000/svg', 'https://api.twilio.com/2010-04-01/Accounts/{account_sid}/Tokens.json'].",
+        "source": "static"
+      }
+    ],
+    "frontend": {
+      "present": true,
+      "js_files": 383,
+      "xml_templates": 164,
+      "owl_components": [
+        "AbstractAttachmentView",
+        "Action",
+        "ActionList",
+        "ActionPanel",
+        "Actions",
+        "Activity",
+        "ActivityButton",
+        "ActivityCell",
+        "ActivityController",
+        "ActivityException",
+        "ActivityListPopover",
+        "ActivityListPopoverItem",
+        "ActivityMailTemplate",
+        "ActivityMarkAsDone",
+        "ActivityMenu",
+        "ActivityModelSelector",
+        "ActivityRecord",
+        "ActivityRenderer",
+        "AttachmentList",
+        "AttachmentPanel",
+        "AutoresizeInput",
+        "Avatar",
+        "AvatarCardPopover",
+        "AvatarStack",
+        "BlurPerformanceWarning",
+        "BusConnectionAlert",
+        "Call",
+        "CallActionList",
+        "CallContextMenu",
+        "CallDropdown",
+        "CallInfiniteMirroringWarning",
+        "CallInvitation",
+        "CallInvitations",
+        "CallMenu",
+        "CallParticipantCard",
+        "CallParticipantVideo",
+        "CallPermissionDialog",
+        "CallPreview",
+        "CallSettings",
+        "CallSettingsDialog"
+      ],
+      "registry_adds": [
+        "actions:action_send_mail_callback",
+        "actions:mail.action_discuss",
+        "actions:mail.discuss_call_settings_action",
+        "actions:mail.discuss_notification_settings_action",
+        "command_categories:activity",
+        "fields:activity.many2many_avatar_user",
+        "fields:activity.many2one_avatar_user",
+        "fields:activity_exception",
+        "fields:activity_model_selector",
+        "fields:char_emojis",
+        "fields:datetime_scheduled_date",
+        "fields:html_composer_message",
+        "fields:html_mail",
+        "fields:kanban.many2many_avatar_user",
+        "fields:kanban.many2one_avatar_user",
+        "fields:kanban.rotting",
+        "fields:kanban_activity",
+        "fields:list.badge_rotting",
+        "fields:list.many2many_avatar_user",
+        "fields:list_activity",
+        "fields:mail_composer_attachment_list",
+        "fields:mail_composer_attachment_selector",
+        "fields:mail_composer_template_selector",
+        "fields:mail_server_configurator_selection",
+        "fields:many2many_avatar_user",
+        "fields:many2many_tags_email",
+        "fields:many2one_avatar_user",
+        "fields:rotting_statusbar_duration",
+        "fields:selection_badge_icons",
+        "fields:shortcut",
+        "fields:statusbar_duration",
+        "fields:text_emojis",
+        "fields:text_scheduled_date",
+        "form_compilers:attachment_preview_compiler",
+        "form_compilers:chatter_compiler",
+        "main_components:bus.ConnectionAlert",
+        "main_components:mail.ChatHub",
+        "services:bus.connection_alert",
+        "services:convert_inline_iframe",
+        "services:discuss.call_invitations"
+      ],
+      "patches": [
+        "ActionPanel.prototype",
+        "Activity.prototype",
+        "Attachment.prototype",
+        "AttachmentList",
+        "AttachmentUploadService.prototype",
+        "BurgerMenu.prototype",
+        "BusConnectionAlert.prototype",
+        "ChannelMember.prototype",
+        "ChannelMemberList.prototype",
+        "CharField.prototype",
+        "ChatWindow.prototype",
+        "Chatter.prototype",
+        "Composer",
+        "Composer.prototype",
+        "Dialog.prototype",
+        "Discuss.prototype",
+        "DiscussApp.prototype",
+        "DiscussClientAction.prototype",
+        "DiscussCommandPalette.prototype",
+        "DiscussContent.prototype",
+        "DiscussCoreCommon.prototype",
+        "DiscussSidebarCallParticipants.prototype",
+        "DiscussSidebarCategory.prototype",
+        "DiscussSidebarChannel.prototype",
+        "FormArchParser.prototype",
+        "FormCompiler.prototype",
+        "FormController.prototype",
+        "FormRenderer.prototype",
+        "ListRenderer.prototype",
+        "MailCoreCommon.prototype",
+        "MailGuest.prototype",
+        "Message",
+        "Message.prototype",
+        "MessagingMenu.prototype",
+        "NotificationMessage.prototype",
+        "OutOfFocusService.prototype",
+        "PropertyValue.prototype",
+        "QuickVideoSettings.prototype",
+        "QuickVoiceSettings.prototype",
+        "ResPartner.prototype"
+      ],
+      "services": [
+        "Popout",
+        "activity_exception_decoration",
+        "activity_exception_icon",
+        "activity_state",
+        "activity_summary",
+        "activity_type_icon",
+        "activity_type_id",
+        "border",
+        "camera",
+        "can_edit_body",
+        "cancel_save_template",
+        "display_avatar_name",
+        "duration_tracking",
+        "edit_tags",
+        "email",
+        "margin",
+        "microphone",
+        "name",
+        "notifications",
+        "open_template_creation_wizard",
+        "padding",
+        "render_model",
+        "useMovable",
+        "write_date"
+      ],
+      "asset_bundles": {
+        "web._assets_primary_variables": 1,
+        "web.assets_backend": 26,
+        "web.assets_backend_lazy": 1,
+        "web.assets_web_dark": 1,
+        "web.assets_frontend": 1,
+        "mail.assets_discuss_public_test_tours": 12,
+        "web.assets_unit_tests": 3,
+        "web.assets_tests": 1,
+        "web.tests_assets": 1,
+        "mail.assets_odoo_sfu": 1,
+        "mail.assets_lamejs": 1,
+        "mail.assets_message_email": 1,
+        "mail.assets_public": 40
+      }
+    },
+    "integrations": {
+      "http_call_sites": 6,
+      "sdk_imports": [
+        "requests",
+        "xmlrpc"
+      ],
+      "uses_api_keys": true,
+      "endpoints": [
+        "http://www.w3.org/2000/svg",
+        "https://api.twilio.com/2010-04-01/Accounts/{account_sid}/Tokens.json",
+        "https://odoo.com/url",
+        "https://tenor.googleapis.com/v2/{endpoint}",
+        "https://translation.googleapis.com/language/translate/v2/{endpoint}?key={api_key}",
+        "https://www.\n        mygarden.com/shop/Basil-1",
+        "https://www.odoo.com/app/discuss"
+      ],
+      "files": [
+        "__manifest__.py",
+        "controllers/discuss/gif.py",
+        "controllers/google_translate.py",
+        "models/discuss/discuss_channel.py",
+        "models/discuss/discuss_channel_member.py",
+        "models/discuss/discuss_channel_rtc_session.py",
+        "models/mail_ice_server.py",
+        "models/mail_link_preview.py",
+        "models/mail_push.py",
+        "models/mail_render_mixin.py",
+        "models/mail_thread.py",
+        "models/update.py",
+        "tools/link_preview.py"
+      ]
+    }
+  },
+  "it_architecture": {
+    "application": "mail (Discuss application component - messaging/collaboration backbone; foundational mixin layer)",
+    "software_services": [
+      "/mail/message/post",
+      "/mail/thread/messages",
+      "/mail/thread/subscribe",
+      "/mail/inbox/messages",
+      "/mail/message/reaction",
+      "/discuss/channel/messages",
+      "/discuss/channel/join",
+      "/mail/rtc/channel/join_call",
+      "/websocket/update_bus_presence",
+      "/mail/attachment/upload"
+    ],
+    "data_objects": [
+      "mail.thread",
+      "mail.message",
+      "mail.followers",
+      "mail.notification",
+      "mail.mail",
+      "mail.message.subtype",
+      "mail.tracking.value",
+      "mail.activity",
+      "mail.activity.mixin",
+      "mail.template",
+      "mail.alias",
+      "discuss.channel",
+      "discuss.channel.member",
+      "mail.guest"
+    ],
+    "logical_data_erm": [
+      "mail.message -> res.partner (author_id)",
+      "mail.message -> mail.message.subtype (subtype_id)",
+      "mail.message -> (model, res_id) polymorphic host record",
+      "mail.followers -> res.partner + mail.message.subtype (per-topic subscription)",
+      "mail.message -> mail.notification (1:N per recipient/channel)",
+      "mail.notification -> mail.mail (email channel) -> ir.mail_server",
+      "mail.message -> mail.tracking.value (field-change old/new)",
+      "discuss.channel -> discuss.channel.member -> res.partner / mail.guest"
+    ],
+    "information_flows": [
+      "depends: base, base_setup, bus, web_tour, html_editor",
+      "side-effect: message_post -> mail.message + _notify_thread -> mail.notification (inbox/email/web_push)",
+      "side-effect: write on tracking=True field -> mail.tracking.value + auto mail.message",
+      "side-effect: inbound email -> message_process -> message_route (alias/reply-token) -> message_new/update on host model",
+      "side-effect: channel post -> bus websocket push to live Discuss clients",
+      "inverse-dependency: 42 downstream modules inherit mail.thread / mail.activity.mixin to gain chatter + activities"
+    ],
+    "frontend_components": [
+      "AbstractAttachmentView",
+      "Action",
+      "ActionList",
+      "ActionPanel",
+      "Actions",
+      "Activity",
+      "ActivityButton",
+      "ActivityCell",
+      "ActivityController",
+      "ActivityException",
+      "ActivityListPopover",
+      "ActivityListPopoverItem",
+      "ActivityMailTemplate",
+      "ActivityMarkAsDone",
+      "ActivityMenu"
+    ],
+    "external_integrations": {
+      "http_call_sites": 6,
+      "sdk_imports": [
+        "requests",
+        "xmlrpc"
+      ],
+      "endpoints": [
+        "http://www.w3.org/2000/svg",
+        "https://api.twilio.com/2010-04-01/Accounts/{account_sid}/Tokens.json",
+        "https://odoo.com/url",
+        "https://tenor.googleapis.com/v2/{endpoint}",
+        "https://translation.googleapis.com/language/translate/v2/{endpoint}?key={api_key}"
+      ]
+    }
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Record Collaboration (Chatter: message, log note, follow)",
+      "Field-Change Tracking & Audit Log",
+      "Email Communication (templates, outgoing queue, inbound gateway/aliases)",
+      "Notification & Delivery Management (multi-channel: inbox/email/web push)",
+      "Real-Time Team Messaging (Discuss channels, DMs, reactions, calls)",
+      "Activity / To-Do Scheduling & Plans",
+      "Email Deliverability Controls (blacklist, bounce handling)"
+    ],
+    "value_streams": [
+      "Collaborate-on-a-Record: post comment -> notify followers -> deliver inbox/email -> track delivery state",
+      "Inbound-Email-to-Record: incoming email -> route by alias/reply-token -> create/update record + post message",
+      "Notify-and-Track-Change: tracked field changes -> tracking.value -> auto-post -> follower notification"
+    ],
+    "information_concepts": [
+      "mail.message (message)",
+      "mail.followers (follower)",
+      "mail.notification (delivery)",
+      "mail.activity (activity)",
+      "mail.template (email template)",
+      "mail.alias (email alias)",
+      "discuss.channel (conversation)",
+      "mail.guest (anonymous participant)"
+    ],
+    "organization": [
+      "base.group_user (internal)",
+      "base.group_portal",
+      "base.group_public",
+      "base.group_system (admin)",
+      "(mail defines no own groups - reuses base groups via 26 record rules)"
+    ],
+    "products": [],
+    "policies": [
+      "26 record rules scope discuss.channel + member visibility by group_public_id / membership (network access control)",
+      "Follower-subtype filtering: a follower receives a message only if message.subtype_id is in their subtype_ids (granular per-topic subscription)",
+      "_mail_post_access (default 'write') gates who may post on a host record",
+      "mail.blacklist / bounce counters enforce email opt-out and deliverability"
+    ],
+    "stakeholders": [
+      "Internal user (res.users / res.partner)",
+      "Portal customer",
+      "Public/guest (mail.guest)",
+      "System/admin (mail server, alias, blacklist config)"
+    ],
+    "strategy": "",
+    "metrics": [
+      "mail.notification delivery status (sent/bounce/exception) - failed-delivery monitoring",
+      "mail.tracking.duration.mixin (time-in-stage analytics)",
+      "message_needaction_counter / inbox unread counters",
+      "discuss.call.history (call duration logs)"
+    ]
+  },
+  "classification": {
+    "value_model": "support",
+    "activity_class": "support",
+    "apqc_category": "9.4 Manage internal controls / 13.0 Develop and Manage Business Capabilities (Information & Knowledge Management); operationally 3.5.4.8 Handle sales order inquiries (post-order) when chatter sits on a sale.order",
+    "rationale": "mail is a cross-cutting SUPPORT subsystem (Stabell & Fjeldstad), not part of any single primary value chain. It supplies collaboration, communication, audit-trail, and notification infrastructure consumed by every primary activity. It is also a value NETWORK enabler: discuss.channel + bus + mail.notification mediate person-to-person and system-to-person exchange (network logic: linking parties and brokering messages). The dominant, foundational role is the mail.thread mixin inherited by ~42 modules to add chatter/activities/tracking everywhere - this is shared collaboration infrastructure, hence value_model=support / activity_class=support. APQC best fit is information/knowledge management (13.0) and internal communication; the apqc_odoo_map.tsv anchors the concrete operation 3.5.4.8 'Handle sales order inquiries' (mail.message message_post on sale.order, tagged support) as a representative application of the chatter on a primary-activity record."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "Chatter on any model (message / internal log note / followers) via mail.thread mixin",
+      "Field-change tracking (tracking=True -> mail.tracking.value) and audit trail",
+      "Email templates with dynamic rendering (mail.render.mixin) + outgoing queue (mail.mail) via ir.mail_server",
+      "Inbound mail gateway with alias routing + reply-token threading (fetchmail.server / mail.alias)",
+      "Multi-channel notification with per-recipient delivery tracking (mail.notification: inbox/email/web push)",
+      "Scheduled activities + activity plans (mail.activity / mail.activity.mixin)",
+      "Real-time Discuss channels, DMs, reactions, GIFs, link previews, voice/video calls (RTC)",
+      "Email blacklist / bounce handling"
+    ],
+    "typical_fits": [
+      "Add full chatter + activities to a custom model by inheriting ['mail.thread','mail.activity.mixin']",
+      "Trigger automated notification emails from business transitions via mail.template",
+      "Route an inbound mailbox into record creation via a mail.alias (e.g. support@ -> helpdesk ticket)",
+      "Track key field changes for an audit log with tracking=True"
+    ],
+    "common_gaps": [
+      "Custom notification routing / digest batching beyond follower-subtype logic",
+      "Bespoke channel access policies beyond group_public_id record rules",
+      "SFU/Twilio infrastructure for scaled RTC calls (external config required)",
+      "Advanced email deliverability (DKIM/SPF, dedicated ESP) handled outside mail",
+      "Tenor GIF / Google Translate / web push require external API keys"
+    ],
+    "drive_hints": [
+      "odoo shell: r = env['res.partner'].browse(1); r.message_post(body='hi'); r.message_ids[:1].mapped(('subtype_id.name','message_type'))",
+      "odoo shell: env['mail.message'].search_count([('model','=','sale.order')])  # chatter volume on a primary-activity model",
+      "odoo shell: env['mail.notification'].read_group([], ['id'], ['notification_status'])  # delivery state distribution",
+      "curl jsonrpc /mail/message/post (auth=public) and /discuss/channel/messages to exercise Discuss",
+      "odoo shell: env['mail.activity'].search([], limit=5).mapped(('res_model','activity_type_id.name','date_deadline'))"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Exact recipient classification logic (_notify_get_recipients_groups) splitting internal vs portal vs follower email layouts.",
+    "Precise APQC code: 13.x Information/Knowledge Management vs 9.x internal controls for a cross-cutting infra module - no clean single PCF leaf.",
+    "Full discuss.channel access matrix (group_public_id vs membership vs invitation token) across the 26 record rules.",
+    "Behavior of the Store serializer (tools/discuss/Store) batching - performance contract not visible from model metadata."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/mail.facts.json",
+    "tools": [
+      "code-read (mail_thread.py, mail_message.py, mail_security.xml)",
+      "doc/MESSAGING_SUBSYSTEM.md",
+      "extract_frontend.py",
+      "extract_module.py"
+    ],
+    "odoo_version": "19.0"
+  }
+}

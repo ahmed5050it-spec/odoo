@@ -1,0 +1,298 @@
+{
+  "subsystem": "gamification",
+  "evidence": {
+    "manifest": {
+      "name": "Gamification",
+      "category": "Human Resources",
+      "depends": [
+        "mail"
+      ],
+      "auto_install": false,
+      "application": false
+    },
+    "models": [
+      {
+        "_name": "gamification.badge",
+        "_description": "Gamification Badge",
+        "fields": 20,
+        "relations": [
+          "rule_auth_user_ids->res.users",
+          "rule_auth_badge_ids->gamification.badge",
+          "owner_ids->gamification.badge.user",
+          "challenge_ids->gamification.challenge",
+          "goal_definition_ids->gamification.goal.definition"
+        ]
+      },
+      {
+        "_name": "gamification.badge.user",
+        "_description": "Gamification User Badge",
+        "fields": 8,
+        "relations": [
+          "user_id->res.users",
+          "sender_id->res.users",
+          "badge_id->gamification.badge",
+          "challenge_id->gamification.challenge"
+        ]
+      },
+      {
+        "_name": "gamification.challenge",
+        "_description": "Gamification Challenge",
+        "fields": 26,
+        "relations": [
+          "user_ids->res.users",
+          "line_ids->gamification.challenge.line",
+          "reward_id->gamification.badge",
+          "report_message_group_id->discuss.channel",
+          "report_template_id->mail.template"
+        ]
+      },
+      {
+        "_name": "gamification.challenge.line",
+        "_description": "Gamification generic goal for challenge",
+        "fields": 9,
+        "relations": [
+          "challenge_id->gamification.challenge",
+          "definition_id->gamification.goal.definition"
+        ]
+      },
+      {
+        "_name": "gamification.goal",
+        "_description": "Gamification Goal",
+        "fields": 21,
+        "relations": [
+          "definition_id->gamification.goal.definition",
+          "user_id->res.users",
+          "line_id->gamification.challenge.line",
+          "challenge_id->gamification.challenge"
+        ]
+      },
+      {
+        "_name": "gamification.goal.definition",
+        "_description": "Gamification Goal Definition",
+        "fields": 19,
+        "relations": [
+          "model_id->ir.model",
+          "field_id->ir.model.fields",
+          "field_date_id->ir.model.fields",
+          "action_id->ir.actions.act_window"
+        ]
+      },
+      {
+        "_name": "gamification.karma.rank",
+        "_description": "Rank based on karma",
+        "fields": 6,
+        "relations": [
+          "user_ids->res.users"
+        ]
+      },
+      {
+        "_name": "gamification.karma.tracking",
+        "_description": "Track Karma Changes",
+        "fields": 9,
+        "relations": [
+          "user_id->res.users",
+          "origin_ref->(reference)"
+        ]
+      }
+    ],
+    "routes": [],
+    "security": {
+      "access_rules": 36,
+      "record_rules": 3,
+      "groups": 0
+    },
+    "views": {
+      "form": 6,
+      "list": 8,
+      "tree": 0,
+      "kanban": 4,
+      "search": 6,
+      "pivot": 0,
+      "graph": 0,
+      "calendar": 0,
+      "activity": 0
+    },
+    "behavioral_notes": [
+      {
+        "element": "gamification.challenge._cron_update / _update_all",
+        "observation": "Daily cron 'Gamification: Goal Challenge Check' (ir_cron_check_challenge, code model._cron_update()) starts draft challenges whose start_date<=today, closes inprogress challenges past end_date, then recomputes goals. _update_all runs a raw SQL join of gamification_goal to mail_presence so only goals of users active within SESSION_LIFETIME are refreshed, recomputes the user_domain participant set, generates missing goals and fires periodic chatter reports. None of this scheduling/side-effect logic is visible in metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "gamification.goal.update_goal (count/sum computation)",
+        "observation": "Goal current value is recomputed by reading the target business model (definition.model_id) live: computation_mode 'count' runs Obj.search_count(domain) and 'sum' runs Obj._read_group(domain, [], ['<field>:sum']); the stored 'domain' (Char) is safe_eval'd with the goal's user injected as `user`, and start_date/end_date are appended as a temporal clause on field_date_id. 'python' mode safe_eval's compute_code expecting a numeric `result`; 'manually' mode only sends reminders. Completeness and reached/failed transitions follow from condition higher/lower. The cross-model query is pure Python, invisible to metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "gamification.badge.user awarding chain",
+        "observation": "Badges are granted by creating a gamification.badge.user row. challenge._check_challenge_reward _read_group's reached goals per user, and when count==len(line_ids) calls _reward_user -> badge.user.create(...)._send_badge(). create() enforces badge.check_granting()/_can_grant_badge (rule_auth everyone/users/having/nobody + monthly rule_max limit), and _send_badge posts a 'You've earned the X badge' mail.thread notification. Top-3 ranking rewards (reward_first/second/third_id) are computed by _get_topN_users. These authorization and notification side-effects live only in code.",
+        "source": "code-read"
+      },
+      {
+        "element": "res.users karma + gamification.karma.tracking / rank",
+        "observation": "gamification extends res.users with karma (computed/stored), rank_id and gold/silver/bronze badge counts. Writing karma routes through _add_karma_batch, which inserts an append-only gamification.karma.tracking row (old_value/new_value/gain/origin_ref); _compute_karma re-reads the latest tracking via DISTINCT ON SQL and calls _recompute_rank to assign gamification.karma.rank by karma_min thresholds, emailing users on rank change. A monthly cron 'Gamification: Karma tracking consolidation' (model._consolidate_cron) collapses trackings older than two months into one consolidated row. This ledger/leaderboard machinery is what forum/website_slides consume; not derivable from metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "frontend (gap #3)",
+        "observation": "No OWL/JS shipped by this module: extract_frontend reports 0 js_files, 0 xml_templates, 0 owl_components/registry_adds/patches; only a single web.assets_backend bundle reference. The gamification UI is plain backend form/list/kanban views (6 form, 8 list, 4 kanban, 6 search); rich progress/leaderboard widgets live in consumer modules (e.g. website_profile).",
+        "source": "static"
+      }
+    ],
+    "frontend": {
+      "present": true,
+      "js_files": 0,
+      "xml_templates": 0,
+      "owl_components": [],
+      "registry_adds": [],
+      "patches": [],
+      "services": [],
+      "asset_bundles": {
+        "web.assets_backend": 1
+      }
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": false,
+      "endpoints": [],
+      "files": []
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    }
+  },
+  "it_architecture": {
+    "application": "gamification (Gamification application component)",
+    "software_services": [],
+    "data_objects": [
+      "gamification.badge",
+      "gamification.badge.user",
+      "gamification.challenge",
+      "gamification.challenge.line",
+      "gamification.goal",
+      "gamification.goal.definition",
+      "gamification.karma.rank",
+      "gamification.karma.tracking"
+    ],
+    "logical_data_erm": [
+      "gamification.challenge -> gamification.challenge.line",
+      "gamification.challenge.line -> gamification.goal.definition",
+      "gamification.goal -> gamification.challenge.line",
+      "gamification.goal -> gamification.goal.definition",
+      "gamification.goal -> res.users",
+      "gamification.badge.user -> gamification.badge",
+      "gamification.badge.user -> res.users",
+      "gamification.karma.tracking -> res.users"
+    ],
+    "information_flows": [
+      "depends: mail (chatter, notifications, mail.template reports, discuss.channel)",
+      "side-effect: challenge._cron_update -> starts/closes challenges + goal.update_goal recompute (daily cron)",
+      "side-effect: goal.update_goal -> reads any target model (definition.model_id) via search_count/_read_group sum",
+      "side-effect: challenge._check_challenge_reward -> gamification.badge.user.create + _send_badge mail notify",
+      "side-effect: res.users.write{karma} -> gamification.karma.tracking ledger + _recompute_rank (karma.rank)"
+    ],
+    "frontend_components": []
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Define Goals & Goal Definitions (KPI rules over any model)",
+      "Run Challenges (recurring objective sets per audience)",
+      "Award & Manage Badges",
+      "Track Karma & Ranks (points ledger + leaderboard)"
+    ],
+    "value_streams": [
+      "Engagement loop: define goal -> assign challenge -> auto-compute progress -> reward badge / karma -> rank up"
+    ],
+    "information_concepts": [
+      "gamification.challenge",
+      "gamification.goal",
+      "gamification.goal.definition",
+      "gamification.badge",
+      "gamification.badge.user",
+      "gamification.karma.rank",
+      "gamification.karma.tracking",
+      "res.users (participant)"
+    ],
+    "organization": [
+      "base.group_user (employee: read goals/badges, update own goals)",
+      "base.group_erp_manager (full configuration of challenges/goals/badges)",
+      "base.group_portal / base.group_public (read-only badge/goal exposure)"
+    ],
+    "products": [],
+    "policies": [
+      "3 record rules scoping goals/badge-users to the owning user",
+      "badge granting policy: rule_auth (everyone/users/having/nobody) + monthly rule_max sending limit",
+      "automation: daily challenge-check cron + monthly karma-consolidation cron"
+    ],
+    "stakeholders": [
+      "Employee / Participant (res.users)",
+      "Challenge Manager (manager_id / base.group_erp_manager)",
+      "Badge Sender (res.users)"
+    ],
+    "strategy": null,
+    "metrics": [
+      "karma totals & karma-gain leaderboard (gamification.karma.tracking)",
+      "badge stats (granted_count, granted_users_count, monthly totals)",
+      "goal completeness % and reached/failed counts per challenge"
+    ]
+  },
+  "classification": {
+    "value_model": "support",
+    "activity_class": "support",
+    "apqc_category": "7.0 Develop and Manage Human Capital",
+    "rationale": "gamification is an HR engagement/motivation support tool, not a primary value activity. It produces no product or customer order; it defines goals/challenges over other modules' data, awards badges and maintains a karma/rank ledger to drive workforce motivation. It is consumed as a support service by hr (hr_gamification), survey, sale/crm (gamification_sale_crm) and the website engagement stack (website_profile, forum, website_slides) via karma. This is a value-support configuration (Stabell & Fjeldstad), aligning to APQC 7.0 Develop and Manage Human Capital (reward & recognition / engagement)."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "goal definitions computing count/sum/python over any Odoo model with a domain",
+      "recurring challenges (daily/weekly/monthly/yearly) auto-assigned by user domain",
+      "individual or leaderboard (ranking) visibility with periodic mail reports",
+      "badge catalog with grant rules, monthly limits and challenge rewards",
+      "karma points ledger, karma ranks and rank-up emails"
+    ],
+    "typical_fits": [
+      "employee engagement programs (objectives + badges)",
+      "sales/CRM contests rewarding KPI achievement",
+      "website/forum reputation via karma and ranks"
+    ],
+    "common_gaps": [
+      "custom python goal-compute logic beyond count/sum",
+      "bespoke reward types other than badges (e.g. monetary/HR rewards)",
+      "richer real-time leaderboard UI (shipped only by consumer modules)"
+    ],
+    "drive_hints": [
+      "odoo shell: env['gamification.challenge'].search([], limit=5).mapped(('name','state','period'))",
+      "odoo shell: env['gamification.goal'].search([('state','=','reached')], limit=5).mapped(('definition_id.name','current','completeness'))",
+      "odoo shell: env['gamification.badge.user'].read_group([], ['badge_id'], ['badge_id'])",
+      "odoo shell: env['res.users'].search([('karma','>',0)], limit=5).mapped(('login','karma','rank_id.name'))"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Exact karma point values awarded by consumer modules (forum/slides) — defined outside gamification.",
+    "How website_profile renders the karma leaderboard from _get_user_ids_ranked_by_karma.",
+    "Batch-mode goal computation correctness for very large participant sets."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/gamification.facts.json",
+    "tools": [
+      "code-read",
+      "extract_frontend.py",
+      "extract_module.py",
+      "extract_runtime.sh",
+      "run-odoo (odoo shell)"
+    ],
+    "odoo_version": "19.0"
+  }
+}

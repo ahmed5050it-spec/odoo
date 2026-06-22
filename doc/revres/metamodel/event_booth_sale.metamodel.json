@@ -1,0 +1,339 @@
+{
+  "subsystem": "event_booth_sale",
+  "evidence": {
+    "manifest": {
+      "name": "Events Booths Sales",
+      "category": "Marketing/Events",
+      "version": "1.2",
+      "summary": "Manage event booths sale",
+      "author": "Odoo S.A.",
+      "license": "LGPL-3",
+      "depends": [
+        "event_booth",
+        "event_sale"
+      ],
+      "auto_install": true,
+      "application": false
+    },
+    "models": [
+      {
+        "_name": "event.booth.registration",
+        "_description": "Event Booth Registration",
+        "fields": 6,
+        "relations": [
+          "sale_order_line_id->sale.order.line",
+          "event_booth_id->event.booth",
+          "partner_id->res.partner"
+        ]
+      },
+      {
+        "_name": "event.booth.configurator",
+        "_description": "Event Booth Configurator (TransientModel wizard)",
+        "fields": 6,
+        "relations": [
+          "product_id->product.product",
+          "sale_order_line_id->sale.order.line",
+          "event_id->event.event",
+          "event_booth_category_id->event.booth.category",
+          "event_booth_ids->event.booth"
+        ]
+      },
+      {
+        "_name": "event.booth.category",
+        "_description": "(inherit) Event Booth Category",
+        "_inherit": "event.booth.category",
+        "fields": 7,
+        "relations": [
+          "product_id->product.product",
+          "currency_id->res.currency (related product_id.currency_id)"
+        ]
+      },
+      {
+        "_name": "event.type.booth",
+        "_description": "(inherit) Event Booth Template",
+        "_inherit": "event.type.booth",
+        "fields": 3,
+        "relations": [
+          "product_id->product.product (related booth_category_id.product_id)",
+          "currency_id->res.currency (related booth_category_id.currency_id)"
+        ]
+      },
+      {
+        "_name": "event.booth",
+        "_description": "(inherit) Event Booth",
+        "_inherit": "event.booth",
+        "fields": 5,
+        "relations": [
+          "event_booth_registration_ids->event.booth.registration",
+          "sale_order_line_registration_ids->sale.order.line",
+          "sale_order_line_id->sale.order.line",
+          "sale_order_id->sale.order (related sale_order_line_id.order_id)"
+        ]
+      },
+      {
+        "_name": "sale.order",
+        "_description": "(inherit) Sales Order",
+        "_inherit": "sale.order",
+        "fields": 2,
+        "relations": [
+          "event_booth_ids->event.booth"
+        ]
+      },
+      {
+        "_name": "sale.order.line",
+        "_description": "(inherit) Sales Order Line",
+        "_inherit": "sale.order.line",
+        "fields": 4,
+        "relations": [
+          "event_booth_category_id->event.booth.category",
+          "event_booth_pending_ids->event.booth",
+          "event_booth_registration_ids->event.booth.registration",
+          "event_booth_ids->event.booth"
+        ]
+      },
+      {
+        "_name": "product.template",
+        "_description": "(inherit) Product Template",
+        "_inherit": "product.template",
+        "fields": 1,
+        "relations": []
+      },
+      {
+        "_name": "product.product",
+        "_description": "(inherit) Product Variant",
+        "_inherit": "product.product",
+        "fields": 0,
+        "relations": []
+      },
+      {
+        "_name": "account.move",
+        "_description": "(inherit) Journal Entry",
+        "_inherit": "account.move",
+        "fields": 0,
+        "relations": []
+      }
+    ],
+    "routes": [],
+    "security": {
+      "access_rules": 4,
+      "record_rules": 0,
+      "groups": 0
+    },
+    "views": {
+      "form": 1,
+      "list": 1,
+      "kanban": 0,
+      "search": 0,
+      "pivot": 0,
+      "graph": 0
+    },
+    "frontend": {
+      "present": true,
+      "js_files": 2,
+      "xml_templates": 0,
+      "owl_components": [],
+      "registry_adds": [
+        "views:event_booth_configurator_form"
+      ],
+      "patches": [
+        "SaleOrderLineProductField.prototype"
+      ],
+      "services": [],
+      "asset_bundles": {
+        "web.assets_backend": 1
+      }
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": false,
+      "endpoints": [],
+      "files": []
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    },
+    "behavioral_notes": [
+      {
+        "element": "event.booth.category pricing chain (_compute_price / _compute_price_incl / _compute_price_reduce / _compute_price_reduce_taxinc) + product_id",
+        "observation": "event_booth_sale makes a booth category sellable by linking it to a product.product (product_id, required, domain service_tracking='event_booth', default product_product_event_booth). price is a stored editable compute seeded from product_id.list_price + product_id.price_extra, so each category can override the shared product's price. price_incl runs product_id.taxes_id.compute_all to get the tax-included price; price_reduce / price_reduce_taxinc apply the contextual pricelist discount (product_id._get_contextual_discount, @api.depends_context(*PRICE_CONTEXT_KEYS)) tax-excl and tax-incl. A @api.constrains forces product_id.service_tracking=='event_booth'. event.type.booth re-exposes product_id/price/currency as related to its booth_category_id so event-type templates carry pricing. None of this pricing/tax/discount logic is visible in metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "sale.order.action_confirm -> sale.order.line._update_event_booths -> event.booth.registration.action_confirm -> event.booth.action_confirm",
+        "observation": "Confirming a sale order is what actually books the booths. The overridden sale.order.action_confirm() first super()-confirms, then for every order line whose service_tracking=='event_booth' it raises a ValidationError unless event_booth_pending_ids is set ('configure before confirming'), then calls order_line._update_event_booths(). _update_event_booths re-checks each pending booth.is_available (raising if any went unavailable) then calls event_booth_registration_ids.sudo().action_confirm(). Registration.action_confirm gathers _get_fields_for_booth_confirmation (sale_order_line_id, partner_id, contact_name/email/phone) and calls the parent event.booth.action_confirm(values), flipping booth.state to 'unavailable' AND writing those sale/partner/contact values onto the booth; then _cancel_pending_registrations() message_posts a cancellation note and _action_cancel()s every rival sale order competing for the same booth and unlinks their registrations. This whole cross-model booking cascade is invisible to metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "event.booth.registration as multi-bidder reservation buffer + sale.order.line._inverse_event_booth_pending_ids",
+        "observation": "event.booth.registration (One2many off both the SO line and the booth) lets several draft sale orders reserve the same physical booth at once; the booth is only truly taken at order confirmation, when the winner confirms and all rival registrations/orders are cancelled. Selecting booths on a line writes event_booth_pending_ids, whose inverse creates one event.booth.registration per selected booth (partner_id from order_id.partner_id) and unlinks de-selected ones; partner/contact fields default from the SO partner but stay editable. A unique(sale_order_line_id, event_booth_id) SQL constraint plus a constraint that all registrations on a line share one event guard consistency. This reservation-buffer pattern is pure code behavior.",
+        "source": "code-read"
+      },
+      {
+        "element": "event-booth product type + sale.order.line._get_display_price / catalog filtering",
+        "observation": "A new service_tracking option 'event_booth' is added on product.template/product.product (selection_add, ondelete set default; onchange forces invoice_policy='order'; constraints block changing tracking off a product still bound to a booth category, and add it to _service_tracking_blacklist). sale.order.line._get_display_price overrides pricing: when a line has pending booths and an event it sums per-booth booth_category_id.price_reduce (or booth.price when discounts are hidden) and converts to the SO currency, so the line price comes from booth categories rather than the bare product. sale.order._get_product_catalog_domain excludes service_tracking='event_booth' products from the catalog (they are picked via the configurator instead). Booth selection is driven by the event.booth.configurator TransientModel wizard surfaced through the patched SaleOrderLineProductField.",
+        "source": "code-read"
+      },
+      {
+        "element": "account.move._invoice_paid_hook -> set booths paid",
+        "observation": "When the customer invoice tied to a booth-selling sale order is paid, the overridden account.move._invoice_paid_hook() walks line_ids.sale_line_ids and calls _update_event_booths(set_paid=True), which calls event.booth.action_set_paid() (is_paid=True) on the confirmed booths. Booths also cannot be deleted once linked to a sale order (event.booth._unlink_except_linked_sale_order raises UserError). This payment->paid-flag side-effect and delete guard are not in metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "frontend (OWL/JS)",
+        "observation": "extract_frontend reports a thin backend-only JS footprint: 2 js files, 0 xml templates, 0 owl_components, one registry add (views:event_booth_configurator_form, the JS-backed form for the booth-picker wizard) and one patch (SaleOrderLineProductField.prototype, which intercepts selecting an event-booth product on a sale order line to open the booth configurator instead of a plain product). Asset bundle web.assets_backend only; no frontend/storefront bundle - the public exhibitor storefront lives in website_event_booth, not here.",
+        "source": "static"
+      },
+      {
+        "element": "integrations (external HTTP/SDK)",
+        "observation": "extract_frontend reports no outbound integration surface: 0 http call sites, no sdk imports, no api keys, no endpoints. event_booth_sale introduces no external calls; pricing/tax/discount all run through Odoo's in-process product, pricelist and account engines inherited from event_sale/sale.",
+        "source": "static"
+      }
+    ]
+  },
+  "it_architecture": {
+    "application": "event_booth_sale (Events Booths Sales bridge; auto_install, bridging event_booth and event_sale/sale)",
+    "software_services": [],
+    "data_objects": [
+      "event.booth.registration",
+      "event.booth.configurator",
+      "event.booth.category",
+      "event.type.booth",
+      "event.booth",
+      "sale.order",
+      "sale.order.line",
+      "product.template",
+      "product.product",
+      "account.move"
+    ],
+    "logical_data_erm": [
+      "event.booth.category -> product.product (sellable booth product)",
+      "event.type.booth -> product.product / price (related via booth_category_id)",
+      "sale.order.line -> event.booth.category (booths category sold)",
+      "sale.order.line -> event.booth (event_booth_pending_ids reserved, event_booth_ids confirmed)",
+      "event.booth.registration -> sale.order.line (reservation owner)",
+      "event.booth.registration -> event.booth (reserved booth)",
+      "event.booth.registration -> res.partner (exhibitor, related order_partner_id)",
+      "event.booth -> sale.order.line (final sale_order_line_id) -> sale.order (sale_order_id)",
+      "sale.order -> event.booth (event_booth_ids)"
+    ],
+    "information_flows": [
+      "depends: event_booth, event_sale",
+      "side-effect: sale.order.action_confirm -> sale.order.line._update_event_booths -> event.booth.registration.action_confirm -> event.booth.action_confirm (state=unavailable, partner/contact set) + cancel rival registrations & orders",
+      "side-effect: sale.order.line.event_booth_pending_ids inverse -> create/unlink event.booth.registration per selected booth",
+      "side-effect: account.move._invoice_paid_hook -> sale.order.line._update_event_booths(set_paid=True) -> event.booth.action_set_paid (is_paid=True)",
+      "compute: event.booth.category.price / price_incl / price_reduce from product_id.list_price + taxes + contextual pricelist discount",
+      "compute: sale.order.line._get_display_price summed from booth_category_id.price_reduce when booths pending",
+      "guard: event.booth._unlink_except_linked_sale_order blocks deleting booths linked to a sale order"
+    ],
+    "frontend_components": []
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Price Booth Categories via a Sellable Product (product_id + price/_incl/_reduce)",
+      "Sell Event Booths through Quotations & Sales Orders",
+      "Configure Booth Selection on a Sale Order Line (event.booth.configurator wizard)",
+      "Reserve Booths for Multiple Bidders (event.booth.registration)",
+      "Book/Assign Booths on Order Confirmation (action_confirm -> booth unavailable)",
+      "Mark Booths Paid on Invoice Payment (is_paid)",
+      "Capture Exhibitor Contact per Booth Registration"
+    ],
+    "value_streams": [
+      "Quote-to-Booked-Booth: add event-booth product line -> configurator picks event + booth category + booths (pending registrations) -> confirm sale order -> winning booths flip to unavailable & get partner/contact, rival orders cancelled -> invoice paid -> booths marked paid"
+    ],
+    "information_concepts": [
+      "event.booth.registration",
+      "event.booth.category (priced)",
+      "event.booth (sale-linked)",
+      "sale.order / sale.order.line (booth-selling)",
+      "product.product (event_booth service_tracking)",
+      "account.move (booth invoice)",
+      "res.partner (exhibitor/customer)"
+    ],
+    "organization": [
+      "event.group_event_registration_desk (booth category product/price field access)",
+      "sales_team.group_sale_salesman (booth sale_order link fields)"
+    ],
+    "products": [
+      "product.product / product.template with service_tracking='event_booth' (the sellable booth offering; default product_product_event_booth)"
+    ],
+    "policies": [
+      "4 access rules (registration + configurator); no module-specific record rules or groups; field-level groups gate pricing (group_event_registration_desk) and sale links (group_sale_salesman)",
+      "product_id on booth category required and constrained to service_tracking='event_booth'; service_tracking cannot be changed off a product bound to a booth category",
+      "event-booth products force invoice_policy='order' and are excluded from the standard product catalog domain",
+      "booking is gated: action_confirm raises unless every event-booth line has pending booths configured, and re-checks availability before confirming",
+      "unique(sale_order_line_id, event_booth_id) registration constraint; all registrations on one line must share a single event",
+      "confirming the winning order cancels and unlinks all rival registrations/orders for the same booth; booths linked to a sale order cannot be deleted"
+    ],
+    "stakeholders": [
+      "Exhibitor / Booth Customer (res.partner)",
+      "Salesperson (group_sale_salesman)",
+      "Event Officer / Registration Desk (event groups)",
+      "Accountant (invoice payment -> is_paid)"
+    ],
+    "strategy": null,
+    "metrics": [
+      "event_booth_count per sale.order (sold booths)",
+      "booth pricing: price / price_incl / price_reduce / price_reduce_taxinc per category",
+      "is_paid booth flag (paid vs unpaid booked booths)"
+    ]
+  },
+  "classification": {
+    "value_model": "network",
+    "activity_class": "primary",
+    "apqc_category": "3.0 Market and Sell Products and Services",
+    "rationale": "event_booth_sale is the bridge that turns the event booth value-network (Stabell & Fjeldstad mediating-technology: a fixed capacity of stands matched to exhibitors) into a sellable offering wired to the sales chain. Its economic logic stays network/capacity-mediation - booths are reserved (event.booth.registration lets several bidders hold the same stand) and only allocated available->unavailable when an exhibitor wins on order confirmation, with rival orders auto-cancelled; that is matching of demand to limited shared capacity, not sequential transformation. The module bolts that network onto sale.order/sale.order.line, product pricing/tax/pricelist and account.move payment so the booking has a price, an invoice and a paid flag. It is a primary, customer-facing sell motion: pricing an offering, configuring it on a quotation, confirming the order and recognising payment. APQC 3.0 Market and Sell Products and Services is the closest PCF home (event booth/sponsorship sales - quote, configure, confirm, get paid); the booth catalog/assignment base lives in event_booth and the public storefront in website_event_booth, while this bridge owns the paid sale + reservation/booking portion of that sell process."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "make a booth category sellable by linking a service product and deriving price / tax-included / discounted prices",
+      "sell booths on standard quotations and sales orders via a booth configurator wizard on the order line",
+      "multi-bidder booth reservation (pending registrations) resolved at order confirmation",
+      "automatic booth booking (state unavailable + partner/contact) and rival-order cancellation on confirm",
+      "invoice the booth (invoice_policy=order) and flag booths paid when the invoice is paid",
+      "booth-count smart button and SO<->booth navigation"
+    ],
+    "typical_fits": [
+      "exhibitions/trade shows selling priced exhibitor stands per event through the sales team",
+      "sponsorship/booth packages quoted and invoiced like any other product",
+      "recurring events templating priced booths via event types"
+    ],
+    "common_gaps": [
+      "public/online booth checkout and exhibitor self-service registration (needs website_event_booth)",
+      "deposit/partial-payment or per-booth advance invoicing rules beyond invoice_policy=order",
+      "floor-plan / spatial stand picker and visual availability map",
+      "approval or waitlist workflow beyond the binary available/unavailable + first-confirmed-wins logic"
+    ],
+    "drive_hints": [
+      "odoo shell: env['event.booth.category'].search([], limit=5).mapped(('name','product_id.name','price','price_incl','price_reduce'))",
+      "odoo shell: env['product.product'].search([('service_tracking','=','event_booth')]).mapped(('name','invoice_policy'))",
+      "odoo shell: so = env['sale.order'].search([('event_booth_ids','!=',False)], limit=1); (so.name, so.event_booth_count, so.event_booth_ids.mapped(('name','state','is_paid')))",
+      "odoo shell: env['event.booth.registration'].search([], limit=5).mapped(('event_booth_id.name','sale_order_line_id.order_id.name','partner_id.name'))"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Whether partial/deposit payments (not full invoice payment) should still flip booths to is_paid, since _invoice_paid_hook fires on full payment.",
+    "How website_event_booth public selection interacts with the multi-bidder event.booth.registration reservation buffer (selection before or after partner assignment).",
+    "Whether multi-company scoping of booth sales is expected given the module adds no record rules (relies on inherited sale/event groups)."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/event_booth_sale.facts.json",
+    "tools": [
+      "code-read",
+      "extract_frontend.py",
+      "extract_module.py"
+    ],
+    "odoo_version": "19.0"
+  }
+}

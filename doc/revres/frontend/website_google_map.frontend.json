@@ -1,0 +1,1 @@
+{"module": "website_google_map", "frontend_gap3": {"present": true, "js_files": 2, "xml_templates": 0, "owl_components": [], "registry_adds": [], "patches": [], "services": [], "asset_bundles": {}}, "integrations_gap7": {"http_call_sites": 0, "sdk_imports": [], "uses_api_keys": true, "endpoints": [], "files": []}}
