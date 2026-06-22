@@ -1,0 +1,134 @@
+{
+  "subsystem": "delivery_mondialrelay",
+  "evidence": {
+    "manifest": {
+      "name": "delivery_mondialrelay",
+      "category": "Shipping Connectors",
+      "depends": [
+        "stock_delivery"
+      ],
+      "auto_install": false,
+      "application": false
+    },
+    "models": [],
+    "routes": [],
+    "security": {
+      "access_rules": 0,
+      "record_rules": 0,
+      "groups": 0
+    },
+    "views": {
+      "form": 0,
+      "list": 0,
+      "tree": 0,
+      "kanban": 0,
+      "search": 0,
+      "pivot": 0,
+      "graph": 0,
+      "calendar": 0,
+      "activity": 0
+    },
+    "frontend": {
+      "present": true,
+      "js_files": 1,
+      "xml_templates": 0,
+      "owl_components": [
+        "MondialRelayField"
+      ],
+      "registry_adds": [
+        "fields:mondialrelay_relay"
+      ],
+      "patches": [],
+      "services": [],
+      "asset_bundles": {
+        "web.assets_backend": 2
+      }
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": false,
+      "endpoints": [],
+      "files": []
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    },
+    "behavioral_notes": [
+      {
+        "element": "frontend (OWL/JS)",
+        "observation": "1 JS files, 1 OWL components, 1 registry adds; bundles ['web.assets_backend'].",
+        "source": "static"
+      },
+      {
+        "element": "thin module",
+        "observation": "0 models, 0 routes, 203 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
+        "source": "ast"
+      }
+    ]
+  },
+  "it_architecture": {
+    "application": "delivery_mondialrelay (delivery_mondialrelay)",
+    "software_services": [],
+    "data_objects": [],
+    "logical_data_erm": [],
+    "information_flows": [
+      "depends: stock_delivery"
+    ],
+    "frontend_components": [
+      "MondialRelayField"
+    ]
+  },
+  "business_architecture": {
+    "capabilities": [
+      "delivery_mondialrelay"
+    ],
+    "value_streams": [],
+    "information_concepts": [],
+    "organization": [],
+    "products": [],
+    "policies": [],
+    "stakeholders": [],
+    "strategy": null,
+    "metrics": []
+  },
+  "classification": {
+    "value_model": "chain",
+    "activity_class": "support",
+    "apqc_category": "4.4 Operate outbound transportation",
+    "rationale": "delivery_mondialrelay: thin chain/support module (auto-architect baseline)."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "delivery_mondialrelay"
+    ],
+    "typical_fits": [],
+    "common_gaps": [],
+    "drive_hints": [
+      "n/a"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/delivery_mondialrelay.facts.json",
+    "tools": [
+      "extract_module.py",
+      "extract_frontend.py",
+      "gen_thin.py"
+    ],
+    "odoo_version": "19.0"
+  }
+}

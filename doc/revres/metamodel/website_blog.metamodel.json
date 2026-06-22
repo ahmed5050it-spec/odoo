@@ -1,0 +1,324 @@
+{
+  "subsystem": "website_blog",
+  "evidence": {
+    "manifest": {
+      "name": "Blog",
+      "category": "Website/Website",
+      "depends": [
+        "website_mail",
+        "website_partner",
+        "html_builder"
+      ],
+      "auto_install": false,
+      "application": false
+    },
+    "models": [
+      {
+        "_name": "blog.blog",
+        "_description": "Blog",
+        "fields": 7,
+        "relations": [
+          "blog_post_ids->blog.post"
+        ]
+      },
+      {
+        "_name": "blog.post",
+        "_description": "Blog Post",
+        "fields": 20,
+        "relations": [
+          "blog_id->blog.blog",
+          "author_id->res.partner",
+          "tag_ids->blog.tag",
+          "website_message_ids->mail.message",
+          "website_id->blog.blog.website_id"
+        ]
+      },
+      {
+        "_name": "blog.tag",
+        "_description": "Blog Tag",
+        "fields": 4,
+        "relations": [
+          "category_id->blog.tag.category",
+          "post_ids->blog.post"
+        ]
+      },
+      {
+        "_name": "blog.tag.category",
+        "_description": "Blog Tag Category",
+        "fields": 2,
+        "relations": [
+          "tag_ids->blog.tag"
+        ]
+      }
+    ],
+    "routes": [
+      {
+        "paths": [
+          "/blog",
+          "/blog/page/<int:page>",
+          "/blog/tag/<string:tag>",
+          "/blog/tag/<string:tag>/page/<int:page>",
+          "/blog/<model(\"blog.blog\"):blog>",
+          "/blog/<model(\"blog.blog\"):blog>/page/<int:page>",
+          "/blog/<model(\"blog.blog\"):blog>/tag/<string:tag>",
+          "/blog/<model(\"blog.blog\"):blog>/tag/<string:tag>/page/<int:page>"
+        ],
+        "auth": "public",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/blog/<model(\"blog.blog\"):blog>/feed"
+        ],
+        "auth": "public",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/blog/<model(\"blog.blog\"):blog>/post/<model(\"blog.post\"):blog_post>"
+        ],
+        "auth": "public",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/blog/<model(\"blog.blog\"):blog>/<model(\"blog.post\", \"[('blog_id','=',blog.id)]\"):blog_post>"
+        ],
+        "auth": "public",
+        "type": "http"
+      }
+    ],
+    "security": {
+      "access_rules": 16,
+      "record_rules": 2,
+      "groups": 0
+    },
+    "views": {
+      "form": 5,
+      "list": 4,
+      "kanban": 1,
+      "search": 2
+    },
+    "behavioral_notes": [
+      {
+        "element": "blog.post.write / create / _check_for_publication",
+        "observation": "Publishing is the core side-effect. write() stamps published_date with now() the first time is_published/website_published flips on (if not already set), and archiving a post (active=False) force-sets is_published=False. On both create() and write(), _check_for_publication() fires for any active post being published and calls blog_id.message_post_with_source('website_blog.blog_post_template_new_post', subtype='website_blog.mt_blog_blog_published') -- i.e. publishing a post posts a 'new post' announcement on the parent blog's mail.thread, notifying its followers. None of this state-machine/notification logic is visible in metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "blog.post._default_website_meta / SEO (website.seo.metadata mixin)",
+        "observation": "blog.post inherits website.seo.metadata + website.published.multi.mixin and overrides _default_website_meta() to emit OpenGraph/Twitter-card tags: og:type='article', article:published_time=post_date, article:modified_time=write_date, article:tag=tag names, plus og:image extracted from cover_properties background-image, og:title/og:description from name/subtitle. The teaser field is computed (first 200 chars of content stripped of HTML) or overridden by teaser_manual. website_url is computed as /blog/<blog-slug>/<post-slug> via ir.http._slug. SEO/meta generation lives entirely in Python.",
+        "source": "code-read"
+      },
+      {
+        "element": "WebsiteBlog.blog_post controller (visitor view tracking)",
+        "observation": "The /blog/<blog>/<post> route (controllers/main.py) increments blog.post.visits once per visitor session: it checks request.session['posts_viewed'] and, if the post id is absent, calls sql.increment_fields_skiplock(blog_post,'visits') (an atomic UPDATE that skips row locks) then records the id in the session. The same controller computes next_post for sequential navigation and renders 'website_blog.blog_post_complete'. Visit counting is a raw-SQL session-gated side-effect, invisible to ORM metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "blog.post commenting via mail (_mail_post_access / website_message_ids / _notify_thread_by_inbox)",
+        "observation": "Reader comments are mail.thread messages: blog.post sets _mail_post_access='read' (any user with read access may post a comment) and website_message_ids is filtered to message_type='comment'. The controller paginates comments at _post_comment_per_page=10. _notify_thread_by_inbox is overridden to suppress inbox/needaction notifications for 'comment' messages (emails only), and blog.blog.message_post downgrades replies on the 'Presentation Published' email to internal notes (subtype mail.mt_note) to avoid spamming all blog followers. Comment plumbing reuses the mail stack, not a dedicated model.",
+        "source": "code-read"
+      },
+      {
+        "element": "frontend (interactions/JS + website builder snippets)",
+        "observation": "15 JS files, 5 XML templates, 0 OWL components; behavior ships as website 'public.interactions' (blog_posts, blog_post_link, website_blog) plus edit/preview interaction variants, and two builder patches (CoverPropertiesOption.prototype, NewContentSystrayItem.prototype) for the cover editor and the 'New Blog Post' systray entry. Asset bundles span web.assets_frontend (3), website.assets_editor (1), website.website_builder_assets (1). The s_blog_posts dynamic snippet renders posts inside the page builder.",
+        "source": "static"
+      }
+    ],
+    "frontend": {
+      "present": true,
+      "js_files": 15,
+      "xml_templates": 5,
+      "owl_components": [],
+      "registry_adds": [
+        "public.interactions.edit:website_blog.blog_posts",
+        "public.interactions.preview:website_blog.blog_posts",
+        "public.interactions:website_blog.blog_post_link",
+        "public.interactions:website_blog.blog_posts",
+        "public.interactions:website_blog.website_blog"
+      ],
+      "patches": [
+        "CoverPropertiesOption.prototype",
+        "NewContentSystrayItem.prototype"
+      ],
+      "services": [],
+      "asset_bundles": {
+        "web.assets_backend": 1,
+        "web.assets_tests": 1,
+        "web.assets_unit_tests": 2,
+        "web.assets_unit_tests_setup": 2,
+        "web.assets_frontend": 3,
+        "website.assets_editor": 1,
+        "website.website_builder_assets": 1
+      }
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": false,
+      "endpoints": [
+        "https://www.odoo.com/app/blog"
+      ],
+      "files": [
+        "__manifest__.py"
+      ]
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    }
+  },
+  "it_architecture": {
+    "application": "website_blog (Blog application component on the website front end)",
+    "software_services": [
+      "/blog",
+      "/blog/page/<int:page>",
+      "/blog/tag/<string:tag>",
+      "/blog/<model(\"blog.blog\"):blog>",
+      "/blog/<model(\"blog.blog\"):blog>/page/<int:page>",
+      "/blog/<model(\"blog.blog\"):blog>/tag/<string:tag>",
+      "/blog/<model(\"blog.blog\"):blog>/<model(\"blog.post\"):blog_post>",
+      "/blog/<model(\"blog.blog\"):blog>/feed"
+    ],
+    "data_objects": [
+      "blog.blog",
+      "blog.post",
+      "blog.tag",
+      "blog.tag.category"
+    ],
+    "logical_data_erm": [
+      "blog.post -> blog.blog (blog_id)",
+      "blog.post -> res.partner (author_id)",
+      "blog.post -> blog.tag (tag_ids, M2M)",
+      "blog.tag -> blog.tag.category (category_id)",
+      "blog.post -> mail.message (website_message_ids = reader comments)",
+      "blog.blog -> blog.post (blog_post_ids)"
+    ],
+    "information_flows": [
+      "depends: website_mail, website_partner, html_builder",
+      "side-effect: blog.post publish (is_published) -> blog.blog.message_post_with_source('blog_post_template_new_post', subtype mt_blog_blog_published) notifies blog followers",
+      "side-effect: blog.post publish -> stamps published_date = now(); archive -> is_published = False",
+      "side-effect: GET /blog/<blog>/<post> -> sql.increment_fields_skiplock(blog.post,'visits') once per session (posts_viewed)",
+      "side-effect: reader comment -> mail.message (message_type=comment) on blog.post via mail.thread; inbox notifications suppressed for comments",
+      "side-effect: blog.post._default_website_meta -> OpenGraph/Twitter article meta tags for SEO/social sharing"
+    ],
+    "frontend_components": [],
+    "external_integrations": {
+      "sdk_imports": [],
+      "endpoints": [
+        "https://www.odoo.com/app/blog"
+      ],
+      "notes": "No outbound HTTP / SDK / API-key usage in code (http_call_sites=0, uses_api_keys=false). The only endpoint is the product page https://www.odoo.com/app/blog declared in __manifest__.py. Social reach is achieved passively via OpenGraph/Twitter-card meta tags and an Atom feed (/blog/<blog>/feed), not an outbound social/marketing API."
+    }
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Author & Publish Blog Posts (content marketing)",
+      "Organize Content (blogs, tags, tag categories)",
+      "Manage Content SEO & Social Sharing (meta/OpenGraph, sitemap, Atom feed)",
+      "Engage Audience (reader comments via mail.thread)",
+      "Measure Reach (per-post visit counts, follower announcements)"
+    ],
+    "value_streams": [
+      "Content-to-Audience: draft post -> tag & set cover/SEO -> publish (announce to blog followers) -> visitors read (tracked visits) -> readers comment (mail.thread) -> attract/engage audience"
+    ],
+    "information_concepts": [
+      "blog.blog",
+      "blog.post",
+      "blog.tag",
+      "blog.tag.category",
+      "res.partner (author)",
+      "mail.message (reader comment)"
+    ],
+    "organization": [
+      "website.group_website_designer (content editors: full CRUD)",
+      "base.group_user (employees: read)",
+      "base.group_portal (portal readers: read published)",
+      "base.group_public (public visitors: read published)"
+    ],
+    "products": [],
+    "policies": [
+      "2 record rules: website_blog_post_public (public/portal see website_published only) + website_blog_public (public/portal see active=True blogs only)",
+      "16 ACLs: read for public/portal/employee, full CRUD reserved to website.group_website_designer",
+      "Unpublished posts / future post_date hidden unless user is website.group_website_designer",
+      "blog.post._mail_post_access='read': any read-access user may post a comment"
+    ],
+    "stakeholders": [
+      "Content editor / author (res.users in website.group_website_designer; res.partner author_id)",
+      "Website visitor / reader (base.group_public)",
+      "Commenter (res.partner / portal reader)",
+      "Blog follower (mail.followers notified on publish)"
+    ],
+    "strategy": null,
+    "metrics": [
+      "blog.post.visits (per-post view counter, session-gated)",
+      "blog.blog.blog_post_count (computed posts per blog)",
+      "publish announcements to blog followers (engagement proxy)"
+    ]
+  },
+  "classification": {
+    "value_model": "network",
+    "activity_class": "primary",
+    "apqc_category": "3.0 Market and Sell Products and Services",
+    "rationale": "website_blog is a value-network mediating activity (Stabell & Fjeldstad): it publishes content to attract and engage an audience, brokering the relationship between the organization and its readership through mediating infrastructure -- public blog pages, tag-based navigation, SEO/OpenGraph metadata, an Atom feed, visit tracking, follower announcements on publish, and a reader-comment channel (mail.thread). Per Stabell & Fjeldstad the network firm's primary activities are network promotion & contract management and service provisioning; content marketing recruits and serves an audience network rather than transforming inputs (chain) or solving a bespoke client problem (shop). It is a primary marketing activity -- the inbound content-marketing channel, not internal support -- mapping to APQC 3.0 Market and Sell, specifically 3.3 Develop and manage marketing plans and 3.4 Develop and manage marketing communications (publishing marketing/editorial content and measuring its reach)."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "multiple blogs, posts, tags and tag categories with website builder editing",
+      "publish / unpublish with publication-date gating and visibility options",
+      "publish-time announcement to blog followers via mail.thread",
+      "reader comments on posts (mail.message, paginated 10/page)",
+      "SEO metadata + OpenGraph/Twitter article cards + sitemap + Atom feed per blog",
+      "tag-based navigation, fuzzy search, and monthly archive nav",
+      "per-post visit counting and posts-per-blog count",
+      "drag-and-drop cover image and the s_blog_posts dynamic snippet in the page builder"
+    ],
+    "typical_fits": [
+      "company news / announcements / editorial content marketing site",
+      "tag-organized knowledge or product blog with author bylines",
+      "public blog gated by website.group_website_designer for editors",
+      "social-shareable posts (OpenGraph) feeding inbound traffic"
+    ],
+    "common_gaps": [
+      "editorial workflow / approval before publish (single-step publish only)",
+      "scheduled auto-publish at a future date without manual action",
+      "advanced engagement analytics beyond a raw visit counter (no funnel/UTM attribution out-of-box)",
+      "newsletter/RSS-to-email distribution (handled by mass_mailing, not website_blog)",
+      "comment moderation/spam controls beyond the mail-note downgrade workaround"
+    ],
+    "drive_hints": [
+      "odoo shell: env['blog.post'].search([], limit=5).mapped(('name','is_published','visits','post_date'))",
+      "odoo shell: env['blog.blog'].search([]).mapped(('name','blog_post_count'))",
+      "odoo shell: p = env['blog.post'].search([('is_published','=',False)], limit=1); p.write({'is_published': True})  # observe published_date stamp + blog follower announcement",
+      "curl public: GET /blog (renders blog index) ; GET /blog/<blog-slug>/feed (Atom XML)"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Exact blog.post publication state machine (active / website_published / post_date vs now) and every transition that re-announces to followers.",
+    "How the website._search_with_fuzzy('blog_posts_only', ...) ranking and the search_in_tags extra interact for blog post search.",
+    "Whether visit counts are deduplicated only per browser session (posts_viewed) or further, and how that interacts with caching.",
+    "Full set of website.* mixins behavior (cover_properties, page_visibility_options, searchable) inherited rather than defined here."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/website_blog.facts.json",
+    "tools": [
+      "code-read",
+      "extract_frontend.py",
+      "extract_module.py",
+      "extract_runtime.sh",
+      "run-odoo (odoo shell)"
+    ],
+    "odoo_version": "19.0"
+  }
+}

@@ -1,0 +1,318 @@
+{
+  "subsystem": "product",
+  "evidence": {
+    "manifest": {
+      "name": "Products & Pricelists",
+      "category": "Sales/Sales",
+      "depends": [
+        "base",
+        "mail",
+        "uom"
+      ],
+      "auto_install": false,
+      "application": false
+    },
+    "models": [
+      {
+        "_name": "product.template",
+        "_description": "Product",
+        "fields": 45,
+        "relations": [
+          "categ_id->product.category",
+          "uom_id->uom.uom",
+          "attribute_line_ids->product.template.attribute.line",
+          "product_variant_ids->product.product",
+          "seller_ids->product.supplierinfo"
+        ]
+      },
+      {
+        "_name": "product.product",
+        "_description": "Product Variant",
+        "fields": 37,
+        "relations": [
+          "product_tmpl_id->product.template",
+          "product_template_attribute_value_ids->product.template.attribute.value",
+          "pricelist_rule_ids->product.pricelist.item"
+        ]
+      },
+      {
+        "_name": "product.attribute",
+        "_description": "Product Attribute",
+        "fields": 10,
+        "relations": [
+          "value_ids->product.attribute.value",
+          "attribute_line_ids->product.template.attribute.line",
+          "product_tmpl_ids->product.template"
+        ]
+      },
+      {
+        "_name": "product.template.attribute.value",
+        "_description": "Product Template Attribute Value",
+        "fields": 15,
+        "relations": [
+          "product_attribute_value_id->product.attribute.value",
+          "attribute_line_id->product.template.attribute.line",
+          "ptav_product_variant_ids->product.product"
+        ]
+      },
+      {
+        "_name": "product.pricelist",
+        "_description": "Pricelist",
+        "fields": 7,
+        "relations": [
+          "currency_id->res.currency",
+          "company_id->res.company",
+          "item_ids->product.pricelist.item"
+        ]
+      },
+      {
+        "_name": "product.pricelist.item",
+        "_description": "Pricelist Rule",
+        "fields": 28,
+        "relations": [
+          "pricelist_id->product.pricelist",
+          "product_tmpl_id->product.template",
+          "product_id->product.product",
+          "categ_id->product.category"
+        ]
+      }
+    ],
+    "routes": [
+      {
+        "paths": [
+          "/product/export/pricelist/"
+        ],
+        "auth": "user",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/product/catalog/order_lines_info",
+          "/product/catalog/update_order_line_info"
+        ],
+        "auth": "user",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/product/document/upload"
+        ],
+        "auth": "user",
+        "type": "http"
+      }
+    ],
+    "security": {
+      "access_rules": 38,
+      "record_rules": 6,
+      "groups": 3
+    },
+    "views": {
+      "form": 15,
+      "list": 24,
+      "kanban": 6,
+      "search": 9,
+      "activity": 2
+    },
+    "behavioral_notes": [
+      {
+        "element": "product.template._create_variant_ids",
+        "observation": "Materialises product.product variants as the cartesian product of valid attribute lines: for attributes with create_variant='always' it instantiates every combination immediately, for 'dynamic' it skips creation (variants are spawned on demand by the configurator), and for 'no_variant' the attribute never produces variants. Guarded by a 'product.dynamic_variant_limit' (default 1000). This template->variant explosion is pure Python, invisible in metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "product.product._compute_product_price_extra / product.template.attribute.value.price_extra",
+        "observation": "A variant's price_extra is computed as the sum of price_extra over its product_template_attribute_value_ids; lst_price = template.list_price + price_extra (uom-context dependent). So the per-variant sales price is assembled from per-attribute-value surcharges held on product.template.attribute.value, not stored on the variant.",
+        "source": "code-read"
+      },
+      {
+        "element": "product.pricelist.item._compute_price",
+        "observation": "Resolves a unit price per rule by compute_price mode: 'fixed' returns fixed_price, 'percentage' applies percent_price to a base price, and 'formula' applies discount/markup, rounding (price_round), surcharge, and min/max margin clamps against a configurable base ('list_price', 'standard_price' or another pricelist). _compute_price_rule selects the most specific applicable rule (variant > template > category > global) by date/quantity. The pricing engine is entirely in Python.",
+        "source": "code-read"
+      },
+      {
+        "element": "frontend (OWL/JS)",
+        "observation": "15 JS files, 8 XML templates, 4 OWL components (ProductCatalogOrderLine, ProductNameAndDescriptionField, ProductPricelistReport, UploadButton), 4 registry registrations, 0 patches; asset bundles web.assets_backend (6), web.report_assets_common (1), web.assets_unit_tests (1).",
+        "source": "ast"
+      }
+    ],
+    "frontend": {
+      "present": true,
+      "js_files": 15,
+      "xml_templates": 8,
+      "owl_components": [
+        "ProductCatalogOrderLine",
+        "ProductNameAndDescriptionField",
+        "ProductPricelistReport",
+        "UploadButton"
+      ],
+      "registry_adds": [
+        "actions:generate_pricelist_report",
+        "fields:pavs_one2many",
+        "views:product_documents_kanban",
+        "views:product_kanban_catalog"
+      ],
+      "patches": [],
+      "services": [
+        "product.report_pricelist"
+      ],
+      "asset_bundles": {
+        "web.assets_backend": 6,
+        "web.report_assets_common": 1,
+        "web.assets_unit_tests": 1
+      }
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": false,
+      "endpoints": [],
+      "files": []
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    }
+  },
+  "it_architecture": {
+    "application": "product (Products & Pricelists application component)",
+    "software_services": [
+      "/product/export/pricelist/",
+      "/product/catalog/*",
+      "/product/document/upload"
+    ],
+    "data_objects": [
+      "product.template",
+      "product.product",
+      "product.attribute",
+      "product.template.attribute.value",
+      "product.pricelist",
+      "product.pricelist.item"
+    ],
+    "logical_data_erm": [
+      "product.product -> product.template",
+      "product.template -> product.category",
+      "product.template -> uom.uom",
+      "product.template -> product.template.attribute.line -> product.attribute",
+      "product.product -> product.template.attribute.value",
+      "product.pricelist -> product.pricelist.item -> product.template/product.product",
+      "product.template -> product.supplierinfo -> res.partner"
+    ],
+    "information_flows": [
+      "depends: base, mail, uom",
+      "side-effect: product.template._create_variant_ids -> generates product.product variants from attribute combinations",
+      "side-effect: product.template.attribute.value.price_extra -> feeds product.product.lst_price",
+      "side-effect: product.pricelist.item._compute_price -> resolves applied unit price consumed by sale/purchase/pos"
+    ],
+    "frontend_components": [
+      "ProductCatalogOrderLine",
+      "ProductNameAndDescriptionField",
+      "ProductPricelistReport",
+      "UploadButton"
+    ]
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Maintain Product Master Data (templates & variants)",
+      "Manage Product Attributes & Variant Generation",
+      "Manage Pricelists & Pricing Rules",
+      "Manage Product Categories & Tags",
+      "Manage Suppliers / Vendor Pricelists"
+    ],
+    "value_streams": [
+      "Define-to-Catalog: define product template -> add attributes -> generate variants -> set list/cost price & pricelists -> publish for sale/purchase"
+    ],
+    "information_concepts": [
+      "product.template",
+      "product.product",
+      "product.attribute",
+      "product.template.attribute.value",
+      "product.pricelist",
+      "product.category"
+    ],
+    "organization": [
+      "group_product_manager",
+      "group_product_pricelist",
+      "group_uom"
+    ],
+    "products": [
+      "product.template",
+      "product.product",
+      "product.combo"
+    ],
+    "policies": [
+      "6 record rules: multi-company scoping on products, pricelists and pricelist rules",
+      "create_variant policy (always/dynamic/no_variant) governing variant materialisation",
+      "applied_on precedence (variant > template > category > global) governing pricelist rule selection"
+    ],
+    "stakeholders": [
+      "Product Manager (res.users)",
+      "Vendor / Supplier (res.partner)",
+      "Sales & Purchase consumers (downstream modules)"
+    ],
+    "strategy": null,
+    "metrics": [
+      "report.product.report_pricelist (Pricelist Report)",
+      "product.category.product_count",
+      "product.template.product_variant_count"
+    ]
+  },
+  "classification": {
+    "value_model": "support",
+    "activity_class": "support",
+    "apqc_category": "2.0 Develop and Manage Products and Services",
+    "rationale": "product is master-data foundation: it defines the product/variant/attribute/pricelist information concepts that the value chain (sale, purchase, stock, mrp), the shop (services/timesheets) and the network (pos/website) all consume. It does not itself transform demand or run an operational document flow; it is a firm-infrastructure support activity (Stabell & Fjeldstad support) feeding every primary activity. product.template is a core Information Concept depended on by base, mail and uom downstream consumers."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "product template/variant model with attributes & exclusions",
+      "always/dynamic/no_variant variant generation",
+      "per-attribute-value price_extra",
+      "pricelists with fixed/percentage/formula rules and applied_on precedence",
+      "categories, tags, UoM, supplier (vendor) pricelists",
+      "product documents & label/pricelist reports"
+    ],
+    "typical_fits": [
+      "standard catalog of goods/services with variants",
+      "tiered/customer-group pricelists",
+      "vendor price lists feeding purchase",
+      "multi-company product scoping via record rules"
+    ],
+    "common_gaps": [
+      "industry-specific product properties beyond product_properties",
+      "complex configurable-product rules beyond attribute exclusions",
+      "bespoke pricing formulas beyond fixed/percentage/formula modes",
+      "external PIM/catalog synchronisation (no integrations present)"
+    ],
+    "drive_hints": [
+      "odoo shell: env['product.template'].search([], limit=5).mapped(('name','list_price','product_variant_count'))",
+      "odoo shell: tmpl._create_variant_ids(); tmpl.product_variant_ids.mapped('lst_price')",
+      "odoo shell: env['product.pricelist'].browse(1)._get_product_price(env['product.product'].browse(1), 1.0)",
+      "curl http .../product/export/pricelist/ (auth=user)"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Exact downstream consumers that read product.pricelist.item._compute_price (sale/purchase/pos) and their override hooks.",
+    "Behaviour of dynamic variant creation triggered from the sale configurator (cross-module, not in this module).",
+    "Full set of compute methods behind product.product image/related fields and combination_indices.",
+    "How product_properties (Properties/PropertiesDefinition) are defined per category at runtime."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/product.facts.json",
+    "tools": [
+      "extract_module.py",
+      "extract_frontend.py",
+      "code-read"
+    ],
+    "odoo_version": "19.0"
+  }
+}

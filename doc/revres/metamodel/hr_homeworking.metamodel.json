@@ -1,0 +1,153 @@
+{
+  "subsystem": "hr_homeworking",
+  "evidence": {
+    "manifest": {
+      "name": "Remote Work",
+      "category": "Human Resources/Remote Work",
+      "depends": [
+        "hr"
+      ],
+      "auto_install": true,
+      "application": false
+    },
+    "models": [
+      {
+        "_name": "hr.employee.location",
+        "_description": "Employee Location",
+        "fields": 7
+      }
+    ],
+    "routes": [],
+    "security": {
+      "access_rules": 2,
+      "record_rules": 2,
+      "groups": 0
+    },
+    "views": {
+      "form": 0,
+      "list": 0,
+      "tree": 0,
+      "kanban": 0,
+      "search": 0,
+      "pivot": 0,
+      "graph": 0,
+      "calendar": 0,
+      "activity": 0
+    },
+    "frontend": {
+      "present": true,
+      "js_files": 1,
+      "xml_templates": 2,
+      "owl_components": [],
+      "registry_adds": [],
+      "patches": [
+        "HrPresenceStatus.prototype",
+        "HrPresenceStatusPill.prototype",
+        "HrPresenceStatusPrivate.prototype",
+        "HrPresenceStatusPrivatePill.prototype"
+      ],
+      "services": [
+        "hr_presence_state",
+        "work_location_name",
+        "work_location_type"
+      ],
+      "asset_bundles": {
+        "web.assets_backend": 1,
+        "web.assets_unit_tests": 1
+      }
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": false,
+      "endpoints": [],
+      "files": []
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    },
+    "behavioral_notes": [
+      {
+        "element": "frontend (OWL/JS)",
+        "observation": "1 JS files, 0 OWL components, 0 registry adds; bundles ['web.assets_backend', 'web.assets_unit_tests'].",
+        "source": "static"
+      },
+      {
+        "element": "thin module",
+        "observation": "1 models, 0 routes, 326 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
+        "source": "ast"
+      }
+    ]
+  },
+  "it_architecture": {
+    "application": "hr_homeworking (Remote Work)",
+    "software_services": [],
+    "data_objects": [
+      "hr.employee.location"
+    ],
+    "logical_data_erm": [
+      "hr.employee.location -> hr.employee",
+      "hr.employee.location -> hr.work.location"
+    ],
+    "information_flows": [
+      "depends: hr"
+    ],
+    "frontend_components": []
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Remote Work"
+    ],
+    "value_streams": [],
+    "information_concepts": [
+      "hr.employee.location"
+    ],
+    "organization": [],
+    "products": [],
+    "policies": [
+      "2 record rules"
+    ],
+    "stakeholders": [],
+    "strategy": null,
+    "metrics": []
+  },
+  "classification": {
+    "value_model": "support",
+    "activity_class": "support",
+    "apqc_category": "7.0 Develop and Manage Human Capital",
+    "rationale": "hr_homeworking: thin support/support module (auto-architect baseline)."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "Remote Work"
+    ],
+    "typical_fits": [],
+    "common_gaps": [],
+    "drive_hints": [
+      "odoo shell: env['hr.employee.location'].search([],limit=3)"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/hr_homeworking.facts.json",
+    "tools": [
+      "extract_module.py",
+      "extract_frontend.py",
+      "gen_thin.py"
+    ],
+    "odoo_version": "19.0"
+  }
+}

@@ -1,0 +1,27 @@
+apqc_id	level	apqc_name	odoo_model	odoo_operation	value_model	evidence
+3.5.3.1	activity	Receive RFP/RFQ from customer	sale.order	create (state=draft)	chain	facts/sale
+3.5.3.13	activity	Submit/present quote to customer	sale.order	action_quotation_send (state=sent)	chain	facts/sale
+3.5.3.14	activity	Revise bid/proposal/quote	sale.order	write (lines/pricing)	chain	facts/sale
+3.5.4.1	activity	Accept and validate sales orders	sale.order	action_confirm (state=sale)	chain	facts/sale
+3.5.4.5	activity	Enter orders into system	sale.order	create	chain	facts/sale
+3.5.4.4	activity	Determine fulfillment process	sale.order.line	procurement route selection	chain	facts/sale
+3.5.4.7	activity	Process back orders and updates	stock.picking	backorder wizard	chain	facts/stock
+3.5.4.8	activity	Handle sales order inquiries (post-order)	mail.message	message_post on sale.order	support	facts/mail
+3.2.2.1	activity	Conduct pricing analysis	product.pricelist	pricelist rules	chain	facts/product
+3.2.2.3	activity	Establish pricing targets	product.template	list_price / pricelist	chain	facts/product
+4.1.2.1	activity	Develop baseline demand forecasts	stock.warehouse.orderpoint	reordering rules	chain	facts/stock
+4.1.2.4	activity	Determine available to promise	sale.order.line	qty_available / forecast	chain	facts/stock
+4.2.1.1	activity	Develop procurement plan	purchase.requisition	requisition	support	facts/purchase
+4.2.4.3	activity	Solicit/Track vendor quotes	purchase.order	RFQ (state=draft/sent)	support	facts/purchase
+4.2.4.4	activity	Create/Distribute purchase orders	purchase.order	button_confirm (state=purchase)	support	facts/purchase
+4.2.4.6	activity	Reconcile purchase orders	account.move	vendor bill matching	support	facts/account
+4.2.4.7	activity	Research/Resolve order exceptions	purchase.order	exception handling	support	facts/purchase
+4.3.1.4	activity	Schedule production orders and create lots	mrp.production	create / schedule	chain	facts/mrp
+4.3.1.7	activity	Release production orders	mrp.production	action_confirm	chain	facts/mrp
+4.3.2.1	activity	Manage raw material inventory	stock.quant	stock moves / valuation	chain	facts/stock
+4.4.1.4	activity	Develop/maintain delivery service policy	stock.picking.type	operation types	chain	facts/stock
+4.4.x	process	Operate outbound transportation (ship)	stock.picking	button_validate (delivery)	chain	facts/stock
+9.2.x	process	Process accounts receivable (invoice)	account.move	action_post (customer invoice)	support	facts/account
+9.5.x	process	Process accounts payable (pay)	account.payment	register payment	support	facts/account
+1.1.1.1	task	Conduct customer and market research	crm.lead	lead qualification	shop	facts/crm
+5.x	process	Deliver services (engagement)	project.task	task lifecycle + timesheet	shop	facts/project

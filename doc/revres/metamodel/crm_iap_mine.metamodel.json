@@ -1,0 +1,276 @@
+{
+  "subsystem": "crm_iap_mine",
+  "evidence": {
+    "manifest": {
+      "name": "Lead Generation",
+      "category": "Sales/CRM",
+      "version": "1.2",
+      "summary": "Generate Leads/Opportunities based on country, industries, size, etc.",
+      "depends": [
+        "iap_crm",
+        "iap_mail"
+      ],
+      "auto_install": true,
+      "application": false
+    },
+    "models": [
+      {
+        "_name": "crm.iap.lead.mining.request",
+        "_description": "CRM Lead Mining Request",
+        "fields": 26,
+        "relations": [
+          "team_id->crm.team",
+          "user_id->res.users",
+          "tag_ids->crm.tag",
+          "lead_ids->crm.lead",
+          "country_ids->res.country",
+          "state_ids->res.country.state",
+          "industry_ids->crm.iap.lead.industry",
+          "preferred_role_id->crm.iap.lead.role",
+          "role_ids->crm.iap.lead.role",
+          "seniority_id->crm.iap.lead.seniority"
+        ]
+      },
+      {
+        "_name": "crm.iap.lead.industry",
+        "_description": "CRM IAP Lead Industry",
+        "fields": 4,
+        "relations": []
+      },
+      {
+        "_name": "crm.iap.lead.role",
+        "_description": "People Role",
+        "fields": 3,
+        "relations": []
+      },
+      {
+        "_name": "crm.iap.lead.seniority",
+        "_description": "People Seniority",
+        "fields": 2,
+        "relations": []
+      },
+      {
+        "_name": "crm.iap.lead.helpers",
+        "_description": "Helper methods for crm_iap_mine modules",
+        "fields": 0,
+        "relations": []
+      },
+      {
+        "_name": "crm.lead",
+        "_description": "Lead (inherited)",
+        "fields": 1,
+        "relations": [
+          "lead_mining_request_id->crm.iap.lead.mining.request"
+        ]
+      }
+    ],
+    "routes": [],
+    "security": {
+      "access_rules": 5,
+      "record_rules": 0,
+      "groups": 0
+    },
+    "views": {
+      "form": 1,
+      "list": 1,
+      "tree": 0,
+      "kanban": 0,
+      "search": 1,
+      "pivot": 0,
+      "graph": 0,
+      "calendar": 0,
+      "activity": 0
+    },
+    "frontend": {
+      "present": true,
+      "js_files": 1,
+      "xml_templates": 0,
+      "owl_components": [],
+      "registry_adds": [],
+      "patches": [],
+      "services": [],
+      "asset_bundles": {
+        "web.assets_backend": 1
+      }
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": false,
+      "endpoints": [
+        "https://iap-services.odoo.com"
+      ],
+      "files": [
+        "models/crm_iap_lead_mining_request.py"
+      ]
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    },
+    "behavioral_notes": [
+      {
+        "element": "crm.iap.lead.mining.request.action_submit / _perform_request / _create_leads_from_response",
+        "observation": "action_submit stamps an ir.sequence request number, then _perform_request builds an IAP payload (_prepare_iap_payload: lead_number, search_type, country/state codes, optional company size, industry reveal_ids, contact role/seniority) and calls the EXTERNAL IAP 'reveal' service via _iap_contact_mining -> iap_tools.iap_jsonrpc against reveal.endpoint (default https://iap-services.odoo.com) path /api/dnb/1/search_by_criteria (Dun & Bradstreet data). On success _create_leads_from_response bulk-creates crm.lead records (type lead or opportunity) from the returned company data and sets state='done'; there is no local catalog of prospects — the leads are materialized purely from the external provider's response. Metadata cannot show this: the whole acquisition pipeline is an outbound HTTP round-trip, not an internal document flow.",
+        "source": "code-read"
+      },
+      {
+        "element": "crm.iap.lead.mining.request credit consumption (_perform_request credit_error, _compute_tooltip, action_buy_credits)",
+        "observation": "The request is metered: CREDIT_PER_COMPANY=1 and CREDIT_PER_CONTACT=1 credits are billed on the iap.account 'reveal' wallet (account_token + database.uuid sent with every call). _compute_tooltip pre-estimates cost (lead_number companies + contact_number*lead_number contacts). If the IAP response carries credit_error the request sets state='error', error_type='credits' and creates no leads; action_buy_credits opens the IAP top-up URL and crm.iap.lead.helpers._notify_no_more_credit emails record creators (rate-limited via an ir.config_parameter flag). Pay-per-result economics live entirely in code/external service, not in the schema.",
+        "source": "code-read"
+      },
+      {
+        "element": "crm.iap.lead.helpers.lead_vals_from_response + _create_leads_from_response (company/contact enrichment)",
+        "observation": "lead_vals_from_response maps the provider payload (duns/clearbit_id, name, domain->website, email, phone_numbers, street/city/zip, state_code via _find_state_id) into crm.lead values, stamping reveal_id (inherited from iap_crm) for dedup and lead_mining_request_id for traceability; when search_type='people' the first contact's full_name/email/title enrich contact_name/email_from/function. After creation each lead gets a message_post_with_source('iap_mail.enrich_company') note rendering the full company profile. reveal_ids of leads already in the DB are sent with the request so the provider avoids returning duplicates.",
+        "source": "code-read"
+      },
+      {
+        "element": "crm.lead inherit (lead_mining_request_id, _merge_get_fields, action_generate_leads)",
+        "observation": "The module only extends crm.lead with a Many2one back-link to the originating mining request, adds that field to _merge_get_fields so it survives lead/opportunity merge, and exposes action_generate_leads which opens the mining-request wizard as a modal from the CRM pipeline. No new state machine on the lead itself — acquired leads enter the standard crm pipeline and are scored/converted by base crm.",
+        "source": "code-read"
+      },
+      {
+        "element": "external integration (gap #7) — IAP Reveal / D&B lead data provider",
+        "observation": "Single outbound integration: iap_tools.iap_jsonrpc POST to the Odoo IAP gateway (reveal.endpoint, default https://iap-services.odoo.com) endpoint /api/dnb/1/search_by_criteria. Auth is the iap.account 'reveal' account_token plus database.uuid; payload also carries db_version, db_lang, country_code and existing reveal_ids. No third-party SDK is imported and no raw api-key is stored in the module — credentials are brokered by the iap framework. This is the SOLE source of the leads the module produces; without IAP credits/connectivity the feature yields nothing.",
+        "source": "static"
+      }
+    ]
+  },
+  "it_architecture": {
+    "application": "crm_iap_mine (Lead Generation — IAP lead-acquisition add-on to CRM)",
+    "software_services": [],
+    "data_objects": [
+      "crm.iap.lead.mining.request",
+      "crm.iap.lead.industry",
+      "crm.iap.lead.role",
+      "crm.iap.lead.seniority",
+      "crm.iap.lead.helpers",
+      "crm.lead"
+    ],
+    "logical_data_erm": [
+      "crm.iap.lead.mining.request -> crm.lead (one2many lead_ids)",
+      "crm.lead -> crm.iap.lead.mining.request (many2one lead_mining_request_id)",
+      "crm.iap.lead.mining.request -> crm.team",
+      "crm.iap.lead.mining.request -> res.users",
+      "crm.iap.lead.mining.request -> crm.tag",
+      "crm.iap.lead.mining.request -> res.country / res.country.state",
+      "crm.iap.lead.mining.request -> crm.iap.lead.industry",
+      "crm.iap.lead.mining.request -> crm.iap.lead.role (preferred_role_id, role_ids)",
+      "crm.iap.lead.mining.request -> crm.iap.lead.seniority"
+    ],
+    "information_flows": [
+      "depends: iap_crm (reveal_id, IAP-CRM glue), iap_mail (enrich_company template + no-credit mail)",
+      "outbound: crm.iap.lead.mining.request._iap_contact_mining -> IAP reveal service (https://iap-services.odoo.com /api/dnb/1/search_by_criteria) authenticated by iap.account token + db_uuid",
+      "side-effect: action_submit -> external request -> crm.lead.create (lead/opportunity) + iap_mail.enrich_company log + credit debit",
+      "side-effect: credit_error from IAP -> state='error' + _notify_no_more_credit email to record creators",
+      "downstream: created crm.lead enters standard crm pipeline (scoring, stage progression, convert, won/lost)"
+    ],
+    "frontend_components": []
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Mine / Acquire External Leads (by country, industry, company size)",
+      "Contact Discovery & Company Enrichment (reveal role/seniority)",
+      "IAP Credit Metering & Top-up for Lead Generation",
+      "Provider-payload-to-Lead Mapping & Deduplication",
+      "Feed Acquired Leads into the CRM Pipeline"
+    ],
+    "value_streams": [
+      "Define-criteria -> request -> external mine -> create leads/opportunities -> enrich -> hand to CRM pipeline",
+      "Credit lifecycle: estimate -> debit on result -> notify/buy on exhaustion"
+    ],
+    "information_concepts": [
+      "crm.iap.lead.mining.request (lead acquisition request)",
+      "crm.iap.lead.industry (industry filter / reveal mapping)",
+      "crm.iap.lead.role (people role filter)",
+      "crm.iap.lead.seniority (people seniority filter)",
+      "crm.lead (acquired lead/opportunity)"
+    ],
+    "organization": [
+      "sales_team.group_sale_manager"
+    ],
+    "products": [],
+    "policies": [
+      "5 access rules: all mining config models restricted to group_sale_manager (helpers model is no-access)",
+      "credit policy: pay-per-company / pay-per-contact (CREDIT_PER_COMPANY, CREDIT_PER_CONTACT) on iap.account 'reveal'; credit_error halts and notifies",
+      "guardrails: MAX_LEAD=200, MAX_CONTACT=5, company-size and state-whitelist (_STATES_FILTER_COUNTRIES_WHITELIST) bounding requests",
+      "dedup policy: existing reveal_ids sent to provider to avoid duplicate leads"
+    ],
+    "stakeholders": [
+      "Sales Manager (group_sale_manager)",
+      "Salesperson (res.users / user_id)",
+      "Sales Team (crm.team)",
+      "Odoo IAP / Reveal data provider (external)",
+      "Prospect company & contacts (acquired lead)"
+    ],
+    "strategy": null,
+    "metrics": [
+      "lead_count (generated leads per request)",
+      "lead_credits / lead_contacts_credits / lead_total_credits (estimated credit cost)",
+      "request state distribution (draft/error/done) and error_type (credits/no_result)"
+    ]
+  },
+  "classification": {
+    "value_model": "shop",
+    "activity_class": "primary",
+    "apqc_category": "3.0 Market and Sell Products and Services (3.1 / 3.5.1 Generate / manage leads)",
+    "rationale": "crm_iap_mine is the lead-acquisition front of the CRM value-shop. A value shop solves a customer-finding problem cyclically (Stabell & Fjeldstad: problem-finding/acquisition -> solving -> choice -> execution), and this module performs exactly the problem-finding/acquisition step: the salesperson frames an acquisition problem (criteria: country, industry, size, contact roles), the system mobilizes an external knowledge resource (IAP Reveal / D&B), and materializes prospects as crm.lead records that re-enter the shop's diagnose/qualify/convert loop owned by parent crm. It is not a chain: there is no sequential transform of an inbound order into an outbound product, no inventory or BOM — output is information (leads), value rests on the quality/reputation of the data source, and the activity is iterative (re-run with refined criteria, dedup against prior results). It is a primary activity because it directly creates the pipeline input that downstream sale (chain) monetizes, mapping to APQC 3.0 Market and Sell (3.1/3.5 lead generation). Support was considered (it is a bolt-on, auto_install add-on with no routes) but rejected: its function is value-creating customer acquisition, not internal enablement like IT/HR/finance — the 'support' flavor here is purely architectural (it augments crm), whereas the business activity is squarely primary market-and-sell.",
+    "value_model_alternative_considered": "support"
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "lead/opportunity generation from an external data provider by country, state, industry and company size",
+      "people/contact discovery filtered by role or seniority",
+      "credit-metered requests with pre-estimate tooltip and in-app top-up (action_buy_credits)",
+      "automatic company enrichment note on each acquired lead (iap_mail.enrich_company)",
+      "deduplication against existing leads via reveal_id",
+      "back-link from lead to its mining request, preserved across merges",
+      "no-credit email notification to request creators"
+    ],
+    "typical_fits": [
+      "outbound prospecting teams buying targeted B2B leads on demand",
+      "seeding a new territory/segment pipeline with company + contact data",
+      "manager-controlled lead generation (group_sale_manager) feeding salespeople",
+      "leads flowing straight into standard crm scoring/conversion without extra config"
+    ],
+    "common_gaps": [
+      "dependence on Odoo IAP credits and connectivity — unusable air-gapped or without a funded reveal account",
+      "data provider coverage/quality varies by country (state filtering whitelisted for a few countries only)",
+      "no built-in scheduling/automation of recurring mining (manual action_submit per request)",
+      "alternative / 3rd-party enrichment providers require custom development",
+      "MAX_LEAD=200 / MAX_CONTACT=5 caps may need batching for large campaigns"
+    ],
+    "drive_hints": [
+      "odoo shell: r = env['crm.iap.lead.mining.request'].create({'name':'Demo','lead_number':3,'search_type':'companies'}); r._prepare_iap_payload()  # inspect outbound payload without spending credits",
+      "odoo shell: env['iap.account'].get('reveal').account_token  # confirm reveal wallet is configured",
+      "odoo shell: env['ir.config_parameter'].sudo().get_param('reveal.endpoint','https://iap-services.odoo.com')  # external endpoint",
+      "odoo shell: env['crm.iap.lead.industry'].search([], limit=5).mapped(('name','reveal_ids'))  # provider industry mapping",
+      "UI: from a CRM pipeline use 'Generate Leads' (crm.lead.action_generate_leads) to open the mining wizard"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Exact remote semantics of /api/dnb/1/search_by_criteria (result schema, partial-result and pagination behavior) — only the client side is in-repo.",
+    "Real per-request credit cost vs. the local CREDIT_PER_COMPANY/CREDIT_PER_CONTACT estimate (authoritative debit happens server-side on IAP).",
+    "Whether contact (people) data is ever attached beyond the first contact, and how multi-contact enrichment is surfaced on the lead."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/crm_iap_mine.facts.json",
+    "tools": [
+      "code-read",
+      "extract_module.py",
+      "extract_frontend.py",
+      "Grep/Read"
+    ],
+    "odoo_version": "19.0"
+  }
+}

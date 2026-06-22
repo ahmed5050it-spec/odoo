@@ -1,0 +1,290 @@
+{
+  "subsystem": "api_doc",
+  "evidence": {
+    "manifest": {
+      "name": "API Documentation",
+      "category": "Hidden",
+      "depends": [
+        "web"
+      ],
+      "auto_install": true,
+      "application": false
+    },
+    "models": [
+      {
+        "_name": "ir.attachment (extension)",
+        "_description": "Adds @api.autovacuum _gc_doc_index to garbage-collect stale cached /doc/index.json attachments",
+        "fields": 0,
+        "relations": []
+      }
+    ],
+    "routes": [
+      {
+        "paths": [
+          "/doc",
+          "/doc/<model_name>",
+          "/doc/index.html"
+        ],
+        "auth": "user",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/doc/index.json"
+        ],
+        "auth": "user",
+        "type": "json2"
+      },
+      {
+        "paths": [
+          "/doc/<model_name>.json"
+        ],
+        "auth": "user",
+        "type": "json2"
+      },
+      {
+        "paths": [
+          "/doc-bearer/index.json"
+        ],
+        "auth": "bearer",
+        "type": "json2"
+      },
+      {
+        "paths": [
+          "/doc-bearer/<model_name>.json"
+        ],
+        "auth": "bearer",
+        "type": "json2"
+      }
+    ],
+    "security": {
+      "access_rules": 0,
+      "record_rules": 0,
+      "groups": 1
+    },
+    "views": {
+      "form": 0,
+      "list": 0,
+      "kanban": 0,
+      "pivot": 0,
+      "graph": 0,
+      "calendar": 0,
+      "activity": 0
+    },
+    "frontend": {
+      "present": true,
+      "js_files": 17,
+      "xml_templates": 8,
+      "owl_components": [
+        "ApiKeyModal",
+        "DocClient",
+        "DocErrorDialog",
+        "DocLoadingIndicator",
+        "DocMethod",
+        "DocModel",
+        "DocRequest",
+        "DocSidebar",
+        "DocTable",
+        "SearchModal"
+      ],
+      "registry_adds": [
+        "actions:doc_api_key_wizard"
+      ],
+      "patches": [],
+      "services": [
+        "other",
+        "read_group"
+      ],
+      "asset_bundles": {
+        "api_doc.assets": 25,
+        "web.assets_backend": 1
+      }
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": true,
+      "endpoints": [],
+      "files": []
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    },
+    "behavioral_notes": [
+      {
+        "element": "DocController.doc_index / _doc_index (GET /doc/index.json, json2, auth=user)",
+        "observation": "Builds the top-level API reference by REFLECTING the live registry, not from any stored documentation. It iterates self.env['ir.model'].sudo().search([]), keeps only models where ir_model.model in self.env and the requesting user has_access('read'), and for each emits {model, name, fields, methods}. fields = field.field_description for every ir_model.field_id whose name is in Model._fields AND passes Model._has_field_access(field, 'read') - i.e. the listing is filtered to the caller's own field-level read rights, not a fixed schema. methods = [name for name in dir(Model) if is_public_method(Model, name)]. Module ordering comes from get_sorted_installed_modules, which feeds installed module names into odoo.modules.module_graph.ModuleGraph to return them in dependency (topological) order. This whole document is metadata-derived but assembled at request time - it cannot be seen from static model metadata because it is the union of ir.model, ORM access rights and the dependency graph computed per-user.",
+        "source": "code-read"
+      },
+      {
+        "element": "DocController.doc_model / _doc_method (GET /doc/<model_name>.json, json2, auth=user, readonly=True)",
+        "observation": "Produces the per-model schema page. After Model.check_access('read') (NotFound if model_name not in self.env), it returns {model, name, doc, fields, methods}: fields is the full Model.fields_get() enriched with the field's introducing module (next(iter(Model._fields[name]._modules))); methods maps each public method (is_public_method gate) to _doc_method(). _doc_method walks reversed(type(model).mro()) to find the parent_class that INTRODUCED the method (so docs are attributed to the right module/model), then parse_signature() runs inspect.signature() on it, strips self/cls, rewrites a Self / BaseModel / Model return annotation to 'list[int]' (mirroring how /json/2 returns recordset ids), and tags @api.model / @api.readonly from the method's _api_model / _readonly attributes. None of this signature/parameter/return introspection exists in ORM metadata - it is pure Python reflection done live.",
+        "source": "code-read"
+      },
+      {
+        "element": "is_public_method + get_public_method (the reflected surface == the callable surface)",
+        "observation": "is_public_method(model, name) calls odoo.service.model.get_public_method(model, name) and additionally drops anything carrying __deprecated__, returning None on AttributeError/AccessError. This is the SAME get_public_method gate the rpc module's /json/2 dispatcher uses to decide what is remotely callable: methods starting with '_', _UNSAFE_ATTRIBUTES, classmethods/staticmethods and @api.private are excluded. The deliberate consequence (code-read, not metadata) is that the api_doc reference is exactly the set of methods a client could actually invoke over /json/2 - the documentation surface and the executable API surface are generated from one authority, so the page never advertises a method the RPC layer would refuse.",
+        "source": "code-read"
+      },
+      {
+        "element": "auth gating: group_allow_doc + auth='bearer' twin routes",
+        "observation": "The HTML page (/doc) and the user-auth JSON routes all begin with `if not self.env.user.has_group('api_doc.group_allow_doc'): raise AccessError(...)`; security/res_groups.xml defines that group with only base.user_root linked and implied_by base.group_system, so by default ONLY the system/admin user can view the reference. The /doc HTML response also sets X-Frame-Options: deny. Each user route has a /doc-bearer/* twin (doc_bearer_index, doc_bearer_modec) that re-calls the same builder under auth='bearer' (API-key) instead of a login session - letting the in-page 'playground' fetch the same JSON the way an external program would, authenticating with res.users.apikeys rather than a cookie. The bearer twins do NOT repeat the group check (the index/model builders are shared), so bearer access is mediated by the API key's resolved user and ORM access rights.",
+        "source": "code-read"
+      },
+      {
+        "element": "Docstring -> HTML pipeline (docutils) + reStructuredText :param/:return/:raises parsing",
+        "observation": "Method/field docstrings are not passed through verbatim: enhance_signature_using_docstring runs inspect.cleandoc, parses the docstring as reStructuredText via docutils (publish_doctree under a hardened _DocUtils config: raw_enabled=False, file_insertion_enabled=False, report_level=3), and extracts RST info-fields - :param/:arg/:key (with optional inline annotation), :type, :returns, :rtype, :raises - mapping them onto the Signature's parameters / return / raise_ dicts; the remaining prose is rendered to an HTML fragment (html4css1 writer, stylesheet stripped). Malformed docstrings only log RST_PARSE_ERROR (pointing at the test_docstring linter) and degrade gracefully. This RST-to-HTML enrichment is invisible to metadata and is what turns raw Python docstrings into the rendered reference.",
+        "source": "code-read"
+      },
+      {
+        "element": "Caching: attachment-backed /doc/index.json + HMAC ETag + ir.attachment._gc_doc_index autovacuum",
+        "observation": "The index can exceed 1MiB, so it is cached server-side as an ir.attachment named odoo-doc-index-<registry_sequence>-<hmac>.json (public=False) created with sudo(), and served via index_attach._to_http_stream(); a Cache-Control: no-cache request bypasses the cache and streams a freshly generated copy. The cache/ETag key is an hmac over (db registry sequence, env.lang, sorted user group ids) - so the cached document is partitioned per language and per group-set, and invalidated whenever the registry sequence bumps (module install/upgrade). The inherited ir.attachment._gc_doc_index (@api.autovacuum) then garbage-collects every cached index whose embedded sequence != the current one. Per-model /doc/<model>.json uses only an HTTP ETag (304 Not Modified) with Cache-Control: no-cache, private, no attachment. This stale-document lifecycle is a pure code-read fact.",
+        "source": "code-read"
+      },
+      {
+        "element": "frontend (OWL single-page 'DocClient' + playground, served from /doc) - gap #3",
+        "observation": "extract_frontend.py reports present=true: 17 JS files, 8 XML/QWeb templates, 10 OWL components and a dedicated api_doc.assets bundle (25 entries). The /doc HTML route renders the 'api_doc.docclient' template, which boots a standalone OWL app: start_doc_client.js mounts DocClient onto document.body (its own App, NOT the standard WebClient). DocClient/ModelStore (doc_model_store.js) fetch('/doc/index.json') then fetch('/doc/<model>.json') to render the sidebar/model/method views; DocRequest + doc_code_gen.js generate copy-pasteable request snippets in several languages and, given an API key entered via ApiKeyModal, POST live to the /json/2 endpoint (Authorization: Bearer ...) as an interactive playground. The single web.assets_backend asset is api_action.js, which registers the 'doc_api_key_wizard' client action opening the res.users.apikeys.description form so a user can mint a key. This entire UI is static assets, not reverse-engineerable from Python metadata.",
+        "source": "static"
+      }
+    ]
+  },
+  "it_architecture": {
+    "application": "api_doc (auto-generated external API documentation: an OWL single-page reference + live playground over the registry, exposed at /doc, with user- and bearer-auth JSON reflection endpoints)",
+    "software_services": [
+      "/doc, /doc/<model_name>, /doc/index.html (OWL doc-client SPA, auth=user, group-gated)",
+      "/doc/index.json (json2: reflected module/model/field/method listing, auth=user)",
+      "/doc/<model_name>.json (json2: per-model fields_get + method signatures/docstrings, auth=user, readonly)",
+      "/doc-bearer/index.json (json2: same index under API-key auth, for the playground/external clients)",
+      "/doc-bearer/<model_name>.json (json2: same per-model schema under API-key auth, readonly)"
+    ],
+    "data_objects": [],
+    "logical_data_erm": [
+      "api_doc owns no business models; it REFLECTS the whole registry via self.env['ir.model'].search([]) at request time",
+      "the rendered reference is the union of ir.model + Model._fields/_has_field_access + dir(Model)/get_public_method, ordered by module_graph.ModuleGraph",
+      "extends ir.attachment with _gc_doc_index; caches the index as an ir.attachment row",
+      "bearer auth depends on res.users.apikeys (via web/base) to resolve a token to a uid; doc_api_key_wizard opens res.users.apikeys.description"
+    ],
+    "information_flows": [
+      "depends: web",
+      "doc render: user (group_allow_doc) -> GET /doc -> render api_doc.docclient -> OWL DocClient mounts -> fetch /doc/index.json -> fetch /doc/<model>.json",
+      "reflection: /doc/index.json -> ir.model.search([]) filtered by has_access('read') + _has_field_access -> {modules, models[{model,name,fields,methods}]}",
+      "method introspection: /doc/<model>.json -> fields_get() + per-method parse_signature(inspect.signature) + docutils RST->HTML docstring -> JSON schema",
+      "playground: in-page DocRequest -> POST /json/2/<model>/<method> (Authorization: Bearer apikey) -> live ORM result (handled by the rpc module)",
+      "cache: /doc/index.json -> ir.attachment(odoo-doc-index-<seq>-<hmac>) + HMAC ETag; ir.attachment._gc_doc_index autovacuum purges stale sequences",
+      "key minting: api_action.js doc_api_key_wizard -> res.users.apikeys.description form"
+    ],
+    "frontend_components": [
+      "DocClient (standalone OWL root mounted on document.body by start_doc_client.js)",
+      "DocSidebar",
+      "DocModel",
+      "DocMethod",
+      "DocTable",
+      "DocRequest (live playground / multi-language code generator)",
+      "ApiKeyModal",
+      "SearchModal",
+      "DocLoadingIndicator",
+      "DocErrorDialog"
+    ]
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Auto-Generate an External API Reference by Reflecting the Live Registry",
+      "Document Model Fields and Method Signatures/Docstrings (RST -> HTML)",
+      "Scope the Reference to the Viewer's Own Access Rights (per-user, per-language)",
+      "Provide an In-Browser API Playground (live Bearer calls to /json/2)",
+      "Generate Client Request Snippets in Multiple Languages",
+      "Mint and Manage API Keys for Documented Endpoints (doc_api_key_wizard)",
+      "Cache and Garbage-Collect the Generated Reference (attachment + ETag + autovacuum)"
+    ],
+    "value_streams": [
+      "Developer enablement round-trip: a developer opens /doc -> the SPA reflects the registry into a browsable model/method reference -> the developer reads a method signature/docstring -> mints an API key and runs it live in the playground -> copies generated client code into their integration"
+    ],
+    "information_concepts": [
+      "API reference document (reflected: modules, models, fields, methods)",
+      "method reflection (signature, parameters, return, raises, @api flags, introducing module)",
+      "cached doc-index attachment (ir.attachment, HMAC-keyed per registry sequence/lang/groups)",
+      "API key credential (res.users.apikeys, used by the playground / bearer routes)"
+    ],
+    "organization": [
+      "api_doc.group_allow_doc (Technical Documentation - implied by base.group_system; base.user_root linked)"
+    ],
+    "products": [],
+    "policies": [
+      "group_allow_doc gate: /doc and the user-auth JSON routes raise AccessError unless the user has api_doc.group_allow_doc (by default only system/admin)",
+      "reflection is access-right-scoped: only models with has_access('read') and fields passing _has_field_access('read') appear; the documented surface == the get_public_method-callable surface",
+      "bearer twins (/doc-bearer/*) authenticate via API key (res.users.apikeys) instead of a session, for the playground and external clients",
+      "/doc HTML response sets X-Frame-Options: deny; deprecated (__deprecated__) methods are excluded from the listing",
+      "cache invalidation: HMAC ETag over (registry sequence, lang, group ids); _gc_doc_index autovacuum purges index attachments from older registry sequences"
+    ],
+    "stakeholders": [
+      "Internal developer / integrator browsing the API reference (primary, must hold group_allow_doc)",
+      "Third-party integration developer using the bearer endpoints / playground to design /json/2 calls",
+      "System administrator (granted by default via base.group_system; mints API keys via doc_api_key_wizard)"
+    ],
+    "strategy": null,
+    "metrics": []
+  },
+  "classification": {
+    "value_model": "support",
+    "activity_class": "support",
+    "apqc_category": "13.0 Develop and Manage Business Capabilities",
+    "rationale": "api_doc is developer-enablement / API-surface tooling - firm IT infrastructure (Porter support activity; Stabell & Fjeldstad 'support'), not a value-creating primary activity of any chain/shop/network. It owns no business object: model_count=0 (only an ir.attachment extension adding one autovacuum method), 0 fields, 0 access/record rules, a single security group, 0 views - just 5 routes (~1242 Python LOC) plus a standalone OWL SPA (17 JS / 8 XML, 10 components) that REFLECTS other modules' registry into a browsable, live-runnable API reference. Its output is documentation about the system, consumed by developers, with no business state of its own. APQC 13.0 'Develop and Manage Business Capabilities' is selected because api_doc is squarely developer enablement / knowledge-and-capability development: it generates and publishes the technical reference and self-service playground that let developers build ON the platform (PCF 13.x knowledge/capability development - 'manage knowledge', 'create and manage organizational capability'). 8.0 'Manage Information Technology' was considered - api_doc is IT plumbing alongside its sibling rpc/web modules and could file under 'develop and maintain IT solutions / IT documentation' - but rejected as the weaker fit: unlike rpc (a running API gateway/runtime = IT service delivery -> 8.0), api_doc is NOT itself the executable interface; it is the documentation/knowledge surface ABOUT that interface, whose purpose is enabling developers to build capabilities, which is 13.0's intent. Either is defensible; 13.0 chosen as primary per the developer-enablement framing."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "Auto-generated /doc API reference SPA reflecting installed modules, models, fields and public methods",
+      "Per-model schema with fields_get + parsed method signatures, parameters, return/raises and RST->HTML docstrings",
+      "Access-right-scoped, per-user/per-language reference (only what the viewer may read)",
+      "In-browser playground: enter an API key and POST live to /json/2 with multi-language code generation",
+      "User-auth (session) and bearer-auth (API-key) JSON endpoints for the same documents",
+      "API-key minting from within the page (doc_api_key_wizard -> res.users.apikeys.description)",
+      "Server-side attachment cache with HMAC ETag and autovacuum garbage collection"
+    ],
+    "typical_fits": [
+      "Admin/developer browses /doc to discover model fields and callable methods before writing a /json/2 integration",
+      "Developer tries a call live in the playground, then copies generated client code (curl/python/etc.) into their app",
+      "An integrator pulls /doc-bearer/<model>.json with an API key to programmatically inspect a model's schema"
+    ],
+    "common_gaps": [
+      "Not a formal OpenAPI/Swagger spec - it is a reflected, Odoo-specific JSON contract, so standard OpenAPI tooling/codegen does not apply out of the box",
+      "Visibility limited to group_allow_doc (admin by default) - exposing it to a wider developer audience requires granting the group, with the security trade-off that entails",
+      "doc field of /doc/<model>.json is 'doc': None (TODO) - model-level docstrings are not yet rendered",
+      "Field/method ordering helpers (sort_key_field/sort_key_method) exist but are commented out - ordering is left to the client",
+      "Reference quality depends on developers writing RST-correct docstrings (test_docstring linter); undocumented methods show only a bare signature"
+    ],
+    "drive_hints": [
+      "GET /doc (as an admin / group_allow_doc user) -> confirm the OWL DocClient SPA renders the module/model sidebar",
+      "curl $URL/doc/index.json -H 'Cookie: session_id=...'  -> confirm {modules, models[...]} reflected listing",
+      "curl $URL/doc/res.partner.json -H 'Cookie: session_id=...'  -> confirm fields_get + method signatures/docstrings JSON",
+      "odoo shell: env['res.users.apikeys']._generate('rpc', 'doc playground', None) to mint a key, then curl $URL/doc-bearer/res.partner.json -H 'Authorization: Bearer <key>'",
+      "odoo shell: env['ir.attachment']._gc_doc_index() to confirm stale odoo-doc-index-*.json attachments are garbage-collected"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Exact wire shape the playground sends to /json/2 for a documented method (the page generates snippets, but the ids-vs-kwargs split is owned by the rpc module, not api_doc).",
+    "Whether model-level docstrings will ever populate the 'doc': None field (marked TODO in doc_model).",
+    "Real-world practice for widening /doc beyond admins - which custom group installations grant api_doc.group_allow_doc to developers.",
+    "How the disabled sort_key_field/sort_key_method ordering would change the rendered field/method order if re-enabled."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/api_doc.facts.json",
+    "tools": [
+      "code-read",
+      "extract_module.py",
+      "extract_frontend.py",
+      "extract_runtime.sh"
+    ],
+    "odoo_version": "19.0"
+  }
+}

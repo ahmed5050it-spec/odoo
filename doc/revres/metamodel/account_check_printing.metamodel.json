@@ -1,0 +1,233 @@
+{
+  "subsystem": "account_check_printing",
+  "evidence": {
+    "manifest": {
+      "name": "Check Printing Base",
+      "category": "Accounting/Accounting",
+      "depends": [
+        "account"
+      ],
+      "auto_install": false,
+      "application": false
+    },
+    "models": [
+      {
+        "_name": "account.payment",
+        "_description": "(extension)",
+        "fields": 6,
+        "relations": [
+          "payment_method_line_id->account.payment.method.line",
+          "journal_id->account.journal (check_manual_sequencing related)"
+        ]
+      },
+      {
+        "_name": "account.journal",
+        "_description": "(extension)",
+        "fields": 4,
+        "relations": [
+          "check_sequence_id->ir.sequence"
+        ]
+      },
+      {
+        "_name": "account.payment.method",
+        "_description": "(extension)",
+        "fields": 0,
+        "relations": []
+      },
+      {
+        "_name": "res.company",
+        "_description": "(extension)",
+        "fields": 6,
+        "relations": []
+      },
+      {
+        "_name": "print.prenumbered.checks",
+        "_description": "Print Pre-numbered Checks",
+        "fields": 1,
+        "relations": []
+      }
+    ],
+    "routes": [],
+    "security": {
+      "access_rules": 1,
+      "record_rules": 0,
+      "groups": 0
+    },
+    "views": {
+      "form": 0,
+      "list": 0,
+      "kanban": 0,
+      "pivot": 0,
+      "graph": 0,
+      "calendar": 0,
+      "activity": 0
+    },
+    "behavioral_notes": [
+      {
+        "element": "account.payment.method._get_payment_method_information",
+        "observation": "Registers a new outbound payment method with code 'check_printing' (mode 'multi', type ('bank',)). account.journal._default_outbound_payment_methods adds the 'Checks' method (data record account_payment_method_check) to bank journals when available, so 'Check' becomes selectable as an outbound payment method on bank journals.",
+        "source": "code-read"
+      },
+      {
+        "element": "account.payment.check_number / _compute_check_number / action_post",
+        "observation": "check_number is a stored computed Char with an inverse. When the journal uses no_gap sequencing, _compute_check_number pre-fills the next sequence value; on action_post (override) a manually-sequenced check consumes the journal's check_sequence_id via next_by_id(). Uniqueness per journal is enforced by a raw-SQL @api.constrains across posted payments; values must be all-digits. check_amount_in_words is computed via currency.amount_to_text. None of this numbering/validation logic is visible in metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "account.journal._create_check_sequence / post_init_hook",
+        "observation": "create() auto-creates a per-journal ir.sequence (implementation 'no_gap', padding 5) as check_sequence_id; the post_init_hook create_check_sequence_on_bank_journals back-fills sequences on existing bank journals at install. check_next_number is a computed Char whose inverse guards against decreasing the number (bank rejection) and the int32 max, then writes number_next_actual on the sudo sequence.",
+        "source": "code-read"
+      },
+      {
+        "element": "account.payment.print_checks / do_print_checks / print.prenumbered.checks wizard",
+        "observation": "print_checks filters payments with method code 'check_printing' not yet sent, requires one shared bank journal; for pre-printed (non-manual) journals it opens the print.prenumbered.checks transient wizard to capture the first printed number, then assigns consecutive padded numbers. do_print_checks resolves the check layout (journal.bank_check_printing_layout or company.account_check_printing_layout), raises a RedirectWarning to Accounting Settings if unset/'disabled', sets is_sent=True, and returns report_action.report_action(self). The cross-model side-effect (state -> in_process/posted, is_sent flagging, document/report generation) is not in metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "res.company.account_check_printing_layout / QWeb check stub (this base module)",
+        "observation": "The layout Selection ships ONLY ('disabled','None') by default; do_print_checks dereferences the chosen value as an xmlID via self.env.ref(check_layout). This base module provides the print DATA structures (_check_get_pages, _check_make_stub_pages, _check_build_page_info, INV_LINES_PER_STUB=9, multi-stub paging) but NO ir.actions.report / QWeb template -- country-specific child modules add the actual check layouts via selection_add. Out-of-the-box, printing is effectively disabled until a layout module is installed.",
+        "source": "code-read"
+      },
+      {
+        "element": "frontend (OWL/JS)",
+        "observation": "No frontend assets: 0 JS files, 0 XML/OWL templates, 0 registry registrations, 0 patches, no asset bundles. UI is server-rendered backend views plus a 'Print Checks' server action bound to account.payment list/kanban and a 'Print Check' button on the payment form.",
+        "source": "static"
+      }
+    ],
+    "frontend": {
+      "present": false,
+      "js_files": 0,
+      "xml_templates": 0,
+      "owl_components": [],
+      "registry_adds": [],
+      "patches": [],
+      "services": [],
+      "asset_bundles": {}
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": false,
+      "endpoints": [],
+      "files": []
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    }
+  },
+  "it_architecture": {
+    "application": "account_check_printing (Check Printing Base extension component of Accounting)",
+    "software_services": [],
+    "data_objects": [
+      "account.payment",
+      "account.journal",
+      "account.payment.method",
+      "res.company",
+      "print.prenumbered.checks"
+    ],
+    "logical_data_erm": [
+      "account.payment -> account.payment.method.line (payment_method_line_id)",
+      "account.payment -> account.journal (check_manual_sequencing, check_number scope)",
+      "account.journal -> ir.sequence (check_sequence_id)",
+      "res.company -> account_check_printing_layout (report xmlID selection)"
+    ],
+    "information_flows": [
+      "depends: account",
+      "side-effect: account.payment.action_post -> consumes journal check_sequence_id (manual numbering)",
+      "side-effect: account.payment.print_checks -> print.prenumbered.checks wizard -> do_print_checks -> report_action (check PDF) + is_sent=True",
+      "side-effect: account.journal.create / post_init_hook -> creates per-journal no_gap ir.sequence"
+    ],
+    "frontend_components": []
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Pay Suppliers by Check",
+      "Check Number Sequencing & Validation",
+      "Print Checks (single & pre-numbered batches)"
+    ],
+    "value_streams": [
+      "Procure-to-Pay (disbursement tail): vendor bill -> register check payment -> assign check number -> print check -> mark sent"
+    ],
+    "information_concepts": [
+      "account.payment (check payment)",
+      "account.journal (bank journal)",
+      "account.payment.method (Checks method)",
+      "ir.sequence (check numbering)"
+    ],
+    "organization": [
+      "account.group_account_user (Accounting / Billing user; gates the Print Checks action and wizard access)"
+    ],
+    "products": [],
+    "policies": [
+      "1 access rule: print.prenumbered.checks wizard restricted to account.group_account_user",
+      "constraint: check_number unique per journal across posted payments (raw SQL @api.constrains)",
+      "constraint: check numbers digits-only; next number cannot decrease (bank rejection) and cannot exceed int32"
+    ],
+    "stakeholders": [
+      "Accountant / Accounts-Payable clerk (res.users)",
+      "Supplier / Vendor (res.partner)",
+      "Bank (check-issuing institution)"
+    ],
+    "strategy": null,
+    "metrics": [
+      "Journal dashboard: num_checks_to_print (payments with method check_printing, state in_process, not yet sent)"
+    ]
+  },
+  "classification": {
+    "value_model": "support",
+    "activity_class": "support",
+    "apqc_category": "9.0 Manage Financial Resources",
+    "rationale": "account_check_printing is a payment-method extension of the accounting (support) function: it adds nothing to the primary value chain but operationalizes the disbursement step of accounts payable. It maps to APQC 9.0 Manage Financial Resources, specifically 9.5 Process payments (accounts payable / 9.5.x pay), realized on account.payment with code 'check_printing'. No own routes, no frontend, no product or revenue logic -- it is back-office plumbing around the payment document."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "'Checks' outbound payment method on bank journals",
+      "automatic & manual check number sequencing (per-journal no_gap ir.sequence)",
+      "amount-in-words and per-journal/company check layout, margins, date label, multi-page stub settings",
+      "Print Checks server action + Print Pre-numbered Checks wizard for batch printing",
+      "stub (paid-invoice summary) data generation with VOID overflow pages"
+    ],
+    "typical_fits": [
+      "pay vendor bills by check from a bank journal with sequential numbering",
+      "reprint/void handling via action_void_check (draft + cancel)",
+      "journal dashboard count of checks awaiting printing"
+    ],
+    "common_gaps": [
+      "no check layout out-of-the-box: a country/bank-specific layout module (selection_add on account_check_printing_layout) is required to actually print",
+      "custom QWeb check stationery / MICR positioning and printer margin tuning",
+      "non-digit or alphanumeric check numbering schemes (blocked by digits-only constraint)"
+    ],
+    "drive_hints": [
+      "odoo shell: env.ref('account_check_printing.account_payment_method_check').read(['name','code','payment_type'])",
+      "odoo shell: env['account.journal'].search([('type','=','bank')]).mapped(('name','check_manual_sequencing','check_next_number'))",
+      "odoo shell: env['res.company']._fields['account_check_printing_layout'].selection  # expect only [('disabled','None')] until a layout module is installed"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Which downstream modules supply the actual check QWeb layouts (account_check_printing_layout selection_add) per country/bank?",
+    "Exact account.payment state machine (draft / in_process / posted) interaction with is_sent and reconciliation across the account module.",
+    "How check printing co-exists with batch payments and bank reconciliation in installed localizations."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/account_check_printing.facts.json",
+    "tools": [
+      "code-read",
+      "extract_frontend.py",
+      "extract_module.py",
+      "extract_runtime.sh",
+      "run-odoo (odoo shell)"
+    ],
+    "odoo_version": "19.0"
+  }
+}

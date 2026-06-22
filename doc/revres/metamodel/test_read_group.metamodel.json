@@ -1,0 +1,236 @@
+{
+  "subsystem": "test_read_group",
+  "evidence": {
+    "manifest": {
+      "name": "test of (formatted/web)_read_group",
+      "category": "Hidden/Tests",
+      "depends": [
+        "base",
+        "web"
+      ],
+      "auto_install": false,
+      "application": false
+    },
+    "models": [
+      {
+        "_name": "test_read_group.aggregate",
+        "_description": "Group Test Aggregate",
+        "fields": 5
+      },
+      {
+        "_name": "test_read_group.aggregate.boolean",
+        "_description": "Group Test Read Boolean Aggregate",
+        "fields": 4
+      },
+      {
+        "_name": "test_read_group.aggregate.monetary",
+        "_description": "Group Test Read Monetary Aggregate",
+        "fields": 8
+      },
+      {
+        "_name": "test_read_group.aggregate.monetary.related",
+        "_description": "To test related currency fields in Monetary aggregates",
+        "fields": 2
+      },
+      {
+        "_name": "test_read_group.chain_inherits",
+        "_description": "ChainInherits",
+        "fields": 1
+      },
+      {
+        "_name": "test_read_group.fill_temporal",
+        "_description": "Group Test Fill Temporal",
+        "fields": 3
+      },
+      {
+        "_name": "test_read_group.on_date",
+        "_description": "Group Test Read On Date",
+        "fields": 2
+      },
+      {
+        "_name": "test_read_group.on_selection",
+        "_description": "Group Test Read On Selection",
+        "fields": 5
+      },
+      {
+        "_name": "test_read_group.order",
+        "_description": "Sales order",
+        "fields": 6
+      },
+      {
+        "_name": "test_read_group.order.line",
+        "_description": "Sales order line",
+        "fields": 4
+      },
+      {
+        "_name": "test_read_group.related_bar",
+        "_description": "RelatedBar",
+        "fields": 5
+      },
+      {
+        "_name": "test_read_group.related_base",
+        "_description": "RelatedBase",
+        "fields": 8
+      },
+      {
+        "_name": "test_read_group.related_foo",
+        "_description": "RelatedFoo",
+        "fields": 6
+      },
+      {
+        "_name": "test_read_group.related_inherits",
+        "_description": "RelatedInherits",
+        "fields": 1
+      },
+      {
+        "_name": "test_read_group.tag",
+        "_description": "Project tag",
+        "fields": 2
+      },
+      {
+        "_name": "test_read_group.task",
+        "_description": "Project task",
+        "fields": 9
+      },
+      {
+        "_name": "test_read_group.user",
+        "_description": "User",
+        "fields": 2
+      }
+    ],
+    "routes": [],
+    "security": {
+      "access_rules": 0,
+      "record_rules": 0,
+      "groups": 0
+    },
+    "views": {},
+    "frontend": {
+      "present": false,
+      "js_files": 0,
+      "xml_templates": 0,
+      "owl_components": [],
+      "registry_adds": [],
+      "patches": [],
+      "services": [],
+      "asset_bundles": {}
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": false,
+      "endpoints": [],
+      "files": []
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    },
+    "behavioral_notes": [
+      {
+        "element": "thin module",
+        "observation": "17 models, 0 routes, 7821 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
+        "source": "ast"
+      }
+    ]
+  },
+  "it_architecture": {
+    "application": "test_read_group (test of (formatted/web)_read_group)",
+    "software_services": [],
+    "data_objects": [
+      "test_read_group.aggregate",
+      "test_read_group.aggregate.boolean",
+      "test_read_group.aggregate.monetary",
+      "test_read_group.aggregate.monetary.related",
+      "test_read_group.chain_inherits",
+      "test_read_group.fill_temporal",
+      "test_read_group.on_date",
+      "test_read_group.on_selection",
+      "test_read_group.order",
+      "test_read_group.order.line",
+      "test_read_group.related_bar",
+      "test_read_group.related_base",
+      "test_read_group.related_foo",
+      "test_read_group.related_inherits",
+      "test_read_group.tag",
+      "test_read_group.task",
+      "test_read_group.user"
+    ],
+    "logical_data_erm": [
+      "test_read_group.aggregate -> res.partner",
+      "test_read_group.aggregate.monetary -> related_model_id.non_stored_currency_id",
+      "test_read_group.aggregate.monetary -> related_model_id.stored_currency_id",
+      "test_read_group.aggregate.monetary -> res.currency",
+      "test_read_group.aggregate.monetary -> test_read_group.aggregate.monetary.related",
+      "test_read_group.aggregate.monetary.related -> res.currency",
+      "test_read_group.chain_inherits -> test_read_group.related_inherits",
+      "test_read_group.order -> test_read_group.order",
+      "test_read_group.order -> test_read_group.order.line",
+      "test_read_group.order.line -> test_read_group.order",
+      "test_read_group.related_bar -> test_read_group.related_base",
+      "test_read_group.related_bar -> test_read_group.related_foo"
+    ],
+    "information_flows": [
+      "depends: base, web"
+    ],
+    "frontend_components": []
+  },
+  "business_architecture": {
+    "capabilities": [
+      "test of (formatted/web)_read_group"
+    ],
+    "value_streams": [],
+    "information_concepts": [
+      "test_read_group.aggregate",
+      "test_read_group.aggregate.boolean",
+      "test_read_group.aggregate.monetary",
+      "test_read_group.aggregate.monetary.related",
+      "test_read_group.chain_inherits",
+      "test_read_group.fill_temporal"
+    ],
+    "organization": [],
+    "products": [],
+    "policies": [],
+    "stakeholders": [],
+    "strategy": null,
+    "metrics": []
+  },
+  "classification": {
+    "value_model": "support",
+    "activity_class": "support",
+    "apqc_category": "13.0 Develop and Manage Business Capabilities",
+    "rationale": "test_read_group: thin support/support module (auto-architect baseline)."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "test of (formatted/web)_read_group"
+    ],
+    "typical_fits": [],
+    "common_gaps": [],
+    "drive_hints": [
+      "odoo shell: env['test_read_group.aggregate'].search([],limit=3)"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/test_read_group.facts.json",
+    "tools": [
+      "extract_module.py",
+      "extract_frontend.py",
+      "gen_thin.py"
+    ],
+    "odoo_version": "19.0"
+  }
+}

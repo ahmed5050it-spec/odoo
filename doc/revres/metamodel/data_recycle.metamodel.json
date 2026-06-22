@@ -1,0 +1,238 @@
+{
+  "subsystem": "data_recycle",
+  "evidence": {
+    "manifest": {
+      "name": "Data Recycle",
+      "category": "Productivity/Data Cleaning",
+      "version": "1.3",
+      "summary": "Find old records and archive/delete them",
+      "depends": ["mail"],
+      "auto_install": false,
+      "application": true
+    },
+    "models": [
+      {
+        "_name": "data_recycle.model",
+        "_description": "Recycling Model",
+        "fields": 17,
+        "relations": [
+          "res_model_id->ir.model",
+          "recycle_record_ids->data_recycle.record",
+          "time_field_id->ir.model.fields",
+          "notify_user_ids->res.users"
+        ]
+      },
+      {
+        "_name": "data_recycle.record",
+        "_description": "Recycling Record",
+        "fields": 7,
+        "relations": [
+          "recycle_model_id->data_recycle.model",
+          "res_model_id->ir.model (related)",
+          "company_id->res.company"
+        ]
+      }
+    ],
+    "routes": [],
+    "security": {
+      "access_rules": 2,
+      "record_rules": 0,
+      "groups": 0
+    },
+    "views": {
+      "form": 1,
+      "list": 2,
+      "tree": 0,
+      "kanban": 0,
+      "search": 1,
+      "pivot": 0,
+      "graph": 0,
+      "calendar": 0,
+      "activity": 0
+    },
+    "frontend": {
+      "present": true,
+      "js_files": 2,
+      "xml_templates": 1,
+      "owl_components": [],
+      "registry_adds": [
+        "views:data_recycle_list"
+      ],
+      "patches": [],
+      "services": [],
+      "asset_bundles": {
+        "web.assets_backend": 2
+      }
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": false,
+      "endpoints": [],
+      "files": []
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    },
+    "behavioral_notes": [
+      {
+        "element": "data_recycle.model (the recycle rule)",
+        "observation": "A configurable cleaning rule, not a record store. It targets a model via res_model_id->ir.model (res_model_name is the related model string), an optional ast-parsed `domain` filter, and an optional staleness threshold built from time_field_id (a date/datetime ir.model.fields) + time_field_delta + time_field_delta_unit (days/weeks/months/years). recycle_action selects 'archive' vs 'unlink' (delete); recycle_mode selects 'manual' (stage candidates for human review) vs 'automatic' (recycle immediately). A @api.constrains('recycle_action') forbids 'archive' when the target model has no 'active' field, so only deletion is possible there. include_archived flips active_test=False when scanning the target.",
+        "source": "code-read"
+      },
+      {
+        "element": "data_recycle.model._recycle_records / _cron_recycle_records",
+        "observation": "The daily cron (data/ir_cron_data.xml, 03:00, interval 1 day, code `model._cron_recycle_records()`) sudo-searches all rules and runs _recycle_records(batch_commits=True). For each rule it composes a Domain from the rule's `domain` AND a time-threshold clause `time_field <= now - relativedelta(delta)`, searches the target model, and diffs against existing data_recycle.record candidates (mapped by res_id) so it only creates NEW candidates. For recycle_mode='automatic' it batches (DR_CREATE_STEP_AUTO=5000) creating data_recycle.record rows then immediately calls action_validate(), committing per batch to survive timeouts. For 'manual' it stages candidates (DR_CREATE_STEP_MANUAL=50000) for later human validation. data_recycle.record holds no copy of the data: res_id+res_model_name is a soft pointer; _compute_name/_compute_company_id browse the live original record (active_test=False, sudo, .exists()) and show '**Record Deleted**' when it is gone.",
+        "source": "code-read"
+      },
+      {
+        "element": "data_recycle.record.action_validate / action_discard",
+        "observation": "action_validate is the executor that performs the irreversible cleanup. It resolves each candidate's original record, groups them per target model into archive-vs-unlink buckets keyed by recycle_model_id.recycle_action, then calls env[model].browse(ids).action_archive() (archive mode) or .unlink() (delete mode) under sudo, and finally unlinks the processed data_recycle.record rows. action_discard merely sets active=False on the candidate (dismiss without touching the original). _cron also calls _notify_records_to_recycle, which message_notify()s the configured notify_user_ids (system-group users) via mail when new manual candidates accumulate, throttled by notify_frequency / notify_frequency_period and last_notification.",
+        "source": "code-read"
+      },
+      {
+        "element": "frontend OWL list view (static/src/views, gap #3)",
+        "observation": "A dedicated OWL list view registered as registry.category('views').add('data_recycle_list') with DataRecycleListController extends DataCleaningCommonListController extends @web ListController, and a buttonTemplate 'DataRecycle.buttons' (t-inherit of web.ListView.Buttons) that injects 'Validate' and 'Unselect' buttons when records are selected. onValidateClick collects selected res ids and ORM-calls data_recycle.record.action_validate to execute the archive/delete in bulk; openRecord is overridden to open the ORIGINAL record's form (res_model_name/res_id) rather than the candidate row. This bespoke review/recycle UI is pure static JS/XML, invisible to Python metadata.",
+        "source": "static"
+      },
+      {
+        "element": "scope vs data_merge (dedupe)",
+        "observation": "data_recycle has only two models (data_recycle_model.py, data_recycle_record.py) and no ir_model.py / dedupe-grouping logic; it is strictly staleness/domain-based archive-or-delete recycling. Duplicate detection and merging live in the sibling Data Merge (data_merge) module — the shared DataCleaningCommonListController base class hints at that common Data Cleaning UI lineage, but no merge code is present in data_recycle itself.",
+        "source": "code-read"
+      }
+    ]
+  },
+  "it_architecture": {
+    "application": "data_recycle (Data Cleaning rule engine: configurable staleness/domain recycle rules that archive or delete stale records, driven by a daily cron with an OWL review UI)",
+    "software_services": [],
+    "data_objects": [
+      "data_recycle.model",
+      "data_recycle.record"
+    ],
+    "logical_data_erm": [
+      "data_recycle.model -> ir.model (res_model_id: target model)",
+      "data_recycle.model -> ir.model.fields (time_field_id: staleness field)",
+      "data_recycle.model -> res.users (notify_user_ids)",
+      "data_recycle.model -> data_recycle.record (recycle_record_ids)",
+      "data_recycle.record -> data_recycle.model (recycle_model_id)",
+      "data_recycle.record -> res.company (company_id, computed)",
+      "data_recycle.record .res_id/.res_model_name -> any target record (soft polymorphic pointer)"
+    ],
+    "information_flows": [
+      "depends: mail (message_notify notifications to admins)",
+      "cron: ir.cron (daily 03:00) -> data_recycle.model._cron_recycle_records -> _recycle_records + _notify_records_to_recycle",
+      "rule->candidate: _recycle_records composes domain + time-threshold, searches target model, creates data_recycle.record candidates (diffed against existing)",
+      "candidate->cleanup: data_recycle.record.action_validate -> env[target].action_archive() OR .unlink() (side-effect on arbitrary business models)",
+      "notify: _notify_records_to_recycle -> mail.thread.message_notify -> notify_user_ids (system group)",
+      "ui: OWL data_recycle_list view -> Validate button -> ORM action_validate; openRecord opens the original target record"
+    ],
+    "frontend_components": [
+      "DataRecycleListController (extends DataCleaningCommonListController / @web ListController)",
+      "DataCleaningCommonListController (shared Data Cleaning list base)",
+      "DataRecycle.buttons template (Validate / Unselect buttons, t-inherit of web.ListView.Buttons)",
+      "views registry entry 'data_recycle_list'"
+    ]
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Define Data Retention / Recycle Rules (per target model, domain + staleness threshold)",
+      "Detect Stale / Expired Records (time-field delta scan)",
+      "Stage Cleanup Candidates for Review (manual mode)",
+      "Execute Archive or Delete (recycle action)",
+      "Automate Periodic Data Cleaning (daily cron)",
+      "Notify Data Stewards of Pending Cleanup (mail)"
+    ],
+    "value_streams": [
+      "Rule-to-Candidate: define recycle rule -> nightly cron scan -> staged data_recycle.record candidates",
+      "Candidate-to-Cleanup: review candidates -> validate -> archive/unlink original records (or automatic mode skips review)"
+    ],
+    "information_concepts": [
+      "data_recycle.model (recycle rule)",
+      "data_recycle.record (cleanup candidate)",
+      "recycle action (archive | unlink)",
+      "staleness threshold (time_field + delta + unit)"
+    ],
+    "organization": [
+      "base.group_system (Settings/Administration — the only group with access; both ACLs are system-only)"
+    ],
+    "products": [],
+    "policies": [
+      "Daily ir.cron at 03:00 drives automatic scanning and notification",
+      "@api.constrains: archive mode forbidden on models without an 'active' field (delete-only)",
+      "CHECK constraint notify_frequency > 0",
+      "Notifications throttled by notify_frequency / period / last_notification",
+      "All cleanup runs under sudo() with per-batch commits to survive timeouts"
+    ],
+    "stakeholders": [
+      "System administrator / data steward (configures rules, reviews and validates candidates)",
+      "Record owners across any module (their stale records are archived/deleted)",
+      "DPO / compliance (data minimization & retention enforcement)"
+    ],
+    "strategy": null,
+    "metrics": [
+      "records_to_recycle_count (pending candidates per rule)",
+      "count of new candidates since last_notification (notification trigger)"
+    ]
+  },
+  "classification": {
+    "value_model": "support",
+    "activity_class": "support",
+    "apqc_category": "13.0 Develop and Manage Business Capabilities",
+    "rationale": "data_recycle is a cross-cutting data-quality / data-governance capability — firm IT infrastructure (Porter support activity; Stabell & Fjeldstad 'support'). It produces no externally-sold output and belongs to no single value chain/shop/network; instead it is generic data-lifecycle housekeeping that operates polymorphically on ANY target model (res_model_id) to enforce retention and remove stale/expired records by archive or delete. That places it in APQC 13.0 'Develop and Manage Business Capabilities', whose 13.x scope includes managing enterprise data/information assets and data quality / master-data management — a governance capability that other capabilities rely on rather than an IT-delivery runtime. APQC 8.0 'Manage Information Technology' was considered because the work is automated by a cron and touches the ORM, but rejected: 8.0 is about delivering IT services/applications/infrastructure, whereas data_recycle governs the lifecycle and quality of business DATA (retention, archiving, purging) — a data-governance capability, which is 13.0. The module is application=true with admin-only ACLs and two thin config/candidate models (no business documents, no routes), confirming it is a governance/housekeeping tool, not a primary value activity."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "Per-model recycle rules with an ast-parsed domain filter",
+      "Time-based staleness detection (date/datetime field + delta + unit)",
+      "Archive or Delete (unlink) recycle actions",
+      "Manual (review queue) vs Automatic (immediate) recycle modes",
+      "Daily background cron scanning all rules",
+      "Admin notifications via mail with frequency throttling",
+      "OWL review list view with bulk Validate / Unselect"
+    ],
+    "typical_fits": [
+      "Purge old logs/leads/mail/attachments by age (e.g. crm.lead older than N months)",
+      "Archive inactive partners/records instead of deleting where 'active' exists",
+      "Scheduled retention enforcement for GDPR/data-minimization housekeeping"
+    ],
+    "common_gaps": [
+      "No duplicate detection / merge — dedupe is the sibling data_merge module",
+      "Domain is a single stored string (no UI rule-builder beyond a domain widget); complex/cross-model rules need care",
+      "No soft-undo: unlink is permanent (only archive is reversible); validation is irreversible for delete rules",
+      "Notifications limited to base.group_system users; no per-steward routing or approval workflow",
+      "No per-record audit log of what was recycled once candidates are unlinked after validation"
+    ],
+    "drive_hints": [
+      "odoo shell: env['data_recycle.model'].create({'name':'Old leads','res_model_id':env.ref('crm.model_crm_lead').id,'time_field_delta':6,'time_field_delta_unit':'months','recycle_action':'archive','recycle_mode':'manual'}).action_recycle_records()",
+      "odoo shell: env['data_recycle.model'].search([])._cron_recycle_records() to run the nightly scan + notify on demand",
+      "odoo shell: env['data_recycle.record'].search([]).action_validate() to execute staged archive/delete",
+      "UI: Settings > Technical > Data Cleaning (Recycle Records) -> open a rule -> Validate selected candidates"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "stakeholders": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Does any data flow exist between data_recycle and the sibling data_merge module beyond the shared DataCleaningCommonListController UI base class?",
+    "Real-world adoption: which target models customers most commonly configure rules against (no runtime data captured here).",
+    "Whether automatic-mode delete rules on large models risk timeouts despite per-batch commits."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/data_recycle.facts.json",
+    "tools": [
+      "code-read",
+      "extract_module.py",
+      "extract_frontend.py"
+    ],
+    "odoo_version": "19.0"
+  }
+}

@@ -1,0 +1,256 @@
+{
+  "subsystem": "website_sale_comparison",
+  "evidence": {
+    "manifest": {
+      "name": "Product Comparison",
+      "category": "Website/Website",
+      "depends": [
+        "website_sale"
+      ],
+      "auto_install": true,
+      "application": false
+    },
+    "models": [
+      {
+        "_name": "product.attribute.category",
+        "_description": "Product Attribute Category",
+        "fields": 3,
+        "relations": [
+          "attribute_ids->product.attribute"
+        ]
+      },
+      {
+        "_name": "product.attribute",
+        "_description": "(extension) attribute tagged with an eCommerce comparison category",
+        "fields": 1,
+        "relations": [
+          "category_id->product.attribute.category"
+        ]
+      },
+      {
+        "_name": "product.product",
+        "_description": "(extension) comparison-table value grouping helper",
+        "fields": 0,
+        "relations": []
+      },
+      {
+        "_name": "product.template.attribute.line",
+        "_description": "(extension) spec-table category grouping helper",
+        "fields": 0,
+        "relations": []
+      }
+    ],
+    "routes": [
+      {
+        "paths": [
+          "/shop/compare"
+        ],
+        "auth": "public",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/shop/compare/get_product_data"
+        ],
+        "auth": "public",
+        "type": "jsonrpc"
+      }
+    ],
+    "security": {
+      "access_rules": 4,
+      "record_rules": 0,
+      "groups": 0
+    },
+    "views": {
+      "form": 0,
+      "list": 1,
+      "kanban": 0,
+      "search": 0,
+      "graph": 0
+    },
+    "frontend": {
+      "present": true,
+      "js_files": 5,
+      "xml_templates": 4,
+      "owl_components": [
+        "ProductComparisonBottomBar",
+        "ProductRow"
+      ],
+      "registry_adds": [
+        "public.interactions:website_sale_comparison.comparison_page",
+        "public.interactions:website_sale_comparison.product_comparison"
+      ],
+      "patches": [],
+      "services": [],
+      "asset_bundles": {
+        "web.assets_frontend": 4,
+        "web.assets_tests": 1,
+        "website.website_builder_assets": 1
+      }
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": false,
+      "endpoints": [],
+      "files": []
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    },
+    "behavioral_notes": [
+      {
+        "element": "product.product._prepare_categories_for_display (models/product_product.py)",
+        "observation": "Builds the comparison-table data structure that drives the /shop/compare page. It collects valid_product_template_attribute_line_ids.attribute_id across the products being compared, then nests an OrderedDict of product.attribute.category -> product.attribute -> {product: [product.template.attribute.value]}. Attributes with no category fall into an empty product.attribute.category bucket. Categories and attributes are .sorted() (category by sequence/id, see product_attribute_category._order). For no_variant attributes it falls back to attribute_line_ids.value_ids so all possible values are shown. This per-attribute, per-product alignment is exactly the row/column diffing of the comparison grid and is invisible to metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "/shop/compare route (controllers/main.py WebsiteSaleProductComparison.product_compare)",
+        "observation": "http/public route that renders the comparison table. It does NOT read a server-side session list: it parses a `products` query-string CSV of product.product ids (e.g. /shop/compare?products=3,7,9), filters non-digits, and redirects to /shop when empty. It deliberately uses product.product.search([('id','in',ids)]) rather than browse() so public ACL read access is enforced per record, then renders website_sale_comparison.product_compare with the products (display_default_code=False). The set of ids to compare is supplied by the frontend (cookie) via the query string, not held in request.session.",
+        "source": "code-read"
+      },
+      {
+        "element": "/shop/compare/get_product_data (jsonrpc) + product.attribute.category grouping model",
+        "observation": "jsonrpc/public endpoint returning per-product pricing/display data (display_name, website_url, image_1024 url, price, currency, strikethrough/compare_list_price) by calling product._get_combination_info_variant() for each id; used to hydrate the comparison bottom bar / rows. The grouping is data-modelled by the new product.attribute.category model (name, sequence index, attribute_ids one2many) plus the product.attribute.category_id ('eCommerce Category') extension, letting merchants regroup similar attributes into table sections. product.template.attribute.line._prepare_categories_for_display(_in_specs_table) reuses the same category grouping for the product-page spec table, filtering single custom-value lines.",
+        "source": "code-read"
+      },
+      {
+        "element": "compare list lives in a browser cookie + OWL/JS (gap #3), NOT in server session",
+        "observation": "static/src/js/website_sale_comparison_utils.js stores compared product ids in a browser cookie `comparison_product_ids` (JSON array, MAX 4) with get/set/add/remove/clear helpers and an EventBus 'comparison_products_changed' event. The product_comparison public interaction wires .o_add_compare / .o_comparelist_remove clicks to add/remove (creating a variant via /sale/create_product_variant when needed), enforces max-4 and already-added warnings, mounts the ProductComparisonBottomBar OWL component, and on remove redirects to /shop/compare?products=<csv> (or /shop when empty). So the 'session-held' compare list is actually client cookie state threaded into the route via the query string, invisible to Python metadata.",
+        "source": "static"
+      }
+    ]
+  },
+  "it_architecture": {
+    "application": "website_sale_comparison (eCommerce product-comparison add-on; extends the website_sale storefront)",
+    "software_services": [
+      "/shop/compare (http: render side-by-side attribute comparison table)",
+      "/shop/compare/get_product_data (jsonrpc: per-product price/display data for the compare bar)"
+    ],
+    "data_objects": [
+      "product.attribute.category",
+      "product.attribute",
+      "product.product",
+      "product.template.attribute.line"
+    ],
+    "logical_data_erm": [
+      "product.attribute.category -> product.attribute (attribute_ids, one2many)",
+      "product.attribute -> product.attribute.category (category_id, 'eCommerce Category')",
+      "product.product -> product.template.attribute.value (compared values via valid attribute lines)"
+    ],
+    "information_flows": [
+      "depends: website_sale (storefront product, variants, public categories)",
+      "inbound: storefront 'add to compare' -> client cookie comparison_product_ids -> /shop/compare?products=<csv>",
+      "side-effect: product.product._prepare_categories_for_display assembles category->attribute->product->value grid for the comparison template",
+      "side-effect: /shop/compare/get_product_data -> product._get_combination_info_variant for pricing/display in the compare bar",
+      "merchant config: product.attribute.category_id groups attributes into comparison-table sections"
+    ],
+    "frontend_components": [
+      "ProductComparisonBottomBar",
+      "ProductRow"
+    ]
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Side-by-Side Product Comparison (attribute table)",
+      "Attribute Categorization / Specs Grouping for Merchandising",
+      "Add/Remove Products to a Comparison List",
+      "Comparison-Aware Storefront Engagement (compare bar)"
+    ],
+    "value_streams": [
+      "Browse-to-Compare-to-Decide: add products to compare -> view aligned attribute/price table -> proceed to product page / cart",
+      "Supports the website_sale Browse-to-Order stream by aiding pre-purchase product selection"
+    ],
+    "information_concepts": [
+      "product.attribute.category (eCommerce comparison category)",
+      "product.attribute (with comparison category)",
+      "product.product (compared item)",
+      "product.template.attribute.line (spec rows)"
+    ],
+    "organization": [
+      "base.group_public (anonymous shopper - read attribute categories)",
+      "base.group_portal (online customer - read)",
+      "base.group_user (internal user - read)",
+      "sales_team.group_sale_manager (manage comparison categories)"
+    ],
+    "products": [
+      "product.product (variant being compared)",
+      "product.attribute / product.attribute.value (comparison axes)"
+    ],
+    "policies": [
+      "4 ACLs, no record rules: read on product.attribute.category for public/portal/internal; full CRUD only for sales_team.group_sale_manager",
+      "Client-side policy: maximum 4 products per comparison (MAX_COMPARISON_PRODUCTS), de-dup on add",
+      "/shop/compare uses search() (not browse) to enforce per-record public read ACL"
+    ],
+    "stakeholders": [
+      "Online Shopper (public visitor / portal customer)",
+      "eCommerce Manager / Sales Manager (curates attribute categories)",
+      "Website Publisher (storefront layout / compare snippet)"
+    ],
+    "strategy": null,
+    "metrics": [
+      "Comparison engagement (products added, comparisons viewed) - not modelled server-side; would require web analytics"
+    ]
+  },
+  "classification": {
+    "value_model": "network",
+    "activity_class": "primary",
+    "apqc_category": "3.0 Market and Sell Products and Services",
+    "rationale": "website_sale_comparison is a storefront merchandising/engagement add-on of the website_sale value network (auto_install=true on top of website_sale). It adds no chain document flow of its own: it neither transforms inputs nor confirms orders. Instead it enriches the shared eCommerce platform with a side-by-side attribute comparison capability that helps many anonymous/portal visitors self-select among catalog products (network logic of mediation over shared infrastructure, Stabell & Fjeldstad), inheriting website_sale's network classification. Its economic role is sell-side merchandising/conversion support on the online channel, hence APQC 3.0 Market and Sell Products and Services (eCommerce merchandising). Activity is primary because it is customer-facing, revenue-channel functionality that directly supports the storefront purchase decision, not a back-office support function. strategy is null (human-supplied)."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "Public /shop/compare page rendering a side-by-side attribute comparison table",
+      "Attribute values aligned per attribute and grouped by configurable eCommerce attribute category",
+      "Add-to-compare / remove-from-compare buttons across shop and product pages",
+      "Client-side comparison list (cookie) capped at 4 products with de-duplication",
+      "Comparison bottom bar with live per-product price/display data (jsonrpc)",
+      "Reuse of attribute categories in the product-page specifications table",
+      "no_variant attributes show all possible values in the comparison"
+    ],
+    "typical_fits": [
+      "B2C catalogs where shoppers compare variants on technical attributes (electronics, appliances)",
+      "Merchants grouping many attributes into readable spec sections via product.attribute.category",
+      "Anonymous + logged-in shoppers comparing without an account"
+    ],
+    "common_gaps": [
+      "Server-side / persistent (cross-device) comparison lists - state is a browser cookie only",
+      "Comparing more than 4 products, or across different attribute taxonomies",
+      "Comparison analytics / conversion tracking (no server-side metrics)",
+      "Comparing non-attribute facts (price history, reviews, stock) beyond the provided price fields",
+      "Custom comparison-table layout beyond the supplied snippet/options"
+    ],
+    "drive_hints": [
+      "curl -s 'http://localhost:8069/shop/compare?products=1,2'  # render comparison table (auth=public)",
+      "odoo shell: env['product.attribute.category'].search([]).mapped(('name','sequence'))",
+      "odoo shell: env['product.product'].browse([1,2])._prepare_categories_for_display()  # inspect grid structure",
+      "curl jsonrpc /shop/compare/get_product_data {product_ids:[1,2]}  # per-product compare-bar data"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Whether the comparison cookie is ever reconciled with a logged-in partner for cross-device persistence (appears purely client-side).",
+    "How _get_combination_info_variant resolves pricelist/discount context for anonymous vs portal users on the compare bar.",
+    "Whether merchants commonly curate product.attribute.category in practice, or attributes mostly fall into the uncategorized bucket."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/website_sale_comparison.facts.json",
+    "tools": [
+      "code-read",
+      "extract_frontend.py",
+      "extract_module.py",
+      "run-odoo (odoo shell)"
+    ],
+    "odoo_version": "19.0"
+  }
+}

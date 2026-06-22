@@ -1,0 +1,338 @@
+{
+  "subsystem": "pos_online_payment",
+  "evidence": {
+    "manifest": {
+      "name": "Point of Sale online payment",
+      "category": null,
+      "summary": null,
+      "author": "Odoo S.A.",
+      "license": "LGPL-3",
+      "depends": [
+        "point_of_sale",
+        "account_payment"
+      ],
+      "auto_install": true,
+      "application": false
+    },
+    "models": [
+      {
+        "_name": "payment.transaction",
+        "_inherit": "payment.transaction",
+        "_description": "Payment Transaction (POS extension)",
+        "fields": 1,
+        "relations": [
+          "pos_order_id->pos.order"
+        ]
+      },
+      {
+        "_name": "pos.order",
+        "_inherit": "pos.order",
+        "_description": "Point of Sale Orders (online-payment extension)",
+        "fields": 2,
+        "relations": [
+          "online_payment_method_id->pos.payment.method"
+        ]
+      },
+      {
+        "_name": "pos.payment.method",
+        "_inherit": "pos.payment.method",
+        "_description": "Point of Sale Payment Methods (online-payment extension)",
+        "fields": 4,
+        "relations": [
+          "online_payment_provider_ids->payment.provider"
+        ]
+      },
+      {
+        "_name": "pos.payment",
+        "_inherit": "pos.payment",
+        "_description": "Point of Sale Payments (online-payment extension)",
+        "fields": 1,
+        "relations": [
+          "online_account_payment_id->account.payment"
+        ]
+      },
+      {
+        "_name": "account.payment",
+        "_inherit": "account.payment",
+        "_description": "Account Payment (POS link)",
+        "fields": 1,
+        "relations": [
+          "pos_order_id->pos.order"
+        ]
+      },
+      {
+        "_name": "pos.config",
+        "_inherit": "pos.config",
+        "_description": "Point of Sale Configuration (online-payment constraints)",
+        "fields": 0,
+        "relations": []
+      },
+      {
+        "_name": "pos.session",
+        "_inherit": "pos.session",
+        "_description": "Point of Sale Session (online-payment extension)",
+        "fields": 0,
+        "relations": []
+      }
+    ],
+    "routes": [
+      {
+        "paths": ["/pos/pay/<int:pos_order_id>"],
+        "auth": "public",
+        "type": "http"
+      },
+      {
+        "paths": ["/pos/pay/transaction/<int:pos_order_id>"],
+        "auth": "public",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": ["/pos/pay/confirmation/<int:pos_order_id>"],
+        "auth": "public",
+        "type": "http"
+      }
+    ],
+    "security": {
+      "access_rules": 0,
+      "record_rules": 0,
+      "groups": 0
+    },
+    "views": {
+      "form": 0,
+      "list": 0,
+      "tree": 0,
+      "kanban": 0,
+      "search": 0,
+      "pivot": 0,
+      "graph": 0,
+      "calendar": 0,
+      "activity": 0
+    },
+    "frontend": {
+      "present": true,
+      "js_files": 9,
+      "xml_templates": 1,
+      "owl_components": [
+        "OnlinePaymentPopup"
+      ],
+      "registry_adds": [],
+      "patches": [
+        "CustomerDisplay.prototype",
+        "CustomerDisplayPosAdapter.prototype",
+        "OrderPaymentValidation.prototype",
+        "PaymentScreen.prototype",
+        "PosOrder.prototype",
+        "PosPayment.prototype",
+        "PosStore.prototype"
+      ],
+      "services": [],
+      "asset_bundles": {
+        "point_of_sale.assets_prod": 3,
+        "point_of_sale.customer_display_assets": 2,
+        "point_of_sale.customer_display_assets_test": 2,
+        "web.assets_tests": 2
+      }
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": true,
+      "endpoints": [],
+      "files": []
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    },
+    "behavioral_notes": [
+      {
+        "element": "pos.payment.method (is_online_payment / online_payment_provider_ids / _force_online_payment_values / _check_pos_config_online_payment)",
+        "observation": "The module turns a pos.payment.method into an 'online' method via is_online_payment plus a m2m online_payment_provider_ids of payment.provider records (empty = all published enabled/test providers). When is_online_payment is set, create/write call _force_online_payment_values which blanks the terminal/journal-bound fields (journal_id, receivable_account_id, outstanding_account_id, use_payment_terminal, qr_code_method, is_cash_count, split_transactions) and forces type='online', payment_method_type='none' -- so the online method deliberately does NOT settle through a POS journal like cash/card. A constraint (_check_pos_config_online_payment + pos.config._check_online_payment_methods) enforces at most one online payment method per pos.config and that its providers share the config currency. This constrained schema-mutation is invisible to field metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "controllers/payment_portal.py (/pos/pay, /pos/pay/transaction, /pos/pay/confirmation)",
+        "observation": "PaymentPortal subclasses the core payment portal. GET /pos/pay/<pos_order_id> authorises the order via _document_check_access(access_token), requires the pos.session be 'opened', resolves the partner (falling back to the company public user, else redirect to login), computes amount_to_pay from next_online_payment_amount (or the unpaid balance), intersects the order's online-method providers with _get_compatible_providers, and renders the pos_online_payment.pay payment form. JSONRPC /pos/pay/transaction/<id> re-validates session/amount/provider, forces currency and partner, injects custom_create_values={'pos_order_id': order.id}, disables tokenization for public users, then calls the inherited _create_transaction and sets the tx landing_route back to /pos/pay/confirmation. The amount is re-checked server-side against the order so a customer cannot pay a stale total. All three routes are auth='public' so an unauthenticated phone (e.g. via a scanned link/QR) can pay.",
+        "source": "code-read"
+      },
+      {
+        "element": "payment.transaction._process_pos_online_payment / _post_process (settlement feedback)",
+        "observation": "When a transaction reaches authorized/done -- either synchronously at GET /pos/pay/confirmation (which calls tx._process_pos_online_payment after checking tx.pos_order_id matches and state in authorized/done) or asynchronously via the inherited _post_process override -- the module mints the accounting payment (account.payment via _create_payment if account_payment did not already), resolves the order's online pos.payment.method (creating one with _get_or_create_online_payment_method if needed), and calls pos_order.add_payment(...) to write a pos.payment line linked to the account.payment (online_account_payment_id). If the order is still draft and _is_pos_order_paid() it runs _process_saved_order(False) to finalise it (paid -> picking/invoice via base POS). Finally it fires pos.config._notify('ONLINE_PAYMENTS_NOTIFICATION', {'id': order.id}) on the bus so the cashier's OWL terminal does a safe RPC to refresh the order state. This webhook-driven, idempotent feedback from a confirmed transaction into a POS payment line is pure Python and invisible to metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "pos.order online-payment lifecycle (_compute_online_payment_method_id / get_and_set_online_payments_data / _process_order)",
+        "observation": "pos.order gains online_payment_method_id (computed from the config's single online method) and next_online_payment_amount (the amount the cashier requests for the next phone payment, validated to be within the unpaid balance). get_and_set_online_payments_data is the RPC the terminal polls to set that amount and read back online payments already made / amount unpaid; if the requested amount is 0 and the order is an empty draft (no online payments, not restaurant, no trusted config) it _clean_payment_lines and deletes the throwaway order created only for the pay flow. _process_order strips any client-supplied online payment lines from draft orders so the online tender is only ever recorded server-side from a real confirmed transaction.",
+        "source": "code-read"
+      },
+      {
+        "element": "pos.payment online-payment integrity guards",
+        "observation": "pos.payment.create refuses an online-method payment that has no linked online_account_payment_id (account.payment), and refuses a non-online method that carries one; pos.payment.write blocks editing essential data (amount/date/method/order/account link) of an online payment. _check_payment_method_id only warns (does not block) when the saved online method differs from the order's currently configured one, so a settled online payment is never lost even if the config later changes. These invariants enforce the one-to-one online-payment<->account.payment binding.",
+        "source": "code-read"
+      },
+      {
+        "element": "frontend (OnlinePaymentPopup + PaymentScreen/PosStore/CustomerDisplay patches) -- gap #3",
+        "observation": "The cashier-side experience is OWL/JS: the module adds a single OnlinePaymentPopup component and patches PaymentScreen, OrderPaymentValidation, PosStore, PosOrder and PosPayment plus the CustomerDisplay / CustomerDisplayPosAdapter (so a customer-facing screen can show a QR/link to pay). 9 JS files / 1 XML template across point_of_sale.assets_prod and the customer_display bundles, no new registry services. The screen flow that requests an online payment, shows the pay link/QR and waits for the ONLINE_PAYMENTS_NOTIFICATION bus signal to mark the order paid lives entirely in this client code and is not reverse-engineerable from Python metadata.",
+        "source": "static"
+      }
+    ]
+  },
+  "it_architecture": {
+    "application": "pos_online_payment (auto-installed bridge: lets a POS customer settle a pos.order online through a payment.provider; backend ORM glue + public payment portal + OWL POS overrides)",
+    "software_services": [
+      "/pos/pay/<pos_order_id> (public payment form for a POS order)",
+      "/pos/pay/transaction/<pos_order_id> (jsonrpc: create the payment.transaction)",
+      "/pos/pay/confirmation/<pos_order_id> (public landing/confirmation -> settle into POS)"
+    ],
+    "data_objects": [
+      "payment.transaction (+pos_order_id)",
+      "pos.order (+online_payment_method_id, +next_online_payment_amount)",
+      "pos.payment.method (+is_online_payment, +online_payment_provider_ids, +type 'online')",
+      "pos.payment (+online_account_payment_id)",
+      "account.payment (+pos_order_id)",
+      "pos.config (online-payment constraints)",
+      "pos.session"
+    ],
+    "logical_data_erm": [
+      "payment.transaction -> pos.order (pos_order_id)",
+      "pos.order -> pos.payment.method (online_payment_method_id, the single online method on the config)",
+      "pos.payment.method -> payment.provider (online_payment_provider_ids, m2m)",
+      "pos.payment -> account.payment (online_account_payment_id, one2one)",
+      "account.payment -> pos.order (pos_order_id)",
+      "pos.order -> pos.payment (payment_ids, base POS)"
+    ],
+    "information_flows": [
+      "depends: point_of_sale, account_payment (which depends on payment + account)",
+      "inbound: customer phone (public) GET /pos/pay -> jsonrpc /pos/pay/transaction -> payment._create_transaction (provider redirect/inline/token)",
+      "inbound: acquirer confirm/webhook -> payment.transaction authorized|done -> _process_pos_online_payment",
+      "side-effect: _process_pos_online_payment -> account.payment (_create_payment) + pos.payment line (add_payment) + finalise draft order (_process_saved_order)",
+      "bus: pos.config._notify('ONLINE_PAYMENTS_NOTIFICATION') -> cashier OWL terminal refreshes order state via RPC",
+      "frontend: cashier requests next_online_payment_amount, shows pay link/QR on PaymentScreen + CustomerDisplay"
+    ],
+    "frontend_components": [
+      "OnlinePaymentPopup",
+      "PaymentScreen.prototype (patch)",
+      "OrderPaymentValidation.prototype (patch)",
+      "PosStore.prototype (patch)",
+      "PosOrder.prototype (patch)",
+      "PosPayment.prototype (patch)",
+      "CustomerDisplay.prototype (patch)",
+      "CustomerDisplayPosAdapter.prototype (patch)"
+    ],
+    "external_integrations": {
+      "sdk": null,
+      "uses_api_keys": true,
+      "files": [],
+      "pattern": "No direct outbound HTTP in this module: it reuses the payment engine's providers. The actual acquirer API calls / api-keys live in the underlying payment + payment_<provider> modules; this bridge only selects compatible payment.provider records and drives the transaction lifecycle.",
+      "note": "gap #7 here is indirect -- external reach is delegated to the payment engine; this module contributes the POS-order binding and settlement feedback."
+    }
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Collect POS Payment Online (customer pays a pos.order from their own phone)",
+      "Generate Pay Link / QR for a POS Order",
+      "Configure an Online Payment Method (one per till, with allowed providers)",
+      "Settle Confirmed Transaction into a POS Payment Line",
+      "Reconcile Online POS Payment to an Accounting Payment"
+    ],
+    "value_streams": [
+      "Pay-POS-Order-Online: cashier requests online tender (next_online_payment_amount) -> show link/QR -> customer opens /pos/pay -> create + confirm payment.transaction at provider -> _process_pos_online_payment writes account.payment + pos.payment -> order marked paid -> bus notifies terminal"
+    ],
+    "information_concepts": [
+      "payment.transaction",
+      "pos.order",
+      "pos.payment.method",
+      "pos.payment",
+      "account.payment",
+      "payment.provider",
+      "pos.config"
+    ],
+    "organization": [
+      "(no module-owned res.groups; reuses point_of_sale POS groups and public/portal access for the customer-facing pay routes)"
+    ],
+    "products": [],
+    "policies": [
+      "at most one online payment method per pos.config (_check_pos_config_online_payment / pos.config._check_online_payment_methods)",
+      "online method providers must share the POS config currency (_get_online_payment_providers error_if_invalid)",
+      "online payment lines are never trusted from the client: stripped from draft orders in _process_order and only written server-side from a confirmed transaction",
+      "online pos.payment must be 1:1 with an account.payment and is immutable once saved (pos.payment.create/write guards)",
+      "pay routes require an opened pos.session and a valid access_token (_check_order_access / _ensure_session_open)"
+    ],
+    "stakeholders": [
+      "POS Customer / Payer (res.partner or public user, pays on their phone)",
+      "Cashier / POS User (requests the online payment at the till)",
+      "Payment Provider (external acquirer, via the payment engine)",
+      "Accountant (consumes the account.payment + session closing entry)"
+    ],
+    "strategy": null,
+    "metrics": [
+      "online vs total tendered amount per pos.order (amount_paid / amount_unpaid)",
+      "payment.transaction state distribution for POS-linked transactions (inherited payment reporting)"
+    ]
+  },
+  "classification": {
+    "value_model": "chain",
+    "activity_class": "primary",
+    "apqc_category": "3.0 Market and Sell Products and Services",
+    "rationale": "pos_online_payment is an auto-installed bridge whose mission is the omnichannel settlement of a retail counter sale: it lets the customer pay a pos.order from their own phone (scan a link/QR served at the public /pos/pay route) so the till transaction can be marked paid. It is classified with its parent point_of_sale as a value-chain primary activity under APQC 3.0 (Market and Sell): the originating, value-creating act it serves is the in-store sell/checkout transaction, and this module simply moves the tender step onto the customer's device. The payment-engine side it leans on (payment / account_payment) is itself a value-network/support 9.0 collect-cash component, and the confirmed transaction does feed an account.payment (APQC 9.5) -- but those are triggered downstream effects; the dominant operation this module exists to complete is the POS sale, so value_model=chain, activity_class=primary, mirroring point_of_sale rather than payment. It carries strong network overtones (it brokers buyer + acquirer through public mediation routes) but the value logic it completes is the chain sell."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "one online payment method per till backed by configured payment providers (empty = all published)",
+      "public payment portal for a POS order (/pos/pay) usable from a customer phone via shared link/QR",
+      "redirect / inline / saved-token payment flows reused from the payment engine",
+      "automatic settlement of a confirmed transaction into a pos.payment + account.payment, finalising the order",
+      "real-time cashier notification (bus) so the terminal refreshes when the customer pays",
+      "currency/amount re-validation server-side to prevent stale or mismatched payments"
+    ],
+    "typical_fits": [
+      "scan-to-pay at the counter (customer settles their own order on their phone)",
+      "split a POS order so part is paid online (next_online_payment_amount)",
+      "restaurant table pay-online flow combined with pos_restaurant",
+      "any payment provider already supported by an installed payment_<provider> module"
+    ],
+    "common_gaps": [
+      "the module ships no acquirer: a payment_<provider> module (Stripe, Adyen, etc.) must be installed and a provider published/enabled",
+      "all configured providers must share the POS config currency (multi-currency tills need extra setup)",
+      "QR/link delivery to the customer is the standard popup/customer-display flow; bespoke kiosk or table-QR UX is OWL dev",
+      "no per-provider reconciliation/fee handling beyond what account_payment provides",
+      "country-specific fiscal capture of the online tender may need certification add-ons"
+    ],
+    "drive_hints": [
+      "odoo shell: env['pos.payment.method'].search([('is_online_payment','=',True)]).mapped(('name','online_payment_provider_ids.name'))",
+      "odoo shell: env['pos.config'].search([]).mapped(lambda c: (c.name, c._get_cashier_online_payment_method().name))",
+      "odoo shell: env['payment.transaction'].search([('pos_order_id','!=',False)], limit=5).mapped(('reference','state','amount','pos_order_id.pos_reference'))",
+      "curl GET /pos/pay/<pos_order_id>?access_token=... (auth=public) to render the POS pay form",
+      "odoo shell: tx=env['payment.transaction'].search([('pos_order_id','!=',False),('state','in',('authorized','done'))],limit=1); print(tx.payment_id, tx.pos_order_id.payment_ids.mapped('amount'))"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "stakeholders": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Exact OWL screen flow that requests the online payment and reacts to the ONLINE_PAYMENTS_NOTIFICATION bus event (client-side, not in Python).",
+    "How the pay link/QR is presented to the customer (customer display vs printed vs cashier-shared link) in each deployment.",
+    "Whether account_payment pre-creates the account.payment or this module's _create_payment does, per provider.",
+    "Real-world split-payment usage (partial online + cash) and conflict handling on the throwaway draft order deletion path.",
+    "Which payment_<provider> modules are installed and which require a customer (aps/flutterwave) in this deployment."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/pos_online_payment.facts.json",
+    "tools": [
+      "code-read",
+      "extract_frontend.py",
+      "extract_module.py",
+      "Grep",
+      "Read"
+    ],
+    "odoo_version": "19.0"
+  }
+}

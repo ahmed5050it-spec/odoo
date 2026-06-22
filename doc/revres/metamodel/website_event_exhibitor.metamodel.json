@@ -1,0 +1,307 @@
+{
+  "subsystem": "website_event_exhibitor",
+  "evidence": {
+    "manifest": {
+      "name": "Event Exhibitors",
+      "category": "Marketing/Events",
+      "version": "1.1",
+      "summary": "Event: manage sponsors and exhibitors",
+      "depends": [
+        "website_event"
+      ],
+      "auto_install": false,
+      "application": false
+    },
+    "models": [
+      {
+        "_name": "event.sponsor",
+        "_description": "Event Sponsor",
+        "_inherit": [
+          "mail.thread",
+          "mail.activity.mixin",
+          "website.published.mixin",
+          "website.searchable.mixin"
+        ],
+        "fields": 27,
+        "relations": [
+          "event_id->event.event",
+          "sponsor_type_id->event.sponsor.type",
+          "partner_id->res.partner",
+          "country_id->res.country"
+        ]
+      },
+      {
+        "_name": "event.sponsor.type",
+        "_description": "Event Sponsor Level",
+        "fields": 3,
+        "relations": []
+      },
+      {
+        "_name": "event.event",
+        "_description": "(extension) sponsors + exhibitor website menu",
+        "fields": 4,
+        "relations": [
+          "sponsor_ids->event.sponsor",
+          "exhibitor_menu_ids->website.event.menu"
+        ]
+      },
+      {
+        "_name": "event.type",
+        "_description": "(extension) exhibitor_menu template flag",
+        "fields": 1,
+        "relations": []
+      },
+      {
+        "_name": "website",
+        "_description": "(extension) _search_get_details sponsor search",
+        "fields": 0,
+        "relations": []
+      },
+      {
+        "_name": "website.event.menu",
+        "_description": "(extension) adds 'exhibitor' menu_type",
+        "fields": 1,
+        "relations": []
+      }
+    ],
+    "routes": [
+      {
+        "paths": [
+          "/event/<model(\"event.event\"):event>/exhibitors",
+          "/event/<model(\"event.event\"):event>/exhibitor"
+        ],
+        "auth": "public",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/event/<model(\"event.event\"):event>/exhibitor/<model(\"event.sponsor\"):sponsor>"
+        ],
+        "auth": "public",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/event_sponsor/<int:sponsor_id>/read"
+        ],
+        "auth": "public",
+        "type": "jsonrpc"
+      }
+    ],
+    "security": {
+      "access_rules": 5,
+      "record_rules": 1,
+      "groups": 0
+    },
+    "views": {
+      "form": 4,
+      "list": 2,
+      "search": 1,
+      "kanban": 1,
+      "pivot": 0,
+      "graph": 0,
+      "calendar": 0,
+      "activity": 0
+    },
+    "frontend": {
+      "present": true,
+      "js_files": 3,
+      "xml_templates": 2,
+      "owl_components": [
+        "ExhibitorConnectClosedDialog"
+      ],
+      "registry_adds": [
+        "public.interactions:website_event_exhibitor.exhibitor_connect"
+      ],
+      "patches": [],
+      "services": [],
+      "asset_bundles": {
+        "web.assets_frontend": 4,
+        "web.report_assets_common": 1,
+        "website.website_builder_assets": 1
+      }
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": false,
+      "endpoints": [
+        "https://www.odoo.com/app/events"
+      ],
+      "files": [
+        "__manifest__.py"
+      ]
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    },
+    "behavioral_notes": [
+      {
+        "element": "event.sponsor (exhibitor booth model + website.published.mixin gating)",
+        "observation": "event.sponsor is a per-event exhibitor/sponsor record that inherits website.published.mixin + website.searchable.mixin, so each booth is an independently publishable web page. _compute_website_url overrides the mixin so website_url points at /event/<event-slug>/exhibitor/<sponsor-slug>. exhibitor_type is a Selection [sponsor='Footer Logo Only', exhibitor='Exhibitor', online='Online Exhibitor']: only 'exhibitor'/'online' get a booth in the directory (the listing/search base domain filters exhibitor_type in ['exhibitor','online']), while 'sponsor' is footer-logo-only and excluded. The model lazily mirrors name/email/phone/image_512/website_description/url from partner_id via _synchronize_with_partner / _compute_* but never writes back to the partner (values are treated as event-specific). show_on_ticket drives the report bundle. This published-booth + partner-mirror behaviour is pure code, invisible to metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "event.sponsor.type (sponsorship levels) + sponsor_type_id ordering/ribbons",
+        "observation": "event.sponsor.type is a standalone catalog of sponsorship tiers (name translatable, sequence auto-incremented by _default_sequence, display_ribbon_style Selection no_ribbon/Gold/Silver/Bronze). event.sponsor.sponsor_type_id defaults to the highest-sequence type and is required; the exhibitors directory groups booths by sponsor_type_id and sorts (sponsor_type_id.sequence, sequence), so the tier drives both the on-page grouping/heading and the ribbon badge. event.event._compute_sponsor_count exposes sponsor_count via a _read_group. Tier semantics live entirely in Python/data, not in the schema.",
+        "source": "code-read"
+      },
+      {
+        "element": "ExhibitorController.event_exhibitors (/event/<id>/exhibitors listing) + event_exhibitor (/event/<id>/exhibitor/<sponsor> detail)",
+        "observation": "ExhibitorController extends WebsiteEventController. /event/<id>/exhibitors (alias /exhibitor) renders website_event_exhibitor.event_exhibitors: it builds search_domain from _get_event_sponsors_base_domain (event_id + exhibitor_type in [exhibitor,online]; AND is_published=True unless the user is in event.group_event_registration_desk), adds free-text (name/website_description ilike), country (partner_id.country_id) and sponsorship-level facets, then groups sorted booths by sponsor_type_id and randomises within each tier (published booths first via sample() for desk users). The detail route /event/<id>/exhibitor/<sponsor> is matched only when event.exhibitor_menu=True, calls sponsor.has_access('read') (Forbidden otherwise) then sudo()s, renders event_exhibitor_main, and builds a 'sponsors_other' sidebar sorted by website_published, is_in_opening_hours, same-country, -sponsor_type sequence and a random tiebreaker. The event.event gains an 'Exhibitors list' website.event.menu (menu_type 'exhibitor') at /event/<slug>/exhibitors via _get_website_menu_entries. None of this routing/search/sort logic is in metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "event.sponsor._compute_is_in_opening_hours + ExhibitorConnect 'meet the sponsor' availability gate (/event_sponsor/<id>/read)",
+        "observation": "is_in_opening_hours is a TZ-aware compute keyed on event_id.is_ongoing and hour_from/hour_to: it localises now/date_begin/date_end into event.date_tz, clamps the booth's opening window to the event window, and returns True only while the booth is currently live (with a midnight=next-day special case). This drives the live 'Connect'/'meet the sponsor' UX: the ExhibitorConnect public.interaction (.o_wesponsor_connect_button) reads data-event-is-ongoing/data-sponsor-is-ongoing/data-user-event-manager and either redirects to the sponsor URL when live, or opens the ExhibitorConnectClosedDialog OWL component. That dialog rpc-fetches /event_sponsor/<id>/read (jsonrpc, public) which marshals sponsor + sponsor_type + event timing (is_ongoing/is_done/start_remaining, formatted hours) for the 'event not started / sponsor not available' modal. The availability/connect logic is split across the Python compute and the JS interaction, outside metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "ExhibitorConnect interaction + ExhibitorConnectClosedDialog OWL dialog (frontend)",
+        "observation": "3 JS files / 2 XML templates, one OWL component (ExhibitorConnectClosedDialog, extends web Dialog) and one website public.interaction (website_event_exhibitor.exhibitor_connect); no registry patches. The interaction debounces the connect-button click (500ms) and routes to redirect() vs. the closed-info dialog based on live state; the dialog lazily rpc-loads sponsor data and renders a luxon-formatted countdown to event start. Assets: web.assets_frontend (4 entries incl. exhibitor scss/templates), web.report_assets_common (full-page ticket report css, tied to show_on_ticket) and website.website_builder_assets (event_page_option editor snippet). Entirely client-side / static, outside Python metadata.",
+        "source": "static"
+      }
+    ]
+  },
+  "it_architecture": {
+    "application": "website_event_exhibitor (Event Exhibitors website extension component, on top of website_event)",
+    "software_services": [
+      "/event/<event>/exhibitors (alias /exhibitor) -- public exhibitor/sponsor directory with content/country/level facets, grouped by sponsorship tier",
+      "/event/<event>/exhibitor/<sponsor> -- public exhibitor booth detail page ('meet the sponsor') with an 'other exhibitors' sidebar",
+      "/event_sponsor/<id>/read (jsonrpc) -- marshals sponsor + timing data for the 'sponsor not available / event not started' connect modal"
+    ],
+    "data_objects": [
+      "event.sponsor",
+      "event.sponsor.type",
+      "event.event",
+      "event.type",
+      "website",
+      "website.event.menu"
+    ],
+    "logical_data_erm": [
+      "event.sponsor -> event.event (event_id, required)",
+      "event.sponsor -> event.sponsor.type (sponsor_type_id, required, tier/ribbon)",
+      "event.sponsor -> res.partner (partner_id, required; name/email/phone/image/url/description mirrored, not written back)",
+      "event.sponsor -> res.country (country_id, related from partner; facet + flag)",
+      "event.event -> event.sponsor (sponsor_ids) / website.event.menu (exhibitor_menu_ids, menu_type='exhibitor')",
+      "event.sponsor -> website.published.mixin / website.searchable.mixin (per-booth published, searchable web page)"
+    ],
+    "information_flows": [
+      "depends: website_event (-> event, website, website_partner, website_mail, html_builder)",
+      "side-effect: event.exhibitor_menu toggle -> _update_website_menus creates/unlinks the 'Exhibitors list' website.event.menu (menu_type 'exhibitor') at /event/<slug>/exhibitors",
+      "side-effect: write event.sponsor.partner_id -> recompute mirrors name/email/phone/image_512/website_description/url + country_id/country_flag_url from the partner",
+      "side-effect: website._search_get_details -> event.sponsor surfaced in event site search for search_type in ['sponsor','all'] (exhibitor_type != 'sponsor')",
+      "flow: /exhibitor/<sponsor> connect button -> ExhibitorConnect interaction -> redirect to sponsor.url (live) OR ExhibitorConnectClosedDialog -> rpc /event_sponsor/<id>/read"
+    ],
+    "frontend_components": [
+      "ExhibitorConnectClosedDialog (OWL Dialog) -- 'event not started / sponsor not available' modal, rpc-loads /event_sponsor/<id>/read",
+      "public.interactions:website_event_exhibitor.exhibitor_connect -- connect-button gate (redirect vs. closed dialog) on .o_wesponsor_connect_button"
+    ]
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Publish Exhibitor/Sponsor Booths to the Event Website (per-booth SEO page, visibility, logo)",
+      "Manage Sponsorship Levels & Ribbons (tiered sponsor_type_id grouping/badges)",
+      "Online Exhibitor Discovery (directory with content/country/level facets, tier grouping)",
+      "Live 'Meet the Sponsor' / Connect Availability (opening-hours gating, online vs. on-site)",
+      "Exhibitor-to-Attendee Mediation on the Website (booth page, sponsor URL, contact info)"
+    ],
+    "value_streams": [
+      "Showcase-to-Connect: organizer registers a sponsor/exhibitor (tier, booth) -> booth published to /event/<id>/exhibitors -> attendee browses/searches the directory -> opens the booth detail page -> connects (redirect to sponsor URL when live, or sees the not-available modal)"
+    ],
+    "information_concepts": [
+      "event.sponsor (published exhibitor/sponsor booth)",
+      "event.sponsor.type (sponsorship level)",
+      "event.event (host event)",
+      "website.event.menu (exhibitor menu entry)",
+      "res.partner (sponsor company / contact)",
+      "res.country (booth country)"
+    ],
+    "organization": [
+      "event.group_event_registration_desk (referenced: sees unpublished booths)",
+      "event.group_event_user (referenced: booth edit affordance)"
+    ],
+    "products": [],
+    "policies": [
+      "1 record rule + website.published.mixin: only is_published booths are visible on the frontend unless the viewer is in event.group_event_registration_desk",
+      "listing/search base domain restricts to exhibitor_type in ['exhibitor','online'] (footer-logo-only 'sponsor' booths excluded from the directory and site search)",
+      "booth detail route is matched only when event.exhibitor_menu=True; access enforced via sponsor.has_access('read') (Forbidden) before sudo() rendering",
+      "is_in_opening_hours (event ongoing + hour_from/hour_to in event TZ) gates the live Connect action vs. the closed-info modal"
+    ],
+    "stakeholders": [
+      "Sponsor / Exhibitor (res.partner showcased via a booth)",
+      "Event Attendee / Website Visitor (browses booths, connects)",
+      "Event Organizer / Website Editor (event.group_event_user)",
+      "Registration Desk operator (event.group_event_registration_desk)"
+    ],
+    "strategy": null,
+    "metrics": [
+      "event.event.sponsor_count (# sponsors/exhibitors per event)",
+      "exhibitor directory facet counts (per sponsorship level / country) on /exhibitors",
+      "is_in_opening_hours live booth availability (currently-open exhibitors)"
+    ]
+  },
+  "classification": {
+    "value_model": "network",
+    "activity_class": "primary",
+    "apqc_category": "3.0 Market and Sell Products and Services",
+    "rationale": "website_event_exhibitor is a value network (Stabell & Fjeldstad mediating technology): it exists to connect two populations -- sponsors/exhibitors and event attendees -- on the event website. It does not transform inputs into outputs (chain) nor solve case-by-case problems (shop); its economic logic is mediation/matching. It extends website_event (itself the network bridge that fuses website + event) by adding a publishable exhibitor booth (event.sponsor on website.published.mixin), a sponsorship-tier catalog (event.sponsor.type), and the public /event/<id>/exhibitors directory + /exhibitor/<sponsor> booth pages whose whole purpose is to let attendees find and reach sponsors -- including a live, opening-hours-gated 'Connect / meet the sponsor' action (redirect to sponsor URL or a not-available modal via /event_sponsor/<id>/read). That is membership/contact mediation between an open set of exhibitors and attendees. activity_class is primary because exhibitor showcasing & engagement is a customer-facing event-marketing demand activity, not back-office support. apqc_category 3.0 Market and Sell is the closest PCF home, inherited from website_event/event: the motion is promoting sponsors and engaging attendees around a marketed event (sponsor visibility, lead/contact generation), not 6.0 post-sale customer service; strategy is left null (human)."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "per-event exhibitor/sponsor records with sponsorship levels (event.sponsor.type) and ribbon styles",
+      "publishable exhibitor booth pages (website.published.mixin) at /event/<id>/exhibitor/<sponsor>",
+      "public exhibitor directory at /event/<id>/exhibitors with free-text, country and sponsorship-level search, grouped by tier",
+      "exhibitor_type distinction: footer-logo-only sponsor vs. on-site exhibitor vs. online exhibitor",
+      "live 'Connect / meet the sponsor' button gated by booth opening hours (is_in_opening_hours), with a not-available info modal",
+      "auto-generated 'Exhibitors list' website menu per event (event.exhibitor_menu) and a website-builder event-page option",
+      "sponsor logos on the full-page ticket report (show_on_ticket) and event site search inclusion"
+    ],
+    "typical_fits": [
+      "conferences/trade shows publishing a sponsors & exhibitors page with Gold/Silver/Bronze tiers",
+      "virtual/hybrid events with 'online exhibitor' booths and a live connect-during-opening-hours action",
+      "lead/visibility generation for sponsors (booth page + outbound link to the sponsor's own website)"
+    ],
+    "common_gaps": [
+      "live video / chat 'meet the sponsor' rooms (the standard connect only redirects to a URL or shows a modal -- needs a live-room integration)",
+      "exhibitor self-service portal to edit their own booth (booth edit is gated to event.group_event_user)",
+      "lead capture / scan-badge analytics per booth (no built-in visit/lead tracking on event.sponsor)",
+      "paid sponsorship packages / e-commerce checkout for booths (no product/order link here)"
+    ],
+    "drive_hints": [
+      "curl -s 'http://localhost:8069/event/1/exhibitors' | head  (public exhibitor directory)",
+      "odoo shell: env['event.sponsor'].search([('is_published','=',True)]).mapped(('name','sponsor_type_id','exhibitor_type','website_url'))",
+      "odoo shell: env['event.sponsor'].search([], limit=5).mapped(('name','is_in_opening_hours','hour_from','hour_to'))",
+      "odoo shell: env['event.sponsor.type'].search([]).mapped(('name','sequence','display_ribbon_style'))",
+      "curl -s -X POST 'http://localhost:8069/event_sponsor/1/read' -H 'Content-Type: application/json' -d '{\"jsonrpc\":\"2.0\",\"method\":\"call\",\"params\":{}}'  (sponsor connect modal data)"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "stakeholders": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Whether a parallel chat/live-session 'connect' path exists once a live-room module is also installed, vs. the URL-redirect-only behaviour seen here.",
+    "Runtime row counts for event.sponsor (published booths, exhibitor vs. online vs. footer-logo sponsor split) were not captured (extract_runtime.sh not run).",
+    "Exact interplay of is_published booth visibility with website_visibility of the parent event on the live directory in a populated DB."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/website_event_exhibitor.facts.json",
+    "tools": [
+      "code-read",
+      "extract_frontend.py",
+      "extract_module.py",
+      "Grep",
+      "Read"
+    ],
+    "odoo_version": "19.0"
+  }
+}

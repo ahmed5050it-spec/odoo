@@ -1,0 +1,163 @@
+{
+  "subsystem": "l10n_sa_edi",
+  "evidence": {
+    "manifest": {
+      "name": "Saudi Arabia - E-invoicing",
+      "category": "Accounting/Localizations/EDI",
+      "depends": [
+        "account_edi",
+        "account_edi_ubl_cii",
+        "l10n_sa",
+        "base_vat",
+        "certificate"
+      ],
+      "auto_install": false,
+      "application": false
+    },
+    "models": [
+      {
+        "_name": "account.edi.xml.ubl_21.zatca",
+        "_description": "UBL 2.1 (ZATCA)",
+        "fields": 0
+      },
+      {
+        "_name": "l10n_sa_edi.otp.wizard",
+        "_description": "Request ZATCA OTP",
+        "fields": 3
+      }
+    ],
+    "routes": [],
+    "security": {
+      "access_rules": 1,
+      "record_rules": 0,
+      "groups": 0
+    },
+    "views": {
+      "form": 0,
+      "list": 0,
+      "tree": 0,
+      "kanban": 0,
+      "search": 0,
+      "pivot": 0,
+      "graph": 0,
+      "calendar": 0,
+      "activity": 0
+    },
+    "frontend": {
+      "present": true,
+      "js_files": 0,
+      "xml_templates": 0,
+      "owl_components": [],
+      "registry_adds": [],
+      "patches": [],
+      "services": [],
+      "asset_bundles": {
+        "web.assets_backend": 1
+      }
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [
+        "requests"
+      ],
+      "uses_api_keys": false,
+      "endpoints": [
+        "http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-x509-token-profile-1.0#X509v3",
+        "http://uri.etsi.org/01903/v1.3.2#",
+        "http://www.w3.org/2000/09/xmldsig#",
+        "https://gw-fatoora.zatca.gov.sa/e-invoicing/core/",
+        "https://gw-fatoora.zatca.gov.sa/e-invoicing/developer-portal/",
+        "https://gw-fatoora.zatca.gov.sa/e-invoicing/simulation/"
+      ],
+      "files": [
+        "models/account_edi_xml_ubl_21_zatca.py",
+        "models/account_journal.py"
+      ]
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    },
+    "behavioral_notes": [
+      {
+        "element": "external integrations",
+        "observation": "0 HTTP call sites; SDKs ['requests']; api_keys=False.",
+        "source": "static"
+      },
+      {
+        "element": "thin module",
+        "observation": "2 models, 0 routes, 3989 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
+        "source": "ast"
+      }
+    ]
+  },
+  "it_architecture": {
+    "application": "l10n_sa_edi (Saudi Arabia - E-invoicing)",
+    "software_services": [],
+    "data_objects": [
+      "account.edi.xml.ubl_21.zatca",
+      "l10n_sa_edi.otp.wizard"
+    ],
+    "logical_data_erm": [
+      "l10n_sa_edi.otp.wizard -> account.journal"
+    ],
+    "information_flows": [
+      "depends: account_edi, account_edi_ubl_cii, l10n_sa, base_vat, certificate"
+    ],
+    "frontend_components": []
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Saudi Arabia - E-invoicing"
+    ],
+    "value_streams": [],
+    "information_concepts": [
+      "account.edi.xml.ubl_21.zatca",
+      "l10n_sa_edi.otp.wizard"
+    ],
+    "organization": [],
+    "products": [],
+    "policies": [],
+    "stakeholders": [],
+    "strategy": null,
+    "metrics": []
+  },
+  "classification": {
+    "value_model": "support",
+    "activity_class": "support",
+    "apqc_category": "9.0 Manage Financial Resources",
+    "rationale": "l10n_sa_edi: thin support/support module (auto-architect baseline)."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "Saudi Arabia - E-invoicing"
+    ],
+    "typical_fits": [],
+    "common_gaps": [],
+    "drive_hints": [
+      "odoo shell: env['account.edi.xml.ubl_21.zatca'].search([],limit=3)"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/l10n_sa_edi.facts.json",
+    "tools": [
+      "extract_module.py",
+      "extract_frontend.py",
+      "gen_thin.py"
+    ],
+    "odoo_version": "19.0"
+  }
+}

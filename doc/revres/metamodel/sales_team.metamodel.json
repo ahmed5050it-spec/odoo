@@ -1,0 +1,262 @@
+{
+  "subsystem": "sales_team",
+  "evidence": {
+    "manifest": {
+      "name": "Sales Teams",
+      "category": "Sales/Sales",
+      "depends": [
+        "base",
+        "mail"
+      ],
+      "auto_install": false,
+      "application": false
+    },
+    "models": [
+      {
+        "_name": "crm.tag",
+        "_description": "CRM Tag",
+        "fields": 2,
+        "relations": []
+      },
+      {
+        "_name": "crm.team",
+        "_description": "Sales Team",
+        "fields": 16,
+        "relations": [
+          "company_id->res.company",
+          "currency_id->res.currency",
+          "user_id->res.users",
+          "member_ids->res.users",
+          "crm_team_member_ids->crm.team.member",
+          "crm_team_member_all_ids->crm.team.member",
+          "favorite_user_ids->res.users"
+        ]
+      },
+      {
+        "_name": "crm.team.member",
+        "_description": "Sales Team Member",
+        "fields": 13,
+        "relations": [
+          "crm_team_id->crm.team",
+          "user_id->res.users",
+          "company_id->res.company"
+        ]
+      },
+      {
+        "_name": null,
+        "_inherit": "res.users",
+        "_description": "Users (extension)",
+        "fields": 3,
+        "relations": [
+          "crm_team_ids->crm.team",
+          "crm_team_member_ids->crm.team.member",
+          "sale_team_id->crm.team"
+        ]
+      }
+    ],
+    "routes": [],
+    "security": {
+      "access_rules": 9,
+      "record_rules": 2,
+      "groups": 3
+    },
+    "views": {
+      "form": 3,
+      "list": 3,
+      "tree": 0,
+      "kanban": 4,
+      "search": 2,
+      "pivot": 0,
+      "graph": 0,
+      "calendar": 0,
+      "activity": 0
+    },
+    "frontend": {
+      "present": true,
+      "js_files": 1,
+      "xml_templates": 0,
+      "owl_components": [],
+      "registry_adds": [
+        "views:crm_team_form"
+      ],
+      "patches": [],
+      "services": [],
+      "asset_bundles": {
+        "web.assets_backend": 1,
+        "web.assets_unit_tests": 1
+      }
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": false,
+      "endpoints": [
+        "https://www.odoo.com/app/crm"
+      ],
+      "files": [
+        "__manifest__.py"
+      ]
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    },
+    "behavioral_notes": [
+      {
+        "element": "crm.team.member (through-model) + crm.team._compute_member_ids / _inverse_member_ids",
+        "observation": "Team membership is NOT a plain many2many: crm.team.member is an explicit join model carrying an `active` flag, so members can be archived without losing history. crm.team.member_ids is computed from crm_team_member_ids.user_id filtered on active memberships (_compute_member_ids depends on crm_team_member_ids.active); the inverse (_inverse_member_ids) creates missing crm.team.member rows for added users and (de)activates rows rather than deleting them. Multi vs mono membership is gated by the ir.config_parameter 'sales_team.membership_multi' (_compute_is_membership_multi); in mono mode a user may sit on only one active team and crm.team.member.create/write call _synchronize_memberships to auto-archive the user's competing memberships, while member_warning is computed to warn before that archive happens.",
+        "source": "code-read"
+      },
+      {
+        "element": "crm.team._get_default_team_id(user_id, domain)",
+        "observation": "The team-assignment helper that the whole sales stack reuses to stamp team_id defaults on downstream documents (crm.lead, sale.order, account.move, pos.order...). It is deliberately NOT wired into default_get because it takes user_id + an optional domain (e.g. use_lead=True); other models' default_team methods call it. Resolution is a 5-step fallback honouring multi-company (valid_cids): (1) one of my teams as member OR leader matching the domain, (2) any of my teams, (3) the context default_team_id, (4) any company-visible team matching the domain, (5) any company-visible team. This single heuristic centralizes 'which sales team owns this record' across modules.",
+        "source": "code-read"
+      },
+      {
+        "element": "crm.team dashboard: kanban (o_crm_team_kanban) + action_primary_channel_button / _compute_dashboard_button_name + is_favorite/favorite_user_ids",
+        "observation": "sales_team ships the Sales dashboard scaffolding that crm/sale fill in. The crm_team_view_kanban_dashboard kanban renders one card per team with a manage menu (View / New / Reporting) and a kanban_color_picker, and its card action is type='object' action_primary_channel_button — a SKELETON method returning False here, overridden downstream to open the team's pipeline. _compute_dashboard_button_name is likewise a placeholder ('Big Pretty Button :)') overloaded by crm/sale to label the action with live counts. Which teams appear on the dashboard is driven by favorite_user_ids: is_favorite ('Show on dashboard') has an inverse (_inverse_is_favorite, sudo) that adds/removes the current user, and creating a team or adding members auto-favourites them (_add_members_to_favorites). The progressbar/KPI numbers are not in this module; they are added by the consumers.",
+        "source": "code-read"
+      },
+      {
+        "element": "team_id scoping + record rules (crm_rule_all_salesteam, sale_team_comp_rule) + res.users.sale_team_id",
+        "observation": "sales_team defines the security spine the sales docs inherit: three groups (group_sale_salesman 'Own Documents Only' -> group_sale_salesman_all_leads 'All Documents' -> group_sale_manager 'Administrator', chained via implied_ids) plus two ir.rule on crm.team — crm_rule_all_salesteam (the all-leads group sees every team) and sale_team_comp_rule (multi-company: company_id in company_ids + [False]). Downstream models (crm.lead, sale.order) add their OWN team_id/user_id-scoped record rules keyed to these same groups, so the salesman/all-leads/manager tier defined here governs visibility of every sales document. res.users.sale_team_id (_compute_sale_team_id) picks the user's main team as the OLDEST active membership (crm_team_member_ids sorted by create_date), and crm_team_ids is the set of active-membership teams; res.users.action_archive cascades to archive the user's memberships. company constraints (_constrains_company_members / _constrains_company_membership, _check_company_auto) keep a member's company aligned with the team's.",
+        "source": "code-read"
+      },
+      {
+        "element": "frontend (OWL/JS)",
+        "observation": "1 JS file, 0 XML templates, 0 OWL components; 1 registry add (views:crm_team_form — the crm_team_form js_class on the team form view that drives the membership warning / multi-team activation UX). Asset bundles: web.assets_backend(1), web.assets_unit_tests(1). No OWL components, services or patches — the dashboard is plain kanban XML, not a custom OWL client action at this layer.",
+        "source": "static"
+      }
+    ]
+  },
+  "it_architecture": {
+    "application": "sales_team (Sales Teams foundation component)",
+    "software_services": [],
+    "data_objects": [
+      "crm.tag",
+      "crm.team",
+      "crm.team.member",
+      "res.users (extension)"
+    ],
+    "logical_data_erm": [
+      "crm.team -> crm.team.member (one2many crm_team_member_ids)",
+      "crm.team.member -> res.users (user_id)",
+      "crm.team.member -> crm.team (crm_team_id)",
+      "crm.team -> res.users (user_id team leader; member_ids salespersons; favorite_user_ids)",
+      "crm.team -> res.company / res.currency (company_id, currency_id)",
+      "res.users -> crm.team (crm_team_ids active teams; sale_team_id main team)"
+    ],
+    "information_flows": [
+      "depends: base, mail (mail.thread chatter + tracking on crm.team and crm.team.member)",
+      "side-effect: crm.team._get_default_team_id -> reused by crm.lead / sale.order / account.move / pos.order default_team methods to stamp team_id",
+      "side-effect: crm.team.member.create/write (mono mode) -> _synchronize_memberships archives the user's competing memberships",
+      "side-effect: crm.team groups + crm.team ir.rules -> inherited tier under which downstream sales docs add team_id/user_id record rules",
+      "side-effect: res.users.action_archive -> cascades crm.team.member.action_archive (membership cleanup)",
+      "side-effect: crm.team dashboard action_primary_channel_button / _compute_dashboard_button_name -> overridden by crm & sale to wire pipeline + KPIs"
+    ],
+    "frontend_components": []
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Sales Team Definition & Organization",
+      "Team Membership Management (active/archived, mono vs multi-team)",
+      "Default Sales-Team Assignment (team_id resolution heuristic)",
+      "Sales Team Dashboard (favourite teams, manage menu scaffolding)",
+      "Sales Security Tiering (salesman / all-documents / manager) & team scoping",
+      "Sales Tagging (crm.tag)"
+    ],
+    "value_streams": [],
+    "information_concepts": [
+      "crm.team (sales team)",
+      "crm.team.member (team membership)",
+      "crm.tag (sales tag)",
+      "res.users (salesperson / team leader)"
+    ],
+    "organization": [
+      "group_sale_salesman (User: Own Documents Only)",
+      "group_sale_salesman_all_leads (User: All Documents)",
+      "group_sale_manager (Administrator)",
+      "res_groups_privilege_sales (Sales privilege)"
+    ],
+    "products": [],
+    "policies": [
+      "ir.rule crm_rule_all_salesteam: group_sale_salesman_all_leads sees all sales teams",
+      "ir.rule sale_team_comp_rule: multi-company team visibility (company_id in company_ids + [False])",
+      "config: sales_team.membership_multi gates single- vs multi-team membership; mono mode auto-archives competing memberships",
+      "constraint: _check_company_auto + _constrains_company_members / _constrains_company_membership keep member company aligned with team",
+      "ondelete _unlink_except_default: the Website and Point of Sale default teams cannot be deleted"
+    ],
+    "stakeholders": [
+      "Salesperson (res.users, group_sale_salesman)",
+      "Sales Team Leader (crm.team.user_id)",
+      "Sales Manager (group_sale_manager)",
+      "Sales Team (crm.team)"
+    ],
+    "strategy": null,
+    "metrics": [
+      "dashboard_button_name (computed dashboard button label, KPI-bearing once overloaded by crm/sale)",
+      "is_favorite / favorite_user_ids (teams surfaced on the Sales dashboard)"
+    ]
+  },
+  "classification": {
+    "value_model": "support",
+    "activity_class": "support",
+    "apqc_category": "3.0 Market and Sell Products and Services (sales force / sales organization administration)",
+    "rationale": "sales_team is a cross-cutting support/foundation module, not a value configuration of its own. It owns no document flow (0 routes, no state machine, no transform/solve/mediate loop) and produces no value stream — it defines the sales ORGANIZATION (crm.team, crm.team.member, the salesman/all-leads/manager group tier) and the reusable team_id-assignment heuristic + dashboard scaffolding that the real value modules consume: crm (shop) hangs its pipeline off crm.team, while sale and pos (chain) inherit its team_id scoping and security tiering for their order/invoice documents. By Stabell & Fjeldstad it is firm-infrastructure / support; its APQC home is 3.0 Market and Sell Products and Services as the sales-force/sales-organization administration backbone rather than any specific 3.5.x selling activity, which live in the consuming modules.",
+    "value_model_note": "Defined as a reference/foundation consumed by crm, sale, pos — it has no value stream of its own (hence value_streams = [])."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "define sales teams with a leader, company and currency",
+      "manage team membership via crm.team.member with active/archived state",
+      "single-team (default) or multi-team membership toggled by sales_team.membership_multi",
+      "default sales-team resolution heuristic reused across sales documents (_get_default_team_id)",
+      "Sales dashboard kanban with per-team manage menu and favourite ('show on dashboard') filtering",
+      "three-tier sales security (own docs / all docs / manager) plus team multi-company record rules",
+      "CRM tags (crm.tag) for classifying sales records"
+    ],
+    "typical_fits": [
+      "organizing the sales force into teams that scope crm/sale/pos documents",
+      "team-leader + salesperson ownership and the own-vs-all-documents visibility split",
+      "mono-membership companies (one salesperson, one main team via sale_team_id)",
+      "favourite teams pinned to the Sales dashboard"
+    ],
+    "common_gaps": [
+      "team-level targets / quotas / KPIs (added by crm & sale; placeholder here)",
+      "custom team_id assignment beyond the 5-step heuristic (territories, round-robin quotas — provided by crm)",
+      "the real dashboard buttons & progressbars (action_primary_channel_button and _compute_dashboard_button_name are skeletons overridden downstream)",
+      "complex per-team approval / commission policies beyond the three standard groups"
+    ],
+    "drive_hints": [
+      "odoo shell: env['crm.team'].search([]).mapped(lambda t: (t.name, t.user_id.name, t.member_ids.mapped('name')))",
+      "odoo shell: env['crm.team']._get_default_team_id(user_id=env.uid)  # see the default-team heuristic resolve",
+      "odoo shell: env['res.users'].browse(env.uid).read(['sale_team_id','crm_team_ids'])",
+      "odoo shell: env['ir.config_parameter'].sudo().set_param('sales_team.membership_multi', '1'); env['crm.team.member'].search([]).read(['user_id','crm_team_id','active'])",
+      "odoo shell: env['ir.rule'].search([('model_id.model','=','crm.team')]).mapped(('name','domain_force'))"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Exact downstream override of action_primary_channel_button / _compute_dashboard_button_name in crm vs sale (which action + which KPI count each module wires).",
+    "How sale_team_id (oldest-membership main team) interacts with crm's round-robin reassignment when a user's earliest membership is archived.",
+    "Whether any consumer relies on crm.tag beyond CRM (crm.tag lives here but is named/used chiefly by crm)."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/sales_team.facts.json",
+    "tools": [
+      "code-read",
+      "extract_module.py",
+      "extract_frontend.py"
+    ],
+    "odoo_version": "19.0"
+  }
+}

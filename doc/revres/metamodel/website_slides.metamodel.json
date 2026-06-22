@@ -1,0 +1,447 @@
+{
+  "subsystem": "website_slides",
+  "evidence": {
+    "manifest": {
+      "name": "eLearning",
+      "category": "Website/eLearning",
+      "depends": [
+        "portal_rating",
+        "website",
+        "website_mail",
+        "website_profile"
+      ],
+      "auto_install": false,
+      "application": true
+    },
+    "models": [
+      {
+        "_name": "slide.channel",
+        "_description": "Course",
+        "fields": 67,
+        "relations": [
+          "user_id->res.users",
+          "slide_ids->slide.slide",
+          "channel_partner_ids->slide.channel.partner",
+          "tag_ids->slide.channel.tag",
+          "prerequisite_channel_ids->slide.channel",
+          "enroll_group_ids->res.groups"
+        ]
+      },
+      {
+        "_name": "slide.slide",
+        "_description": "Slides",
+        "fields": 69,
+        "relations": [
+          "channel_id->slide.channel",
+          "category_id->slide.slide",
+          "slide_partner_ids->slide.slide.partner",
+          "question_ids->slide.question",
+          "slide_resource_ids->slide.slide.resource",
+          "embed_ids->slide.embed"
+        ]
+      },
+      {
+        "_name": "slide.channel.partner",
+        "_description": "Channel / Partners (Members)",
+        "fields": 15,
+        "relations": [
+          "channel_id->slide.channel",
+          "partner_id->res.partner",
+          "next_slide_id->slide.slide"
+        ]
+      },
+      {
+        "_name": "slide.slide.partner",
+        "_description": "Slide / Partner decorated m2m",
+        "fields": 7,
+        "relations": [
+          "slide_id->slide.slide",
+          "channel_id->slide.channel",
+          "partner_id->res.partner"
+        ]
+      },
+      {
+        "_name": "slide.question",
+        "_description": "Content Quiz Question",
+        "fields": 8,
+        "relations": [
+          "slide_id->slide.slide",
+          "answer_ids->slide.answer"
+        ]
+      },
+      {
+        "_name": "slide.answer",
+        "_description": "Slide Question's Answer",
+        "fields": 5,
+        "relations": [
+          "question_id->slide.question"
+        ]
+      },
+      {
+        "_name": "slide.channel.tag",
+        "_description": "Channel/Course Tag",
+        "fields": 6,
+        "relations": [
+          "group_id->slide.channel.tag.group",
+          "channel_ids->slide.channel"
+        ]
+      },
+      {
+        "_name": "slide.embed",
+        "_description": "Embedded Slides View Counter",
+        "fields": 4,
+        "relations": [
+          "slide_id->slide.slide"
+        ]
+      }
+    ],
+    "routes": [
+      {
+        "paths": [
+          "/slides",
+          "/slides/page/<int:page>",
+          "/slides/tag/<string:slug_tags>",
+          "/slides/all"
+        ],
+        "auth": "public",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/slides/channel/join",
+          "/slides/channel/leave",
+          "/slides/channel/subscribe",
+          "/slides/channel/unsubscribe"
+        ],
+        "auth": "public",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/slides/slide/set_completed",
+          "/slides/slide/set_uncompleted",
+          "/slides/slide/like",
+          "/slides/slide/get_html_content"
+        ],
+        "auth": "public",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/slides/slide/quiz/get",
+          "/slides/slide/quiz/submit",
+          "/slides/slide/quiz/reset",
+          "/slides/slide/quiz/question_add_or_update"
+        ],
+        "auth": "public",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/slides/embed/<int:slide_id>",
+          "/slides/embed_external/<int:slide_id>"
+        ],
+        "auth": "public",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/slides/add_slide",
+          "/slides/prepare_preview",
+          "/slides/category/add",
+          "/slides/slide/archive"
+        ],
+        "auth": "user",
+        "type": "jsonrpc"
+      }
+    ],
+    "security": {
+      "access_rules": 41,
+      "record_rules": 21,
+      "groups": 2
+    },
+    "views": {
+      "form": 10,
+      "list": 18,
+      "kanban": 3,
+      "search": 8,
+      "pivot": 4,
+      "graph": 4
+    },
+    "behavioral_notes": [
+      {
+        "element": "slide.channel._action_add_members / enroll policy",
+        "observation": "Enrollment is mediated by slide.channel.partner. _action_add_members creates/unarchives memberships with member_status 'joined' or 'invited'; 'invited' makes the channel visible but NOT the slides until the partner self-enrolls. enroll = Selection('public','invite') and visibility = Selection('public','connected','members','link') gate who can join and who can see content. Invitations carry an HMAC-signed link (_get_invitation_hash) and expire after 3 months via the _gc_slide_channel_partner autovacuum. None of this gating logic is visible in metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "slide.channel.partner._recompute_completion + _post_completion_update_hook",
+        "observation": "Per-member completion is recomputed by read-grouping completed slide.slide.partner rows: completion = round(100 * completed_slides_count / total_slides), and member_status auto-transitions joined->ongoing->completed. Crossing 100% calls _post_completion_update_hook (awards channel.karma_gen_channel_finish karma via res.users._add_karma_batch) and _send_completed_mail (sends completed_template_id email). Un-completing reverses the karma. This gamification + notification side-effect chain is pure Python.",
+        "source": "code-read"
+      },
+      {
+        "element": "slide.slide.slide_category content types + quiz karma",
+        "observation": "slide_category = Selection('infographic','article','document','video','quiz') with a derived slide_type (pdf/sheet/doc/youtube_video/google_drive_video/vimeo_video) and source_type ('local_file' upload vs 'external' Google Drive). _action_mark_completed writes slide.slide.partner.completed=True and runs _action_set_quiz_done, which awards tiered karma (quiz_first/second/third/fourth_attempt_reward indexed by quiz_attempts_count) only for members of published slides; quiz answers live in slide.question/slide.answer with is_correct flags. Content-type polymorphism and the attempt-decayed reward formula are not in metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "slide.channel.message_post (rating/review gating)",
+        "observation": "message_post is overridden so a 'comment' raises AccessError unless can_review (karma threshold), enforces one review per author per course, and demotes replies to 'Presentation Published' notifications to internal notes to avoid spamming all course followers. Reviews ride on rating.mixin (portal_rating). This karma-gated social moderation is invisible to metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "frontend (OWL/JS) + public interactions",
+        "observation": "50 JS files, 23 XML templates, 12 OWL components (SlideUploadDialog, SlideQuizFinishDialog, SlideShareDialog, SlideXPProgressBar, ...), 15 website public.interactions (slides, share, enroll_email, slide_like, slide_upload, course_prerequisite, ...) and 8 backend patches (Chatter, Thread, Message, Activity, NewContentSystrayItem, ...). A dedicated website_slides.slide_embed_assets bundle (60 assets) powers the standalone embedded-player surface. This is a frontend/route-heavy module not reflected in Python metadata.",
+        "source": "static"
+      }
+    ],
+    "frontend": {
+      "present": true,
+      "js_files": 50,
+      "xml_templates": 23,
+      "owl_components": [
+        "CourseTagAddDialog",
+        "EmailSharingInput",
+        "ModuleToInstallIcon",
+        "SlideCategoryIcon",
+        "SlideInstallModule",
+        "SlideQuizFinishDialog",
+        "SlideShareDialog",
+        "SlideUnsubscribeDialog",
+        "SlideUploadCategory",
+        "SlideUploadDialog",
+        "SlideUploadSourceTypes",
+        "SlideXPProgressBar"
+      ],
+      "registry_adds": [
+        "fields:slide_category_one2many",
+        "public.interactions:website_slides.category_add",
+        "public.interactions:website_slides.category_delete",
+        "public.interactions:website_slides.course_prerequisite",
+        "public.interactions:website_slides.embed_share",
+        "public.interactions:website_slides.enroll_email",
+        "public.interactions:website_slides.search_modal",
+        "public.interactions:website_slides.share",
+        "public.interactions:website_slides.slide_archive",
+        "public.interactions:website_slides.slide_like",
+        "public.interactions:website_slides.slide_toggle_preview",
+        "public.interactions:website_slides.slide_upload",
+        "public.interactions:website_slides.slides",
+        "public.interactions:website_slides.tag_add",
+        "public.interactions:website_slides.unsubscribe",
+        "views:slide_channel_partner_enroll_tree"
+      ],
+      "patches": [
+        "Activity.prototype",
+        "Animation.prototype",
+        "Chatter.prototype",
+        "EditWebsiteSystrayItem.prototype",
+        "Message.prototype",
+        "NewContentSystrayItem.prototype",
+        "RatingPopupComposer.prototype",
+        "Thread.prototype"
+      ],
+      "services": [],
+      "asset_bundles": {
+        "web.assets_backend": 9,
+        "web.assets_frontend": 18,
+        "website.assets_editor": 1,
+        "web.assets_tests": 1,
+        "website_slides.slide_embed_assets": 60,
+        "web.assets_unit_tests": 2,
+        "web.assets_unit_tests_setup": 2,
+        "website.website_builder_assets": 1,
+        "im_livechat.assets_embed_core": 1,
+        "mail.assets_public": 1,
+        "portal.assets_chatter": 1,
+        "portal.assets_chatter_helpers": 1
+      }
+    },
+    "integrations": {
+      "http_call_sites": 7,
+      "sdk_imports": [
+        "requests"
+      ],
+      "uses_api_keys": true,
+      "endpoints": [
+        "https://player.vimeo.com/video/%s?badge=0&amp;autopause=0&amp;player_id=0",
+        "https://player.vimeo.com/video/%s?h=%s&badge=0&amp;autopause=0&amp;player_id=0",
+        "https://vimeo.com/api/oembed.json?%s",
+        "https://www.googleapis.com/drive/v2/files/%s",
+        "https://www.googleapis.com/youtube/v3/videos",
+        "https://www.odoo.com/app/elearning"
+      ],
+      "files": [
+        "__manifest__.py",
+        "models/slide_slide.py"
+      ]
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    }
+  },
+  "it_architecture": {
+    "application": "website_slides (eLearning platform application component)",
+    "software_services": [
+      "/slides/*",
+      "/slides/channel/{join,leave,subscribe,unsubscribe}",
+      "/slides/slide/{set_completed,set_uncompleted,like}",
+      "/slides/slide/quiz/{get,submit,reset,question_add_or_update}",
+      "/slides/embed/<slide_id>",
+      "/slides/add_slide"
+    ],
+    "data_objects": [
+      "slide.channel",
+      "slide.slide",
+      "slide.channel.partner",
+      "slide.slide.partner",
+      "slide.question",
+      "slide.answer",
+      "slide.channel.tag",
+      "slide.embed"
+    ],
+    "logical_data_erm": [
+      "slide.channel -> res.users (responsible)",
+      "slide.slide -> slide.channel",
+      "slide.channel.partner -> slide.channel + res.partner (membership)",
+      "slide.slide.partner -> slide.slide + res.partner (progress)",
+      "slide.question -> slide.slide",
+      "slide.answer -> slide.question",
+      "slide.channel -> slide.channel (prerequisite_channel_ids)"
+    ],
+    "information_flows": [
+      "depends: portal_rating, website, website_mail, website_profile",
+      "side-effect: slide.channel.partner._recompute_completion -> res.users karma (_add_karma_batch) + completed_template_id mail",
+      "side-effect: slide.slide._action_set_quiz_done -> attempt-tiered res.users karma",
+      "external: slide.slide video metadata fetch -> YouTube/Vimeo/Google Drive APIs (requests)"
+    ],
+    "frontend_components": [
+      "CourseTagAddDialog",
+      "EmailSharingInput",
+      "ModuleToInstallIcon",
+      "SlideCategoryIcon",
+      "SlideInstallModule",
+      "SlideQuizFinishDialog",
+      "SlideShareDialog",
+      "SlideUnsubscribeDialog",
+      "SlideUploadCategory",
+      "SlideUploadDialog",
+      "SlideUploadSourceTypes",
+      "SlideXPProgressBar"
+    ]
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Publish & Organize Courses (channels of slides)",
+      "Manage Enrollment & Membership (public/invite, visibility tiers)",
+      "Author Multi-format Content (video/document/article/infographic/quiz)",
+      "Assess Learners via Quizzes",
+      "Track Completion & Progress",
+      "Gamify Learning (karma, ranks, completion rewards)",
+      "Enable Community Engagement (ratings/reviews/likes/comments)"
+    ],
+    "value_streams": [
+      "Learn-to-Complete: enroll -> consume content -> pass quizzes -> reach 100% completion -> earn karma + completion mail",
+      "Author-to-Publish: create course -> upload slides -> publish -> notify members of new content"
+    ],
+    "information_concepts": [
+      "slide.channel (course)",
+      "slide.slide (lesson/content)",
+      "slide.channel.partner (attendee/membership)",
+      "slide.slide.partner (per-content progress)",
+      "slide.question / slide.answer (quiz)",
+      "res.partner (learner)"
+    ],
+    "organization": [
+      "group_website_slides_officer",
+      "group_website_slides_manager"
+    ],
+    "products": [],
+    "policies": [
+      "21 record rules: published/visibility + membership-scoped access to courses and slides (e.g. portal/user restricted to published & attendee/link-based content)",
+      "enroll policy (public vs invite) + visibility tiers (public/connected/members/link) gate access",
+      "karma thresholds gate review/comment/vote (can_review/can_comment/can_vote)",
+      "invitation links HMAC-signed and auto-expire after 3 months (autovacuum)"
+    ],
+    "stakeholders": [
+      "Learner / Attendee (res.partner)",
+      "Course Responsible / Instructor (res.users, group_website_slides_officer)",
+      "eLearning Manager (group_website_slides_manager)",
+      "Public visitor (anonymous)"
+    ],
+    "strategy": null,
+    "metrics": [
+      "channel statistics (total_slides, total_views, total_votes, total_time, members_completed_count, completion)",
+      "slide.question stats (attempts_count, attempts_avg, done_count)",
+      "rating_avg_stars (course reviews)",
+      "pivot/graph reporting views (4 pivot, 4 graph)"
+    ]
+  },
+  "classification": {
+    "value_model": "network",
+    "activity_class": "primary",
+    "apqc_category": "3.0 Market and Sell Products and Services",
+    "rationale": "website_slides is a mediating (network) value configuration in Stabell & Fjeldstad terms: it is a two-sided eLearning platform that connects content providers (instructors/officers who publish courses) with consumers (learners/attendees), and its value rises with the size of the content catalog and the engaged community (Metcalfe-style network effects via ratings, karma ranks, leaderboards, shared/embedded content). The infrastructure is membership mediation (slide.channel.partner) plus engagement services (enroll/like/quiz/review), not a sequential transform of a document, so it is not a chain; and the heavy public web surface (39 routes, public auth, website_profile/portal_rating deps, standalone embed bundle) is mediation infrastructure, ruling out 'shop' and 'support'. It is classed primary (not support) because publishing and monetizable course delivery is the firm's core offering for an eLearning business. APQC mapping is best read as 3.0 Market and Sell: the platform is the marketing/demand-generation and content-distribution channel (akin to website/CRM-adjacent modules in apqc_odoo_map.tsv) that attracts and converts an audience; the optional website_sale_slides / certification (survey) bridges push it toward 3.5 Sell. A training-delivery reading (APQC 7.3 'Develop and counsel employees' / corporate L&D) also fits the channel_type='training' internal-academy use, but the out-of-box module is an external-facing public website offering, so the market/sell category is the primary fit with 7.x as the secondary, internal-use interpretation."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "Course (channel) catalog with tags, prerequisites and SEO/website publishing",
+      "Multi-format content: video (YouTube/Vimeo/Google Drive), PDF/doc/sheet, article (HTML), image, quiz",
+      "Enrollment policies (open vs on-invitation) and 4-tier course visibility",
+      "Per-learner completion tracking, member status (invited/joined/ongoing/completed) and 'next lesson' resume",
+      "Quizzes with correct-answer scoring and attempt-decayed karma rewards",
+      "Gamification: karma, ranks, channel-finish rewards, gamification.challenge 'slides' category",
+      "Community: ratings/reviews (portal_rating), likes/dislikes, comments, share & invite emails",
+      "Embeddable standalone slide player (slide.embed view counter)"
+    ],
+    "typical_fits": [
+      "Public eLearning / online academy with open or invite-only courses",
+      "Internal corporate training portal (channel_type='training')",
+      "Documentation hub (channel_type='documentation')",
+      "Karma/leaderboard-driven learner engagement out of the box"
+    ],
+    "common_gaps": [
+      "Certification/graded exams (needs website_slides_survey bridge / survey module)",
+      "Paid courses & checkout (needs website_sale_slides bridge, not in this module)",
+      "Discussion forums per course (needs website_slides_forum bridge)",
+      "Bespoke completion rules / SCORM / xAPI or external LMS interop",
+      "Custom karma economies and approval workflows beyond the built-in thresholds"
+    ],
+    "drive_hints": [
+      "odoo shell: env['slide.channel'].search([], limit=5).mapped(('name','channel_type','enroll','visibility','total_slides','completion'))",
+      "odoo shell: env['slide.slide'].read_group([('is_category','=',False)], ['id:count'], ['slide_category'])",
+      "odoo shell: env['slide.channel.partner'].search([], limit=5).mapped(('partner_id','channel_id','member_status','completion'))",
+      "curl public: GET /slides  and  GET /slides/all  (auth=public, course catalog pages)",
+      "curl jsonrpc: POST /slides/channel/join {channel_id}  then  POST /slides/slide/quiz/submit"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "stakeholders": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Exact karma amounts (karma_gen_channel_rank/finish, quiz attempt rewards) ship as defaults but are per-course configurable - real values need runtime inspection.",
+    "Whether certification is in use depends on the website_slides_survey bridge (module_website_slides_survey flag), which is outside this module's code.",
+    "Live row counts / catalog size were not captured (runtime models_with_data = 0); engagement metrics need a populated DB.",
+    "Precise external-API behavior (YouTube/Vimeo/Google Drive quota, failure handling) when fetching video metadata via requests."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/website_slides.facts.json",
+    "tools": [
+      "code-read",
+      "extract_frontend.py",
+      "extract_module.py",
+      "extract_runtime.sh",
+      "run-odoo (odoo shell)"
+    ],
+    "odoo_version": "19.0"
+  }
+}

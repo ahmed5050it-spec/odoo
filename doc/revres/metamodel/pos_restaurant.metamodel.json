@@ -1,0 +1,337 @@
+{
+  "subsystem": "pos_restaurant",
+  "evidence": {
+    "manifest": {
+      "name": "Restaurant",
+      "category": "Sales/Point of Sale",
+      "summary": "Restaurant extensions for the Point of Sale ",
+      "depends": [
+        "point_of_sale"
+      ],
+      "auto_install": false,
+      "application": true
+    },
+    "models": [
+      {
+        "_name": "restaurant.floor",
+        "_description": "Restaurant Floor",
+        "fields": 8,
+        "relations": [
+          "pos_config_ids->pos.config",
+          "table_ids->restaurant.table"
+        ]
+      },
+      {
+        "_name": "restaurant.table",
+        "_description": "Restaurant Table",
+        "fields": 11,
+        "relations": [
+          "floor_id->restaurant.floor",
+          "parent_id->restaurant.table"
+        ]
+      },
+      {
+        "_name": "restaurant.order.course",
+        "_description": "POS Restaurant Order Course",
+        "fields": 6,
+        "relations": [
+          "order_id->pos.order",
+          "line_ids->pos.order.line"
+        ]
+      },
+      {
+        "_name": "pos.order",
+        "_description": "(extension)",
+        "fields": 3,
+        "relations": [
+          "table_id->restaurant.table",
+          "course_ids->restaurant.order.course"
+        ]
+      },
+      {
+        "_name": "pos.order.line",
+        "_description": "(extension)",
+        "fields": 1,
+        "relations": [
+          "course_id->restaurant.order.course"
+        ]
+      },
+      {
+        "_name": "pos.config",
+        "_description": "(extension)",
+        "fields": 5,
+        "relations": [
+          "floor_ids->restaurant.floor"
+        ]
+      }
+    ],
+    "routes": [],
+    "security": {
+      "access_rules": 5,
+      "record_rules": 0,
+      "groups": 0
+    },
+    "views": {
+      "form": 2,
+      "list": 2,
+      "kanban": 1,
+      "search": 1
+    },
+    "frontend": {
+      "present": true,
+      "js_files": 31,
+      "xml_templates": 21,
+      "owl_components": [
+        "FloorScreen",
+        "NumpadDropdown",
+        "OrderCourse",
+        "SplitBillScreen",
+        "TipCell",
+        "TipReceipt",
+        "TipScreen"
+      ],
+      "registry_adds": [
+        "pos_pages:FloorScreen",
+        "pos_pages:SplitBillScreen",
+        "pos_pages:TipScreen"
+      ],
+      "patches": [
+        "ActionpadWidget",
+        "ActionpadWidget.prototype",
+        "ControlButtons",
+        "ControlButtons.prototype",
+        "DataServiceOptions.prototype",
+        "DevicesSynchronisation.prototype",
+        "FeedbackScreen.prototype",
+        "Navbar.prototype",
+        "OrderDisplay.prototype",
+        "OrderPaymentValidation.prototype",
+        "OrderSummary.prototype",
+        "PaymentInterface.prototype",
+        "PaymentScreenPaymentLines.prototype",
+        "PosConfig.prototype",
+        "PosOrder.prototype",
+        "PosOrderline.prototype",
+        "PosPayment.prototype",
+        "PosRouter.prototype",
+        "PosStore.prototype",
+        "ProductScreen.prototype",
+        "ReceiptHeader.prototype",
+        "ReceiptScreen.prototype",
+        "TicketScreen",
+        "TicketScreen.prototype",
+        "receiptLineGrouper"
+      ],
+      "services": [
+        "FloorScreen",
+        "ProductScreen",
+        "SplitBillScreen",
+        "TipScreen",
+        "useDraggable"
+      ],
+      "asset_bundles": {
+        "point_of_sale._assets_pos": 2,
+        "web.assets_backend": 1,
+        "web.assets_tests": 1,
+        "web.assets_unit_tests": 1,
+        "point_of_sale.assets_debug": 1
+      }
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": false,
+      "endpoints": [
+        "https://www.odoo.com/app/point-of-sale-restaurant"
+      ],
+      "files": [
+        "__manifest__.py"
+      ]
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    },
+    "behavioral_notes": [
+      {
+        "element": "restaurant.floor + restaurant.table (floor plan & table layout)",
+        "observation": "A restaurant.floor (name, background_color/image, sequence) is linked many2many to the restaurant-enabled pos.config(s) and owns a one2many of restaurant.table records. Each table carries pixel-geometry fields (position_h, position_v, width, height, shape square/round, color, seats) that exist purely to render the draggable floor-plan in the OWL app -- these are not accounting data. On creating/enabling a restaurant config, pos.config._setup_default_floor auto-creates one floor named after the company plus one default table, so a till is never floor-less. floor.write and table @api.ondelete guards block editing/removing a floor or table while a non-closed pos.session uses its config, and floor.deactivate_floor / table.are_orders_still_in_draft refuse to remove anything that still has draft (open) orders, protecting in-progress dining.",
+        "source": "code-read"
+      },
+      {
+        "element": "pos.order.table_id + customer_count + pos.order._get_open_order (table-to-order assignment)",
+        "observation": "The extension adds table_id (Many2one restaurant.table) and customer_count (Guests) to pos.order, binding a sit-down order to its physical table. _get_open_order is overridden so that, only when config.module_pos_restaurant is true, re-opening a table resolves to the existing draft order by uuid OR by (table_id + state='draft' + config_id) -- i.e. tapping an occupied table reloads its running tab rather than starting a new ticket. This table-keyed open-order lookup (and the draft-tab semantics) lives entirely in Python and the OWL client and is invisible to metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "restaurant.order.course (course firing / coursing)",
+        "observation": "restaurant.order.course models a meal 'course' (e.g. starters, mains): index for ordering, a uuid, order_id->pos.order and line_ids->pos.order.line, plus a fired Boolean. pos.order.line gains course_id (ondelete='set null') so each ordered item is grouped into a course. On both create and write, when fired is set true the model stamps fired_date = now() server-side -- the timestamp of when the kitchen was told to start that course (firing). pos.session._set_last_order_preparation_change snapshots line state (qty, product, attributes, note) into the order's last_order_preparation_change JSON, the basis for computing what to send to the kitchen/bar preparation printer. None of this coursing/firing/prep-diff logic is derivable from field metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "pos.config restaurant feature flags (iface_splitbill / iface_printbill / set_tip_after_payment / default_screen)",
+        "observation": "pos.config is extended with Booleans iface_splitbill (enable bill splitting), iface_printbill (print a proforma bill before payment; defaulted True for restaurant configs at create), set_tip_after_payment (let card terminals adjust the authorized amount to add a tip after the guest leaves), and default_screen (tables|register). create/write also force show_product_images/show_category_images defaults and gate set_tip_after_payment on iface_tipproduct; floor_ids is added to _get_forbidden_change_fields so floors can't be silently swapped on a live config. These flags switch on the SplitBillScreen, the pre-payment bill print, post-payment tip adjustment and whether the app opens on the floor plan -- behaviors that are pure config-driven UI branches.",
+        "source": "code-read"
+      },
+      {
+        "element": "frontend (restaurant extension of the offline OWL POS app) -- table transfer, split bill, coursing, tips",
+        "observation": "pos_restaurant is delivered almost entirely as JS/OWL bolted onto the standalone offline point_of_sale terminal app (it injects into the point_of_sale._assets_pos bundle, not a separate SPA). It adds 7 OWL components / ~31 JS files / 21 XML templates and registers 3 new pos_pages screens -- FloorScreen (drag-and-drop floor plan built on a makeDraggableHook/useDraggable; tables are repositioned and table-merge is detected via on-screen rectangle intersection), SplitBillScreen (split one order's lines into separate orders/bills), and TipScreen (collect/adjust tips, incl. set-tip-after-payment) -- plus an OrderCourse component for coursing and ~25 prototype patches onto base POS screens/models (ProductScreen, ControlButtons, ActionpadWidget, TicketScreen, OrderSummary, PaymentScreen lines, PosStore/PosOrder/PosOrderline) that add restaurant control buttons, table transfer between tables, guest count, course actions and proforma-bill printing. Transfer-between-tables and split-bill happen client-side against the POS's IndexedDB-backed offline ORM and only later sync to pos.order on the server; this entire interaction model is reverse-engineerable only from the static JS, never from Python metadata.",
+        "source": "static"
+      }
+    ]
+  },
+  "it_architecture": {
+    "application": "pos_restaurant (Restaurant extension of the Point of Sale application component: adds floor/table/course backend models + restaurant screens to the offline OWL POS terminal app)",
+    "software_services": [
+      "(no own HTTP/JSON-RPC routes; extends point_of_sale's /pos/ui terminal app and pos.session data-loading + sync_from_ui RPCs)"
+    ],
+    "data_objects": [
+      "restaurant.floor",
+      "restaurant.table",
+      "restaurant.order.course",
+      "pos.order (table_id, customer_count, course_ids)",
+      "pos.order.line (course_id)",
+      "pos.config (floor_ids, iface_splitbill, iface_printbill, set_tip_after_payment, default_screen)"
+    ],
+    "logical_data_erm": [
+      "restaurant.floor -> pos.config (pos_config_ids, many2many)",
+      "restaurant.floor -> restaurant.table (table_ids)",
+      "restaurant.table -> restaurant.floor (floor_id)",
+      "restaurant.table -> restaurant.table (parent_id, table grouping)",
+      "pos.order -> restaurant.table (table_id)",
+      "pos.order -> restaurant.order.course (course_ids)",
+      "restaurant.order.course -> pos.order (order_id)",
+      "restaurant.order.course -> pos.order.line (line_ids)",
+      "pos.order.line -> restaurant.order.course (course_id)"
+    ],
+    "information_flows": [
+      "depends: point_of_sale",
+      "config gate: restaurant models (restaurant.floor/table/order.course) are loaded into the terminal only when pos.config.module_pos_restaurant is true (pos.session._load_pos_data_models)",
+      "side-effect: pos.config._setup_default_floor -> auto-create one restaurant.floor + one restaurant.table when a restaurant/bar config is created or enabled",
+      "side-effect: restaurant.order.course.create/write with fired=True -> stamp fired_date=now() (kitchen firing time)",
+      "frontend path: FloorScreen/SplitBillScreen mutate table assignment and split orders in the offline OWL/IndexedDB client, then replay to pos.order via point_of_sale's sync_from_ui",
+      "downstream (inherited from point_of_sale): the finished pos.order still drives stock.picking + account.move at payment/session close"
+    ],
+    "frontend_components": [
+      "FloorScreen",
+      "SplitBillScreen",
+      "TipScreen",
+      "OrderCourse",
+      "NumpadDropdown",
+      "TipCell",
+      "TipReceipt"
+    ]
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Manage Restaurant Floors & Table Layout (floor plan)",
+      "Assign Orders to Tables & Track Guest Count",
+      "Course Management & Kitchen Firing (coursing)",
+      "Split Bills across an Order",
+      "Print Proforma Bill before Payment",
+      "Transfer / Merge Orders between Tables",
+      "Collect & Adjust Tips (incl. set-tip-after-payment)"
+    ],
+    "value_streams": [
+      "Dine-in service: seat guests at table -> open table order (table_id + guest count) -> order by course / fire to kitchen -> print proforma bill -> split bill if needed -> tender payment + tip -> (inherited) deliver stock + close session journal entry"
+    ],
+    "information_concepts": [
+      "restaurant.floor",
+      "restaurant.table",
+      "restaurant.order.course",
+      "pos.order (table-bound order)",
+      "pos.order.line (coursed line)",
+      "pos.config (restaurant terminal profile)"
+    ],
+    "organization": [
+      "point_of_sale.group_pos_user (read floors/tables; full CRUD on courses)",
+      "point_of_sale.group_pos_manager (full CRUD on floors/tables/courses)"
+    ],
+    "products": [],
+    "policies": [
+      "no own ir.rule (0 record rules); 5 ir.model.access rows reuse the inherited group_pos_user / group_pos_manager groups",
+      "floors/tables read-only for pos_user, manager-only create/write/unlink; restaurant.order.course writable by pos_user (the cashier edits coursing live)",
+      "cannot delete/deactivate a floor or table while a non-closed pos.session uses its config (@api.ondelete + write guards)",
+      "cannot delete a floor/table that still has draft orders (deactivate_floor / are_orders_still_in_draft)"
+    ],
+    "stakeholders": [
+      "Waiter / Cashier (res.users, point_of_sale.group_pos_user)",
+      "Restaurant / POS Manager (res.users, point_of_sale.group_pos_manager)",
+      "Kitchen / Bar staff (consume course firing & preparation changes)",
+      "Diner (guest at a table)"
+    ],
+    "strategy": null,
+    "metrics": [
+      "customer_count (guests served per order) -- inferred, no dedicated report model in this module",
+      "course fired_date timestamps (kitchen firing timing) -- inferred"
+    ]
+  },
+  "classification": {
+    "value_model": "chain",
+    "activity_class": "primary",
+    "apqc_category": "3.0 Market and Sell Products and Services",
+    "rationale": "pos_restaurant is a thin sell-side extension of point_of_sale, which is itself a value-chain primary activity (the originating act is the in-restaurant sale/checkout that produces a paid pos.order and drives downstream delivery (stock.picking) and revenue/cash recognition (account.move at session close)). It therefore inherits value_model 'chain' / activity_class 'primary' and maps to APQC 3.0 (Market and Sell) -- the dine-in order is the 3.5 'manage sales orders' family realized as a table-served till; deliver (APQC 4.0) and AR/cash (APQC 9.0) remain triggered side-effects, not this module's mission. The module's own added value is service-orchestration (floor plan, table assignment, coursing/firing, bill splitting, tips), giving it a pronounced 'shop' (service-encounter / dining experience) overtone, and -- like its parent -- a strong network/frontend character: nearly all of its logic ships as OWL screens patched into the offline IndexedDB-backed POS terminal app, with no server HTTP routes of its own."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "graphical floor plan with draggable, resizable tables (shape/seats/color) across multiple floors",
+      "table-bound orders with guest (customer) count and reload-the-tab-by-table behavior",
+      "course management and kitchen/bar firing with preparation-change tracking",
+      "bill splitting (SplitBillScreen) and pre-payment proforma bill printing",
+      "transfer / merge orders between tables",
+      "tips, including adjust-tip-after-payment via card terminals",
+      "auto-provisioned default floor + table when a restaurant/bar config is enabled",
+      "onboarding 'Restaurant' and 'Bar' scenarios with demo floors, categories and presets"
+    ],
+    "typical_fits": [
+      "sit-down restaurant / bar counter service with table-served checks",
+      "split-the-check and pay-with-tip at the table",
+      "coursed service firing to kitchen/bar printers",
+      "single restaurant config toggled on via module_pos_restaurant on pos.config"
+    ],
+    "common_gaps": [
+      "reservation / waitlist management (not in scope here)",
+      "complex kitchen display systems beyond the basic preparation-change/printer flow",
+      "advanced floor-plan constraints (capacity optimization, table combination rules) beyond simple parent_id grouping",
+      "custom split logic (per-seat allocation, item-share splitting) beyond the standard SplitBillScreen",
+      "deep coursing automation (timed auto-fire, pacing) -- firing is manual",
+      "any new offline/client screen or table-state behavior requires OWL development, not configuration"
+    ],
+    "drive_hints": [
+      "odoo shell: env['pos.config'].search([('module_pos_restaurant','=',True)]).mapped(('name','iface_splitbill','iface_printbill','default_screen'))",
+      "odoo shell: env['restaurant.floor'].search([]).mapped(('name','pos_config_ids','table_ids'))",
+      "odoo shell: env['restaurant.table'].search([], limit=10).mapped(('table_number','floor_id','seats','shape'))",
+      "odoo shell: env['pos.order'].search([('table_id','!=',False)], limit=5).mapped(('name','table_id','customer_count','state'))",
+      "odoo shell: env['restaurant.order.course'].search([], limit=5).mapped(('index','fired','fired_date','order_id'))",
+      "browse /pos/ui/<config_id> on a restaurant config to launch the floor-plan FloorScreen"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "stakeholders": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Exact split-bill algorithm in SplitBillScreen (per-line vs per-quantity vs per-seat) and how it materializes new pos.order records on sync.",
+    "Full transfer/merge-between-tables flow: how parent_id grouping and table_id reassignment are persisted and conflict-resolved across two devices offline.",
+    "How course firing drives the actual kitchen/bar preparation printout (preparation-change diff -> printer) -- the print path lives in the parent module / hardware proxy.",
+    "Precise post-payment tip adjustment mechanics with external payment terminals (set_tip_after_payment) and which payment add-on modules support it."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/pos_restaurant.facts.json",
+    "tools": [
+      "code-read",
+      "extract_frontend.py",
+      "extract_module.py",
+      "extract_runtime.sh",
+      "run-odoo (odoo shell)"
+    ],
+    "odoo_version": "19.0"
+  }
+}

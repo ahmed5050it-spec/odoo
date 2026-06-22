@@ -1,0 +1,285 @@
+{
+  "subsystem": "delivery",
+  "evidence": {
+    "manifest": {
+      "name": "Delivery Costs",
+      "category": "Sales/Delivery",
+      "depends": [
+        "sale",
+        "payment_custom"
+      ],
+      "auto_install": false,
+      "application": false
+    },
+    "models": [
+      {
+        "_name": "delivery.carrier",
+        "_description": "Shipping Methods",
+        "fields": 34,
+        "relations": [
+          "product_id->product.product",
+          "company_id->res.company",
+          "price_rule_ids->delivery.price.rule"
+        ]
+      },
+      {
+        "_name": "delivery.price.rule",
+        "_description": "Delivery Price Rules",
+        "fields": 10,
+        "relations": [
+          "carrier_id->delivery.carrier"
+        ]
+      },
+      {
+        "_name": "delivery.zip.prefix",
+        "_description": "Delivery Zip Prefix",
+        "fields": 1,
+        "relations": []
+      },
+      {
+        "_name": "choose.delivery.carrier",
+        "_description": "Delivery Carrier Selection Wizard",
+        "fields": 13,
+        "relations": [
+          "order_id->sale.order",
+          "carrier_id->delivery.carrier",
+          "available_carrier_ids->delivery.carrier"
+        ]
+      },
+      {
+        "_name": "sale.order",
+        "_description": "(extension)",
+        "fields": 7,
+        "relations": [
+          "carrier_id->delivery.carrier"
+        ]
+      }
+    ],
+    "routes": [
+      {
+        "paths": [
+          "/delivery/set_pickup_location"
+        ],
+        "auth": "user",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/delivery/get_pickup_locations"
+        ],
+        "auth": "user",
+        "type": "jsonrpc"
+      }
+    ],
+    "security": {
+      "access_rules": 10,
+      "record_rules": 1,
+      "groups": 0
+    },
+    "views": {
+      "form": 2,
+      "list": 2,
+      "search": 1
+    },
+    "behavioral_notes": [
+      {
+        "element": "delivery.carrier.rate_shipment",
+        "observation": "Provider-abstraction dispatch: rate_shipment(order) reflectively calls '<delivery_type>_rate_shipment' via getattr(self, '%s_rate_shipment' % self.delivery_type)(order). The base module ships only two built-in providers, 'fixed' (fixed_rate_shipment, price from the carrier product pricelist) and 'base_on_rule' (base_on_rule_rate_shipment, walks delivery.price.rule via safe_eval of variable+operator+max_value). External carriers are added by sub-modules that _inherit delivery.carrier and extend the delivery_type selection. Not visible in metadata (reflective dispatch on a Selection value).",
+        "source": "code-read"
+      },
+      {
+        "element": "delivery.carrier external-provider override contract",
+        "observation": "The class docstring defines the carrier-connector SPI: an external provider implements <type>_rate_shipment, <type>_send_shipping, <type>_get_tracking_link, <type>_cancel_shipment and _<type>_get_default_custom_package_code. integration_level ('rate' vs 'rate_and_ship'), prod_environment and debug_logging (log_xml -> ir.logging) are the credential/sandbox/trace hooks for those real-carrier API calls. The base module defines the contract but makes no external call itself.",
+        "source": "code-read"
+      },
+      {
+        "element": "sale.order shipping cost line (set_delivery_line / _create_delivery_line)",
+        "observation": "set_delivery_line(carrier, amount) removes any prior delivery line then _create_delivery_line builds a sale.order.line with is_delivery=True, product_id=carrier.product_id, price_unit=rated price, taxes mapped through the fiscal position; rate_shipment applies margin/fixed_margin and zeroes the price when free_over and order total >= amount. The shipping charge thus rides the order total into Quote-to-Cash invoicing. Computed in Python, invisible to metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "delivery.carrier._match (carrier availability filtering)",
+        "observation": "_match gates a carrier against a source (sale.order or stock.picking) by address (country_ids/state_ids/zip_prefix_ids regex), product tags (must_have_tag_ids/excluded_tag_ids) and max_weight/max_volume; available_carriers/_is_available_for_order drive the choose.delivery.carrier wizard and portal selection. base_on_rule additionally validates by running rate_shipment().get('success').",
+        "source": "code-read"
+      },
+      {
+        "element": "stock.picking tracking integration (cross-module, not in base delivery)",
+        "observation": "tracking_number / carrier_tracking_ref and the send-to-shipper-on-validate behavior live in the separate stock_delivery module (addons/stock_delivery/models/stock_picking.py: carrier_tracking_ref field, carrier_tracking_url = carrier_id.get_tracking_link(picking), _send_confirmation_email triggering rate_and_ship at button_validate). The base delivery module only provides the delivery.carrier abstraction those pickings call; it has no stock.picking model and does not depend on stock.",
+        "source": "code-read"
+      },
+      {
+        "element": "external integrations (carrier-connector abstraction)",
+        "observation": "delivery is the carrier-connector abstraction layer: extract_frontend reports 0 outbound HTTP call sites, no SDK imports and no API keys in this module. Real outbound carrier API traffic (FedEx/UPS/DHL/Easypost/Sendcloud, etc.) lives in delivery_* / *_delivery sub-modules that _inherit delivery.carrier and implement the <type>_rate_shipment/<type>_send_shipping SPI defined here. This is a gap #7 external-integration boundary realized as an extension point rather than a concrete connector.",
+        "source": "static"
+      }
+    ],
+    "frontend": {
+      "present": true,
+      "js_files": 7,
+      "xml_templates": 6,
+      "owl_components": [
+        "Location",
+        "LocationList",
+        "LocationSchedule",
+        "LocationSelectorDialog",
+        "Map",
+        "MapContainer"
+      ],
+      "registry_adds": [],
+      "patches": [
+        "PaymentForm.prototype"
+      ],
+      "services": [],
+      "asset_bundles": {
+        "web.assets_frontend": 1
+      }
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": false,
+      "endpoints": [],
+      "files": []
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    }
+  },
+  "it_architecture": {
+    "application": "delivery (Shipping / Delivery Costs application component)",
+    "software_services": [
+      "/delivery/set_pickup_location",
+      "/delivery/get_pickup_locations"
+    ],
+    "data_objects": [
+      "delivery.carrier",
+      "delivery.price.rule",
+      "delivery.zip.prefix",
+      "choose.delivery.carrier"
+    ],
+    "logical_data_erm": [
+      "delivery.carrier -> product.product (delivery product)",
+      "delivery.carrier -> res.company",
+      "delivery.price.rule -> delivery.carrier",
+      "sale.order -> delivery.carrier (carrier_id)",
+      "choose.delivery.carrier -> sale.order"
+    ],
+    "information_flows": [
+      "depends: sale, payment_custom",
+      "side-effect: delivery.carrier.rate_shipment -> sale.order.line (is_delivery=True) shipping charge on the order",
+      "side-effect: external provider sub-modules delegate <type>_send_shipping/<type>_get_tracking_link to real carrier APIs (gap #7)",
+      "cross-module: stock_delivery uses delivery.carrier to set stock.picking.carrier_tracking_ref and send-to-shipper at button_validate"
+    ],
+    "frontend_components": [
+      "Location",
+      "LocationList",
+      "LocationSchedule",
+      "LocationSelectorDialog",
+      "Map",
+      "MapContainer"
+    ],
+    "external_integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": false,
+      "endpoints": [],
+      "character": "carrier-connector abstraction (gap #7): defines the <type>_rate_shipment/<type>_send_shipping/<type>_get_tracking_link/<type>_cancel_shipment SPI; concrete external carrier API calls are implemented in delivery_* sub-modules, not here."
+    }
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Manage Shipping Methods (carriers)",
+      "Rate Shipment / Compute Delivery Cost",
+      "Select Carrier for an Order (wizard + portal)",
+      "Define Delivery Price Rules",
+      "Provision External Carrier Connectors (extension point)"
+    ],
+    "value_streams": [
+      "Quote-to-Cash (shipping leg): add carrier -> rate shipment -> shipping cost line on order -> invoice estimated cost",
+      "Order-to-Ship: carrier selection feeds outbound shipment (tracking realized in stock_delivery)"
+    ],
+    "information_concepts": [
+      "delivery.carrier (shipping method)",
+      "delivery.price.rule (pricing rule)",
+      "delivery.zip.prefix (service area)",
+      "sale.order (carrier_id, shipping_weight)"
+    ],
+    "organization": [],
+    "products": [],
+    "policies": [
+      "1 record rule: multi-company scoping on delivery.carrier",
+      "_check_tags constraint: a tag cannot be in both Must Have and Excluded tags",
+      "margin >= -100% and shipping_insurance 0-100 SQL CHECK constraints",
+      "free_over / amount automation: shipping price set to 0 above an order-amount threshold"
+    ],
+    "stakeholders": [
+      "Customer (res.partner, shipping address / pickup location)",
+      "Salesperson (res.users, selects carrier on order)",
+      "Carrier / Shipping Provider (delivery.carrier, external API in sub-modules)"
+    ],
+    "strategy": null,
+    "metrics": [
+      "shipping_weight / estimated weight per order",
+      "rated delivery_price vs free_over threshold (no dedicated analytics model in base delivery)"
+    ]
+  },
+  "classification": {
+    "value_model": "chain",
+    "activity_class": "support",
+    "apqc_category": "4.4 Operate outbound transportation / ship",
+    "rationale": "delivery extends the outbound-logistics (shipping/carrier) leg of the value chain, so its value_model is chain. It is classed as a support activity because it provisions shipping capability for the chain rather than performing the physical ship itself: it abstracts carriers (delivery.carrier), rates shipments and injects the cost into the order, while the actual outbound move and tracking are executed by stock/stock_delivery. It carries a noted gap #7 external-integration character - the module defines the carrier-connector SPI but the real external carrier API calls live in delivery_* sub-modules. APQC maps to 4.4 Operate outbound transportation / ship (Supply Chain)."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "shipping methods with fixed price and rule-based pricing (delivery.price.rule)",
+      "carrier availability matching by address, weight, volume and product tags",
+      "carrier selection wizard + eCommerce/portal carrier choice and pickup-location selector",
+      "margin / fixed margin and free-over-threshold free shipping",
+      "cash-on-delivery payment gating via the selected carrier",
+      "extension point for external carrier connectors (rate/ship/track/cancel SPI)"
+    ],
+    "typical_fits": [
+      "fixed-price or weight/price-rule domestic shipping out of the box",
+      "installing an Enterprise/community delivery_* connector for a real carrier",
+      "invoicing the estimated shipping cost on the sales order"
+    ],
+    "common_gaps": [
+      "any concrete external carrier API (FedEx/UPS/DHL/Easypost/Sendcloud) - requires a delivery_* connector module",
+      "real shipment creation, label printing and tracking - requires stock_delivery + a connector",
+      "custom rate logic / negotiated tariffs beyond delivery.price.rule",
+      "multi-package and dimensional-weight rating refinements"
+    ],
+    "drive_hints": [
+      "odoo shell: env['delivery.carrier'].search([]).mapped(('name','delivery_type'))",
+      "odoo shell: so = env['sale.order'].search([], limit=1); c = env['delivery.carrier'].search([('delivery_type','=','fixed')], limit=1); c.rate_shipment(so)",
+      "curl jsonrpc /delivery/get_pickup_locations (auth=user) with a zip_code + country"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Which concrete delivery_* connector modules are installed and which external carrier APIs they reach (gap #7 realized).",
+    "Exact send-to-shipper / tracking flow at stock.picking.button_validate (lives in stock_delivery, depends on integration_level).",
+    "How choose.delivery.carrier and the portal pickup-location selector map onto sale.order.line creation for non-base providers."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/delivery.facts.json",
+    "tools": [
+      "code-read",
+      "extract_frontend.py",
+      "extract_module.py",
+      "extract_runtime.sh",
+      "run-odoo (odoo shell)"
+    ],
+    "odoo_version": "19.0"
+  }
+}

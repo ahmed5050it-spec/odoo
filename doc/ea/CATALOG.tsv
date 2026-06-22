@@ -1,0 +1,28 @@
+artifact	ea_layer	metamodel_element	fit_to_standard_phase	source_type
+ARCHITECTURE.md	Enterprise	overall blueprint	framing	human+revres
+ARIS_METHODOLOGY.md	Enterprise	metamodel repository	framing	human+metadata
+MODULES_SUBSYSTEM.md	Enterprise	module system	framing	revres
+VALUE_CONFIGURATION_METHODOLOGY.md	Business	value configuration	1-identify value model	human
+VALUE_MODELS_THREE_AR.md	Business	capability / value stream	1-identify value model	human+revres
+PRIMARY_ACTIVITIES_AR.md	Business	value stream (primary)	1-identify value model	human+revres
+SUPPORT_ACTIVITIES_AR.md	Business	capability (support)	1-identify value model	human+revres
+PRIMARY_SUPPORT_INTEGRATION_AR.md	Business Process	value stream integration	2-select standard process	revres+runtime
+APQC_PCF_VALUE_MODELS_AR.md	Business Process	process classification	2-select standard process	human+revres
+BPMN_REVERSE_IMPLEMENTATION.md	Business Process	process / EPC	4-model the gap	revres
+MESSAGING_SUBSYSTEM.md	Application	application service	3-show standard live	revres
+PROFILING_SUBSYSTEM.md	Application	non-functional / perf	3-show standard live	runtime
+LOGS_AND_MESSAGES.md	Application	information flow	3-show standard live	runtime
+doc/revres/extract_module.py	Application	engine (extractor)	3-show standard live	tool
+doc/revres/run_revres.sh	Application	engine (batch)	3-show standard live	tool
+doc/revres/facts/*.json	Application	application + data objects	3-show standard live	revres
+doc/revres/index.tsv	Application	app catalog (triage)	3-show standard live	revres
+MODULES_DEPENDENCY_MAP.txt	Application	application dependency	3-show standard live	revres
+BASE_MODULE.md	Data	data objects (ir.*/res.*)	3-show standard live	revres
+PRODUCT_CONFIGURATION_AR.md	Solution	product configuration	4-fit: configure	human+revres
+PRODUCT_VALUE_LIFECYCLE_AR.md	Solution	value realization	4-fit: configure	revres+runtime
+VALUE_AND_SERVICE_PRODUCT_MGMT.md	Solution	product / service def	4-fit: configure	revres
+REVERSE_ENGINEERABLE_FROM_CODE_AR.md	Enterprise	reverse-eng boundary	governance	human+revres
+METADATA_LIMITS_AR.md	Enterprise	metadata boundary	governance	human+revres
+.claude/skills/run-odoo	Application	live driving harness	3-show standard live	tool
+doc/ea/EA_FIT_TO_STANDARD_AR.md	Solution	solution architecture	5-document & accept	human
+Fit/Gap log (workshop)	Customer Experience	requirement -> fit/gap	5-document & accept	human

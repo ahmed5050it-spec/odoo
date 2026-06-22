@@ -1,0 +1,316 @@
+{
+  "subsystem": "hr_recruitment",
+  "evidence": {
+    "manifest": {
+      "name": "Recruitment",
+      "category": "Human Resources/Recruitment",
+      "depends": [
+        "hr",
+        "calendar",
+        "utm",
+        "attachment_indexation",
+        "web_tour",
+        "digest"
+      ],
+      "auto_install": false,
+      "application": true
+    },
+    "models": [
+      {
+        "_name": "hr.applicant",
+        "_description": "Applicant",
+        "fields": 60,
+        "relations": [
+          "partner_id->res.partner",
+          "job_id->hr.job",
+          "stage_id->hr.recruitment.stage",
+          "employee_id->hr.employee",
+          "department_id->hr.department",
+          "user_id->res.users",
+          "interviewer_ids->res.users",
+          "meeting_ids->calendar.event",
+          "talent_pool_ids->hr.talent.pool",
+          "refuse_reason_id->hr.applicant.refuse.reason"
+        ]
+      },
+      {
+        "_name": "hr.job",
+        "_description": "Job Position (extended: alias + recruitment)",
+        "fields": 29,
+        "relations": [
+          "application_ids->hr.applicant",
+          "manager_id->hr.employee",
+          "interviewer_ids->res.users",
+          "alias_id->mail.alias",
+          "job_source_ids->hr.recruitment.source",
+          "address_id->res.partner"
+        ]
+      },
+      {
+        "_name": "hr.recruitment.stage",
+        "_description": "Recruitment Stages",
+        "fields": 13,
+        "relations": [
+          "job_ids->hr.job",
+          "template_id->mail.template"
+        ]
+      },
+      {
+        "_name": "hr.talent.pool",
+        "_description": "Talent Pool",
+        "fields": 9,
+        "relations": [
+          "talent_ids->hr.applicant",
+          "pool_manager->res.users",
+          "categ_ids->hr.applicant.category"
+        ]
+      },
+      {
+        "_name": "hr.recruitment.source",
+        "_description": "Source of Applicants",
+        "fields": 6,
+        "relations": [
+          "job_id->hr.job",
+          "alias_id->mail.alias",
+          "medium_id->utm.medium",
+          "campaign_id->utm.campaign"
+        ]
+      }
+    ],
+    "routes": [],
+    "security": {
+      "access_rules": 31,
+      "record_rules": 8,
+      "groups": 5
+    },
+    "views": {
+      "form": 9,
+      "list": 11,
+      "kanban": 4,
+      "search": 3,
+      "pivot": 2,
+      "graph": 2,
+      "calendar": 1,
+      "activity": 1
+    },
+    "behavioral_notes": [
+      {
+        "element": "hr.applicant.message_new / hr.job._alias_get_creation_values",
+        "observation": "Inbound emails to a job's mail alias auto-create hr.applicant records (alias_model = hr.applicant) with alias_defaults seeding job_id/department_id/company_id/user_id and the job's first stage; hr.job.platform regex parses the applicant's name out of job-board emails (e.g. LinkedIn) so CVs/applications can be ingested by email. Not visible in metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "hr.applicant.create_employee_from_applicant",
+        "observation": "Hire conversion: creates an hr.employee from the applicant via _get_employee_create_vals (name, work_contact_id, job_id, job_title, department_id, private address), copies the applicant's unique ir.attachment files (CV/docs) onto the new employee, and back-links applicant_ids. This is the recruitment->HR core handoff, driven by Python not schema.",
+        "source": "code-read"
+      },
+      {
+        "element": "hr.applicant.write + hr.recruitment.stage (pipeline/kanban)",
+        "observation": "stage_id drives the kanban pipeline (stage.fold + legend_blocked/waiting/done/normal + applicant.kanban_state). Moving into a stage flagged hired_stage sets date_closed (via _compute_date_closed) and decrements hr.job.no_of_recruitment (openings); leaving it increments it back. Stages with a template_id post an automated email to the applicant on entry (_track_template). _read_group_stage_ids/group_expand keep empty columns visible.",
+        "source": "code-read"
+      },
+      {
+        "element": "hr.applicant.action_create_meeting + interviewer_ids",
+        "observation": "Interview scheduling opens the calendar action and creates calendar.event records linked back through calendar.event.applicant_id, defaulting attendees to the applicant + recruiter/department manager. Setting interviewer_ids calls _create_recruitment_interviewers (granting interviewer-group access) and message_notify's the assigned interviewers. Cross-model side-effect into calendar, invisible in metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "hr.applicant talent-pool & duplicate detection",
+        "observation": "_get_similar_applicants_domain / _search_is_applicant_in_pool match applicants across email_normalized, partner_phone_sanitized and linkedin_profile (the pool search uses a raw SQL CTE), powering application_count, talent_pool_count and de-duplication when adding talents to a pool. Behavior lives in compute/search methods, not field metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "frontend (OWL/JS)",
+        "observation": "16 JS files, 1 OWL component (RecruitmentActionHelper), 9 registry registrations (custom fields RecruitmentCopyClipboardChar/applicant_char/applicant_line_many2many/hr_applicant_state_selection + recruitment kanban/list/form view variants + interviewer view + tour), 2 prototype patches (FormController, ResPartner); asset bundles {web.assets_backend:4, web.assets_unit_tests:1}.",
+        "source": "static"
+      }
+    ],
+    "frontend": {
+      "present": true,
+      "js_files": 16,
+      "xml_templates": 5,
+      "owl_components": [
+        "RecruitmentActionHelper"
+      ],
+      "registry_adds": [
+        "fields:RecruitmentCopyClipboardChar",
+        "fields:applicant_char",
+        "fields:applicant_line_many2many",
+        "fields:hr_applicant_state_selection",
+        "views:hr_recruitment_interviewer",
+        "views:recruitment_form_view",
+        "views:recruitment_kanban_view",
+        "views:recruitment_list_view",
+        "web_tour.tours:hr_recruitment_tour"
+      ],
+      "patches": [
+        "FormController.prototype",
+        "ResPartner.prototype"
+      ],
+      "services": [
+        "job_id"
+      ],
+      "asset_bundles": {
+        "web.assets_backend": 4,
+        "web.assets_unit_tests": 1
+      }
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": false,
+      "endpoints": [
+        "https://www.odoo.com/app/recruitment"
+      ],
+      "files": [
+        "__manifest__.py"
+      ]
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    }
+  },
+  "it_architecture": {
+    "application": "hr_recruitment (Recruitment application component)",
+    "software_services": [],
+    "data_objects": [
+      "hr.applicant",
+      "hr.job",
+      "hr.recruitment.stage",
+      "hr.talent.pool",
+      "hr.recruitment.source"
+    ],
+    "logical_data_erm": [
+      "hr.applicant -> hr.job",
+      "hr.applicant -> hr.recruitment.stage",
+      "hr.applicant -> hr.employee",
+      "hr.applicant -> res.partner",
+      "hr.applicant -> calendar.event",
+      "hr.applicant -> hr.talent.pool",
+      "hr.job -> mail.alias",
+      "hr.recruitment.source -> hr.job"
+    ],
+    "information_flows": [
+      "depends: hr, calendar, utm, attachment_indexation, web_tour, digest",
+      "side-effect: inbound email -> mail.alias -> hr.applicant.message_new creates applicant (CV intake)",
+      "side-effect: hr.applicant.create_employee_from_applicant -> hr.employee (+ attachment copy)",
+      "side-effect: hr.applicant.action_create_meeting -> calendar.event (interview)",
+      "side-effect: stage move to hired_stage -> set date_closed + decrement hr.job.no_of_recruitment"
+    ],
+    "frontend_components": [
+      "RecruitmentActionHelper"
+    ]
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Manage Job Positions & Openings",
+      "Track Applicant Pipeline (stages/kanban)",
+      "Source Applicants (email alias, UTM, job platforms)",
+      "Schedule Interviews & Assign Interviewers",
+      "Manage Talent Pool & Detect Duplicates",
+      "Hire / Convert Applicant to Employee",
+      "Recruitment Analysis"
+    ],
+    "value_streams": [
+      "Source-to-Hire: job opening -> application intake -> screening/stages -> interviews -> offer -> hired employee"
+    ],
+    "information_concepts": [
+      "hr.applicant",
+      "hr.job",
+      "hr.recruitment.stage",
+      "hr.talent.pool",
+      "hr.recruitment.source",
+      "hr.employee (hire target)",
+      "res.partner (candidate contact)"
+    ],
+    "organization": [
+      "group_hr_recruitment_interviewer",
+      "group_hr_recruitment_user",
+      "group_hr_recruitment_manager",
+      "group_applicant_cv_display"
+    ],
+    "products": [],
+    "policies": [
+      "8 record rules: interviewer-only visibility (see only applicants on their jobs), multi-company scoping, recruiter ownership"
+    ],
+    "stakeholders": [
+      "Applicant / Candidate (res.partner)",
+      "Recruiter (res.users / user_id)",
+      "Interviewer (res.users / interviewer_ids)",
+      "Hiring/Department Manager (hr.employee / manager_id)",
+      "HR Manager"
+    ],
+    "strategy": null,
+    "metrics": [
+      "Recruitment pivot/graph analysis (applications per job/stage)",
+      "hr.applicant day_open / day_close / delay_close (time-to-hire)",
+      "hr.job application_count / open_application_count / no_of_hired_employee",
+      "digest KPI kpi_hr_recruitment_new_colleagues (new hires)"
+    ]
+  },
+  "classification": {
+    "value_model": "support",
+    "activity_class": "support",
+    "apqc_category": "7.0 Develop and Manage Human Capital",
+    "rationale": "hr_recruitment is a talent-acquisition support activity: it does not produce or sell the firm's output but supplies the organization with human capital. It maps to APQC PCF 7.1 (Recruit, source and select employees) and feeds hr (hr.employee) at the hire boundary. As an HR support function it is a 'support' value model (infrastructure/staffing) rather than a primary value-chain activity; no document flow to stock/account, the terminal output is a hired hr.employee."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "job-position management with per-job email alias intake",
+      "applicant pipeline with configurable kanban stages (fold, hired_stage, rotting threshold)",
+      "automated stage emails via mail.template",
+      "interview scheduling through calendar + interviewer assignment/notification",
+      "refuse reasons + templated refusal mails",
+      "talent pool with email/phone/LinkedIn duplicate detection",
+      "UTM sourcing (medium/source/campaign) and job-platform regex parsing",
+      "one-click hire: create employee from applicant (CV/attachments copied)",
+      "recruitment analysis (pivot/graph) and digest KPI"
+    ],
+    "typical_fits": [
+      "standard source-to-hire pipeline driven by kanban stages",
+      "email-to-applicant intake per job position",
+      "interviewer access scoping via record rules",
+      "applicant-to-employee conversion handoff to hr"
+    ],
+    "common_gaps": [
+      "online job board / careers website (separate module website_hr_recruitment)",
+      "candidate assessment surveys (hr_recruitment_survey)",
+      "CV / resume field extraction (hr_recruitment_extract)",
+      "custom approval workflow for offers / salary bands",
+      "industry-specific applicant properties and scorecards"
+    ],
+    "drive_hints": [
+      "odoo shell: env['hr.applicant'].search([], limit=5).mapped(('partner_name','stage_id.name','job_id.name'))",
+      "odoo shell: env['hr.job'].search([], limit=5).mapped(('name','alias_email','no_of_recruitment','application_count'))",
+      "odoo shell: env['hr.recruitment.stage'].search([]).mapped(('name','sequence','hired_stage'))",
+      "odoo shell: app = env['hr.applicant'].search([('job_id','!=',False)], limit=1); app.create_employee_from_applicant()"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Default recruitment stages shipped as data are New, Qualification, First Interview, Second Interview, Contract Proposal, Contract Signed; which are job-specific vs global at runtime is config-dependent.",
+    "Full set of record rules behind interviewer-only visibility vs recruiter/manager access.",
+    "How website_hr_recruitment / hr_recruitment_survey / hr_recruitment_extract extend intake and screening when installed."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/hr_recruitment.facts.json",
+    "tools": [
+      "code-read",
+      "extract_frontend.py",
+      "extract_module.py",
+      "extract_runtime.sh",
+      "run-odoo (odoo shell)"
+    ],
+    "odoo_version": "19.0"
+  }
+}

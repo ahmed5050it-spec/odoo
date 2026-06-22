@@ -1,0 +1,157 @@
+{
+  "subsystem": "project_todo",
+  "evidence": {
+    "manifest": {
+      "name": "To-Do",
+      "category": "Productivity/To-Do",
+      "depends": [
+        "project"
+      ],
+      "auto_install": true,
+      "application": true
+    },
+    "models": [
+      {
+        "_name": "mail.activity.todo.create",
+        "_description": "Create activity and todo at the same time",
+        "fields": 4
+      }
+    ],
+    "routes": [],
+    "security": {
+      "access_rules": 4,
+      "record_rules": 1,
+      "groups": 0
+    },
+    "views": {
+      "form": 3,
+      "list": 1,
+      "tree": 0,
+      "kanban": 1,
+      "search": 1,
+      "pivot": 0,
+      "graph": 0,
+      "calendar": 1,
+      "activity": 1
+    },
+    "frontend": {
+      "present": true,
+      "js_files": 14,
+      "xml_templates": 3,
+      "owl_components": [
+        "TodoChatterPanel"
+      ],
+      "registry_adds": [
+        "fields:todo_done_checkmark",
+        "view_widgets:todo_chatter_panel",
+        "views:todo_activity_wizard",
+        "views:todo_conversion_form",
+        "views:todo_form",
+        "views:todo_list"
+      ],
+      "patches": [
+        "ActivityMenu.prototype"
+      ],
+      "services": [],
+      "asset_bundles": {
+        "web.assets_backend": 4,
+        "web.assets_tests": 1,
+        "web.assets_unit_tests": 1
+      }
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": false,
+      "endpoints": [],
+      "files": []
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    },
+    "behavioral_notes": [
+      {
+        "element": "frontend (OWL/JS)",
+        "observation": "14 JS files, 1 OWL components, 6 registry adds; bundles ['web.assets_backend', 'web.assets_tests', 'web.assets_unit_tests'].",
+        "source": "static"
+      },
+      {
+        "element": "thin module",
+        "observation": "1 models, 0 routes, 589 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
+        "source": "ast"
+      }
+    ]
+  },
+  "it_architecture": {
+    "application": "project_todo (To-Do)",
+    "software_services": [],
+    "data_objects": [
+      "mail.activity.todo.create"
+    ],
+    "logical_data_erm": [
+      "mail.activity.todo.create -> res.users"
+    ],
+    "information_flows": [
+      "depends: project"
+    ],
+    "frontend_components": [
+      "TodoChatterPanel"
+    ]
+  },
+  "business_architecture": {
+    "capabilities": [
+      "To-Do"
+    ],
+    "value_streams": [],
+    "information_concepts": [
+      "mail.activity.todo.create"
+    ],
+    "organization": [],
+    "products": [],
+    "policies": [
+      "1 record rules"
+    ],
+    "stakeholders": [],
+    "strategy": null,
+    "metrics": []
+  },
+  "classification": {
+    "value_model": "shop",
+    "activity_class": "primary",
+    "apqc_category": "5.0 Deliver Services",
+    "rationale": "project_todo: thin shop/primary module (auto-architect baseline)."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "To-Do"
+    ],
+    "typical_fits": [],
+    "common_gaps": [],
+    "drive_hints": [
+      "odoo shell: env['mail.activity.todo.create'].search([],limit=3)"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/project_todo.facts.json",
+    "tools": [
+      "extract_module.py",
+      "extract_frontend.py",
+      "gen_thin.py"
+    ],
+    "odoo_version": "19.0"
+  }
+}

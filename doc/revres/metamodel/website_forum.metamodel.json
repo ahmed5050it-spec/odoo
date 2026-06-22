@@ -1,0 +1,353 @@
+{
+  "subsystem": "website_forum",
+  "evidence": {
+    "manifest": {
+      "name": "Forum",
+      "category": "Website/Website",
+      "depends": [
+        "auth_signup",
+        "website_mail",
+        "website_profile"
+      ],
+      "auto_install": false,
+      "application": false
+    },
+    "models": [
+      {
+        "_name": "forum.forum",
+        "_description": "Forum",
+        "fields": 60,
+        "relations": [
+          "authorized_group_id->res.groups",
+          "post_ids->forum.post",
+          "last_post_id->forum.post",
+          "tag_ids->forum.tag"
+        ]
+      },
+      {
+        "_name": "forum.post",
+        "_description": "Forum Post",
+        "fields": 58,
+        "relations": [
+          "forum_id->forum.forum",
+          "parent_id->forum.post",
+          "child_ids->forum.post",
+          "tag_ids->forum.tag",
+          "vote_ids->forum.post.vote",
+          "closed_reason_id->forum.post.reason"
+        ]
+      },
+      {
+        "_name": "forum.post.vote",
+        "_description": "Post Vote",
+        "fields": 6,
+        "relations": [
+          "post_id->forum.post",
+          "user_id->res.users",
+          "forum_id->forum.forum"
+        ]
+      },
+      {
+        "_name": "forum.tag",
+        "_description": "Forum Tag",
+        "fields": 6,
+        "relations": [
+          "forum_id->forum.forum",
+          "post_ids->forum.post"
+        ]
+      },
+      {
+        "_name": "forum.post.reason",
+        "_description": "Post Closing Reason",
+        "fields": 2,
+        "relations": []
+      }
+    ],
+    "routes": [
+      {
+        "paths": [
+          "/forum",
+          "/forum/all",
+          "/forum/<model(forum.forum):forum>"
+        ],
+        "auth": "public",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/forum/<forum>/question/<question>",
+          "/forum/<forum>/ask",
+          "/forum/<forum>/new"
+        ],
+        "auth": "user",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/forum/<forum>/post/<post>/upvote",
+          "/forum/<forum>/post/<post>/downvote",
+          "/forum/<forum>/post/<post>/toggle_correct",
+          "/forum/<forum>/post/<post>/flag"
+        ],
+        "auth": "user",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/forum/<forum>/validation_queue",
+          "/forum/<forum>/flagged_queue",
+          "/forum/<forum>/offensive_posts",
+          "/forum/<forum>/post/<post>/validate"
+        ],
+        "auth": "user",
+        "type": "http"
+      }
+    ],
+    "security": {
+      "access_rules": 15,
+      "record_rules": 12,
+      "groups": 0
+    },
+    "views": {
+      "form": 15,
+      "list": 5,
+      "kanban": 1,
+      "search": 2,
+      "graph": 1
+    },
+    "behavioral_notes": [
+      {
+        "element": "forum.post (question vs answer hierarchy)",
+        "observation": "Questions and answers are the SAME model forum.post: a record with parent_id=False is a question, a record with parent_id set is an answer to that question (child_ids). Comments are mail.message records on the post (mail.thread), and convert_answer_to_comment / convert_comment_to_answer move content between the two representations. Not visible in metadata — the single self-referential model implements the whole Q&A tree.",
+        "source": "code-read"
+      },
+      {
+        "element": "forum.post.write(is_correct) — accept answer",
+        "observation": "Accepting an answer sets is_correct=True via write(); the override grants karma to BOTH parties (answer author gets forum.karma_gen_answer_accepted, default 15; acceptor gets forum.karma_gen_answer_accept, default 2) and refuses the action with AccessError unless user.karma >= karma_answer_accept_own/all. has_validated_answer on the question recomputes. Removing acceptance reverses the karma. This dual-karma side-effect lives only in Python.",
+        "source": "code-read"
+      },
+      {
+        "element": "forum.post karma-gated actions (vote / edit / close / comment / flag)",
+        "observation": "_compute_post_karma_rights derives ~16 can_* booleans (can_ask, can_answer, can_edit, can_close, can_upvote, can_downvote, can_comment, can_flag, can_moderate...) by comparing the user's res.users.karma to per-forum thresholds (e.g. karma_edit_own=1 vs karma_edit_all=300, karma_close_own=100 vs karma_close_all=500, karma_upvote=5, karma_downvote=50, karma_flag=500, karma_moderate=1000). create()/write()/vote()/message_post() re-check these and raise AccessError. _update_content additionally strips links to rel=nofollow and blocks images/links below karma_dofollow/karma_editor. This permission-by-reputation model is entirely code-driven, invisible to metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "forum.post.vote() and forum.post.vote model",
+        "observation": "vote(upvote) creates/updates a forum.post.vote (Selection -1/0/1) for (post,user); vote_count is the stored sum of votes and drives relevancy (math.copysign time-decayed score) and the default _order 'is_correct DESC, vote_count DESC, last_activity_date DESC'. Casting a vote triggers karma generation on the post author (karma_gen_question_upvote=5, karma_gen_answer_upvote=10, downvotes negative). The voting->reputation->ranking loop is the core network mechanic and is not metadata-derivable.",
+        "source": "code-read"
+      },
+      {
+        "element": "forum.post moderation lifecycle (state machine)",
+        "observation": "state in {active, pending, close, offensive, flagged}. New questions from users below karma_post (default 100) are forced to 'pending' and routed to moderators via message_post_with_source (validation_queue); validate() activates and awards the deferred 'ask question' karma. close()/_mark_as_offensive()/_flag()/_refuse() move posts through the queue and apply karma penalties (karma_gen_answer_flagged=-100, x10 for a spammer's first post). _notify_state_update posts threaded notifications to followers and tag-followers. None of this workflow is in metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "gamification badges + karma tracking (inherited models)",
+        "observation": "Module inherits gamification.challenge (adds challenge_category='forum') and gamification.karma.tracking, and ships ~29 gamification.badge records across 4 data files: question (Student, Nice/Good/Great Question, Popular/Notable/Famous Question, Scholar...), answer (Teacher, Nice/Good/Great Answer, Enlightened, Guru, Self-Learner), participation (Autobiographer, Commentator, Pundit, Taxonomist...), moderation (Cleanup, Critic, Editor, Supporter...). Badges are awarded by gamification challenges evaluating karma/activity domains — the gamification engine, not website_forum metadata, computes them.",
+        "source": "code-read"
+      },
+      {
+        "element": "/forum controllers + SEO microdata",
+        "observation": "controllers/website_forum.py extends website_profile.WebsiteProfile and exposes ~40 /forum/* routes (browse/ask/answer/vote/accept/close/flag/validation queues/user profile). forum.post._get_microdata emits schema.org QAPage / Question / Answer JSON-LD (acceptedAnswer + suggestedAnswer) for SEO; _get_related_posts runs a raw-SQL Jaccard tag-similarity query. These behaviors are static/code-read, not in Python field metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "frontend (OWL/JS)",
+        "observation": "17 JS files, 6 XML templates, 2 OWL components (FlagMarkAsOffensiveDialog, WebsiteForumTagsWrapper); 5 registry registrations (4 public.interactions for website_forum/share/spam/profile-activity + 1 view website_forum_add_form); patches NewContentSystrayItem.prototype (adds 'Forum Post' to the website New-content menu); asset bundles include web.assets_frontend (7), website.assets_editor, web.assets_backend.",
+        "source": "static"
+      }
+    ],
+    "frontend": {
+      "present": true,
+      "js_files": 17,
+      "xml_templates": 6,
+      "owl_components": [
+        "FlagMarkAsOffensiveDialog",
+        "WebsiteForumTagsWrapper"
+      ],
+      "registry_adds": [
+        "public.interactions:website_forum.website_forum",
+        "public.interactions:website_forum.website_forum_share",
+        "public.interactions:website_forum.website_forum_spam",
+        "public.interactions:website_forum.wprofile_forum_activity",
+        "views:website_forum_add_form"
+      ],
+      "patches": [
+        "NewContentSystrayItem.prototype"
+      ],
+      "services": [],
+      "asset_bundles": {
+        "website.assets_editor": 1,
+        "web.assets_tests": 2,
+        "web.assets_backend": 1,
+        "web.assets_frontend": 7,
+        "web.assets_unit_tests": 1,
+        "web.assets_unit_tests_setup": 6,
+        "website.website_builder_assets": 1,
+        "web.assets_frontend_minimal": 1
+      }
+    },
+    "integrations": {
+      "http_call_sites": 1,
+      "sdk_imports": [
+        "requests"
+      ],
+      "uses_api_keys": false,
+      "endpoints": [
+        "https://schema.org",
+        "https://www.odoo.com/app/forum"
+      ],
+      "files": [
+        "__manifest__.py",
+        "controllers/website_forum.py",
+        "models/forum_post.py"
+      ]
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    }
+  },
+  "it_architecture": {
+    "application": "website_forum (Q&A Forum website application component)",
+    "software_services": [
+      "/forum, /forum/all, /forum/<forum> (browse)",
+      "/forum/<forum>/ask, /forum/<forum>/new, /forum/<forum>/question/<question> (ask & view)",
+      "/forum/<forum>/post/<post>/upvote|downvote|toggle_correct|flag (jsonrpc vote/accept/flag)",
+      "/forum/<forum>/validation_queue|flagged_queue|offensive_posts|post/<post>/validate (moderation)"
+    ],
+    "data_objects": [
+      "forum.forum",
+      "forum.post",
+      "forum.post.vote",
+      "forum.tag",
+      "forum.post.reason"
+    ],
+    "logical_data_erm": [
+      "forum.post -> forum.forum",
+      "forum.post -> forum.post (parent_id: question/answer tree)",
+      "forum.post.vote -> forum.post",
+      "forum.post.vote -> res.users",
+      "forum.post <-> forum.tag (many2many)",
+      "forum.post -> forum.post.reason"
+    ],
+    "information_flows": [
+      "depends: auth_signup, website_mail, website_profile",
+      "side-effect: accept answer (write is_correct) -> _add_karma on answer author + acceptor (res.users.karma)",
+      "side-effect: vote()/close()/flag() -> karma generation/penalty via gamification.karma.tracking",
+      "side-effect: low-karma question create -> state='pending' -> moderator notification (mail.thread) -> validate()",
+      "side-effect: forum.post._get_microdata -> schema.org QAPage JSON-LD for SEO",
+      "outbound: controllers import requests (HTTP); endpoints schema.org, odoo.com/app/forum"
+    ],
+    "frontend_components": [
+      "FlagMarkAsOffensiveDialog",
+      "WebsiteForumTagsWrapper"
+    ]
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Host Q&A / FAQ Community Forums",
+      "Ask Questions & Post Answers (accept best answer)",
+      "Reputation / Karma Management (gamified privileges)",
+      "Community Moderation (validate, flag, close, mark offensive)",
+      "Tagging & Content Discovery (search, related posts, SEO microdata)"
+    ],
+    "value_streams": [
+      "Question-to-Answer: ask question -> peers answer -> community votes -> asker accepts best answer -> reputation distributed",
+      "Content moderation: post -> (pending/flagged) queue -> moderator validate/close/mark-offensive -> karma adjusted"
+    ],
+    "information_concepts": [
+      "forum.forum",
+      "forum.post (question/answer)",
+      "forum.post.vote",
+      "forum.tag",
+      "res.users (member/karma)"
+    ],
+    "organization": [
+      "base.group_public (read)",
+      "base.group_portal (read)",
+      "base.group_user (read)",
+      "base.group_erp_manager (forum.forum manager: full CRUD)"
+    ],
+    "products": [],
+    "policies": [
+      "Karma thresholds gate every action (ask/answer/vote/edit/close/comment/flag/moderate) per forum",
+      "12 record rules: website-domain + can_view (own-or-positive-karma authors) visibility scoping; forum privacy public/connected/private(group)"
+    ],
+    "stakeholders": [
+      "Asker (res.users / public visitor)",
+      "Answerer (res.users)",
+      "Moderator (high-karma res.users)",
+      "Website visitor / SEO reader (public)"
+    ],
+    "strategy": null,
+    "metrics": [
+      "Forum statistics: total_posts, total_views, total_answers, total_favorites (computed on forum.forum)",
+      "Per-post: vote_count, favourite_count, child_count, relevancy, views",
+      "User karma + gamification badges/challenges (gamification.karma.tracking)"
+    ]
+  },
+  "classification": {
+    "value_model": "network",
+    "activity_class": "primary",
+    "apqc_category": "3.0 Market and Sell Products and Services",
+    "rationale": "Value model = network (Stabell & Fjeldstad): website_forum is mediating technology — it links members who want to be interdependent (askers seeking answers, answerers seeking reputation) and creates value by enabling and orchestrating their exchanges, not by transforming inputs (chain) or matching a problem to a stored solution (shop). The value of the platform rises with the size and activity of the community and the accumulated content: the self-referential forum.post question/answer tree, the vote/karma/badge reputation loop, and tag-based discovery are classic network-mediation infrastructure (membership via auth_signup, capacity utilisation via relevancy/ranking). Activity class = primary: the forum is the customer-facing value-producing asset itself (a public website property), not an internal enabling function. APQC = 3.0 Market and Sell Products and Services: the manifest category is Website/Website and the out-of-box default welcome message frames the forum as a marketing/community-engagement asset ('build your professional profile and become a better marketer together') — it drives SEO (schema.org QAPage microdata), brand community, top-of-funnel engagement and lead capture (auth_signup), which sit under Market-and-Sell rather than transactional sales. NOTE: an equally defensible mapping is 6.0 Manage Customer Service (specifically self-service / community knowledge-base deflection) when the forum is deployed as post-sale peer support; chosen 3.0 because the default framing, Website category, and SEO/community-marketing mechanics weight it toward marketing/community engagement rather than ticketed service."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "Multi-forum Q&A and FAQ sites (Questions mode = 1 answer, Discussions mode = many)",
+      "Reputation/karma engine with per-forum, per-action thresholds",
+      "Voting (up/down), accept-best-answer, favorites, tags & related-post discovery",
+      "Moderation workflow: pending validation queue, flagging, close with reason, mark offensive",
+      "Gamification: ~29 badges (question/answer/participation/moderation) + challenges",
+      "SEO: schema.org QAPage/Question/Answer microdata, sitemap, website builder integration"
+    ],
+    "typical_fits": [
+      "Public community/support forum embedded in an Odoo website",
+      "Reputation-gated self-moderating community (configure karma_* thresholds in the forum form)",
+      "Private/members-only forum via privacy=connected/private + authorized_group_id",
+      "Knowledge-base / FAQ with branded welcome message and guidelines"
+    ],
+    "common_gaps": [
+      "Custom karma thresholds and badge rules beyond the shipped defaults (forum form + gamification config)",
+      "External SSO / federated identity beyond auth_signup",
+      "Spam/abuse detection beyond manual flag + karma (no built-in ML/anti-spam external service)",
+      "Cross-forum or external-site content syndication / API publishing",
+      "Bespoke reputation analytics or leaderboards beyond standard badges/karma tracking"
+    ],
+    "drive_hints": [
+      "odoo shell: env['forum.forum'].search([]).mapped(('name','total_posts','total_answers'))",
+      "odoo shell: p = env['forum.post'].search([('parent_id','=',False)], limit=1); (p.name, p.child_count, p.vote_count, p.has_validated_answer)",
+      "odoo shell: env['forum.post'].search([('is_correct','=',True)], limit=5).mapped(('name','vote_count','forum_id.name'))",
+      "curl -s http://localhost:8069/forum  (public HTML index of forums)",
+      "curl jsonrpc POST /forum/<forum_id>/post/<post_id>/upvote (auth=user) -> {'vote_count','user_vote'}"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "stakeholders": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Exact gamification challenge definitions that map karma/activity to each of the ~29 badges (live in gamification config, not website_forum code).",
+    "Whether a deployment uses the forum as marketing/community (APQC 3.0) or post-sale self-service support (APQC 6.0) — depends on business intent, not code.",
+    "Real distribution of question/answer/closed/pending states and karma levels (runtime not captured; runtime.models_with_data=0)."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/website_forum.facts.json",
+    "tools": [
+      "code-read",
+      "extract_frontend.py",
+      "extract_module.py",
+      "extract_runtime.sh",
+      "run-odoo (odoo shell)"
+    ],
+    "odoo_version": "19.0"
+  }
+}

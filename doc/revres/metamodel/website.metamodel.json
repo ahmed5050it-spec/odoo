@@ -1,0 +1,606 @@
+{
+  "subsystem": "website",
+  "evidence": {
+    "manifest": {
+      "name": "Website",
+      "category": "Website/Website",
+      "depends": [
+        "digest",
+        "web",
+        "html_editor",
+        "http_routing",
+        "portal",
+        "social_media",
+        "auth_signup",
+        "mail",
+        "google_recaptcha",
+        "utm",
+        "html_builder"
+      ],
+      "auto_install": false,
+      "application": true,
+      "external_dependencies": {
+        "python": [
+          "geoip2"
+        ],
+        "apt": {
+          "geoip2": "python3-geoip2"
+        }
+      }
+    },
+    "models": [
+      {
+        "_name": "website",
+        "_description": "Website",
+        "fields": 44,
+        "relations": [
+          "company_id->res.company",
+          "user_id->res.users",
+          "menu_id->website.menu",
+          "theme_id->ir.module.module",
+          "default_lang_id->res.lang"
+        ]
+      },
+      {
+        "_name": "website.page",
+        "_description": "Page",
+        "fields": 13,
+        "relations": [
+          "view_id->ir.ui.view",
+          "website_id->website",
+          "menu_ids->website.menu"
+        ]
+      },
+      {
+        "_name": "website.menu",
+        "_description": "Website Menu",
+        "fields": 15,
+        "relations": [
+          "page_id->website.page",
+          "website_id->website",
+          "parent_id->website.menu",
+          "controller_page_id->website.controller.page"
+        ]
+      },
+      {
+        "_name": "website.visitor",
+        "_description": "Website Visitor",
+        "fields": 21,
+        "relations": [
+          "website_id->website",
+          "partner_id->res.partner",
+          "country_id->res.country",
+          "website_track_ids->website.track",
+          "last_visited_page_id->website.page"
+        ]
+      },
+      {
+        "_name": "website.track",
+        "_description": "Visited Pages",
+        "fields": 4,
+        "relations": [
+          "visitor_id->website.visitor",
+          "page_id->website.page"
+        ]
+      },
+      {
+        "_name": "website.controller.page",
+        "_description": "Model Page",
+        "fields": 9,
+        "relations": [
+          "view_id->ir.ui.view",
+          "record_view_id->ir.ui.view",
+          "menu_ids->website.menu"
+        ]
+      },
+      {
+        "_name": "website.rewrite",
+        "_description": "Website rewrite",
+        "fields": 8,
+        "relations": [
+          "website_id->website",
+          "route_id->website.route"
+        ]
+      },
+      {
+        "_name": "website.snippet.filter",
+        "_description": "Website Snippet Filter",
+        "fields": 8,
+        "relations": [
+          "action_server_id->ir.actions.server",
+          "filter_id->ir.filters",
+          "website_id->website"
+        ]
+      }
+    ],
+    "routes": [
+      {
+        "paths": [
+          "/model/<string:page_name_slugified>",
+          "/model/<string:page_name_slugified>/<string:record_slug>"
+        ],
+        "auth": "public",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/pages",
+          "/pages/page/<int:page>"
+        ],
+        "auth": "public",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/website/search",
+          "/website/search/<string:search_type>"
+        ],
+        "auth": "public",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/website/force/<int:website_id>"
+        ],
+        "auth": "user",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/website/lang/<lang>"
+        ],
+        "auth": "public",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/robots.txt",
+          "/sitemap.xml",
+          "/favicon.ico"
+        ],
+        "auth": "public",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/website/info"
+        ],
+        "auth": "public",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/website/configurator",
+          "/website/configurator/<int:step>"
+        ],
+        "auth": "user",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/website/add",
+          "/website/add/<path:path>"
+        ],
+        "auth": "user",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/website/save_xml"
+        ],
+        "auth": "user",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/website/snippet/filters",
+          "/website/snippet/filter_templates",
+          "/website/snippet/autocomplete"
+        ],
+        "auth": "public",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/website/theme_customize_data",
+          "/website/theme_customize_data_get",
+          "/website/theme_customize_bundle_reload"
+        ],
+        "auth": "user",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/website/image",
+          "/website/image/<xmlid>",
+          "/website/image/<model>/<id>/<field>"
+        ],
+        "auth": "public",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/website/form",
+          "/website/form/<string:model_name>"
+        ],
+        "auth": "public",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/website/fetch_dashboard_data"
+        ],
+        "auth": "user",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/website/google_maps_api_key"
+        ],
+        "auth": "public",
+        "type": "jsonrpc"
+      }
+    ],
+    "security": {
+      "access_rules": 44,
+      "record_rules": 8,
+      "groups": 5
+    },
+    "views": {
+      "form": 14,
+      "list": 11,
+      "kanban": 4,
+      "search": 7,
+      "graph": 3,
+      "pivot": 0,
+      "calendar": 0,
+      "activity": 0
+    },
+    "behavioral_notes": [
+      {
+        "element": "website.get_current_website / website.website_domain",
+        "observation": "Multi-website routing: get_current_website() resolves the active website by precedence (session force_website_id -> context website_id -> request domain match via _get_current_website_id -> first website fallback). website_domain() returns Domain('website_id','in',[False,*ids]) so every website-scoped query transparently mixes generic (website_id=False) and site-specific records. _get_cached_values() prefetches user_id/company_id/default_lang_id/homepage_url to serve frontend dispatch before the env is fully initialised. None of this domain/precedence logic is visible in metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "ir.http._serve_page / website.page._get_response (QWeb rendering)",
+        "observation": "Page rendering is dynamic: ir.http._serve_fallback -> _serve_page looks up website.page via _get_page_info (URL + website_domain, specific-website-first, case-insensitive), then website.page._get_response renders the linked ir.ui.view through request.render() (QWeb). website.page _inherits ir.ui.view (view_id) and arch is a related field on the view, so the page IS a thin URL/SEO wrapper over a QWeb template. Public GET responses are memoised in an ORM cache ('templates.cached_values') keyed on (website,lang,path,debug) with a 3600s TTL and csrf re-injection on cache hits. Pure runtime behaviour, invisible to metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "ir.http._register_website_track -> website.visitor._handle_webpage_dispatch",
+        "observation": "Visitor analytics side-effect: _post_dispatch hooks every 200 response; for tracked templates (and non-bot, tracking not disabled) it calls website.visitor._handle_webpage_dispatch, which _get_visitor_from_request(force_create=True) creates/updates a website.visitor and appends a website.track row (url + page_id). Timezone is derived from geoip and persisted via a FOR NO KEY UPDATE SKIP LOCKED SQL UPDATE to dodge concurrent-update errors. A page view thus silently writes visitor/track rows -- a cross-model effect not derivable from the schema.",
+        "source": "code-read"
+      },
+      {
+        "element": "website.page.write / get_unique_path (URL & key uniqueness)",
+        "observation": "Editing a page URL re-slugifies it, enforces per-website uniqueness via get_unique_path (suffixes -1,-2...), cascades the new URL to related website.menu records, syncs website.homepage_url, and clears the 'templates' registry cache. Renaming regenerates a unique view key. These automations couple website.page <-> website.menu <-> website and bust render caches -- behaviour metadata cannot show.",
+        "source": "code-read"
+      },
+      {
+        "element": "frontend (OWL/JS website builder)",
+        "observation": "website is the prime example of metadata gap #3: ~350 JS files and 152 XML templates implement the in-browser drag-and-drop website builder (40 OWL components incl. Configurator, snippet/page dialogs, fullscreen editor), 40+ public.interactions.edit snippet behaviours, 20+ monkey-patches of editor/navbar/popover prototypes, and 22 asset bundles (website.assets_editor=26, web.assets_frontend=34, website.assets_wysiwyg=13). Almost the entire UX lives in client-side OWL/JS, entirely outside Python model metadata.",
+        "source": "static"
+      }
+    ],
+    "frontend": {
+      "present": true,
+      "js_files": 350,
+      "xml_templates": 152,
+      "owl_components": [
+        "AddFontDialog",
+        "AddPageConfirmDialog",
+        "AddPageDialog",
+        "AddPageTemplateBlank",
+        "AddPageTemplatePreview",
+        "AddPageTemplatePreviews",
+        "AddPageTemplates",
+        "AnimateText",
+        "ApplyConfiguratorScreen",
+        "AttributeTranslateDialog",
+        "BrokenLink",
+        "CarouselItemHeaderMiddleButtons",
+        "Configurator",
+        "Counter",
+        "CreatePageMessage",
+        "CustomizeTranslationTab",
+        "DeletePageDialog",
+        "DescriptionScreen",
+        "DuplicatePageDialog",
+        "EditHeadBodyDialog",
+        "EditInBackendSystrayItem",
+        "EditMenuDialog",
+        "EditWebsiteSystrayItem",
+        "EmbedCodeOptionDialog",
+        "EmphasizeAnimatedText",
+        "FeaturesSelectionScreen",
+        "FieldIframePreview",
+        "FullscreenIndication",
+        "GoogleMapsApiKeyDialog",
+        "HeaderTopOptions",
+        "HierarchyNavbar",
+        "HighlightConfigurator",
+        "HighlightPicker",
+        "HighlightToolbarButton",
+        "ImageRadioField",
+        "ImageSelector",
+        "InstallModuleDialog",
+        "Keyword",
+        "MenuDialog",
+        "MenuRow"
+      ],
+      "registry_adds": [
+        "actions:backend_dashboard",
+        "actions:open_website_custom_menu",
+        "actions:website_configurator",
+        "actions:website_preview",
+        "actions:website_view_hierarchy",
+        "fields:iframe",
+        "fields:image_radio",
+        "fields:page_url",
+        "fields:website_publish_button",
+        "fields:website_redirect_button",
+        "html_builder.snippetsPreprocessor:website_snippets",
+        "isTopWindowURL:html_builder.website_builder_action",
+        "lazy_components:website.WebsiteBuilder",
+        "main_components:FullscreenIndication",
+        "main_components:WebsiteLoader",
+        "public.interactions.edit:public_components",
+        "public.interactions.edit:website.animation",
+        "public.interactions.edit:website.background_video",
+        "public.interactions.edit:website.base_header",
+        "public.interactions.edit:website.carousel_slider",
+        "public.interactions.edit:website.countdown",
+        "public.interactions.edit:website.dynamic_snippet",
+        "public.interactions.edit:website.embed_code",
+        "public.interactions.edit:website.form"
+      ],
+      "patches": [
+        "AnchorSlide.prototype",
+        "BuilderUrlPicker",
+        "BuilderUrlPicker.prototype",
+        "BurgerMenu.prototype",
+        "Colibri.prototype",
+        "Form.prototype",
+        "HtmlImageSelector.prototype",
+        "Interaction.prototype",
+        "LinkPopover",
+        "LinkPopover.prototype",
+        "NavBar.prototype",
+        "SnippetModel.prototype",
+        "SnippetViewer.prototype",
+        "WebsiteBuilderClientAction.prototype",
+        "cookie",
+        "publicInteractions.constructor.prototype",
+        "this.window.Modal.prototype",
+        "urlUtils"
+      ],
+      "services": [
+        "Banner",
+        "Columns",
+        "Masonry",
+        "Quotes",
+        "Settings",
+        "Showcase",
+        "Title",
+        "open_website_url"
+      ],
+      "asset_bundles": {
+        "web.assets_frontend": 34,
+        "web.assets_frontend_minimal": 6,
+        "web.assets_frontend_lazy": 6,
+        "web.assets_backend": 29,
+        "website.assets_editor": 26,
+        "website.assets_wysiwyg": 13,
+        "website.assets_inside_builder_iframe": 3,
+        "website.website_builder_assets": 4,
+        "web.assets_unit_tests": 11,
+        "web.assets_unit_tests_setup": 17,
+        "web.assets_tests": 4
+      }
+    },
+    "integrations": {
+      "http_call_sites": 5,
+      "sdk_imports": [
+        "requests"
+      ],
+      "uses_api_keys": true,
+      "endpoints": [
+        "http://google.com/complete/search",
+        "https://fonts.google.com/metadata/fonts",
+        "https://maps.google.com/maps?",
+        "https://olg.api.odoo.com",
+        "https://plausible.io",
+        "https://plausible.io/js/plausible.js",
+        "https://website.api.odoo.com",
+        "https://www.odoo.com/app/website"
+      ],
+      "files": [
+        "__manifest__.py",
+        "controllers/main.py",
+        "models/assets.py",
+        "models/res_partner.py",
+        "models/website.py"
+      ]
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    }
+  },
+  "it_architecture": {
+    "application": "website (Website builder / web presence application component)",
+    "software_services": [
+      "/pages, /website/search (public page listing & site search)",
+      "/website/configurator/* (site setup wizard)",
+      "/website/add, /website/save_xml (page authoring)",
+      "/website/theme_customize_data* (theme customization)",
+      "/website/snippet/* (dynamic snippet data feeds)",
+      "/website/image/* (responsive image serving)",
+      "/website/form/* (website form submission)",
+      "/robots.txt, /sitemap.xml, /favicon.ico (SEO/crawler endpoints)",
+      "/website/force/<id>, /website/lang/<lang> (multi-website / multi-lang switching)"
+    ],
+    "data_objects": [
+      "website",
+      "website.page",
+      "website.menu",
+      "website.controller.page",
+      "website.visitor",
+      "website.track",
+      "website.rewrite",
+      "website.snippet.filter"
+    ],
+    "logical_data_erm": [
+      "website.page -> ir.ui.view (_inherits view_id; arch is the QWeb template)",
+      "website.page -> website",
+      "website.menu -> website.page / website.controller.page",
+      "website.visitor -> website.track -> website.page",
+      "website.visitor -> res.partner",
+      "website -> res.company / res.users (public user) / ir.module.module (theme)",
+      "website.rewrite -> website.route (URL redirect/404 rules)"
+    ],
+    "information_flows": [
+      "depends: web, html_editor, html_builder, http_routing, portal, mail, auth_signup, social_media, utm, google_recaptcha, digest",
+      "side-effect: HTTP GET -> ir.http._serve_page -> website.page._get_response -> QWeb render of ir.ui.view (cached)",
+      "side-effect: any tracked 200 response -> website.visitor + website.track rows (geoip-derived country/timezone)",
+      "side-effect: website.page URL edit -> cascades to website.menu, syncs website.homepage_url, clears render caches",
+      "outbound: geoip2 (visitor geolocation), plausible.io / Google Analytics (web analytics), Google fonts/maps APIs, odoo.com website.api / olg.api (configurator/IAP suggestions)"
+    ],
+    "frontend_components": [
+      "Configurator",
+      "ApplyConfiguratorScreen",
+      "FeaturesSelectionScreen",
+      "DescriptionScreen",
+      "AddPageDialog",
+      "AddPageTemplates",
+      "DuplicatePageDialog",
+      "DeletePageDialog",
+      "EditMenuDialog",
+      "MenuDialog",
+      "EditWebsiteSystrayItem",
+      "EditInBackendSystrayItem",
+      "FullscreenIndication",
+      "ImageSelector",
+      "HighlightConfigurator",
+      "AnimateText",
+      "Counter",
+      "BrokenLink",
+      "GoogleMapsApiKeyDialog",
+      "InstallModuleDialog"
+    ]
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Build & Edit Website (drag-and-drop builder, snippets, themes)",
+      "Manage Pages, Menus & Site Structure",
+      "Multi-Website & Multi-Language Management",
+      "SEO Optimization (metadata, sitemap, robots, redirects)",
+      "Visitor Tracking & Web Analytics",
+      "Website Form Capture & Lead Generation"
+    ],
+    "value_streams": [
+      "Author-to-Publish: configure site -> create/edit page (QWeb) -> set SEO/menu -> publish",
+      "Visit-to-Insight: visitor request -> page render -> website.visitor/track capture -> dashboard analytics"
+    ],
+    "information_concepts": [
+      "website",
+      "website.page",
+      "website.menu",
+      "website.visitor",
+      "website.controller.page",
+      "ir.ui.view (page template / QWeb)"
+    ],
+    "organization": [
+      "group_website_designer",
+      "group_website_restricted_editor",
+      "group_multi_website",
+      "group_website_publisher",
+      "base.group_public (visitor / public user)"
+    ],
+    "products": [],
+    "policies": [
+      "8 record rules: website-scoped visibility (website_id in [False, current]) + published/visibility-group page access control",
+      "page visibility: public / connected / restricted_group / password",
+      "cookies bar + blocked third-party domains (privacy/consent automation)"
+    ],
+    "stakeholders": [
+      "Website Visitor (public user)",
+      "Website Designer / Editor (res.users)",
+      "Marketing / SEO manager",
+      "Company (res.company, multi-website owner)"
+    ],
+    "strategy": null,
+    "metrics": [
+      "website.visitor (visit_count, visitor_page_count, connection state)",
+      "website.track (page-level visit log)",
+      "/website/fetch_dashboard_data (backend website dashboard)"
+    ]
+  },
+  "classification": {
+    "value_model": "network",
+    "activity_class": "primary",
+    "apqc_category": "3.0 Market and Sell Products and Services",
+    "rationale": "website is a value network (Stabell & Fjeldstad mediating technology): it IS the platform/infrastructure that mediates between the organization and an open population of visitors, and between visitors and the published content/forms/other apps (shop, blog, event, livechat). Its value is mediating-and-infrastructure: routing requests to the right website (get_current_website), rendering pages (QWeb), connecting parties via forms/menus, and its worth grows with the number of participants (visitors, published pages, linked apps) -- the hallmark of a network, not a sequential transformation (chain) or a problem-solving cycle (shop). activity_class is primary because operating that mediating infrastructure -- provisioning the web presence and the request/render/track service itself -- is the core service the module delivers, not a back-office support function. apqc_category 3.0 Market and Sell is chosen over 6.0 Manage Customer Service because the platform's primary purpose is the public-facing market presence, content publishing, SEO and lead/visitor capture (demand-side marketing channel) rather than post-sale case handling; customer-service flows (livechat, helpdesk) are optional add-on modules, whereas marketing/web-presence is the module's reason to exist."
+  },
+  "apqc_category": "3.0 Market and Sell Products and Services",
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "drag-and-drop block/snippet website builder with themes",
+      "page/menu management with multi-website & multi-language",
+      "SEO toolkit: meta, sitemap.xml, robots.txt, 301/302/308/404 redirects (website.rewrite)",
+      "visitor tracking + geoip + analytics integration (Plausible / Google Analytics)",
+      "website forms mapped to any model, recaptcha protected",
+      "page visibility & access control (public/connected/group/password)",
+      "website configurator wizard (industry + features bootstrap)"
+    ],
+    "typical_fits": [
+      "corporate / brochure site on standard themes and snippets",
+      "multi-brand or multi-country sites via group_multi_website",
+      "lead-capture contact forms feeding crm",
+      "SEO-managed published pages with menus"
+    ],
+    "common_gaps": [
+      "bespoke OWL snippets / custom interactions beyond the snippet catalog",
+      "custom theme development (SCSS/asset bundles)",
+      "headless / external-frontend consumption of Odoo content",
+      "advanced redirect / multi-domain routing rules",
+      "analytics beyond Plausible/GA out-of-box integrations"
+    ],
+    "drive_hints": [
+      "odoo shell: env['website'].search([]).mapped(('name','domain'))",
+      "odoo shell: env['website'].get_current_website().website_domain()",
+      "odoo shell: env['website.page'].search([], limit=5).mapped(('url','is_published'))",
+      "curl -s http://localhost:8069/sitemap.xml | head",
+      "curl -s http://localhost:8069/robots.txt"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "stakeholders": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Exact set of ir.ui.view templates flagged track=True that trigger visitor creation in a live DB.",
+    "How website.rewrite redirect rules interact with module-specific routes (shop/blog/event) at scale.",
+    "Runtime row counts for website.visitor/website.track were not captured (extract_runtime.sh not run).",
+    "Full snippet/interaction catalog: only a subset of the ~350 JS files was statically catalogued."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/website.facts.json",
+    "tools": [
+      "code-read",
+      "extract_frontend.py",
+      "extract_module.py",
+      "Grep",
+      "Read"
+    ],
+    "odoo_version": "19.0"
+  }
+}

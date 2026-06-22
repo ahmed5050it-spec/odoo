@@ -1,0 +1,359 @@
+{
+  "subsystem": "purchase",
+  "evidence": {
+    "manifest": {
+      "name": "Purchase",
+      "category": "Supply Chain/Purchase",
+      "summary": "Purchase orders, tenders and agreements",
+      "depends": [
+        "account"
+      ],
+      "auto_install": false,
+      "application": true
+    },
+    "models": [
+      {
+        "_name": "purchase.order",
+        "_description": "Purchase Order",
+        "fields": 44,
+        "relations": [
+          "partner_id->res.partner",
+          "company_id->res.company",
+          "order_line->purchase.order.line",
+          "invoice_ids->account.move",
+          "fiscal_position_id->account.fiscal.position",
+          "payment_term_id->account.payment.term"
+        ]
+      },
+      {
+        "_name": "purchase.order.line",
+        "_description": "Purchase Order Line",
+        "fields": 42,
+        "relations": [
+          "order_id->purchase.order",
+          "product_id->product.product",
+          "invoice_lines->account.move.line",
+          "tax_ids->account.tax"
+        ]
+      },
+      {
+        "_name": "purchase.report",
+        "_description": "Purchase Report",
+        "fields": 27,
+        "relations": [
+          "partner_id->res.partner",
+          "product_id->product.product",
+          "category_id->product.category",
+          "order_id->purchase.order"
+        ]
+      },
+      {
+        "_name": "purchase.bill.line.match",
+        "_description": "Purchase Line and Vendor Bill line matching view",
+        "fields": 21,
+        "relations": [
+          "pol_id->purchase.order.line",
+          "aml_id->account.move.line",
+          "account_move_id->account.move"
+        ]
+      },
+      {
+        "_name": "purchase.bill.union",
+        "_description": "Purchases & Bills Union",
+        "fields": 9,
+        "relations": [
+          "vendor_bill_id->account.move",
+          "purchase_order_id->purchase.order"
+        ]
+      },
+      {
+        "_name": "bill.to.po.wizard",
+        "_description": "Bill to Purchase Order",
+        "fields": 2,
+        "relations": [
+          "purchase_order_id->purchase.order",
+          "partner_id->res.partner"
+        ]
+      },
+      {
+        "_name": "account.move",
+        "_description": "(extension)",
+        "fields": 6,
+        "relations": [
+          "purchase_id->purchase.order",
+          "purchase_vendor_bill_id->purchase.bill.union"
+        ]
+      }
+    ],
+    "routes": [
+      {
+        "paths": [
+          "/my/rfq",
+          "/my/rfq/page/<int:page>"
+        ],
+        "auth": "user",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/my/purchase",
+          "/my/purchase/page/<int:page>"
+        ],
+        "auth": "user",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/my/purchase/<int:order_id>"
+        ],
+        "auth": "public",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/my/purchase/<int:order_id>/update"
+        ],
+        "auth": "public",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/my/purchase/<int:order_id>/download_edi"
+        ],
+        "auth": "public",
+        "type": null
+      }
+    ],
+    "security": {
+      "access_rules": 35,
+      "record_rules": 8,
+      "groups": 5
+    },
+    "views": {
+      "form": 3,
+      "list": 8,
+      "kanban": 2,
+      "search": 3,
+      "pivot": 2,
+      "graph": 2,
+      "calendar": 1,
+      "activity": 1
+    },
+    "behavioral_notes": [
+      {
+        "element": "purchase.order.button_confirm",
+        "observation": "Confirms an RFQ: validates each line has a product, calls _add_supplier_to_product (auto-registers the vendor in product.supplierinfo, capped at 10 sellers), then either approves directly or routes to a 'to approve' state. If _approval_allowed returns True it calls button_approve which writes state='purchase' and date_approve=now; otherwise state='to approve'. Not visible in metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "purchase.order._approval_allowed (double validation)",
+        "observation": "Approval gating depends on company.po_double_validation: 'one_step' always allows; 'two_step' allows only when amount_total is below po_double_validation_amount (currency-converted); purchase managers (group_purchase_manager) always bypass. This is the configurable PO approval threshold policy, encoded in Python not metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "purchase.order.action_create_invoice",
+        "observation": "Creates vendor bills: builds account.move records with default_move_type='in_invoice' from order lines (via _prepare_invoice / _prepare_account_move_line), batches/groups by (company, partner, currency), and converts negative-total moves into refunds. This is the PO -> vendor bill (account.move) document side-effect.",
+        "source": "code-read"
+      },
+      {
+        "element": "purchase.order.state machine",
+        "observation": "Selection: draft(RFQ) -> sent(RFQ Sent) -> 'to approve' -> purchase(Purchase Order) -> done/cancel. button_cancel blocks cancellation if the PO is locked or has non-draft/non-cancel vendor bills, enforcing document-chain integrity.",
+        "source": "code-read"
+      },
+      {
+        "element": "purchase.report / purchase.bill.union / purchase.bill.line.match",
+        "observation": "Read-only SQL view models (analytics & reconciliation): purchase.report for purchase analysis, purchase.bill.union unifies POs and vendor bills, purchase.bill.line.match drives the PO-line/bill-line matching (3-way-match) view. Not stored tables.",
+        "source": "code-read"
+      },
+      {
+        "element": "frontend (OWL/JS)",
+        "observation": "15 JS files, 4 OWL components, 10 registry registrations, 1 patches; asset bundles ['web.assets_backend', 'web.assets_frontend', 'web.assets_tests'].",
+        "source": "static"
+      }
+    ],
+    "frontend": {
+      "present": true,
+      "js_files": 15,
+      "xml_templates": 8,
+      "owl_components": [
+        "ButtonWithNotification",
+        "OpenMatchLineWidget",
+        "PurchaseDashBoard",
+        "PurchaseFileUploader"
+      ],
+      "registry_adds": [
+        "fields:monetary_no_zero",
+        "fields:open_match_line_widget",
+        "public.interactions:purchase.purchase_datetime_picker",
+        "public.interactions:purchase.purchase_sidebar",
+        "view_widgets:purchase_file_uploader",
+        "view_widgets:toaster_button",
+        "views:purchase_dashboard_kanban",
+        "views:purchase_dashboard_list",
+        "views:purchase_product_kanban_catalog",
+        "web_tour.tours:purchase_tour"
+      ],
+      "patches": [
+        "ProductCatalogKanbanRecord.prototype"
+      ],
+      "services": [
+        "action_open_line"
+      ],
+      "asset_bundles": {
+        "web.assets_backend": 8,
+        "web.assets_frontend": 2,
+        "web.assets_tests": 1
+      }
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": true,
+      "endpoints": [
+        "https://www.odoo.com/app/purchase"
+      ],
+      "files": [
+        "__manifest__.py"
+      ]
+    }
+  },
+  "it_architecture": {
+    "application": "purchase (Purchase application component)",
+    "software_services": [
+      "/my/rfq/*",
+      "/my/purchase/*",
+      "/my/purchase/<id>/update",
+      "/my/purchase/<id>/download_edi"
+    ],
+    "data_objects": [
+      "purchase.order",
+      "purchase.order.line",
+      "purchase.report",
+      "purchase.bill.line.match",
+      "purchase.bill.union",
+      "bill.to.po.wizard"
+    ],
+    "logical_data_erm": [
+      "purchase.order -> res.partner (vendor)",
+      "purchase.order -> res.company",
+      "purchase.order.line -> purchase.order",
+      "purchase.order.line -> product.product",
+      "purchase.order.line -> account.move.line (invoice_lines)",
+      "purchase.order -> account.move (invoice_ids)"
+    ],
+    "information_flows": [
+      "depends: account",
+      "side-effect: purchase.order.button_confirm -> product.supplierinfo (vendor registration) + state=purchase",
+      "side-effect: purchase.order.action_create_invoice -> account.move (in_invoice vendor bill)",
+      "portal: vendor portal RFQ/PO views and EDI download via /my/rfq and /my/purchase routes"
+    ],
+    "frontend_components": [
+      "ButtonWithNotification",
+      "OpenMatchLineWidget",
+      "PurchaseDashBoard",
+      "PurchaseFileUploader"
+    ]
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Manage RFQs & Purchase Orders",
+      "Vendor / Supplier Management",
+      "Purchase Order Approval (double validation)",
+      "Vendor Bill Matching & Reconciliation (3-way match)",
+      "Purchase Analysis"
+    ],
+    "value_streams": [
+      "Procure-to-Pay: RFQ -> confirmed PO -> receipt -> vendor bill -> reconcile/pay"
+    ],
+    "information_concepts": [
+      "purchase.order",
+      "purchase.order.line",
+      "res.partner (vendor)",
+      "product.product (purchased item)",
+      "product.supplierinfo (vendor price list)",
+      "account.move (vendor bill)"
+    ],
+    "organization": [
+      "group_purchase_user",
+      "group_purchase_manager",
+      "group_warning_purchase",
+      "group_send_reminder"
+    ],
+    "products": [],
+    "policies": [
+      "8 record rules: multi-company + own/team document visibility scoping",
+      "po_double_validation approval threshold (one_step/two_step + amount)",
+      "po_lock / lock_confirmed_po order locking"
+    ],
+    "stakeholders": [
+      "Vendor / Supplier (res.partner)",
+      "Buyer / Purchase User (res.users)",
+      "Purchase Manager (approver)",
+      "Accountant (vendor bill reconciliation)"
+    ],
+    "strategy": null,
+    "metrics": [
+      "purchase.report (Purchase Analysis: amounts, delay, qty ordered/received/billed)"
+    ]
+  },
+  "classification": {
+    "value_model": "support",
+    "activity_class": "support",
+    "apqc_category": "4.2 Procure Materials and Services",
+    "rationale": "purchase is a procurement support activity feeding the value chain rather than a primary transform. It sources inputs (RFQ -> PO -> vendor bill) so that stock/mrp/sale can operate; its only dependency is account, and its terminal side-effect is a vendor bill (account.move). Maps to APQC 4.2 with activity refs 4.2.4.4 (create/distribute purchase orders, via button_confirm state=purchase) and 4.2.4.6 (reconcile, via vendor bill matching). Classified support per Stabell & Fjeldstad: it provisions inputs for the primary activities."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "RFQ -> purchase order lifecycle",
+      "vendor RFQ solicitation & tracking",
+      "auto vendor registration on product (supplierinfo)",
+      "configurable PO approval / double validation",
+      "vendor bill creation & PO-to-bill matching (3-way match)",
+      "purchase analysis (pivot/graph)",
+      "vendor portal (RFQ/PO + EDI download)"
+    ],
+    "typical_fits": [
+      "standard RFQ-to-PO-to-bill flow",
+      "single- or two-step approval by amount threshold",
+      "buyer/team ownership with multi-company scoping",
+      "vendor price lists via product.supplierinfo"
+    ],
+    "common_gaps": [
+      "purchase agreements / tenders (module_purchase_requisition)",
+      "advanced 3-way match (module_account_3way_match)",
+      "product matrix entry (module_purchase_product_matrix)",
+      "industry-specific approval workflows beyond amount threshold",
+      "custom vendor-scoring / sourcing logic"
+    ],
+    "drive_hints": [
+      "odoo shell: env['purchase.order'].search([], limit=5).mapped(('name','state'))",
+      "odoo shell: po = env['purchase.order'].create({...}); po.button_confirm(); print(po.state)  # -> 'purchase' or 'to approve'",
+      "odoo shell: po.action_create_invoice(); print(po.invoice_ids.mapped('move_type'))  # -> 'in_invoice'",
+      "curl http /my/purchase/<id> (vendor portal, auth=public via token)"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Exact downstream of button_confirm when stock is installed (purchase_stock adds stock.picking receipt creation; core purchase depends only on account).",
+    "Full compute chain behind qty_received / qty_invoiced / qty_to_invoice on purchase.order.line.",
+    "How purchase.bill.line.match drives the reconciliation UI and what 'is_purchase_matched' on account.move signals."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/purchase.facts.json",
+    "tools": [
+      "code-read",
+      "extract_frontend.py",
+      "extract_module.py"
+    ],
+    "odoo_version": "19.0"
+  }
+}

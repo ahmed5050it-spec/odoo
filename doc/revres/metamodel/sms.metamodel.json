@@ -1,0 +1,380 @@
+{
+  "subsystem": "sms",
+  "evidence": {
+    "manifest": {
+      "name": "SMS gateway",
+      "category": "Sales/Sales",
+      "summary": "SMS Text Messaging",
+      "depends": [
+        "base",
+        "iap_mail",
+        "mail",
+        "phone_validation"
+      ],
+      "auto_install": true,
+      "application": false
+    },
+    "models": [
+      {
+        "_name": "sms.sms",
+        "_description": "Outgoing SMS",
+        "_inherit": null,
+        "fields": 9,
+        "methods": 17,
+        "relations": [
+          "partner_id->res.partner",
+          "mail_message_id->mail.message",
+          "sms_tracker_id->sms.tracker"
+        ]
+      },
+      {
+        "_name": "sms.template",
+        "_description": "SMS Templates",
+        "_inherit": [
+          "mail.render.mixin",
+          "template.reset.mixin"
+        ],
+        "fields": 5,
+        "methods": 6,
+        "relations": [
+          "model_id->ir.model",
+          "sidebar_action_id->ir.actions.act_window"
+        ]
+      },
+      {
+        "_name": "sms.composer",
+        "_description": "Send SMS Wizard",
+        "_inherit": null,
+        "fields": 21,
+        "methods": 31,
+        "relations": [
+          "template_id->sms.template"
+        ]
+      },
+      {
+        "_name": "sms.tracker",
+        "_description": "Link SMS to mailing/sms tracking models",
+        "_inherit": null,
+        "fields": 2,
+        "methods": 3,
+        "relations": [
+          "mail_notification_id->mail.notification"
+        ]
+      },
+      {
+        "_name": "sms.template.preview",
+        "_description": "SMS Template Preview",
+        "_inherit": null,
+        "fields": 6,
+        "methods": 5,
+        "relations": [
+          "sms_template_id->sms.template",
+          "model_id->ir.model"
+        ]
+      },
+      {
+        "_name": "sms.template.reset",
+        "_description": "SMS Template Reset",
+        "_inherit": null,
+        "fields": 1,
+        "methods": 1,
+        "relations": [
+          "template_ids->sms.template"
+        ]
+      },
+      {
+        "_name": "sms.account.phone",
+        "_description": "SMS Account Registration Phone Number Wizard",
+        "_inherit": null,
+        "fields": 2,
+        "methods": 1,
+        "relations": [
+          "account_id->iap.account"
+        ]
+      },
+      {
+        "_name": "sms.account.code",
+        "_description": "SMS Account Verification Code Wizard",
+        "_inherit": null,
+        "fields": 2,
+        "methods": 1,
+        "relations": [
+          "account_id->iap.account"
+        ]
+      },
+      {
+        "_name": "sms.account.sender",
+        "_description": "SMS Account Sender Name Wizard",
+        "_inherit": null,
+        "fields": 2,
+        "methods": 2,
+        "relations": [
+          "account_id->iap.account"
+        ]
+      }
+    ],
+    "routes": [
+      {
+        "paths": [
+          "/sms/status"
+        ],
+        "auth": "public",
+        "type": "jsonrpc"
+      }
+    ],
+    "security": {
+      "access_rules": 13,
+      "record_rules": 1,
+      "groups": 0,
+      "note": "sms defines NO own res.groups; the single record rule and 13 ir.model.access entries scope the technical SMS/template/wizard models, reusing base groups (e.g. base.group_user / base.group_system)."
+    },
+    "views": {
+      "form": 2,
+      "list": 2,
+      "search": 2
+    },
+    "behavioral_notes": [
+      {
+        "element": "sms.sms.send / _send_with_api",
+        "observation": "send() (sms_sms.py:99) locks 'outgoing' rows, groups them by API + batch, then _send_with_api groups by body and calls SmsApi._send_sms_batch -> POST to the external Odoo IAP endpoint https://sms.api.odoo.com /api/sms/3/send. The docstring warns it contacts an external server and a failed transaction may be retried, sending duplicate SMS. IAP result states are mapped via IAP_TO_SMS_STATE_SUCCESS / PROVIDER_TO_SMS_FAILURE_TYPE into sms.state and failure_type. Not visible in metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "sms.sms._process_queue (ir.cron) + state machine",
+        "observation": "create() (sms_sms.py:78) triggers the 'sms.ir_cron_sms_scheduler_action' cron; _process_queue (:151) batch-sends queued SMS (sms.session.batch.size, default 500) via _send, calling _commit_progress for chunked remaining work. state flows outgoing -> process -> pending(=Sent) -> sent(=Delivered) or error/canceled; unlink_sent marks rows to_delete and an @api.autovacuum GC (_gc_device) hard-deletes them, while the linked mail.notification persists for the delivery icon.",
+        "source": "code-read"
+      },
+      {
+        "element": "sms.template (mail.render.mixin)",
+        "observation": "sms.template (sms_template.py) is a thin model: body is a Char rendered against the related model via mail.render.mixin (_render_field / _compute_render_model = model). _unrestricted_rendering=True. model_id is domain-limited to models flagged is_mail_thread_sms (ir.model extension). action_create_sidebar_action generates an ir.actions.act_window bound to the model so 'Send SMS (<tpl>)' appears as a contextual action opening the sms.composer. Render formulas live in Python, not metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "mail.thread._notify_thread_by_sms (SMS as a mail notification channel)",
+        "observation": "mail_thread.py overrides _notify_thread to fan a posted mail.message out by SMS: for recipients whose notif=='sms' it creates sms.sms (sudo) + mail.notification(type='sms') + an sms.tracker keyed by sms.uuid, then sends immediately unless put_in_queue. message_post with message_type='sms' keeps the raw body for the SMS and renders an HTML version for the chatter. This is how any mail.thread model gains SMS notifications without schema changes (sibling of the email channel).",
+        "source": "code-read"
+      },
+      {
+        "element": "phone formatting + phone.blacklist enforcement",
+        "observation": "Numbers are sanitized to international format via record._phone_format (phone_validation) in the composer (_compute_sanitized_numbers raises UserError on invalid) and in _notify_thread_by_sms. Mass mode (_prepare_mass_sms_values) marks recipients canceled with failure_type sms_blacklist (against phone.blacklist via _get_blacklist_record_ids), sms_duplicate, sms_optout, or sms_number_format/sms_number_missing before any IAP call. Opt-out is a no-op hook here (delegated to SMS Marketing).",
+        "source": "code-read"
+      },
+      {
+        "element": "/sms/status delivery-report webhook (controllers/main.py)",
+        "observation": "Public jsonrpc route /sms/status receives batched delivery reports from IAP keyed by sms.uuid, validates uuid/status format, and updates sms.tracker -> mail.notification status (sent/bounce/exception) via _action_update_from_sms_state / _action_update_from_provider_error, then marks the SMS to_delete. This inbound callback from the external SMS service is invisible to model metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "frontend (OWL/JS)",
+        "observation": "7 JS files, 1 OWL component (SendSMSButton), 1 registry registration (fields:sms_widget), 7 patches (Failure/Message/MessagingMenu/Notification prototypes, PhoneField/formPhoneField/phoneField); asset bundles ['web.assets_backend', 'web.assets_unit_tests']. Patches the phone field to add a click-to-SMS action and the Discuss notification UI to surface SMS delivery failures.",
+        "source": "static"
+      },
+      {
+        "element": "external integrations (IAP)",
+        "observation": "0 raw http_call_sites and no third-party SDK imports; SMS sending and account registration go through Odoo's IAP layer (odoo.addons.iap.tools.iap_tools.iap_jsonrpc) to endpoint https://sms.api.odoo.com (tools/sms_api.py). uses_api_keys=false at this layer because auth is the IAP account_token + database.uuid, not a customer-held API key.",
+        "source": "static"
+      }
+    ],
+    "frontend": {
+      "present": true,
+      "js_files": 7,
+      "xml_templates": 3,
+      "owl_components": [
+        "SendSMSButton"
+      ],
+      "registry_adds": [
+        "fields:sms_widget"
+      ],
+      "patches": [
+        "Failure.prototype",
+        "Message.prototype",
+        "MessagingMenu.prototype",
+        "Notification.prototype",
+        "PhoneField",
+        "formPhoneField",
+        "phoneField"
+      ],
+      "services": [
+        "enable_sms",
+        "sms"
+      ],
+      "asset_bundles": {
+        "web.assets_backend": 1,
+        "web.assets_unit_tests": 1
+      }
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": false,
+      "endpoints": [
+        "https://sms.api.odoo.com"
+      ],
+      "files": [
+        "tools/sms_api.py"
+      ]
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    }
+  },
+  "it_architecture": {
+    "application": "sms (SMS gateway component - an SMS delivery channel layered on mail's notification pipeline via Odoo IAP)",
+    "software_services": [
+      "/sms/status"
+    ],
+    "data_objects": [
+      "sms.sms",
+      "sms.template",
+      "sms.composer",
+      "sms.tracker",
+      "sms.template.preview",
+      "sms.template.reset",
+      "sms.account.phone",
+      "sms.account.code",
+      "sms.account.sender"
+    ],
+    "logical_data_erm": [
+      "sms.sms -> mail.message (mail_message_id)",
+      "sms.sms -> res.partner (partner_id)",
+      "sms.sms -> sms.tracker (sms_uuid bridge)",
+      "sms.tracker -> mail.notification (mail_notification_id)",
+      "sms.template -> ir.model (model_id, is_mail_thread_sms only)",
+      "sms.composer -> sms.template (template_id)",
+      "iap.account (extension: sender_name) -> external IAP SMS service"
+    ],
+    "information_flows": [
+      "depends: base, iap_mail, mail, phone_validation",
+      "side-effect: message_post(message_type='sms') -> _notify_thread_by_sms -> sms.sms + mail.notification(type='sms') + sms.tracker",
+      "side-effect: sms.sms.send / _process_queue cron -> SmsApi._send_sms_batch -> IAP https://sms.api.odoo.com (external)",
+      "inbound: /sms/status webhook from IAP -> sms.tracker -> mail.notification delivery status (sent/bounce/exception)",
+      "side-effect: phone.blacklist / phone_validation._phone_format gate numbers before send (sms_blacklist / sms_number_format)",
+      "inverse-dependency: auto_install=True with mail; downstream modules (mass_mailing_sms, marketing, crm, *_sms) reuse sms.composer + _message_sms to add SMS"
+    ],
+    "frontend_components": [
+      "SendSMSButton"
+    ],
+    "external_integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "endpoints": [
+        "https://sms.api.odoo.com"
+      ]
+    }
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Outbound SMS Sending (transactional + batch via IAP)",
+      "SMS Notification Channel on records (chatter SMS, sibling of email)",
+      "SMS Templates (per-model, dynamic rendering)",
+      "SMS Composer (single / numbers / mass modes)",
+      "Delivery Tracking & Failure Handling (state machine + webhook reports)",
+      "Phone Number Validation & Blacklist/Opt-out Enforcement",
+      "IAP SMS Account Registration & Sender-Name Management"
+    ],
+    "value_streams": [
+      "Notify-by-SMS: post on record -> _notify_thread_by_sms -> create sms.sms -> IAP send -> delivery report -> notification status",
+      "Compose-and-Send: open sms.composer (template/body) -> validate & sanitize numbers -> create + send sms.sms",
+      "Mass-SMS: recordset -> _message_sms_schedule_mass -> filter blacklist/duplicate/optout -> queue + cron send"
+    ],
+    "information_concepts": [
+      "sms.sms (outgoing SMS)",
+      "sms.template (SMS template)",
+      "sms.tracker (SMS <-> notification/trace bridge)",
+      "sms.composer (send wizard)",
+      "mail.notification (delivery, type='sms')",
+      "iap.account (SMS service account + sender_name)"
+    ],
+    "organization": [
+      "base.group_user (internal)",
+      "base.group_system (admin / IAP account + sender-name config)",
+      "(sms defines no own groups - 1 record rule + 13 access rules reuse base groups)"
+    ],
+    "products": [],
+    "policies": [
+      "Exclusion list: phone.blacklist enforced before send (use_exclusion_list default True) -> failure_type sms_blacklist",
+      "De-duplication: same sanitized number in a mass batch -> sms_duplicate (canceled)",
+      "Number validation: phone_validation._phone_format gates send; invalid -> sms_number_format / sms_number_missing",
+      "sms.template model_id restricted to ir.model flagged is_mail_thread_sms",
+      "IAP auth via account_token + database.uuid (not user-held API keys); not reachable during module install"
+    ],
+    "stakeholders": [
+      "Internal user / salesperson (sends SMS, owns IAP credits)",
+      "Recipient contact (res.partner / phone number)",
+      "System/admin (registers IAP SMS account, sets sender name)",
+      "Odoo IAP SMS service (external delivery provider)"
+    ],
+    "strategy": null,
+    "metrics": [
+      "sms.sms.state distribution (outgoing/process/pending/sent/error/canceled)",
+      "mail.notification SMS delivery status (sent/bounce/exception) - drives message_has_sms_error flag",
+      "Recipient valid/invalid counts in the composer",
+      "IAP credit balance / consumption (iap.account)"
+    ]
+  },
+  "classification": {
+    "value_model": "support",
+    "activity_class": "support",
+    "apqc_category": "9.4 Manage internal communications (cross-cutting notification channel); operationally 3.5.4.8 Handle sales order inquiries / post-order comms when SMS chatter sits on a sale.order (apqc_odoo_map.tsv, support)",
+    "rationale": "sms is a cross-cutting SUPPORT subsystem (Stabell & Fjeldstad): an SMS delivery channel, not part of any single primary value chain. It is the SMS sibling of mail - it plugs into mail.thread's notification pipeline (_notify_thread_by_sms) and reuses mail.message / mail.notification, so any mail.thread model gains SMS with no schema change. auto_install=True with mail confirms it is shared messaging infrastructure consumed by marketing (mass_mailing_sms), crm, and transactional notifications. APQC best fit is 9.4 internal communications (the firm-wide communication-infrastructure category that also houses mail); chosen over a 3.x Market-and-Sell code because sms itself is channel infrastructure, not a selling activity - 3.x only applies derivatively when the SMS notifies on a sales record (anchored by 3.5.4.8 in apqc_odoo_map.tsv). Note the external integration (gap #7): all sending goes through Odoo IAP (https://sms.api.odoo.com) via iap_tools.iap_jsonrpc, with an inbound /sms/status webhook for delivery reports."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "Send SMS from any record (click-to-SMS via patched phone field, sms.composer)",
+      "SMS as a chatter/notification channel alongside email (message_type='sms')",
+      "Per-model SMS templates with dynamic rendering (mail.render.mixin)",
+      "Single, numbers, and mass composition modes with recipient validation",
+      "Delivery state machine + IAP webhook delivery reports (sent/bounce/exception)",
+      "Phone sanitization (international format) + phone.blacklist exclusion + duplicate guard",
+      "Queued sending via ir.cron with batching + autovacuum cleanup",
+      "IAP SMS account registration, verification, and sender-name management"
+    ],
+    "typical_fits": [
+      "Add an SMS notification to a business transition via _message_sms_with_template / sms.template",
+      "Let users send ad-hoc SMS from a record's phone field (built-in sms_widget)",
+      "Schedule a mass SMS over a recordset with blacklist + de-dup via _message_sms_schedule_mass",
+      "Surface SMS delivery failures in Discuss (message_has_sms_error) for follow-up"
+    ],
+    "common_gaps": [
+      "Using a non-Odoo SMS provider requires subclassing SmsApi/SmsApiBase and overriding _split_by_api / _send_sms_batch (default is hard-wired to Odoo IAP)",
+      "Opt-out beyond raw phone.blacklist (consent/marketing opt-out) is a no-op here - handled by SMS Marketing",
+      "No SMS scheduling/throttling UI beyond the queue cron batch size config parameter",
+      "Inbound/two-way SMS (replies) is not modeled - delivery is one-way + status webhook only",
+      "IAP credits, country support, and sender registration depend on external Odoo service state"
+    ],
+    "drive_hints": [
+      "odoo shell: env['sms.sms'].read_group([], ['id'], ['state'])  # delivery state distribution",
+      "odoo shell: p=env['res.partner'].search([('phone','!=',False)], limit=1); p._message_sms('hello from odoo')  # creates sms.sms + mail.notification(type='sms')",
+      "odoo shell: env['sms.template'].search([], limit=5).mapped(('name','model','body'))",
+      "odoo shell: env['iap.account'].get('sms').read(['account_token','sender_name'])  # IAP SMS account",
+      "curl jsonrpc /sms/status (auth=public) with {message_statuses:[{sms_status,uuids}]} to simulate an IAP delivery report"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Exact IAP wire contract / retry semantics of /api/sms/3/send and how partial-batch failures map back to per-uuid states (only the success/failure dicts are visible from code).",
+    "Precise APQC leaf for a cross-cutting comms channel - 9.4 internal communications vs 12.x external relationships vs derivative 3.5.4.8; no single clean PCF leaf, mirrors the mail module.",
+    "How downstream modules (mass_mailing_sms, marketing_sms) extend sms.composer opt-out (_get_optout_record_ids) and revoked-SMS filtering.",
+    "Live IAP-dependent behavior (credit checks, country support, sender registration) cannot be observed without an activated database + credits."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/sms.facts.json",
+    "tools": [
+      "code-read (sms_sms.py, sms_template.py, wizard/sms_composer.py, models/mail_thread.py, tools/sms_api.py, controllers/main.py, sms_tracker.py, iap_account.py)",
+      "doc/MESSAGING_SUBSYSTEM.md",
+      "extract_frontend.py",
+      "extract_module.py"
+    ],
+    "odoo_version": "19.0"
+  }
+}

@@ -1,0 +1,259 @@
+{
+  "subsystem": "rating",
+  "evidence": {
+    "manifest": {
+      "name": "Customer Rating",
+      "category": "Productivity",
+      "depends": [
+        "mail"
+      ],
+      "auto_install": false,
+      "application": false
+    },
+    "models": [
+      {
+        "_name": "rating.mixin",
+        "_description": "Rating Mixin",
+        "fields": 8,
+        "relations": [
+          "_inherit->mail.thread",
+          "rating_ids->rating.rating"
+        ]
+      },
+      {
+        "_name": "rating.parent.mixin",
+        "_description": "Rating Parent Mixin",
+        "fields": 5,
+        "relations": [
+          "rating_ids->rating.rating"
+        ]
+      },
+      {
+        "_name": "rating.rating",
+        "_description": "Rating",
+        "fields": 24,
+        "relations": [
+          "res_model_id->ir.model",
+          "parent_res_model_id->ir.model",
+          "partner_id->res.partner",
+          "rated_partner_id->res.partner",
+          "message_id->mail.message"
+        ]
+      }
+    ],
+    "routes": [
+      {
+        "paths": [
+          "/rate/<string:token>/<int:rate>"
+        ],
+        "auth": "public",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/rate/<string:token>/submit_feedback"
+        ],
+        "auth": "public",
+        "type": "http"
+      }
+    ],
+    "security": {
+      "access_rules": 4,
+      "record_rules": 0,
+      "groups": 0
+    },
+    "views": {
+      "form": 2,
+      "list": 1,
+      "tree": 0,
+      "kanban": 2,
+      "search": 1,
+      "pivot": 1,
+      "graph": 1,
+      "calendar": 0,
+      "activity": 0
+    },
+    "behavioral_notes": [
+      {
+        "element": "rating.rating (record + access_token)",
+        "observation": "rating.rating is the satisfaction fact: a Float 'rating' value constrained 0-5 by the _rating_range SQL check, mapped to grades great/okay/bad (>=4 / >=3 / <3) and text top/ok/ko via rating_data. It carries a res_model/res_id Many2oneReference to ANY rated record (generic, polymorphic), a uuid access_token (_default_access_token) for the public email flow, a 'consumed' flag separating sent-but-unanswered from filled ratings, and an optional message_id link so a chatter mail.message can render the rating. create()/write() auto-stamp rated_on and resolve parent_res_model/parent_res_id via _find_parent_data. Not visible in metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "mail.thread.rating_apply / rating_send_request / _rating_get_access_token",
+        "observation": "The rating.mixin behaviour lives on the mail.thread extension. rating_send_request(template) posts a mail.template (mt_note) to the customer carrying a /rate/<token> link minted by _rating_get_access_token (reuses an unconsumed rating or creates one as sudo). rating_apply(rate, token=...) writes rating+feedback+consumed=True on the rating.rating and, if the record is a mail.thread, posts/updates a chatter message embedding the rating image; notify_delay_send schedules the mail +2h so the rater can still edit. This is the closed loop survey->store->chatter, none of it readable from metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "/rate/<token>/<rate> + /submit_feedback (public controllers)",
+        "observation": "Two public (auth='public', website=True) HTTP routes implement the customer-facing survey. _get_rating_and_record resolves the rating.rating by access_token as sudo (404 if missing); a non-public logged-in user whose commercial partner differs from rating.partner_id is rejected (rating_external_page_invalid_partner). submit_feedback (POST) validates rate in {1,3,5} (UNHAPPY/NEUTRAL/HAPPY) and calls record_sudo.rating_apply, then renders the thank-you page. The public->sudo escalation after token+partner check is the security boundary and is invisible to metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "rating.mixin._compute_rating_stats / _compute_rating_satisfaction / rating.parent.mixin",
+        "observation": "rating_avg and rating_count are computed together in one _read_group over consumed ratings with rating>=1 (RATING_LIMIT_MIN); rating_percentage_satisfaction = great*100/total (or -1 when none), where 'great' = rating>=4. rating_last_value is fetched via raw SQL array_agg ordered by write_date for performance. rating.parent.mixin rolls the same satisfaction % up to a parent record (e.g. project from its tasks) over parent_res_id, optionally windowed by _rating_satisfaction_days. Compute formulas live in Python, not metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "frontend (OWL/JS)",
+        "observation": "3 JS files, 0 OWL components, 0 registry adds, 1 patch (Message.prototype via core/common/message_model_patch.js) plus a notification_item patch; bundles include mail.assets_public and portal.assets_chatter so the rating renders inside the discuss/portal chatter, not a standalone app.",
+        "source": "static"
+      }
+    ],
+    "frontend": {
+      "present": true,
+      "js_files": 3,
+      "xml_templates": 2,
+      "owl_components": [],
+      "registry_adds": [],
+      "patches": [
+        "Message.prototype"
+      ],
+      "services": [],
+      "asset_bundles": {
+        "web.assets_backend": 2,
+        "web.assets_frontend": 1,
+        "web.assets_unit_tests": 1,
+        "mail.assets_public": 1,
+        "portal.assets_chatter": 1
+      }
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": true,
+      "endpoints": [],
+      "files": []
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    }
+  },
+  "it_architecture": {
+    "application": "rating (Customer Rating mixin/backbone component)",
+    "software_services": [
+      "/rate/<string:token>/<int:rate>",
+      "/rate/<string:token>/submit_feedback"
+    ],
+    "data_objects": [
+      "rating.mixin",
+      "rating.parent.mixin",
+      "rating.rating"
+    ],
+    "logical_data_erm": [
+      "rating.rating -> ir.model (res_model_id / parent_res_model_id)",
+      "rating.rating -> res.partner (partner_id customer / rated_partner_id operator)",
+      "rating.rating -> mail.message (message_id)",
+      "rating.parent.mixin -> rating.rating (rating_ids on parent_res_id)",
+      "rating.mixin -> mail.thread (inherit) -> rating.rating (rating_ids on res_id)"
+    ],
+    "information_flows": [
+      "depends: mail (rating.mixin inherits mail.thread; ratings surface in chatter)",
+      "side-effect: rating_send_request -> mail.template mt_note with /rate/<token> link to customer",
+      "side-effect: rating_apply / /rate submit -> rating.rating(consumed=True) + chatter mail.message with rating image",
+      "consumed-by (not in rating's own metadata): project, im_livechat, website_slides, website_sale grafting rating.mixin/rating.parent.mixin"
+    ],
+    "frontend_components": []
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Capture Customer Satisfaction Rating (1-5 / happy-neutral-unhappy)",
+      "Send Rating Request (email survey with tokenized link)",
+      "Aggregate Satisfaction (avg, count, % satisfaction, repartition)",
+      "Roll-up Satisfaction to Parent (rating.parent.mixin)"
+    ],
+    "value_streams": [
+      "Satisfaction feedback loop: request -> customer rates via /rate/<token> -> rating stored + chatter -> satisfaction KPIs"
+    ],
+    "information_concepts": [
+      "rating.rating (satisfaction fact)",
+      "rating.mixin (rated record)",
+      "rating.parent.mixin (parent aggregate)",
+      "res.partner (customer + rated operator)",
+      "mail.message (chatter carrier)"
+    ],
+    "organization": [
+      "base.group_user (read/write/create ratings)",
+      "base.group_portal (no direct ORM access)",
+      "base.group_public (no direct ORM access)",
+      "base.group_system (full access incl. unlink)"
+    ],
+    "products": [],
+    "policies": [
+      "rating value constrained 0-5 (_rating_range SQL check)",
+      "public route escalates to sudo only after access_token + commercial-partner match",
+      "satisfaction restricted to consumed ratings with rating>=1; statistic fields under base.group_user"
+    ],
+    "stakeholders": [
+      "Customer / rater (res.partner, partner_id)",
+      "Rated operator (res.partner, rated_partner_id — e.g. salesperson, agent, technician)",
+      "Manager consuming satisfaction KPIs (base.group_user)"
+    ],
+    "strategy": null,
+    "metrics": [
+      "rating_avg (average rating)",
+      "rating_count (# ratings)",
+      "rating_percentage_satisfaction (% happy)",
+      "rating repartition / grades (great/okay/bad) via pivot + graph views"
+    ]
+  },
+  "classification": {
+    "value_model": "support",
+    "activity_class": "support",
+    "apqc_category": "6.0 Manage Customer Service",
+    "rationale": "rating is a cross-cutting customer-satisfaction/feedback backbone, not a primary value-creating activity. Like mail.thread, it ships two abstract mixins (rating.mixin, rating.parent.mixin) plus a generic polymorphic fact model (rating.rating, res_model/res_id to ANY record) that many primary modules graft onto — project, helpdesk, website_slides, event, im_livechat, website_sale — to measure satisfaction of their own deliverables. Under Stabell & Fjeldstad it is firm-infrastructure SUPPORT: it creates no order/delivery/invoice of its own; it instruments others. APQC 6.0 Manage Customer Service captures the satisfaction-measurement intent (the surrounding chatter/customer-inquiry handling is mapped support under mail in apqc_odoo_map.tsv)."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "tokenized email rating request (happy/neutral/unhappy 1-3-5 -> stored 1-5)",
+      "public /rate/<token> survey + feedback page (no login)",
+      "rating stored as chatter message with star/smiley image",
+      "satisfaction analytics: avg, count, % satisfaction, repartition (pivot/graph)",
+      "parent roll-up of satisfaction (rating.parent.mixin)",
+      "reusable mixin grafted onto any mail.thread model"
+    ],
+    "typical_fits": [
+      "post-task / post-ticket / post-course satisfaction survey",
+      "salesperson / agent / operator rating (rated_partner_id)",
+      "satisfaction % shown on the rated record and rolled up to its parent"
+    ],
+    "common_gaps": [
+      "rating scale beyond the fixed 0-5 / happy-neutral-unhappy mapping",
+      "multi-question or NPS-style surveys (rating stores a single value + feedback)",
+      "custom satisfaction thresholds / grade boundaries (great/okay/bad hardcoded in rating_data)",
+      "non-email rating channels (SMS/in-app) beyond the provided web route"
+    ],
+    "drive_hints": [
+      "odoo shell: env['rating.rating'].search([], limit=5).mapped(('res_model','rating','rating_text','consumed'))",
+      "odoo shell: rec = env['project.task'].search([], limit=1); rec._rating_get_access_token()  # mint a /rate token",
+      "curl public GET /rate/<token>/5  then POST /rate/<token>/submit_feedback (rate=5, feedback=...)"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Per-consumer mapping: how project/helpdesk/website_slides/event trigger rating_send_request and which template each uses.",
+    "How rating.parent.mixin parents are wired per consumer (_rating_get_parent_field_name override).",
+    "Interaction of notify_delay_send (+2h editable window) with the mail queue cron across consumers."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/rating.facts.json",
+    "tools": [
+      "code-read",
+      "extract_frontend.py",
+      "extract_module.py",
+      "extract_runtime.sh",
+      "run-odoo (odoo shell)"
+    ],
+    "odoo_version": "19.0"
+  }
+}

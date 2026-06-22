@@ -1,0 +1,331 @@
+{
+  "subsystem": "event_sale",
+  "evidence": {
+    "manifest": {
+      "name": "Events Sales",
+      "category": "Marketing/Events",
+      "depends": [
+        "event_product",
+        "sale_management"
+      ],
+      "auto_install": true,
+      "application": false
+    },
+    "models": [
+      {
+        "_name": "sale.order.line",
+        "_description": "(extension) Sales Order Line",
+        "fields": 5,
+        "relations": [
+          "event_id->event.event",
+          "event_slot_id->event.slot",
+          "event_ticket_id->event.event.ticket",
+          "registration_ids->event.registration"
+        ]
+      },
+      {
+        "_name": "event.registration",
+        "_description": "(extension) Event Registration",
+        "fields": 6,
+        "relations": [
+          "sale_order_id->sale.order",
+          "sale_order_line_id->sale.order.line"
+        ]
+      },
+      {
+        "_name": "sale.order",
+        "_description": "(extension) Sales Order",
+        "fields": 1,
+        "relations": []
+      },
+      {
+        "_name": "event.event",
+        "_description": "(extension) Event",
+        "fields": 2,
+        "relations": [
+          "sale_order_lines_ids->sale.order.line"
+        ]
+      },
+      {
+        "_name": "event.event.ticket",
+        "_description": "(extension) Event Ticket",
+        "fields": 0,
+        "relations": []
+      },
+      {
+        "_name": "product.template",
+        "_description": "(extension) Product",
+        "fields": 0,
+        "relations": []
+      },
+      {
+        "_name": "event.sale.report",
+        "_description": "Event Sales Report",
+        "fields": 24,
+        "relations": [
+          "event_id->event.event",
+          "event_ticket_id->event.event.ticket",
+          "event_registration_id->event.registration",
+          "sale_order_id->sale.order",
+          "sale_order_line_id->sale.order.line",
+          "product_id->product.product"
+        ]
+      },
+      {
+        "_name": "event.event.configurator",
+        "_description": "Event Configurator",
+        "fields": 6,
+        "relations": [
+          "product_id->product.product",
+          "event_id->event.event",
+          "event_slot_id->event.slot",
+          "event_ticket_id->event.event.ticket"
+        ]
+      },
+      {
+        "_name": "registration.editor",
+        "_description": "Edit Attendee Details on Sales Confirmation",
+        "fields": 2,
+        "relations": [
+          "sale_order_id->sale.order",
+          "event_registration_ids->registration.editor.line"
+        ]
+      },
+      {
+        "_name": "registration.editor.line",
+        "_description": "Edit Attendee Line on Sales Confirmation",
+        "fields": 10,
+        "relations": [
+          "editor_id->registration.editor",
+          "sale_order_line_id->sale.order.line",
+          "registration_id->event.registration",
+          "event_id->event.event",
+          "event_ticket_id->event.event.ticket"
+        ]
+      }
+    ],
+    "routes": [],
+    "security": {
+      "access_rules": 4,
+      "record_rules": 1,
+      "groups": 1
+    },
+    "views": {
+      "form": 0,
+      "list": 0,
+      "kanban": 0,
+      "pivot": 0,
+      "graph": 0,
+      "calendar": 0,
+      "activity": 0
+    },
+    "frontend": {
+      "present": true,
+      "js_files": 2,
+      "xml_templates": 1,
+      "owl_components": [],
+      "registry_adds": [
+        "views:event_configurator_form"
+      ],
+      "patches": [
+        "SaleOrderLineProductField.prototype"
+      ],
+      "services": [],
+      "asset_bundles": {
+        "web.assets_backend": 1,
+        "web.assets_tests": 1
+      }
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": false,
+      "endpoints": [
+        "https://www.odoo.com/app/events"
+      ],
+      "files": [
+        "__manifest__.py"
+      ]
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    },
+    "behavioral_notes": [
+      {
+        "element": "sale.order.action_confirm -> sale.order.line._init_registrations",
+        "observation": "Confirming a sales order that carries any line whose product service_tracking == 'event' first raises ValidationError if any such line has no event_id, then calls order_line._init_registrations(): for each event line it creates (int(product_uom_qty) - len(existing registration_ids)) event.registration rows linked via sale_order_line_id/sale_order_id. Paid lines (price_total != 0) on a single-order confirmation are created in state 'draft' so attendee details can be captured before confirmation; free lines default to 'open' for seat checks. When confirming exactly one order the method returns the action_sale_order_event_registration act_window (the registration.editor attendee wizard) instead of the normal result. None of this SO->registration materialization is visible in metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "event.registration.create / write / _synchronize_so_line_values",
+        "observation": "event.registration.create and write detect a sale_order_line_id in vals and call _synchronize_so_line_values(so_line), copying partner_id, event_id, event_slot_id, event_ticket_id and sale_order_id from the SO line onto the registration (public users are kept off the registration). On create, each SO-linked registration also message_post_with_source('mail.message_origin_link') to chatter-link the registration back to its sale.order. write() additionally detects a changed event_slot_id/event_ticket_id and fires _sale_order_registration_data_change_notify, which schedules a mail.mail_activity_data_warning activity on the sale.order rendering the event_registration_change_exception view. This bidirectional SO<->registration sync and the chatter/activity side-effects are pure code, not metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "event.registration._compute_registration_status (state + sale_status driven by SO state/amount)",
+        "observation": "A stored compute on sale_order_id.state / currency_id / amount_total drives both the new sale_status Selection (free / to_pay / sold) and the inherited registration state. If the order total is zero the registrations are 'free' and any draft/unset moves to 'open'; otherwise registrations on a confirmed ('sale') order become sale_status 'sold' and open, while not-yet-sold ones become 'to_pay' and fall back to 'draft'; registrations on a cancelled order are forced to state 'cancel'. _compute_field_value is overridden so that a registration transitioning draft/cancel -> open triggers _update_mail_schedulers (queues the event's after_sub attendee mails). So payment status on the sale order gates seat confirmation and attendee-mail scheduling.",
+        "source": "code-read"
+      },
+      {
+        "element": "sale.order.line._get_display_price / _compute_price_unit / event.event.ticket pricing",
+        "observation": "For an event-ticket line _get_display_price returns the price taken from event.event.ticket (ticket.price, or ticket.price_reduce in the ticket's company currency when the pricelist hides discounts), converted to the SO line currency via _convert_to_sol_currency -- i.e. the ticket, not the product list price, sets the line unit price (_compute_price_unit is re-triggered on event_ticket_id). _get_sale_order_line_multiline_description_sale and event.event.ticket._get_ticket_multiline_description build the line label from the ticket (and slot) rather than the product, and product.template._onchange_type_event forces invoice_policy='order' for event service products. Ticket-based pricing/description override is not derivable from metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "sale.order.write partner sync + event.sale.report (_auto=False) + event.event.sale_price_total rollup",
+        "observation": "sale.order.write propagates a changed partner_id down to all linked event.registration rows (sudo) so a customer change in the website_sale/backend flow re-owns the attendees. event.sale.report is an _auto=False SQL-view model joining event.registration to sale.order.line for revenue/seat analysis by event, ticket and salesperson (read-only, event manager only). event.event gains a sale_price_total Monetary computed by _read_group over confirmed (state='sale') SO lines on the event (converted to the event company currency at today's rate), exposing per-event ticketing revenue; action_view_linked_orders opens only those confirmed orders. These joins/aggregations live in SQL/Python, not metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "frontend (OWL/JS) -- SaleOrderLineProductField patch + event configurator form view",
+        "observation": "2 JS files, 1 XML template, no OWL components of its own; it registers the event_configurator_form view (a form.Controller subclass whose onRecordSaved closes the window returning {event_id, event_slot_id, event_ticket_id}) and patches @sale/js/sale_product_field SaleOrderLineProductField.prototype so that, when a line's product service_tracking === 'event', editing/selecting the product opens the event_sale.event_configurator_action dialog (the event.event.configurator wizard) to pick event/slot/ticket and writes the result back onto the SO line; cancelling clears the product. Asset bundles ['web.assets_backend','web.assets_tests'].",
+        "source": "static"
+      }
+    ]
+  },
+  "it_architecture": {
+    "application": "event_sale (Events Sales bridge application component over event + sale)",
+    "software_services": [],
+    "data_objects": [
+      "sale.order.line",
+      "event.registration",
+      "sale.order",
+      "event.event",
+      "event.sale.report",
+      "event.event.configurator",
+      "registration.editor"
+    ],
+    "logical_data_erm": [
+      "sale.order.line -> event.event",
+      "sale.order.line -> event.event.ticket",
+      "sale.order.line -> event.slot",
+      "event.registration -> sale.order",
+      "event.registration -> sale.order.line",
+      "event.event -> sale.order.line (sale_order_lines_ids)",
+      "event.sale.report -> event.registration / sale.order.line (SQL view join)"
+    ],
+    "information_flows": [
+      "depends: event_product, sale_management",
+      "side-effect: sale.order.action_confirm -> sale.order.line._init_registrations -> event.registration rows (draft for paid, open for free)",
+      "side-effect: sale.order.action_confirm (single order) -> registration.editor attendee wizard (action_sale_order_event_registration)",
+      "side-effect: event.registration.create -> _synchronize_so_line_values + mail.message_origin_link chatter back to sale.order",
+      "side-effect: event.registration draft/cancel->open -> _update_mail_schedulers (queued attendee emails)",
+      "side-effect: sale.order.write(partner_id) -> propagate partner_id to linked event.registration",
+      "pricing: sale.order.line unit price/description for an event line sourced from event.event.ticket (price/price_reduce), not product list price",
+      "rollup: event.event.sale_price_total <- sum(confirmed sale.order.line.price_total) per event"
+    ],
+    "frontend_components": [
+      "EventConfiguratorController (event_configurator_form view)",
+      "SaleOrderLineProductField.prototype (patch)"
+    ]
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Sell Event Tickets via Sales Orders",
+      "Configure Event/Slot/Ticket on an Order Line (configurator wizard)",
+      "Auto-create & Sync Attendee Registrations from Confirmed Orders",
+      "Capture Attendee Details at Sales Confirmation (registration editor)",
+      "Price & Invoice Registrations (ticket-based pricing, invoice on order)",
+      "Event Sales / Revenue Analysis (event.sale.report)"
+    ],
+    "value_streams": [
+      "Sell-to-Attend (the bridge): quote event-ticket line -> configure event/slot/ticket -> confirm order -> auto-create registrations -> capture attendee details -> payment gates 'sold'/open seats + attendee mails -> invoice"
+    ],
+    "information_concepts": [
+      "sale.order.line (event ticket line)",
+      "event.registration (paid/sold attendee)",
+      "sale.order",
+      "event.event",
+      "event.event.ticket",
+      "event.sale.report"
+    ],
+    "organization": [
+      "sales_team.group_sale_salesman (implies event.group_event_registration_desk)",
+      "event.group_event_manager (event.sale.report access)"
+    ],
+    "products": [
+      "product.template (service_tracking='event' ticket products; invoice_policy forced to 'order')"
+    ],
+    "policies": [
+      "1 record rule: multi-company scoping on event.sale.report",
+      "@api.constrains on sale.order.line: an event ticket line must carry event + ticket (+ slot when the event is multi-slot)",
+      "action_confirm blocks confirmation while any event line is missing its event_id",
+      "registration state/sale_status governed by sale.order state & amount (free->open, paid->draft until 'sale'->sold/open, cancelled->cancel)",
+      "sales_team.group_sale_salesman implies the event registration desk group (cross-app permission bridge)"
+    ],
+    "stakeholders": [
+      "Customer / Order Buyer (res.partner)",
+      "Attendee (event.registration partner)",
+      "Salesperson (res.users)",
+      "Event Manager (event.sale.report consumer)"
+    ],
+    "strategy": null,
+    "metrics": [
+      "event.sale.report (revenues, untaxed price, ticket price, seats by event/ticket/salesperson)",
+      "event.event.sale_price_total (per-event ticketing revenue, tax included)",
+      "sale.order.attendee_count (attendees per order)"
+    ]
+  },
+  "classification": {
+    "value_model": "network",
+    "activity_class": "primary",
+    "apqc_category": "3.0 Market and Sell Products and Services",
+    "rationale": "event_sale is THE BRIDGE between event (a value network: a mediation/membership platform that connects organizers and attendees around seat capacity) and sale (a value chain: quote-to-cash document flow). Its own added value is monetizing event registrations -- turning a seat in the network into a priced, confirmable, invoiceable sale.order.line, and turning a confirmed order back into event.registration rows whose state/sale_status (free/to_pay/sold) is gated by the order's payment. Because the economic logic it manages is still network logic (selling access/membership to a capacity-constrained event, ticket-based pricing, attendee provisioning) rather than transforming inputs into a physical good, it is classified network, consistent with the bridged event(network) record; the chain side is inherited from sale and is what this module plugs into rather than what it is. It is a primary, customer-facing activity (it directly produces sellable, revenue-bearing registrations). APQC 3.0 Market and Sell is the closest PCF home -- registering paying attendees to a marketed event is a sell motion (order capture + pricing + ticket configuration), matching the sale and event records' 3.0 placement. (Alternative considered: 'chain', justified by reuse of sale.order/line and invoice-on-order revenue; rejected because the module's distinctive behavior is network monetization / attendee mediation, not a transformation step -- the chain mechanics belong to sale, which this bridge extends.)"
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "event service product (service_tracking='event') sold on a quotation/sales order line",
+      "event/slot/ticket configurator popup on the order line",
+      "ticket-based pricing (ticket.price / price_reduce) overriding product list price, invoice on order",
+      "auto-creation of one event.registration per sold unit on order confirmation",
+      "attendee-detail capture wizard (registration.editor) at confirmation",
+      "payment-gated registration status (free / to_pay / sold) and seat confirmation",
+      "event sales & revenue analysis (event.sale.report pivot/graph) and per-event sale_price_total"
+    ],
+    "typical_fits": [
+      "paid conferences/trainings where tickets are sold through quotations and invoiced",
+      "B2B bulk ticket purchase (one order line, qty N -> N attendees) with attendee details filled later",
+      "internal/back-office ticket sales by a salesperson (no website needed)"
+    ],
+    "common_gaps": [
+      "online/e-commerce ticket checkout and public registration UX (needs website_event_sale)",
+      "point-of-sale ticket selling (needs pos_event / pos_event_sale)",
+      "deferred-revenue / per-attendance invoicing policies beyond invoice-on-order",
+      "custom approval or pricing rules on ticket lines beyond pricelist/ticket price",
+      "no HTTP routes of its own -- all interaction is backend ORM/forms"
+    ],
+    "drive_hints": [
+      "odoo shell: env['sale.order.line'].search([('event_id','!=',False)], limit=5).mapped(('order_id.name','event_id.name','event_ticket_id.name','price_unit'))",
+      "odoo shell: env['event.registration'].search([('sale_order_id','!=',False)], limit=5).mapped(('name','state','sale_status','sale_order_id.name'))",
+      "odoo shell: env['event.sale.report'].search([], limit=5).mapped(('event_id','event_ticket_id','sale_price','sale_order_state'))",
+      "odoo shell: so = env['sale.order'].search([('order_line.event_id','!=',False)], limit=1); so.action_confirm(); so.attendee_count"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Exact precedence of ticket price vs pricelist rule once both apply (the price_reduce path when _show_discount is false).",
+    "How registration state/sale_status behaves under partial payment or order amendment after confirmation.",
+    "Whether the single-order action_confirm always interrupts batch confirmation by returning the attendee wizard action."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/event_sale.facts.json",
+    "tools": [
+      "code-read",
+      "extract_frontend.py",
+      "extract_module.py",
+      "extract_runtime.sh",
+      "run-odoo (odoo shell)"
+    ],
+    "odoo_version": "19.0"
+  }
+}

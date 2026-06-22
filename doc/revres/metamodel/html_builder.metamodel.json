@@ -1,0 +1,191 @@
+{
+  "subsystem": "html_builder",
+  "evidence": {
+    "manifest": {
+      "name": "HTML Builder",
+      "category": "Uncategorized",
+      "depends": [
+        "base",
+        "html_editor",
+        "mail"
+      ],
+      "auto_install": false,
+      "application": false
+    },
+    "models": [],
+    "routes": [],
+    "security": {
+      "access_rules": 0,
+      "record_rules": 0,
+      "groups": 0
+    },
+    "views": {},
+    "frontend": {
+      "present": true,
+      "js_files": 148,
+      "xml_templates": 69,
+      "owl_components": [
+        "AddSnippetDialog",
+        "AnchorDialog",
+        "BackgroundPositionOverlay",
+        "BaseOptionComponent",
+        "BasicMany2Many",
+        "BlockTab",
+        "Builder",
+        "BuilderButton",
+        "BuilderButtonGroup",
+        "BuilderCheckbox",
+        "BuilderColorPicker",
+        "BuilderComponent",
+        "BuilderContext",
+        "BuilderDateTimePicker",
+        "BuilderFontFamilyPicker",
+        "BuilderList",
+        "BuilderMany2Many",
+        "BuilderMany2One",
+        "BuilderNumberInput",
+        "BuilderRange",
+        "BuilderRow",
+        "BuilderSelect",
+        "BuilderSelectItem",
+        "BuilderTextInput",
+        "BuilderTextInputBase",
+        "BuilderUrlPicker",
+        "ColorPickerThemeTab",
+        "CustomInnerSnippet",
+        "CustomizeComponent",
+        "CustomizeTab",
+        "DragAndDropMoveHandle",
+        "Img",
+        "ImgGroup",
+        "InvisibleElementsPanel",
+        "ModelMany2Many",
+        "OverlayButtons",
+        "SelectMany2X",
+        "SelectMany2XCreate",
+        "Snippet",
+        "SnippetViewer"
+      ],
+      "registry_adds": [
+        "color_picker_tabs:html_builder.theme",
+        "main_components:ImageTransformation",
+        "services:html_builder.snippets"
+      ],
+      "patches": [],
+      "services": [],
+      "asset_bundles": {
+        "web._assets_primary_variables": 1,
+        "html_builder.assets": 10,
+        "web.assets_frontend": 1,
+        "web.assets_web_dark": 1,
+        "html_builder.assets_inside_builder_iframe": 5,
+        "html_builder.iframe_add_dialog": 7,
+        "web.assets_unit_tests": 2
+      }
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": false,
+      "endpoints": [
+        "https://www.odoo.com"
+      ],
+      "files": [
+        "__manifest__.py"
+      ]
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    },
+    "behavioral_notes": [
+      {
+        "element": "frontend (OWL/JS)",
+        "observation": "148 JS files, 40 OWL components, 3 registry adds; bundles ['web._assets_primary_variables', 'html_builder.assets', 'web.assets_frontend'].",
+        "source": "static"
+      },
+      {
+        "element": "thin module",
+        "observation": "0 models, 0 routes, 90 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
+        "source": "ast"
+      }
+    ]
+  },
+  "it_architecture": {
+    "application": "html_builder (HTML Builder)",
+    "software_services": [],
+    "data_objects": [],
+    "logical_data_erm": [],
+    "information_flows": [
+      "depends: base, html_editor, mail"
+    ],
+    "frontend_components": [
+      "AddSnippetDialog",
+      "AnchorDialog",
+      "BackgroundPositionOverlay",
+      "BaseOptionComponent",
+      "BasicMany2Many",
+      "BlockTab",
+      "Builder",
+      "BuilderButton",
+      "BuilderButtonGroup",
+      "BuilderCheckbox",
+      "BuilderColorPicker",
+      "BuilderComponent",
+      "BuilderContext",
+      "BuilderDateTimePicker",
+      "BuilderFontFamilyPicker"
+    ]
+  },
+  "business_architecture": {
+    "capabilities": [
+      "HTML Builder"
+    ],
+    "value_streams": [],
+    "information_concepts": [],
+    "organization": [],
+    "products": [],
+    "policies": [],
+    "stakeholders": [],
+    "strategy": null,
+    "metrics": []
+  },
+  "classification": {
+    "value_model": "support",
+    "activity_class": "support",
+    "apqc_category": "13.0 Develop and Manage Business Capabilities",
+    "rationale": "html_builder: thin support/support module (auto-architect baseline)."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "HTML Builder"
+    ],
+    "typical_fits": [],
+    "common_gaps": [],
+    "drive_hints": [
+      "n/a"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/html_builder.facts.json",
+    "tools": [
+      "extract_module.py",
+      "extract_frontend.py",
+      "gen_thin.py"
+    ],
+    "odoo_version": "19.0"
+  }
+}

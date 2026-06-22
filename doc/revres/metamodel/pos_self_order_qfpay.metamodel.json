@@ -1,0 +1,123 @@
+{
+  "subsystem": "pos_self_order_qfpay",
+  "evidence": {
+    "manifest": {
+      "name": "POS Self Order QFPay",
+      "category": "Sales/Point Of Sale",
+      "depends": [
+        "pos_qfpay",
+        "pos_self_order"
+      ],
+      "auto_install": true,
+      "application": false
+    },
+    "models": [],
+    "routes": [],
+    "security": {
+      "access_rules": 0,
+      "record_rules": 0,
+      "groups": 0
+    },
+    "views": {},
+    "frontend": {
+      "present": true,
+      "js_files": 2,
+      "xml_templates": 0,
+      "owl_components": [],
+      "registry_adds": [],
+      "patches": [
+        "PaymentPage.prototype",
+        "SelfOrder.prototype"
+      ],
+      "services": [],
+      "asset_bundles": {
+        "pos_self_order.assets": 2,
+        "pos_self_order.assets_tests": 3
+      }
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": false,
+      "endpoints": [],
+      "files": []
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    },
+    "behavioral_notes": [
+      {
+        "element": "frontend (OWL/JS)",
+        "observation": "2 JS files, 0 OWL components, 0 registry adds; bundles ['pos_self_order.assets', 'pos_self_order.assets_tests'].",
+        "source": "static"
+      },
+      {
+        "element": "thin module",
+        "observation": "0 models, 0 routes, 130 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
+        "source": "ast"
+      }
+    ]
+  },
+  "it_architecture": {
+    "application": "pos_self_order_qfpay (POS Self Order QFPay)",
+    "software_services": [],
+    "data_objects": [],
+    "logical_data_erm": [],
+    "information_flows": [
+      "depends: pos_qfpay, pos_self_order"
+    ],
+    "frontend_components": []
+  },
+  "business_architecture": {
+    "capabilities": [
+      "POS Self Order QFPay"
+    ],
+    "value_streams": [],
+    "information_concepts": [],
+    "organization": [],
+    "products": [],
+    "policies": [],
+    "stakeholders": [],
+    "strategy": null,
+    "metrics": []
+  },
+  "classification": {
+    "value_model": "chain",
+    "activity_class": "primary",
+    "apqc_category": "3.0 Market and Sell Products and Services",
+    "rationale": "pos_self_order_qfpay: thin chain/primary module (auto-architect baseline)."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "POS Self Order QFPay"
+    ],
+    "typical_fits": [],
+    "common_gaps": [],
+    "drive_hints": [
+      "n/a"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/pos_self_order_qfpay.facts.json",
+    "tools": [
+      "extract_module.py",
+      "extract_frontend.py",
+      "gen_thin.py"
+    ],
+    "odoo_version": "19.0"
+  }
+}

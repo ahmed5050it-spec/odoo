@@ -1,0 +1,339 @@
+{
+  "subsystem": "payment_mercado_pago",
+  "evidence": {
+    "manifest": {
+      "name": "Payment Provider: Mercado Pago",
+      "category": "Accounting/Payment Providers",
+      "summary": "A payment provider covering several countries in Latin America.",
+      "version": "1.0",
+      "author": "Odoo S.A.",
+      "license": "LGPL-3",
+      "depends": [
+        "payment"
+      ],
+      "auto_install": false,
+      "application": false
+    },
+    "models": [
+      {
+        "_name": "payment.provider (inherit)",
+        "_description": "Payment Provider (Mercado Pago OAuth credentials + LatAm onboarding)",
+        "fields": 6,
+        "relations": [
+          "code (Selection selection_add 'mercado_pago', ondelete set default)",
+          "mercado_pago_account_country_id (Many2one res.country, domain=const.SUPPORTED_COUNTRIES, required_if_provider, inverse sets available_currency_ids via CURRENCY_MAPPING)",
+          "mercado_pago_is_oauth_supported (Boolean compute, TODO remove in 19.1)",
+          "mercado_pago_access_token (Char, groups=base.group_system)",
+          "mercado_pago_access_token_expiry (Datetime, groups=base.group_system)",
+          "mercado_pago_refresh_token (Char, groups=base.group_system)",
+          "mercado_pago_public_key (Char, groups=base.group_system)"
+        ]
+      },
+      {
+        "_name": "payment.transaction (inherit)",
+        "_description": "Payment Transaction (Mercado Pago Checkout Pro preference / direct payment / refund flow)",
+        "fields": 0,
+        "relations": [
+          "no new fields; 11 methods overriding payment's rendering/request/notification hooks"
+        ]
+      },
+      {
+        "_name": "payment.token (inherit)",
+        "_description": "Payment Token (saved Mercado Pago card via vaulted customer)",
+        "fields": 1,
+        "relations": [
+          "mercado_pago_customer_id (Char, readonly; Mercado Pago customer id at token creation; provider_ref holds the card id)"
+        ]
+      }
+    ],
+    "routes": [
+      {
+        "paths": [
+          "/payment/mercado_pago/payments"
+        ],
+        "auth": "public",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/payment/mercado_pago/return"
+        ],
+        "auth": "public",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/payment/mercado_pago/webhook/<path:reference>"
+        ],
+        "auth": "public",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/payment/mercado_pago/oauth/return"
+        ],
+        "auth": "user",
+        "type": "http"
+      }
+    ],
+    "security": {
+      "access_rules": 0,
+      "record_rules": 0,
+      "groups": 0,
+      "note": "No own ACL/rules; relies on payment's security and on base.group_system field groups guarding mercado_pago_access_token / mercado_pago_refresh_token / mercado_pago_access_token_expiry / mercado_pago_public_key."
+    },
+    "views": {
+      "form": 1,
+      "list": 0,
+      "kanban": 0,
+      "search": 0,
+      "pivot": 0,
+      "graph": 0,
+      "note": "xml_loc=136: view inheritance of the payment.provider form (Mercado Pago account country + 'Connect' OAuth button, OAuth credential fields), QWeb templates (payment_form_templates.xml inline form mounting the Mercado Pago SDK, payment_mercado_pago_templates.xml incl. an authorization_error template), plus data/payment_provider_data.xml. post_init_hook / uninstall_hook declared in the manifest."
+    },
+    "behavioral_notes": [
+      {
+        "element": "payment.transaction._get_specific_rendering_values / _mercado_pago_prepare_preference_request_payload -> POST https://api.mercadopago.com/checkout/preferences (Checkout Pro redirect)",
+        "observation": "The default online_redirect flow (gap #7) builds a Checkout Pro 'preference' via _mercado_pago_prepare_preference_request_payload (items[] with reference/amount/currency, payer name/email/phone/address, auto_return='all', back_urls all pointing at /payment/mercado_pago/return, external_reference=tx.reference, notification_url=/payment/mercado_pago/webhook/<url-quoted reference>, statement_descriptor=company name) and POSTs it to '/checkout/preferences' through payment.provider._send_api_request. It reads response['init_point'] when provider.state=='enabled' else response['sandbox_init_point'], then parses that hosted-checkout URL and re-embeds its query params as hidden inputs in the redirect form so the buyer is bounced to Mercado Pago's hosted page. Amounts are normalized by _mercado_pago_convert_amount, which rounds DOWN to const.CURRENCY_DECIMALS (COP/HNL/NIO are 0-decimal, deviating from ISO 4217) else payment's CURRENCY_MINOR_UNITS. None of this server-to-server HTTP or the sandbox/live URL switch is visible in Python field/model metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "_send_payment_request + /payment/mercado_pago/payments (jsonrpc) -> POST https://api.mercadopago.com/v1/payments (direct & tokenized card charges)",
+        "observation": "Two direct-API paths bypass the redirect. (1) The public jsonrpc controller route /payment/mercado_pago/payments receives the card token/installments/brand/issuer from the browser SDK, resolves the tx via _search_by_reference, builds the base payload, POSTs '/v1/payments' with an idempotency key (scope='direct_payment'), then _process('mercado_pago', ...). (2) payment.transaction._send_payment_request (off-session token charge) first POSTs '/v1/card_tokens' with the saved card_id to mint a fresh single-use token, then POSTs '/v1/payments' (transaction_amount, token, installments=1, payer.id=token.mercado_pago_customer_id) with idempotency key scope='token_payment' and _process()es the result. Both reuse _mercado_pago_prepare_base_request_payload (external_reference, notification_url, statement_descriptor). The per-charge card_tokens round-trip and the idempotency-key scoping are invisible to metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "MercadoPagoPaymentController return + webhook (/return, /webhook/<reference>) -> GET /v1/payments/<id> verify + _process",
+        "observation": "Mercado Pago has no signed-webhook scheme, so settlement is verified by an authenticated callback GET rather than an HMAC. The redirect-return route /payment/mercado_pago/return (GET, public) and the webhook /payment/mercado_pago/webhook/<path:reference> (POST, public, csrf=False) both funnel into _verify_and_process: it _search_by_reference's the tx, then GETs '/v1/payments/<payment_id>' from api.mercadopago.com (Bearer access-token auth) to fetch authoritative payment data and only then calls tx_sudo._process('mercado_pago', verified_data). The webhook filters out IPNs (it only acts when data['action'] is 'payment.created'/'payment.updated', since IPNs leave 'action' empty); the return route skips processing when payment_id=='null' (buyer cancelled). The trust boundary is the server-to-server verification GET, not the inbound request itself.",
+        "source": "code-read"
+      },
+      {
+        "element": "payment.transaction._apply_updates -> status mapping into payment's state machine",
+        "observation": "_apply_updates stamps provider_reference = payment_data['id'], maps payment_type_id/payment_method_id through const.PAYMENT_METHODS_MAPPING (falling back to the 'unknown' payment.method), then translates Mercado Pago's status via const.TRANSACTION_STATUS_MAPPING into payment's guarded transitions: pending/in_process/in_mediation/authorized -> _set_pending; approved/refunded -> _set_done; cancelled/null -> _set_canceled; rejected -> _set_error (with a human message from const.ERROR_MESSAGE_MAPPING keyed on status_detail); any other status -> _set_error. _extract_amount_data and _extract_reference read amount/currency/external_reference back from the verified payload. This inbound status->state translation is pure code semantics, not derivable from metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "OAuth onboarding via odoo proxy (action_start_onboarding / _mercado_pago_fetch_access_token / MercadoPagoOnboardingController)",
+        "observation": "Onboarding is OAuth-by-proxy, not direct API-key entry. action_start_onboarding (override) gates on const.SUPPORTED_COUNTRIES (RedirectWarning if the company country is unsupported), requires an account country, then redirects (ir.actions.act_url) to the Mercado Pago authorize URL built through Odoo's proxy at https://mercadopago.api.odoo.com/api/mercado_pago/1 (is_proxy_request=True), carrying a return_url to /payment/mercado_pago/oauth/return plus a csrf_token. The oauth/return controller (auth=user) validates the CSRF token (Forbidden on failure), POSTs '/get_access_token' through the proxy to exchange the authorization_code, and writes mercado_pago_access_token/refresh_token/public_key + flips the provider to state='enabled', is_published=True, allow_tokenization=True, then syncs currency. _mercado_pago_fetch_access_token transparently refreshes an expired token by POSTing '/refresh_access_token' through the proxy (expiry is backdated 31 days so refresh happens before the refresh token dies). @api.constrains block enabling without an access token and tokenization without a public key. All of this OAuth/proxy choreography is invisible to metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "external integration surface (gap #7) -- endpoints, OAuth keys, SDK",
+        "observation": "Static gap-#7 facts (extract_frontend.py): uses_api_keys=true; two outbound endpoints -- https://api.mercadopago.com (direct REST, Bearer access-token auth: /checkout/preferences, /v1/payments, /v1/card_tokens, /v1/customers[/search][/<id>/cards]) and https://mercadopago.api.odoo.com/api/mercado_pago (Odoo's Mercado Pago OAuth proxy: /authorize, /get_access_token, /refresh_access_token, jsonrpc) -- declared in const.py and models/payment_provider.py. No 'requests' import here: HTTP is delegated to payment.provider._send_api_request in the parent engine, which payment_mercado_pago configures via the _build_request_url / _build_request_headers / _parse_response_content / _parse_response_error hook overrides (headers add X-Platform-Id, X-Idempotency-Key, and the Bearer access token). On the browser side the Mercado Pago JS SDK is loaded on payment-form pages (PaymentForm.prototype patch) to tokenize the card client-side before the /payment/mercado_pago/payments jsonrpc call. This dual server-to-server + client-side acquirer link is the canonical metadata gap #7.",
+        "source": "static"
+      },
+      {
+        "element": "frontend (static) -- Mercado Pago SDK inline form patch",
+        "observation": "1 JS file, 0 OWL components, 0 registry adds (gap #3). The module patches the shared PaymentForm widget (static/src/interactions/payment_form.js -> PaymentForm.prototype) rather than registering a new component: it consumes the inline-form values JSON from payment.provider._mercado_pago_get_inline_form_values (buyer email + mercado_pago_public_key) to mount the Mercado Pago JS SDK, tokenize the card in-browser, and POST the resulting token/installments/brand/issuer to the public jsonrpc route /payment/mercado_pago/payments. Assets load into web.assets_frontend (manifest glob static/src/**/*). These browser interactions and the Mercado Pago SDK are invisible to Python metadata (gap #3).",
+        "source": "static"
+      }
+    ],
+    "frontend": {
+      "present": true,
+      "js_files": 1,
+      "xml_templates": 0,
+      "owl_components": [],
+      "registry_adds": [],
+      "patches": [
+        "PaymentForm.prototype"
+      ],
+      "services": [],
+      "asset_bundles": {
+        "web.assets_frontend": 1
+      }
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": true,
+      "endpoints": [
+        "https://api.mercadopago.com",
+        "https://mercadopago.api.odoo.com/api/mercado_pago"
+      ],
+      "files": [
+        "const.py",
+        "models/payment_provider.py"
+      ]
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    }
+  },
+  "it_architecture": {
+    "application": "payment_mercado_pago (Mercado Pago acquirer adapter for the payment engine; _inherit-only, no own models/views)",
+    "software_services": [
+      "/payment/mercado_pago/payments (jsonrpc, public: in-browser tokenized card charge -> POST /v1/payments)",
+      "/payment/mercado_pago/return (redirect-return after Checkout Pro: verify GET /v1/payments/<id>, then /payment/status)",
+      "/payment/mercado_pago/webhook/<reference> (async notifications, csrf=False; filters IPNs, verifies via GET /v1/payments/<id>)",
+      "/payment/mercado_pago/oauth/return (OAuth authorization-code return, auth=user, CSRF-checked)"
+    ],
+    "data_objects": [
+      "payment.provider (+mercado_pago_account_country_id, mercado_pago_access_token, mercado_pago_access_token_expiry, mercado_pago_refresh_token, mercado_pago_public_key, mercado_pago_is_oauth_supported)",
+      "payment.transaction (Mercado Pago preference / direct payment / refund flow; no new fields)",
+      "payment.token (+mercado_pago_customer_id)"
+    ],
+    "logical_data_erm": [
+      "payment.transaction -> payment.provider (provider_id; provider_code=='mercado_pago' gates every override)",
+      "payment.transaction -> payment.token (token_id; off-session charges read provider_ref [card id] + mercado_pago_customer_id)",
+      "payment.token -> payment.provider (provider_id)",
+      "payment.provider -> res.country (mercado_pago_account_country_id; drives available_currency_ids via const.CURRENCY_MAPPING)",
+      "payment.provider.code selection_add 'mercado_pago'",
+      "external: payment.transaction.provider_reference == Mercado Pago payment id (cross-system key)",
+      "external: payment.transaction.external_reference == tx.reference (echoed back in webhook/return data)",
+      "external: payment.token.provider_ref == Mercado Pago card id; payment.token.mercado_pago_customer_id == Mercado Pago customer id"
+    ],
+    "information_flows": [
+      "depends: payment (inherits the provider/transaction/token engine + _send_api_request)",
+      "outbound: _get_specific_rendering_values -> POST https://api.mercadopago.com/checkout/preferences (Checkout Pro preference; init_point vs sandbox_init_point by provider.state)",
+      "outbound: _send_payment_request / jsonrpc controller -> POST /v1/card_tokens + /v1/payments (Bearer access-token, idempotency key)",
+      "outbound: _extract_token_values -> GET/POST /v1/customers[/search] + POST /v1/customers/<id>/cards (vault saved card)",
+      "outbound: OAuth onboarding -> POST https://mercadopago.api.odoo.com/api/mercado_pago proxy (/authorize, /get_access_token, /refresh_access_token, jsonrpc)",
+      "client-side: Mercado Pago JS SDK loaded via PaymentForm.prototype patch on payment-form pages; tokenizes the card in-browser, then posts to /payment/mercado_pago/payments",
+      "inbound (redirect): Mercado Pago -> /payment/mercado_pago/return -> _verify_and_process (GET /v1/payments/<id>) -> _process -> /payment/status",
+      "inbound (webhook): Mercado Pago -> /payment/mercado_pago/webhook/<reference> -> filter IPNs -> _verify_and_process (GET /v1/payments/<id>) -> _process -> payment state machine",
+      "side-effect: successful charge + tx.tokenize -> _extract_token_values -> payment.token vault (customer id + card id + last4)",
+      "side-effect: OAuth return -> provider.write(state='enabled', is_published=True, allow_tokenization=True) + currency synced to account country"
+    ],
+    "frontend_components": [
+      "PaymentForm.prototype (patch; mounts the Mercado Pago JS SDK from _mercado_pago_get_inline_form_values [email + public_key], tokenizes the card client-side, posts token/installments/brand/issuer to /payment/mercado_pago/payments)",
+      "Mercado Pago JS SDK (loaded on payment-form pages via web.assets_frontend; client-side card tokenization channel)"
+    ],
+    "external_integrations": {
+      "sdk": "Mercado Pago JS SDK (browser, client-side card tokenization); server side uses no python SDK -- HTTP via payment.provider._send_api_request",
+      "uses_api_keys": true,
+      "endpoints": [
+        "https://api.mercadopago.com",
+        "https://mercadopago.api.odoo.com/api/mercado_pago"
+      ],
+      "auth": "Bearer <mercado_pago_access_token> + X-Platform-Id + X-Idempotency-Key headers (direct API); Odoo jsonrpc proxy with OAuth authorization-code / refresh-token grant (onboarding)",
+      "files": [
+        "const.py",
+        "models/payment_provider.py",
+        "models/payment_transaction.py",
+        "models/payment_token.py",
+        "controllers/payment.py",
+        "controllers/onboarding.py"
+      ],
+      "pattern": "Concrete realization of metadata gap #7: a real external acquirer integration for Latin America. Outbound server-to-server REST to api.mercadopago.com (Checkout Pro /checkout/preferences, /v1/payments, /v1/card_tokens, /v1/customers + cards) authenticated with an OAuth access token; merchant onboarding routed through Odoo's mercadopago.api.odoo.com OAuth proxy (authorize / get_access_token / refresh_access_token); a parallel client-side Mercado Pago JS SDK tokenization channel; and inbound settlement via a redirect-return route plus a csrf=False webhook, both verified by an authenticated GET /v1/payments/<id> (no HMAC signature scheme -- the trust boundary is the verification call, unlike Stripe's signed webhook).",
+      "note": "Prime gap-#7 example: none of the Mercado Pago endpoints, the OAuth Bearer auth + proxy onboarding, the verification-GET trust model, or the browser SDK channel are derivable from Python model/field metadata; they were established only by reading const.py + the model/controller code."
+    }
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Accept Card / Online Payments via Mercado Pago Checkout Pro (hosted redirect)",
+      "Direct in-browser card payment (Mercado Pago JS SDK tokenization + /v1/payments)",
+      "Tokenization / Saved Cards (vault Mercado Pago customer + card for off-session charges)",
+      "Multi-country LatAm acceptance (AR/BR/CL/CO/MX/PE/UY) with per-country currency binding",
+      "Mercado Pago Wallet & local card-brand payment methods (amex, visa, mastercard, naranja, oca, elo, hipercard, ...)",
+      "OAuth self-onboarding via Odoo proxy (no manual API-key entry) with automatic token refresh"
+    ],
+    "value_streams": [
+      "Collect-Payment (Checkout Pro): initiate tx -> POST /checkout/preferences (api.mercadopago.com) -> buyer redirected to hosted checkout -> back to /payment/mercado_pago/return OR async /payment/mercado_pago/webhook -> verify GET /v1/payments/<id> -> _process -> state machine done/error -> downstream settlement",
+      "Collect-Payment (Direct/SDK): Mercado Pago JS SDK tokenizes card in-browser -> POST /payment/mercado_pago/payments (jsonrpc) -> POST /v1/payments (idempotent) -> _process",
+      "Tokenize-and-Recharge: successful charge + tokenize -> vault payment.token (customer + card) -> later off-session POST /v1/card_tokens + /v1/payments for card-not-present / recurring",
+      "Onboard-Merchant (OAuth): action_start_onboarding -> Odoo proxy authorize -> Mercado Pago OAuth -> /payment/mercado_pago/oauth/return -> exchange code for access/refresh token + public key -> provider enabled, currency synced"
+    ],
+    "information_concepts": [
+      "payment.provider (Mercado Pago OAuth credentials: access/refresh token + expiry, public key, account country)",
+      "payment.transaction (mapped to a Mercado Pago preference / payment / refund, keyed by external_reference + provider_reference)",
+      "payment.token (saved Mercado Pago card: customer id + card id)",
+      "Mercado Pago merchant account (external; reached via OAuth onboarding hooks)"
+    ],
+    "organization": [
+      "(no module-owned res.groups; mercado_pago_access_token / mercado_pago_refresh_token / mercado_pago_access_token_expiry / mercado_pago_public_key are restricted to base.group_system; everything else inherits payment's groups/record rules)"
+    ],
+    "products": [],
+    "policies": [
+      "A Mercado Pago provider cannot be enabled without an access token (@api.constrains -> 'Connect' the account first)",
+      "Tokenization cannot be allowed without a Mercado Pago public key (@api.constrains)",
+      "Onboarding is only offered for companies in const.SUPPORTED_COUNTRIES (AR/BR/CL/CO/MX/PE/UY) else RedirectWarning",
+      "Exactly one available currency, matching the account country's currency (const.CURRENCY_MAPPING), is enforced (@api.constrains)",
+      "OAuth return must pass CSRF-token validation or is rejected with HTTP 403 Forbidden",
+      "Mercado Pago providers are excluded from validation (zero-amount) operations (_get_compatible_providers filter)",
+      "Inbound webhook/return data is never trusted directly -- it is re-verified by an authenticated GET /v1/payments/<id> before _process",
+      "Idempotency-Key (X-Idempotency-Key) sent on payment POSTs to make charge requests safe to retry",
+      "Access/refresh/public keys gated by base.group_system field groups; token auto-refreshed (expiry backdated 31 days)"
+    ],
+    "stakeholders": [
+      "Payer / Cardholder / Wallet holder (res.partner)",
+      "Merchant / Company (res.company, holds the Mercado Pago account & OAuth tokens)",
+      "Mercado Pago (external acquirer / PSP, MercadoLibre)",
+      "Odoo Mercado Pago proxy (mercadopago.api.odoo.com, mediates OAuth onboarding)",
+      "Accountant (consumes settled payments via account_payment downstream)"
+    ],
+    "strategy": null,
+    "metrics": [
+      "(no own reports; transaction volumes/amounts/state surfaced by the parent payment.transaction pivot/graph)"
+    ]
+  },
+  "classification": {
+    "value_model": "network",
+    "activity_class": "support",
+    "apqc_category": "9.0 Manage Financial Resources (9.5 process payments / collect cash; manage external payment provider)",
+    "rationale": "payment_mercado_pago is a value-NETWORK (Stabell & Fjeldstad mediating-technology) component: a concrete acquirer adapter whose purpose is to interconnect two parties who would not otherwise transact directly -- the Latin-American cardholder/wallet holder and the merchant -- by linking the merchant to Mercado Pago's payment network. It exhibits the three mediating-technology activities: network promotion & contract management (OAuth self-onboarding through the Odoo proxy, per-country eligibility and currency binding, token/key management), service provisioning (creating the Checkout Pro preference or the direct /v1/payments charge and verifying settlement per transaction), and infrastructure operation (the server-to-server api.mercadopago.com link, the client-side Mercado Pago JS SDK channel, and the verify-GET-based return/webhook settlement loop). It does not transform inputs into outputs (chain) nor solve a bespoke customer problem (shop). It inherits the parent 'payment' engine's value_model exactly: the engine is the generic mediator and this module is its Mercado Pago realization. activity_class is 'support' because, from the enterprise value-chain perspective, payment acceptance is an infrastructure/finance support function (category Accounting/Payment Providers, application=False, no end-user app) sitting under 9.0 Manage Financial Resources -- specifically 9.5 process payments / collect cash, with the side of 'manage an external payment provider'. So value_model=network (its own internal logic is mediation, an acquirer integration -- gap #7), activity_class=support (its place on the enterprise value chain). This mirrors the sibling payment_stripe.metamodel.json (network/support) and the parent payment engine; it differs from Stripe mainly in the trust model (an authenticated verification GET rather than a signed webhook) and in OAuth-by-proxy onboarding rather than Connect.",
+    "apqc_evidence": "apqc_odoo_map.tsv: '9.5.x process accounts payable (pay) -> account.payment register payment -> support'; payment acceptance feeds that collect-cash process upstream of the ledger."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "hosted Checkout Pro redirect payment (preference -> init_point / sandbox_init_point by provider state)",
+      "direct in-browser card payment via the Mercado Pago JS SDK + public /payment/mercado_pago/payments jsonrpc route",
+      "tokenization / saved cards (Mercado Pago customer + card) including off-session token charges",
+      "multi-country LatAm acceptance with enforced single-currency-per-account-country binding",
+      "local card brands and the Mercado Pago wallet as activatable payment methods",
+      "asynchronous settlement via a redirect-return route plus a csrf=False webhook, both re-verified by an authenticated GET /v1/payments/<id>",
+      "OAuth self-onboarding through Odoo's proxy with automatic access-token refresh"
+    ],
+    "typical_fits": [
+      "online shop / portal checkout collecting card or wallet payments in a supported LatAm country",
+      "save-card-for-later and tokenized recurring/subscription charges (off-session /v1/payments)",
+      "send-a-payment-link or pay-an-invoice-online collection (with account_payment / sale downstream)",
+      "merchant self-onboarding to Mercado Pago via OAuth rather than manual API-key entry",
+      "country-correct currency acceptance (CURRENCY_MAPPING + COP/HNL/NIO 0-decimal handling)"
+    ],
+    "common_gaps": [
+      "no signed-webhook (HMAC) scheme -- authenticity relies on the verification GET, so a public-reachable URL/tunnel is required and a spoofed notification id would simply not resolve to a real payment",
+      "manual capture / authorize-then-capture and refund/void operations are not implemented here (status mapping handles externally-initiated 'refunded' but no _send_refund_request)",
+      "country support is bounded by const.SUPPORTED_COUNTRIES (AR/BR/CL/CO/MX/PE/UY); other LatAm regions cannot onboard",
+      "full OAuth proxy request/response contract (mercadopago.api.odoo.com) is opaque -- onboarding depends on Odoo's IAP proxy being reachable",
+      "installments fixed to 1 for token/off-session charges; richer installment plans only via the in-browser SDK path",
+      "bespoke reconciliation / settlement document chains live downstream (account_payment, sale), not here"
+    ],
+    "drive_hints": [
+      "odoo shell: env['payment.provider'].search([('code','=','mercado_pago')]).mapped(lambda p:(p.name,p.state,p.mercado_pago_account_country_id.code))",
+      "odoo shell: p=env['payment.provider'].search([('code','=','mercado_pago')],limit=1); print(p.support_tokenization, p.allow_tokenization, p.available_currency_ids.mapped('name'))",
+      "odoo shell: tx=env['payment.transaction'].search([('provider_code','=','mercado_pago')],limit=1); print(tx.reference, tx.state, tx.provider_reference)",
+      "odoo shell: print([m for m in dir(env['payment.transaction']) if m.startswith('_mercado_pago_')])",
+      "curl -X POST https://<host>/payment/mercado_pago/webhook/<bad-ref> (csrf=False, auth=public) with a body whose action is 'payment.created' but an id that resolves to nothing -> _verify_and_process returns early, no state change",
+      "Mercado Pago sandbox test buyer + test card (provider in non-enabled state uses sandbox_init_point)"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Exact request/response payloads of the Mercado Pago OAuth proxy (mercadopago.api.odoo.com) for /authorize, /get_access_token and /refresh_access_token.",
+    "Real-world distribution of Mercado Pago transaction states, Checkout-Pro-vs-direct-SDK split, tokenization usage, and IPN/webhook timing (no runtime row counts captured).",
+    "Whether/how refunds and chargebacks are reflected back -- status mapping accepts 'refunded' as done but no refund request is issued from this module.",
+    "Which downstream modules consume the settled Mercado Pago transactions (account_payment, sale, subscription)."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/payment_mercado_pago.facts.json",
+    "tools": [
+      "apqc_odoo_map.tsv",
+      "code-read (models/payment_provider.py, models/payment_transaction.py, models/payment_token.py, controllers/payment.py, controllers/onboarding.py, const.py, __manifest__.py)",
+      "extract_frontend.py (frontend/payment_mercado_pago.frontend.json)",
+      "extract_module.py (facts/payment_mercado_pago.facts.json)",
+      "Grep",
+      "Read"
+    ],
+    "odoo_version": "19.0"
+  }
+}

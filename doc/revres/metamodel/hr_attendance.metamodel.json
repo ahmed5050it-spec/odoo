@@ -1,0 +1,355 @@
+{
+  "subsystem": "hr_attendance",
+  "evidence": {
+    "manifest": {
+      "name": "Attendances",
+      "category": "Human Resources/Attendances",
+      "depends": [
+        "hr",
+        "barcodes",
+        "base_geolocalize"
+      ],
+      "auto_install": false,
+      "application": true
+    },
+    "models": [
+      {
+        "_name": "hr.attendance",
+        "_description": "Attendance",
+        "fields": 29,
+        "relations": [
+          "employee_id->hr.employee",
+          "department_id->hr.department",
+          "manager_id->hr.employee",
+          "attendance_manager_id->res.users",
+          "linked_overtime_ids->hr.attendance.overtime.line"
+        ]
+      },
+      {
+        "_name": "hr.attendance.overtime.line",
+        "_description": "Attendance Overtime Line",
+        "fields": 11,
+        "relations": [
+          "employee_id->hr.employee",
+          "rule_ids->hr.attendance.overtime.rule"
+        ]
+      },
+      {
+        "_name": "hr.attendance.overtime.rule",
+        "_description": "Overtime Rule",
+        "fields": 18,
+        "relations": [
+          "resource_calendar_id->resource.calendar",
+          "ruleset_id->hr.attendance.overtime.ruleset"
+        ]
+      },
+      {
+        "_name": "hr.attendance.overtime.ruleset",
+        "_description": "Overtime Ruleset",
+        "fields": 8,
+        "relations": [
+          "rule_ids->hr.attendance.overtime.rule",
+          "company_id->res.company",
+          "country_id->res.country"
+        ]
+      },
+      {
+        "_name": "hr.employee",
+        "_description": "(extension) Employee",
+        "fields": 17,
+        "relations": [
+          "attendance_ids->hr.attendance",
+          "last_attendance_id->hr.attendance",
+          "overtime_ids->hr.attendance.overtime.line",
+          "attendance_manager_id->res.users"
+        ]
+      }
+    ],
+    "routes": [
+      {
+        "paths": [
+          "/hr_attendance/<token>"
+        ],
+        "auth": "public",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/hr_attendance/kiosk_mode_menu/<int:company_id>"
+        ],
+        "auth": "user",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/hr_attendance/attendance_barcode_scanned"
+        ],
+        "auth": "public",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/hr_attendance/manual_selection"
+        ],
+        "auth": "public",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/hr_attendance/systray_check_in_out"
+        ],
+        "auth": "user",
+        "type": "jsonrpc"
+      }
+    ],
+    "security": {
+      "access_rules": 11,
+      "record_rules": 10,
+      "groups": 5
+    },
+    "views": {
+      "form": 3,
+      "list": 7,
+      "kanban": 2,
+      "search": 3,
+      "pivot": 1,
+      "graph": 1,
+      "calendar": 0,
+      "activity": 0
+    },
+    "behavioral_notes": [
+      {
+        "element": "hr.employee._attendance_action_change",
+        "observation": "The single check-in/check-out toggle (models/hr_employee.py): if attendance_state != 'checked_in' it CREATES a new hr.attendance with check_in=now (and in_* geo fields), else it SEARCHes the open record (check_out=False) and WRITEs check_out=now (and out_* geo). If no open record is found on a check-out attempt it raises UserError. This create-or-close toggle is the heart of the subsystem and is invoked by every surface (kiosk barcode/PIN, systray, manual). Not visible in metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "hr.attendance._compute_worked_hours / _get_worked_hours_in_range",
+        "observation": "worked_hours (stored, @api.depends check_in/check_out) is NOT a naive check_out-check_in delta: it localizes both times to the employee's resource.calendar timezone, then for non-flexible resources SUBTRACTS lunch intervals (employee._employee_attendance_intervals(..., lunch=True)) via Intervals algebra (sum_intervals). Flexible-calendar resources get the raw span. The formula lives in Python, not metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "hr.attendance.create/write/unlink -> _update_overtime",
+        "observation": "Every create/write/unlink touching check_in/check_out/employee_id recomputes overtime: _update_overtime() deletes affected hr.attendance.overtime.line rows and regenerates them from the employee version's ruleset (rule_ids._generate_overtime_vals_v2 over the daily/weekly period), preserving manually-edited/to_approve lines, then schedules recompute of overtime_hours/expected_hours/validated_overtime_hours/overtime_status. A raw attendance edit cascades into a full overtime-line rebuild — a cross-model side-effect metadata cannot show.",
+        "source": "code-read"
+      },
+      {
+        "element": "hr.employee._compute_attendance_state (attendance_state on employee)",
+        "observation": "attendance_state ('checked_in'/'checked_out') is computed from last_attendance_id: checked_in iff the latest attendance has no check_out. _compute_presence_state then OVERRIDES the generic HR presence (hr.employee.public also exposes attendance_state) so that a checked_in employee shows hr_presence_state='present' — attendance is wired as the 2nd-highest-priority presence signal after login. Cross-model behavior invisible in field metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "controllers/main.py kiosk routes + _cron_auto_check_out / _cron_absence_detection",
+        "observation": "Public kiosk routes are token-gated by res.company.attendance_kiosk_key (HrAttendance._get_company) and run sudo: /attendance_barcode_scanned matches hr.employee.barcode, /manual_selection checks employee.pin when attendance_kiosk_use_pin, both call _attendance_action_change with a kiosk geoip stamp. Two crons also write attendances headlessly: _cron_auto_check_out closes forgotten open attendances past expected+tolerance hours (out_mode='auto_check_out'), and _cron_absence_detection inserts in_mode/out_mode='technical' 1-second attendances to book negative overtime for unjustified absences. Automation effects invisible in metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "frontend (OWL/JS) — public kiosk app",
+        "observation": "13 JS files, 11 OWL components, 3 registry registrations (actions:employee_barcode_scanner, systray:hr_attendance.attendance_menu, views:attendance_list_view), 0 patches. The kiosk is a STANDALONE OWL App (kioskAttendanceApp in static/src/public_kiosk/public_kiosk_app.js) mounted by createPublicKioskAttendance via new App(...).mount(document.body) on the public website page (template hr_attendance.public_kiosk_mode) — it is NOT a backend client action; it bootstraps its own env/services and rpc's the public /hr_attendance/* JSON-RPC routes. Asset bundle hr_attendance.assets_public_attendance (30 assets) serves it; CheckInOut/BadgeScanner/KioskPinCode/KioskManualSelection/KioskGreetings drive barcode/PIN/manual flows, and ActivityMenu adds the backend systray check-in/out widget.",
+        "source": "static"
+      }
+    ],
+    "frontend": {
+      "present": true,
+      "js_files": 13,
+      "xml_templates": 12,
+      "owl_components": [
+        "ActivityMenu",
+        "AttendanceActionHelper",
+        "BadgeScanner",
+        "CardLayout",
+        "CheckInOut",
+        "KioskGreetings",
+        "KioskManualSelection",
+        "KioskPinCode",
+        "Many2One",
+        "NewEmployeeDialog",
+        "kioskAttendanceApp"
+      ],
+      "registry_adds": [
+        "actions:employee_barcode_scanner",
+        "systray:hr_attendance.attendance_menu",
+        "views:attendance_list_view"
+      ],
+      "patches": [],
+      "services": [],
+      "asset_bundles": {
+        "web.assets_backend": 3,
+        "web.qunit_suite_tests": 1,
+        "web.assets_unit_tests": 1,
+        "hr_attendance.assets_public_attendance": 30
+      }
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [
+        "requests"
+      ],
+      "uses_api_keys": false,
+      "endpoints": [
+        "https://maps.google.com?q=%s,%s",
+        "https://www.odoo.com/app/employees"
+      ],
+      "files": [
+        "__manifest__.py",
+        "controllers/main.py",
+        "models/hr_attendance.py"
+      ]
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    }
+  },
+  "it_architecture": {
+    "application": "hr_attendance (Attendances / check-in-out application component)",
+    "software_services": [
+      "/hr_attendance/<token>",
+      "/hr_attendance/kiosk_mode_menu/<int:company_id>",
+      "/hr_attendance/attendance_barcode_scanned",
+      "/hr_attendance/manual_selection",
+      "/hr_attendance/systray_check_in_out"
+    ],
+    "data_objects": [
+      "hr.attendance",
+      "hr.attendance.overtime.line",
+      "hr.attendance.overtime.rule",
+      "hr.attendance.overtime.ruleset"
+    ],
+    "logical_data_erm": [
+      "hr.attendance -> hr.employee (employee_id)",
+      "hr.attendance -> hr.attendance.overtime.line (linked_overtime_ids)",
+      "hr.attendance.overtime.line -> hr.attendance.overtime.rule (rule_ids)",
+      "hr.attendance.overtime.rule -> hr.attendance.overtime.ruleset (ruleset_id)",
+      "hr.employee -> hr.attendance (attendance_ids / last_attendance_id)"
+    ],
+    "information_flows": [
+      "depends: hr, barcodes, base_geolocalize",
+      "side-effect: hr.employee._attendance_action_change -> create/close hr.attendance (check_in/check_out toggle)",
+      "side-effect: hr.attendance.create/write/unlink -> _update_overtime rebuilds hr.attendance.overtime.line from the ruleset",
+      "side-effect: hr.attendance state -> hr.employee.attendance_state -> hr_presence_state ('present' when checked in)",
+      "automation: _cron_auto_check_out closes forgotten attendances; _cron_absence_detection books technical absence attendances",
+      "integration: barcodes (badge scan) + base_geolocalize (base.geocoder reverse-geocode of check-in GPS/IP)"
+    ],
+    "frontend_components": [
+      "ActivityMenu",
+      "AttendanceActionHelper",
+      "BadgeScanner",
+      "CardLayout",
+      "CheckInOut",
+      "KioskGreetings",
+      "KioskManualSelection",
+      "KioskPinCode",
+      "Many2One",
+      "NewEmployeeDialog",
+      "kioskAttendanceApp"
+    ]
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Record Employee Check-In / Check-Out",
+      "Compute Worked Hours (calendar/lunch-aware)",
+      "Manage & Validate Overtime (rulesets, approval)",
+      "Operate Attendance Kiosk (barcode / PIN / manual)",
+      "Attendance Reporting (pivot/graph)"
+    ],
+    "value_streams": [
+      "Time-Capture: check-in -> open hr.attendance -> check-out -> worked_hours computed",
+      "Overtime-Settlement: attendance period -> overtime lines per ruleset -> approve/refuse -> validated extra hours"
+    ],
+    "information_concepts": [
+      "hr.attendance (a check-in/out event)",
+      "hr.attendance.overtime.line (overtime computed for a day/period)",
+      "hr.attendance.overtime.rule / ruleset (overtime policy)",
+      "hr.employee (the tracked worker)"
+    ],
+    "organization": [
+      "group_hr_attendance_own_reader",
+      "group_hr_attendance_officer",
+      "group_hr_attendance_user",
+      "group_hr_attendance_manager"
+    ],
+    "products": [],
+    "policies": [
+      "10 record rules: own-attendance read for base users; officer restricted to employees they manage (attendance_manager_id); multi-company scoping on hr.attendance and overtime lines",
+      "_check_validity / _check_validity_check_in_check_out: at most one open attendance, no overlapping slices, check_out >= check_in",
+      "write() guard: a non-manager may only edit their own attendances or those of employees they are the attendance manager of",
+      "res.company config: attendance_kiosk_use_pin, attendance_kiosk_mode, auto_check_out + tolerance, absence_management, attendance_device_tracking, overtime thresholds"
+    ],
+    "stakeholders": [
+      "Employee (hr.employee / res.users) — checks in/out",
+      "Attendance Approver/Officer (group_hr_attendance_officer) — reviews & validates overtime",
+      "Attendance Administrator (group_hr_attendance_user)",
+      "HR / Payroll — consumes worked & validated overtime hours"
+    ],
+    "strategy": null,
+    "metrics": [
+      "worked_hours / expected_hours per attendance",
+      "overtime_hours, validated_overtime_hours, overtime_status (to_approve/approved/refused)",
+      "hr.employee: hours_today, hours_last_month, hours_last_month_overtime, total_overtime",
+      "Attendance reporting (pivot/graph by employee/department/date)"
+    ]
+  },
+  "classification": {
+    "value_model": "support",
+    "activity_class": "support",
+    "apqc_category": "7.0 Develop and Manage Human Capital",
+    "rationale": "hr_attendance is an HR time-tracking SUPPORT activity (Stabell & Fjeldstad infrastructure/firm-infrastructure & HR management): it produces no saleable output and triggers no document chain into stock/account. It captures a labour-presence fact (the check-in/check-out event) and derives worked & overtime hours that feed downstream HR/payroll. Activity is support because it enables the workforce rather than creating customer value directly; the depends (hr core, barcodes for badge capture, base_geolocalize for GPS/IP stamping) are all enabling infrastructure, not value-flow links. APQC 7.0 (Develop and Manage Human Capital) — specifically the 'manage employee time/attendance' sub-process under workforce administration."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "check-in/check-out via systray, manual entry, or public kiosk (barcode + optional PIN)",
+      "calendar- and lunch-aware worked-hours computation (flexible vs fixed schedules)",
+      "configurable overtime rulesets (daily/weekly, tolerances, rates) with approve/refuse validation",
+      "automatic check-out of forgotten attendances and technical absence detection (crons)",
+      "GPS/IP geolocation stamping of check-in/out (device tracking toggle, Google Maps link)",
+      "employee attendance_state driving HR presence; attendance reporting (pivot/graph)"
+    ],
+    "typical_fits": [
+      "badge/kiosk clock-in at a shared terminal per company (token-gated kiosk URL)",
+      "remote/desk workers self-checking via the backend systray widget",
+      "overtime approval workflow by an attendance officer scoped to their employees",
+      "hours feeding payroll/timesheet reconciliation"
+    ],
+    "common_gaps": [
+      "integration with physical biometric/RFID hardware beyond barcode scan",
+      "country-specific overtime/labour-law rules not expressible in the standard ruleset",
+      "payroll posting of attendance/overtime hours (needs hr_payroll / work-entry bridge)",
+      "shift planning & rostering (needs planning module)",
+      "anti-fraud geofencing/face-match beyond GPS+IP stamping"
+    ],
+    "drive_hints": [
+      "odoo shell: e = env['hr.employee'].search([], limit=1); e._attendance_action_change(); (e.attendance_state, e.hours_today)",
+      "odoo shell: env['hr.attendance'].search([], limit=5).mapped(('employee_id.name','check_in','check_out','worked_hours','overtime_hours'))",
+      "odoo shell: env.company.attendance_kiosk_url  # the token-gated public kiosk URL",
+      "curl -s http://localhost:8069/hr_attendance/<attendance_kiosk_key>  (public kiosk page, auth=public)"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "stakeholders": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Exact overtime generation algorithm in rule_ids._generate_overtime_vals_v2 (how base_off/timing/quantity_period and tolerances combine into duration per rule).",
+    "How worked & validated overtime hours are consumed downstream by payroll / work entries (not in this module's dependency set).",
+    "Precise interaction of _cron_auto_check_out and _cron_absence_detection with flexible-hour calendars and multi-timezone employees."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/hr_attendance.facts.json",
+    "tools": [
+      "code-read",
+      "extract_frontend.py",
+      "extract_module.py",
+      "extract_runtime.sh",
+      "run-odoo (odoo shell)"
+    ],
+    "odoo_version": "19.0"
+  }
+}

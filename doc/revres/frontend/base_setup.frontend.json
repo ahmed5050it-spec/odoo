@@ -1,0 +1,1 @@
+{"module": "base_setup", "frontend_gap3": {"present": true, "js_files": 1, "xml_templates": 1, "owl_components": ["ResetModuleStateCogMenu"], "registry_adds": [], "patches": [], "services": [], "asset_bundles": {"web.assets_backend": 1}}, "integrations_gap7": {"http_call_sites": 0, "sdk_imports": [], "uses_api_keys": true, "endpoints": [], "files": []}}

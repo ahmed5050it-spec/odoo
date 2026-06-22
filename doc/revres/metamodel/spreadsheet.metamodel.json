@@ -1,0 +1,318 @@
+{
+  "subsystem": "spreadsheet",
+  "evidence": {
+    "manifest": {
+      "name": "Spreadsheet",
+      "category": "Productivity/Dashboard",
+      "depends": [
+        "bus",
+        "web",
+        "portal"
+      ],
+      "auto_install": false,
+      "application": false
+    },
+    "models": [
+      {
+        "_name": "spreadsheet.mixin",
+        "_description": "Spreadsheet mixin",
+        "_inherit": null,
+        "_abstract": true,
+        "fields": 4,
+        "relations": []
+      },
+      {
+        "_name": "ir.http (extension)",
+        "_description": "session_info override: adds can_insert_in_spreadsheet=False (toggled true by downstream apps)",
+        "fields": 0,
+        "relations": []
+      },
+      {
+        "_name": "ir.model (extension)",
+        "_description": "has_searchable_parent_relation: tells the client which models expose a stored _parent_store hierarchy",
+        "fields": 0,
+        "relations": []
+      },
+      {
+        "_name": "res.currency (extension)",
+        "_description": "get_company_currency_for_spreadsheet: currency struct (code/symbol/decimalPlaces/position) for the JS lib",
+        "fields": 0,
+        "relations": []
+      },
+      {
+        "_name": "res.currency.rate (extension)",
+        "_description": "get_rates_for_spreadsheet / _get_rate_for_spreadsheet: batched conversion rates for ODOO.CURRENCY.RATE formula",
+        "fields": 0,
+        "relations": []
+      },
+      {
+        "_name": "res.lang (extension)",
+        "_description": "get_locales_for_spreadsheet / _get_user_spreadsheet_locale / _odoo_lang_to_spreadsheet_locale: maps Odoo lang to an o-spreadsheet locale (separators, date/time format, weekStart)",
+        "fields": 0,
+        "relations": []
+      }
+    ],
+    "routes": [
+      {
+        "paths": [
+          "/spreadsheet/log"
+        ],
+        "auth": "user",
+        "type": "jsonrpc"
+      }
+    ],
+    "security": {
+      "access_rules": 0,
+      "record_rules": 0,
+      "groups": 0
+    },
+    "views": {
+      "form": 0,
+      "list": 0,
+      "tree": 0,
+      "kanban": 0,
+      "search": 0,
+      "pivot": 0,
+      "graph": 0,
+      "calendar": 0,
+      "activity": 0
+    },
+    "frontend": {
+      "present": true,
+      "js_files": 100,
+      "xml_templates": 15,
+      "owl_components": [
+        "DateFilterDropdown",
+        "DateFilterValue",
+        "DefaultDateValue",
+        "FilterValue",
+        "FilterValuesList",
+        "MenuPopover",
+        "NumericFilterValue",
+        "PublicReadonlySpreadsheet",
+        "SelectionFilterValue",
+        "SpreadsheetComponent",
+        "SpreadsheetShareButton",
+        "TextFilterValue"
+      ],
+      "registry_adds": [
+        "actions:action_download_spreadsheet",
+        "fields:binary_spreadsheet",
+        "services:geo_json_service",
+        "services:spreadsheetLinkMenuCell"
+      ],
+      "patches": [
+        "Grid.prototype",
+        "Spreadsheet.prototype",
+        "components.ZoomableChartJsComponent.prototype",
+        "spreadsheet.components.FigureComponent.prototype",
+        "spreadsheet.components.GaugeChartComponent.prototype",
+        "spreadsheet.components.ScorecardChart.prototype"
+      ],
+      "services": [
+        "geo_json_service",
+        "spreadsheetLinkMenuCell"
+      ],
+      "asset_bundles": {
+        "web.chartjs_lib": 2,
+        "spreadsheet.o_spreadsheet": 10,
+        "spreadsheet.assets_print": 1,
+        "spreadsheet.public_spreadsheet": 52,
+        "web.assets_backend": 6,
+        "web.assets_web_dark": 1,
+        "web.assets_unit_tests": 5
+      }
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": false,
+      "endpoints": [],
+      "files": []
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    },
+    "behavioral_notes": [
+      {
+        "element": "spreadsheet.mixin (AbstractModel, _auto=False) — workbook persistence",
+        "observation": "The reusable base every Odoo spreadsheet record inherits (spreadsheet.dashboard, documents.document, spreadsheet.template, etc.). It stores the o-spreadsheet workbook twice: spreadsheet_binary_data is a Binary attachment holding the JSON workbook (base64), and spreadsheet_data is a Text field that is NOT stored — it is computed (_compute_spreadsheet_data) by reading the raw bytes of the linked ir.attachment (res_field='spreadsheet_binary_data') and inverse-written (_inverse_spreadsheet_data) back into that attachment as base64. So the 'document' is an attachment blob, and the Text field is just a convenience view onto it. A fresh record defaults to _empty_spreadsheet_data(): one 'Sheet1' (translated for the creator), the user's locale, and revisionId 'START_REVISION'. This is the metadata-invisible storage contract behind every spreadsheet feature.",
+        "source": "code-read"
+      },
+      {
+        "element": "spreadsheet.mixin._check_spreadsheet_data (@api.constrains) — referential integrity of formulas",
+        "observation": "On write of spreadsheet_binary_data the workbook JSON is decoded and (in test mode) statically validated against the live ORM: fields_in_spreadsheet(data) walks every model/field-chain referenced by pivots, lists and ODOO formulas inside the cells and raises ValidationError if a model is unknown or a field-chain (e.g. 'product_id.channel_ids') does not resolve through relational hops; menus_xml_ids_in_spreadsheet(data) checks that every embedded ir.ui.menu xml-id exists and has an action. An xlsx blob ([Content_Types].xml present) is skipped. This means the spreadsheet's BI content is effectively a typed reference into the data model — not opaque text — but the binding lives in the JSON, not in ORM metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "spreadsheet.mixin._zip_xslx_files / _get_file_content — xlsx export packaging",
+        "observation": "xlsx export is assembled client-side (the o-spreadsheet JS produces the list of file parts) and only zipped server-side: _zip_xslx_files(files) streams a ZIP_DEFLATED archive, and for each part either writes its 'content' or, when only an 'imageSrc' is sent (to save bandwidth), resolves the image — base64 data: URIs are decoded directly, while /web/image/<id> paths are streamed from the backing ir.attachment via ir.binary. Embedded charts/figures thus become real image bytes inside the .xlsx. The heavy lifting (cell/format/formula serialization) is the JS engine; Python only packages.",
+        "source": "code-read"
+      },
+      {
+        "element": "/spreadsheet/log (controller) + res.currency/res.lang/ir.model helper RPCs — server-side data plumbing",
+        "observation": "The only Python route here is telemetry: SpreadsheetController.log_action logs export/copy/freeze/print events, stringifying each datasource (resModel + fields + groupby + domain) for audit of what business data left the system. The substantive server surface is a set of @api.readonly @api.model helper methods the JS lib batches over standard call_kw, NOT bespoke routes: res.lang.get_locales_for_spreadsheet/_get_user_spreadsheet_locale (locale injection), res.currency.get_company_currency_for_spreadsheet + res.currency.rate.get_rates_for_spreadsheet (currency formatting & conversion for ODOO.CURRENCY.RATE), ir.model.has_searchable_parent_relation (hierarchy support), and spreadsheet.mixin.get_display_names_for_spreadsheet (batched display_name resolution for relation cells). NOTE: the collaborative edit endpoints (dispatch_spreadsheet_message / save_spreadsheet_snapshot / join_spreadsheet_session) and the /spreadsheet/data/<model>/<id> load+save routes that the JS references are NOT defined in this community module — they live in spreadsheet_edition (enterprise); this module ships only the engine, mixin storage and read-only/public surface.",
+        "source": "code-read"
+      },
+      {
+        "element": "data_sources/list/pivot/chart — the ODOO formula engine (client re-evaluation against live models)",
+        "observation": "The 'BI' is data, not Python: cells contain ODOO formulas (ODOO.PIVOT, ODOO.LIST, ODOO.FILTER.VALUE, ODOO.CURRENCY.RATE, charts) re-evaluated client-side. OdooDataProvider (an EventBus) owns the silent ORM + a ServerData batcher that coalesces many cell requests into single read_group/web_search_read RPCs and fires 'data-source-updated' to trigger re-evaluation (debounced, with a 10s safety flush). OdooViewsDataSource (base of ListDataSource and OdooPivotModel) lazily loads field metadata via the field service, recomputes its domain from the live user context + global filters (addDomain/getComputedDomain via @web Domain), and the pivot path (OdooPivot/OdooPivotModel/pivot_time_adapters) reuses @web's pivot_model.js to produce read_group matrices the spreadsheet renders. None of this is reverse-engineerable from Python metadata (gap #3); a dashboard/document is a stored workbook whose figures are computed in the browser.",
+        "source": "static"
+      },
+      {
+        "element": "FRONTEND (gap #3, STRONG) — the o-spreadsheet OWL engine + public read-only app",
+        "observation": "The substance of this module is a massive OWL/JS application in static/src: ~100 JS files / 15 XML, fronted by the bundled @odoo/o-spreadsheet library (o_spreadsheet/o_spreadsheet.js) wrapped by OdooSpreadsheetModel (model.js) and the SpreadsheetComponent action root (actions/spreadsheet_component.js). It contributes the full Odoo layer ON TOP of the generic grid: data_sources/, pivot/, list/, chart/ (odoo_chart, odoo_menu, geo charts via chartjs-chart-geo + treemap libs), global_filters/ (date/relation/text/numeric filter plugins + components), ir_ui_menu/ (clickable cells that open Odoo views/menus via odoo_menu_link_cell), helpers/ (migration.js workbook version migrations, geo_json_service, freezeOdooData which snapshots a live workbook into a frozen/static copy by evaluating every ODOO cell to a literal value and rasterizing odoo charts to PNG), logging/, and print_assets/. A separate public_readonly_app/ boots its own standalone OWL App (main.js -> PublicReadonlySpreadsheet) from a dedicated spreadsheet.public_spreadsheet bundle (52 includes: its own bootstrap/bootstrap-css + a trimmed web core) so a frozen spreadsheet can render on a public portal page with no web client. Registry: actions:action_download_spreadsheet, fields:binary_spreadsheet, services:geo_json_service + spreadsheetLinkMenuCell. Patches: Grid/Spreadsheet prototypes and several chart components. This frontend is the product; the 1 route + 1 abstract model + 5 thin helper extensions are a thin server skirt around it.",
+        "source": "static"
+      }
+    ]
+  },
+  "it_architecture": {
+    "application": "spreadsheet (o-spreadsheet engine foundation: the spreadsheet.mixin workbook-storage contract + the OWL/JS spreadsheet client with Odoo data sources, plus a standalone public read-only app)",
+    "software_services": [
+      "/spreadsheet/log (jsonrpc, auth=user): export/copy/freeze/print telemetry of which model+fields+domain left the system",
+      "spreadsheet.mixin.get_display_names_for_spreadsheet (call_kw helper: batched display_name resolution)",
+      "res.lang.get_locales_for_spreadsheet / _get_user_spreadsheet_locale (call_kw helper: locale injection)",
+      "res.currency.get_company_currency_for_spreadsheet (call_kw helper: currency formatting struct)",
+      "res.currency.rate.get_rates_for_spreadsheet (call_kw helper: batched conversion rates)",
+      "ir.model.has_searchable_parent_relation (call_kw helper: hierarchy support)"
+    ],
+    "data_objects": [
+      "spreadsheet.mixin (abstract: spreadsheet_binary_data, spreadsheet_data, spreadsheet_file_name, thumbnail)"
+    ],
+    "logical_data_erm": [
+      "spreadsheet.mixin -> ir.attachment (spreadsheet_binary_data stored as an attachment blob; spreadsheet_data computed from attachment.raw)",
+      "spreadsheet.mixin -> ir.binary (xlsx image parts resolved from /web/image/<id> via ir.binary._get_stream_from)",
+      "spreadsheet workbook JSON -> any business model/field (pivots/lists/ODOO formulas reference arbitrary models; validated by fields_in_spreadsheet)",
+      "spreadsheet workbook JSON -> ir.ui.menu (embedded menu links validated by menus_xml_ids_in_spreadsheet)",
+      "res.lang / res.currency / res.currency.rate -> spreadsheet locale & currency settings injected into the workbook at render time"
+    ],
+    "information_flows": [
+      "depends: bus (collaborative bus channel, used by spreadsheet_edition), web (OWL framework + call_kw + chartjs_lib), portal (public read-only layout)",
+      "inherited-by: spreadsheet.dashboard, spreadsheet.dashboard.share, documents.document, spreadsheet.template, ... (every concrete spreadsheet record reuses spreadsheet.mixin storage)",
+      "render: host action -> OdooSpreadsheetModel(data) -> OdooDataProvider + ServerData batch read_group/web_search_read over call_kw -> re-evaluate ODOO formulas -> figures",
+      "persist: workbook JSON <-> spreadsheet_binary_data (ir.attachment); _check_spreadsheet_data validates model/field/menu references on write",
+      "freeze/export: freezeOdooData evaluates ODOO cells to literals + rasterizes odoo charts -> _zip_xslx_files packages xlsx -> /spreadsheet/log telemetry",
+      "public: public_readonly_app boots a standalone OWL App from spreadsheet.public_spreadsheet bundle to render a frozen workbook on a portal page"
+    ],
+    "frontend_components": [
+      "SpreadsheetComponent (OWL action root wrapping @odoo/o-spreadsheet)",
+      "OdooSpreadsheetModel (model.js: Odoo wrapper over the o-spreadsheet Model)",
+      "OdooDataProvider + ServerData (data_sources: batched RPC + re-evaluation EventBus)",
+      "OdooViewsDataSource / ListDataSource / OdooPivot / OdooPivotModel (list & pivot data sources)",
+      "PublicReadonlySpreadsheet (standalone public app root)",
+      "SpreadsheetShareButton",
+      "FilterValue / FilterValuesList / DateFilterDropdown / DateFilterValue / TextFilterValue / NumericFilterValue / SelectionFilterValue (global filters)",
+      "MenuPopover (ir.ui.menu link cells)",
+      "geo_json_service (service; geo charts)",
+      "spreadsheetLinkMenuCell (service; clickable Odoo-link cells)",
+      "binary_spreadsheet (field widget)",
+      "Grid.prototype / Spreadsheet.prototype / chart-component patches"
+    ]
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Provide a Reusable Spreadsheet Storage Contract (spreadsheet.mixin: workbook persisted as a JSON attachment)",
+      "Run an In-Browser Spreadsheet Engine (o-spreadsheet: cells, formulas, charts, pivots, lists, formatting)",
+      "Bind Spreadsheet Cells to Live Business Data via ODOO Formulas (pivots/lists/charts re-evaluated against any model)",
+      "Apply & Propagate Global Filters across a Workbook (date/relation/text/numeric)",
+      "Validate Workbook References against the Data Model (models/fields/menu xml-ids)",
+      "Inject Locale & Currency into Workbooks (res.lang / res.currency / res.currency.rate)",
+      "Freeze & Export Spreadsheets (frozen literal snapshot, xlsx packaging, chart rasterization)",
+      "Render Frozen Spreadsheets Publicly (standalone read-only OWL app on the portal)",
+      "Audit Data Export from Spreadsheets (/spreadsheet/log telemetry)"
+    ],
+    "value_streams": [
+      "Author-to-Persist: build/edit a workbook -> ODOO formulas reference business models -> validate references -> store as JSON attachment via spreadsheet.mixin",
+      "Open-to-Insight: host action loads workbook -> OdooSpreadsheetModel + OdooDataProvider batch RPCs -> re-evaluate ODOO formulas against live data -> rendered figures/pivots/charts",
+      "Freeze-to-Share/Export: freezeOdooData (literals + chart images) -> xlsx package or frozen public workbook -> portal render / download, logged"
+    ],
+    "information_concepts": [
+      "spreadsheet.mixin (the spreadsheet record)",
+      "workbook snapshot (spreadsheet_data / spreadsheet_binary_data JSON)",
+      "ODOO data source (pivot / list / chart bound to a business model)",
+      "global filter",
+      "spreadsheet locale / company currency"
+    ],
+    "organization": [],
+    "products": [],
+    "policies": [
+      "_check_spreadsheet_data (@api.constrains): in test mode, reject a workbook referencing unknown models/fields/menu xml-ids — referential integrity of the BI layer",
+      "/spreadsheet/log: log model+fields+groupby+domain on download/copy/freeze/print (data-export audit)",
+      "@api.readonly on the helper RPCs: route locale/currency/display-name reads to a read replica when possible",
+      "no ir.rule / groups of its own — access is governed by the host model that inherits the mixin (e.g. spreadsheet.dashboard, documents.document)"
+    ],
+    "stakeholders": [
+      "End user / analyst (builds & reads spreadsheets, applies filters, exports)",
+      "Module developer (inherits spreadsheet.mixin to add a spreadsheet feature; extends the OWL engine / data sources)",
+      "Host app (spreadsheet_dashboard, documents, spreadsheet_edition — all build on this engine)",
+      "External recipient (views/downloads a frozen public spreadsheet)"
+    ],
+    "strategy": null,
+    "metrics": [
+      "/spreadsheet/log export/copy/freeze/print telemetry (operational audit of data egress)",
+      "This module is infrastructure FOR metrics (the pivots/lists/charts users build are the KPI surface) — it owns the engine, not the KPIs"
+    ]
+  },
+  "classification": {
+    "value_model": "support",
+    "activity_class": "support",
+    "apqc_category": "13.0 Develop and Manage Business Capabilities",
+    "rationale": "spreadsheet is firm-infrastructure / BI-tooling (Porter support activity; Stabell & Fjeldstad 'support'). It creates no primary value in any single value chain/shop/network — it is a horizontal analytics-and-document engine reused across apps: every concrete spreadsheet record (dashboards, documents, templates, BI pivots) inherits its spreadsheet.mixin storage contract and renders through its OWL o-spreadsheet client. Its substance is overwhelmingly the FRONTEND (~100 JS files: the wrapped o-spreadsheet library, the Odoo data_sources/pivot/list/chart layer that re-evaluates ODOO formulas against live models, global filters, ir.ui.menu link cells, freeze/export, and a standalone public read-only app) plus a thin server skirt: 1 abstract model, 1 telemetry route, and 5 read-only helper extensions (lang/currency/model). APQC 13.0 'Develop and Manage Business Capabilities' is chosen because this module delivers the self-service business-intelligence / analytics-spreadsheet capability the organization uses to measure and improve its other capabilities — it is performance-measurement/decision-support tooling, a business-capability concern sitting on top of the IT platform. 8.0 'Manage Information Technology' was considered (it is platform/runtime code, like `web`) but rejected: unlike `web` — a generic UI runtime that is pure IT delivery with no business semantics — spreadsheet's purpose is data-bound analytics (pivots/lists/charts over business models, KPI dashboards, frozen reports) consumed for decision-making, which is business-intelligence tooling (13.0) rather than IT delivery itself. The sibling spreadsheet_dashboard record is classified identically (support / 13.0)."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "Reusable spreadsheet.mixin (inherit it to make any record a stored o-spreadsheet workbook)",
+      "Full in-browser spreadsheet engine: cells, formulas, formatting, charts, pivots, lists, scorecards, gauges",
+      "Live data binding via ODOO formulas (ODOO.PIVOT / ODOO.LIST / ODOO.FILTER.VALUE / ODOO.CURRENCY.RATE) re-evaluated against any model",
+      "Global filters (date/relation/text/numeric) propagated across a workbook",
+      "Locale- and currency-aware rendering injected from res.lang / res.currency",
+      "Workbook reference validation against the live data model (models/fields/menu xml-ids)",
+      "Freeze a live workbook to literals + chart images and export to xlsx",
+      "Standalone public read-only rendering of a frozen workbook on the portal",
+      "Data-export telemetry (/spreadsheet/log)"
+    ],
+    "typical_fits": [
+      "Adding a spreadsheet feature to an app by inheriting spreadsheet.mixin (spreadsheet_dashboard, documents.document, spreadsheet.template all do this)",
+      "Building pivot/list/chart dashboards over standard business models with zero backend code",
+      "Sharing a frozen spreadsheet externally via the public read-only app without granting backend access"
+    ],
+    "common_gaps": [
+      "Collaborative real-time editing (dispatch_spreadsheet_message / save_spreadsheet_snapshot / revisions) is NOT in this community module — it ships in spreadsheet_edition (enterprise)",
+      "Authoring workbook content / ODOO formulas is data-modeling work, not config (requires the editor + understanding of the target models)",
+      "Custom OWL components, new chart types, or new ODOO formula functions require JS dev against the o-spreadsheet engine (gap #3)",
+      "No external/BI-integration surface here (gap #7) — 0 HTTP call sites, no SDKs/api-keys; all data stays inside Odoo via call_kw"
+    ],
+    "drive_hints": [
+      "odoo shell: '_auto' in dir(env['spreadsheet.mixin']) and env['spreadsheet.mixin']._auto -> confirm it is an abstract storage contract, not a table",
+      "odoo shell: rec = env['spreadsheet.dashboard'].search([], limit=1); rec.spreadsheet_data[:200] to see the stored o-spreadsheet workbook JSON behind a concrete record",
+      "odoo shell: env['res.lang']._get_user_spreadsheet_locale() and env['res.currency'].get_company_currency_for_spreadsheet() to see the locale/currency structs injected into a workbook",
+      "odoo shell: env['ir.model'].has_searchable_parent_relation(['res.partner']) to see the hierarchy-support helper the client batches"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Per-workbook data binding: which business models/fields each stored workbook actually queries lives inside the spreadsheet_data JSON (validated by fields_in_spreadsheet) and is not exposed as ORM metadata.",
+    "The collaborative editing path (revisions, snapshots, bus dispatch) and the /spreadsheet/data load+save routes are referenced by the JS but defined in spreadsheet_edition (enterprise) — out of scope for this community module record.",
+    "Runtime row counts not captured (spreadsheet.mixin is abstract; concrete counts live on host models like spreadsheet.dashboard / documents.document); runtime.models_with_data=0 is a placeholder.",
+    "Full inventory of the o-spreadsheet engine beyond the catalogued components (the bundled @odoo/o-spreadsheet library holds the bulk of grid/formula/chart logic)."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/spreadsheet.facts.json",
+    "tools": [
+      "code-read",
+      "extract_module.py",
+      "extract_frontend.py"
+    ],
+    "odoo_version": "19.0"
+  }
+}

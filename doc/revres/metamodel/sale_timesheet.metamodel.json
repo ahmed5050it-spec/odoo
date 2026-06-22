@@ -1,0 +1,313 @@
+{
+  "subsystem": "sale_timesheet",
+  "evidence": {
+    "manifest": {
+      "name": "Sales Timesheet",
+      "category": "Sales/Sales",
+      "summary": "Sell based on timesheets",
+      "depends": [
+        "sale_project",
+        "hr_timesheet"
+      ],
+      "auto_install": true,
+      "application": false
+    },
+    "models": [
+      {
+        "_name": "project.sale.line.employee.map",
+        "_description": "Project Sales line, employee mapping",
+        "fields": 13,
+        "relations": [
+          "project_id->project.project",
+          "employee_id->hr.employee",
+          "sale_line_id->sale.order.line",
+          "currency_id->res.currency"
+        ]
+      },
+      {
+        "_name": "account.analytic.line",
+        "_description": "(extension: timesheet <-> sale.order.line bridge)",
+        "fields": 8,
+        "relations": [
+          "so_line->sale.order.line",
+          "order_id->sale.order",
+          "timesheet_invoice_id->account.move",
+          "commercial_partner_id->res.partner"
+        ]
+      },
+      {
+        "_name": "sale.order.line",
+        "_description": "(extension: timesheet-delivered qty)",
+        "fields": 6,
+        "relations": [
+          "timesheet_ids->account.analytic.line",
+          "analytic_line_ids->account.analytic.line"
+        ]
+      },
+      {
+        "_name": "project.project",
+        "_description": "(extension: pricing_type, employee map)",
+        "fields": 7,
+        "relations": [
+          "sale_line_employee_ids->project.sale.line.employee.map",
+          "timesheet_product_id->product.product"
+        ]
+      },
+      {
+        "_name": "project.task",
+        "_description": "(extension: sale_order_id, remaining_hours_so)",
+        "fields": 8,
+        "relations": [
+          "sale_order_id->sale.order",
+          "last_sol_of_customer->sale.order.line"
+        ]
+      },
+      {
+        "_name": "account.move",
+        "_description": "(extension: linked timesheets)",
+        "fields": 4,
+        "relations": [
+          "timesheet_ids->account.analytic.line",
+          "timesheet_encode_uom_id->uom.uom"
+        ]
+      },
+      {
+        "_name": "product.template",
+        "_description": "(extension: service_type=timesheet, upsell threshold)",
+        "fields": 5,
+        "relations": [
+          "project_id->project.project",
+          "project_template_id->project.project"
+        ]
+      },
+      {
+        "_name": "timesheets.analysis.report",
+        "_description": "(extension: revenue/margin analytics)",
+        "fields": 8,
+        "relations": [
+          "order_id->sale.order",
+          "so_line->sale.order.line",
+          "timesheet_invoice_id->account.move"
+        ]
+      }
+    ],
+    "routes": [
+      {
+        "paths": [
+          "/my/tasks/<task_id>/orders/invoices",
+          "/my/tasks/<task_id>/orders/invoices/page/<int:page>"
+        ],
+        "auth": "user",
+        "type": "http"
+      }
+    ],
+    "security": {
+      "access_rules": 2,
+      "record_rules": 2,
+      "groups": 0
+    },
+    "views": {
+      "form": 1,
+      "list": 1,
+      "kanban": 1,
+      "pivot": 1,
+      "graph": 1
+    },
+    "behavioral_notes": [
+      {
+        "element": "sale.order.line._compute_qty_delivered_method / _prepare_qty_delivered",
+        "observation": "When the ordered product is type='service' with service_type='timesheet', qty_delivered_method is set to 'timesheet'; qty_delivered is then computed NOT from stock moves but by summing logged hours: _get_delivered_quantity_by_analytic over account.analytic.line where project_id is set. This is the core monetization step - delivered effort (hours) becomes the billable delivered quantity on the sales line. Formula lives in Python, invisible to metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "account.analytic.line._compute_so_line / _timesheet_determine_sale_line",
+        "observation": "Each timesheet line (account.analytic.line with a project) is auto-linked to a sale.order.line via so_line, resolved by the project's pricing_type: task_rate -> task's sale_line_id; fixed_rate -> project's sale_line_id; employee_rate -> the project.sale.line.employee.map entry matching the employee (else falls back to task/project SOL). This is the project/task<->sale linkage that routes each hour to the right billable line and unit price. so_line is editable (is_so_line_edited) and skipped once invoiced.",
+        "source": "code-read"
+      },
+      {
+        "element": "account.move._link_timesheets_to_invoice + sale.order.line._recompute_qty_to_invoice",
+        "observation": "Invoice-on-delivered-hours: for service_type='timesheet' / invoice_policy='delivery' lines, draft invoice creation searches timesheets in the period and stamps timesheet_invoice_id = the invoice line's move, marking those hours invoiced; qty_to_invoice is recomputed from not-yet-invoiced timesheets. action_post on a credit note (out_refund) un-stamps timesheet_invoice_id so the hours become re-billable. Closes the deliver->invoice loop of the value-shop.",
+        "source": "code-read"
+      },
+      {
+        "element": "account.analytic.line._compute_timesheet_invoice_type / project.project._get_profitability_items_from_aal",
+        "observation": "Each timesheet is classified billable_time / timesheet_revenues / billable_fixed / billable_milestones / billable_manual / non_billable from its so_line product policy, and the project profitability panel aggregates analytic-line cost (negative amount) vs revenue (positive) per type - turning logged effort into a live cost/revenue/margin view of the engagement.",
+        "source": "code-read"
+      },
+      {
+        "element": "sale_timesheet.time_product (data) + product.product._is_delivered_timesheet",
+        "observation": "Ships a master data product 'Service on Timesheets' (type=service, service_policy=delivered_timesheet, uom=hour, list_price 40) used as the default project timesheet_product_id; it is protected from archive/delete/company-link. _is_delivered_timesheet() gates the timesheet billing path. This is the concrete value-shop product definition (type=service + timesheet) from VALUE_MODELS_THREE_AR.",
+        "source": "code-read"
+      },
+      {
+        "element": "frontend SoLineField (static)",
+        "observation": "1 JS file + 1 XML template: OWL component SoLineField registered as fields:so_line_field, also pushed into the project.webclient bundle, letting timesheet grids pick/show the sales order item (so_line) per line.",
+        "source": "static"
+      }
+    ],
+    "frontend": {
+      "present": true,
+      "js_files": 1,
+      "xml_templates": 1,
+      "owl_components": [
+        "SoLineField"
+      ],
+      "registry_adds": [
+        "fields:so_line_field"
+      ],
+      "patches": [],
+      "services": [],
+      "asset_bundles": {
+        "web.assets_frontend": 1,
+        "web.assets_backend": 1,
+        "web.assets_tests": 1,
+        "web.assets_unit_tests": 2,
+        "project.webclient": 1
+      }
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": true,
+      "endpoints": [],
+      "files": []
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    }
+  },
+  "it_architecture": {
+    "application": "sale_timesheet (Sales-Timesheet billing bridge; auto-installed when sale_project + hr_timesheet coexist)",
+    "software_services": [
+      "/my/tasks/<task_id>/orders/invoices (portal)"
+    ],
+    "data_objects": [
+      "project.sale.line.employee.map",
+      "account.analytic.line",
+      "sale.order.line",
+      "project.project",
+      "project.task",
+      "account.move",
+      "product.template",
+      "timesheets.analysis.report"
+    ],
+    "logical_data_erm": [
+      "account.analytic.line -> sale.order.line (so_line: which billable line a logged hour feeds)",
+      "account.analytic.line -> account.move (timesheet_invoice_id: hour stamped as invoiced)",
+      "project.sale.line.employee.map -> sale.order.line (employee-rate pricing)",
+      "project.project -> product.product (timesheet_product_id)",
+      "project.task -> sale.order (sale_order_id)",
+      "sale.order.line -> account.analytic.line (timesheet_ids: hours delivered against the line)"
+    ],
+    "information_flows": [
+      "depends: sale_project, hr_timesheet",
+      "side-effect: hr_timesheet hour logged -> account.analytic.line.so_line resolved by project pricing_type -> sale.order.line.qty_delivered increments (delivered effort -> billable qty)",
+      "side-effect: invoice creation -> _link_timesheets_to_invoice stamps timesheet_invoice_id + _recompute_qty_to_invoice (deliver -> invoice)",
+      "side-effect: out_refund post -> timesheet_invoice_id cleared -> hours re-billable",
+      "side-effect: project profitability panel aggregates analytic-line cost vs timesheet revenue per invoice type"
+    ],
+    "frontend_components": [
+      "SoLineField"
+    ]
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Bill Services on Delivered Timesheets (hours -> billable qty_delivered)",
+      "Set Service Rate (task / project / employee pricing)",
+      "Invoice Time & Track Project Profitability",
+      "Upsell Prepaid Service Hours (threshold alert)"
+    ],
+    "value_streams": [
+      "Deliver-to-Cash (services): sell service hours -> log timesheets -> delivered qty -> invoice on delivered hours -> recognise revenue & margin"
+    ],
+    "information_concepts": [
+      "account.analytic.line (timesheet/effort)",
+      "sale.order.line (billable service line)",
+      "project.sale.line.employee.map (rate-by-employee)",
+      "project.project / project.task (engagement)",
+      "product.template (service_type=timesheet)"
+    ],
+    "organization": [
+      "(reuses hr_timesheet & project groups - no new groups; e.g. hr_timesheet.group_hr_timesheet_user / _approver, project.group_project_user)"
+    ],
+    "products": [
+      "product.product 'Service on Timesheets' (sale_timesheet.time_product: type=service, service_policy=delivered_timesheet)"
+    ],
+    "policies": [
+      "2 ir.rule: scope account.analytic.line readonly/billing rules to project_id=False so hr_timesheet's own-timesheet rules govern project lines",
+      "service_policy=delivered_timesheet drives invoice_policy='delivery' + service_type='timesheet' (product master mapping)",
+      "invoiced timesheets are locked: cannot edit unit_amount/employee/so_line/date or delete once invoice posted"
+    ],
+    "stakeholders": [
+      "Consultant / Employee (logs hours)",
+      "Project Manager (sets pricing, reviews profitability)",
+      "Customer (res.partner, billed for delivered hours)",
+      "Billing/Accountant (invoices delivered timesheets)"
+    ],
+    "strategy": null,
+    "metrics": [
+      "timesheets.analysis.report (timesheet_revenues, margin, billable_time, non_billable_time)",
+      "project profitability (cost vs revenue per timesheet_invoice_type)",
+      "sale.order.line.remaining_hours (prepaid hours remaining)"
+    ]
+  },
+  "classification": {
+    "value_model": "shop",
+    "activity_class": "primary",
+    "apqc_category": "5.0 Deliver Services",
+    "rationale": "sale_timesheet is the BRIDGE that monetizes the value-shop: it is the seam between the shop side (project/hr_timesheet, where unique customer problems are solved through cyclical logged effort) and the chain/cash side (sale, account). Concretely it turns hr_timesheet delivered effort into sale.order.line.qty_delivered (service_type='timesheet' => qty_delivered computed from logged hours via _get_delivered_quantity_by_analytic), auto-routes each hour to the right billable line/unit-price via project pricing_type (task/fixed/employee rate) and the project.sale.line.employee.map, then invoices on delivered hours (timesheet_invoice_id stamping) and reports revenue/margin - realizing the value-shop revenue where value is known by delivered effort. It depends on sale_project + hr_timesheet and auto-installs, so it exists only as the connective tissue. Value-shop primary activities per Stabell & Fjeldstad ('Execution' = hr_timesheet delivered work; monetized here); APQC 5.0 Deliver Services covers the deliver-and-bill-services flow. activity_class primary: it is on the revenue-producing service-delivery path, not a back-office support function."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "delivered-timesheet service policy (qty_delivered from logged hours)",
+      "three pricing modes: task rate / project (fixed) rate / employee rate via employee map",
+      "invoice on delivered hours + lock invoiced timesheets + credit-note re-billing",
+      "project profitability (cost vs revenue per billable type) and timesheet analysis report",
+      "prepaid-hours upsell threshold and remaining-hours display on the SO line",
+      "customer portal: timesheets behind a task's invoices"
+    ],
+    "typical_fits": [
+      "time-and-materials consulting billed on actual hours",
+      "fixed-price-per-hour services regardless of who delivers (fixed rate)",
+      "junior/senior differentiated billing (employee rate map)",
+      "prepaid hour packs with upsell alerting"
+    ],
+    "common_gaps": [
+      "approval/validation of timesheets before they count as delivered (needs config/extra module)",
+      "complex multi-currency or multi-rate-card pricing beyond the employee map",
+      "custom revenue-recognition / WIP accounting on unbilled hours",
+      "non-hour service UoM nuances and rounding policies"
+    ],
+    "drive_hints": [
+      "odoo shell: env['product.product'].search([('service_policy','=','delivered_timesheet')]).mapped('name')",
+      "odoo shell: env.ref('sale_timesheet.time_product').read(['name','service_policy','type','list_price'])",
+      "odoo shell: env['sale.order.line'].search([('qty_delivered_method','=','timesheet')], limit=5).mapped(lambda l:(l.product_id.name, l.qty_delivered, l.remaining_hours))",
+      "odoo shell: env['project.project'].search([('allow_billable','=',True)], limit=5).mapped(('name','pricing_type'))"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Exact precedence when task pricing_type and project employee map both resolve a so_line for the same hour (fallback order verified in _timesheet_determine_sale_line, but edge cases with subtasks/multi-company need runtime confirmation).",
+    "How service_upsell_threshold triggers the upsell activity end-to-end (activity scheduling lives partly in related sale modules).",
+    "Live row counts / real engagement volumes (runtime extraction not run; runtime.models_with_data = 0)."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/sale_timesheet.facts.json",
+    "tools": [
+      "code-read",
+      "extract_frontend.py",
+      "extract_module.py"
+    ],
+    "odoo_version": "19.0"
+  }
+}

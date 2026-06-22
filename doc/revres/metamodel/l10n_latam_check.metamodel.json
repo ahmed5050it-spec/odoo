@@ -1,0 +1,161 @@
+{
+  "subsystem": "l10n_latam_check",
+  "evidence": {
+    "manifest": {
+      "name": "Third Party and Deferred/Electronic Checks Management",
+      "category": "Accounting/Localizations",
+      "depends": [
+        "account",
+        "base_vat"
+      ],
+      "auto_install": false,
+      "application": false
+    },
+    "models": [
+      {
+        "_name": "l10n_latam.check",
+        "_description": "Account payment check",
+        "fields": 16
+      },
+      {
+        "_name": "l10n_latam.payment.mass.transfer",
+        "_description": "Checks Mass Transfers",
+        "fields": 6
+      },
+      {
+        "_name": "l10n_latam.payment.register.check",
+        "_description": "Payment register check",
+        "fields": 8
+      }
+    ],
+    "routes": [],
+    "security": {
+      "access_rules": 4,
+      "record_rules": 1,
+      "groups": 0
+    },
+    "views": {
+      "form": 1,
+      "list": 5,
+      "tree": 0,
+      "kanban": 0,
+      "search": 1,
+      "pivot": 1,
+      "graph": 0,
+      "calendar": 1,
+      "activity": 0
+    },
+    "frontend": {
+      "present": false,
+      "js_files": 0,
+      "xml_templates": 0,
+      "owl_components": [],
+      "registry_adds": [],
+      "patches": [],
+      "services": [],
+      "asset_bundles": {}
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": false,
+      "endpoints": [],
+      "files": []
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    },
+    "behavioral_notes": [
+      {
+        "element": "thin module",
+        "observation": "3 models, 0 routes, 1379 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
+        "source": "ast"
+      }
+    ]
+  },
+  "it_architecture": {
+    "application": "l10n_latam_check (Third Party and Deferred/Electronic Checks Management)",
+    "software_services": [],
+    "data_objects": [
+      "l10n_latam.check",
+      "l10n_latam.payment.mass.transfer",
+      "l10n_latam.payment.register.check"
+    ],
+    "logical_data_erm": [
+      "l10n_latam.check -> account.journal",
+      "l10n_latam.check -> account.move.line",
+      "l10n_latam.check -> account.payment",
+      "l10n_latam.check -> payment_id.company_id",
+      "l10n_latam.check -> payment_id.currency_id",
+      "l10n_latam.check -> payment_id.journal_id",
+      "l10n_latam.check -> payment_id.partner_id",
+      "l10n_latam.check -> payment_id.payment_method_line_id",
+      "l10n_latam.check -> res.bank",
+      "l10n_latam.payment.mass.transfer -> account.journal",
+      "l10n_latam.payment.mass.transfer -> l10n_latam.check",
+      "l10n_latam.payment.mass.transfer -> res.company"
+    ],
+    "information_flows": [
+      "depends: account, base_vat"
+    ],
+    "frontend_components": []
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Third Party and Deferred/Electronic Checks Management"
+    ],
+    "value_streams": [],
+    "information_concepts": [
+      "l10n_latam.check",
+      "l10n_latam.payment.mass.transfer",
+      "l10n_latam.payment.register.check"
+    ],
+    "organization": [],
+    "products": [],
+    "policies": [
+      "1 record rules"
+    ],
+    "stakeholders": [],
+    "strategy": null,
+    "metrics": []
+  },
+  "classification": {
+    "value_model": "support",
+    "activity_class": "support",
+    "apqc_category": "9.0 Manage Financial Resources",
+    "rationale": "l10n_latam_check: thin support/support module (auto-architect baseline)."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "Third Party and Deferred/Electronic Checks Management"
+    ],
+    "typical_fits": [],
+    "common_gaps": [],
+    "drive_hints": [
+      "odoo shell: env['l10n_latam.check'].search([],limit=3)"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/l10n_latam_check.facts.json",
+    "tools": [
+      "extract_module.py",
+      "extract_frontend.py",
+      "gen_thin.py"
+    ],
+    "odoo_version": "19.0"
+  }
+}

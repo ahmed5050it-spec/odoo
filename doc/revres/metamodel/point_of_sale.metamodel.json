@@ -1,0 +1,469 @@
+{
+  "subsystem": "point_of_sale",
+  "evidence": {
+    "manifest": {
+      "name": "Point of Sale",
+      "category": "Sales/Point of Sale",
+      "summary": "Handle checkouts and payments for shops and restaurants.",
+      "depends": [
+        "resource",
+        "stock_account",
+        "barcodes",
+        "html_editor",
+        "digest",
+        "phone_validation",
+        "partner_autocomplete",
+        "iot_base",
+        "google_address_autocomplete"
+      ],
+      "auto_install": false,
+      "application": true
+    },
+    "models": [
+      {
+        "_name": "pos.order",
+        "_description": "Point of Sale Orders",
+        "fields": 61,
+        "relations": [
+          "session_id->pos.session",
+          "config_id->pos.config",
+          "partner_id->res.partner",
+          "account_move->account.move",
+          "picking_ids->stock.picking",
+          "payment_ids->pos.payment",
+          "lines->pos.order.line"
+        ]
+      },
+      {
+        "_name": "pos.order.line",
+        "_description": "Point of Sale Order Lines",
+        "fields": 35,
+        "relations": [
+          "order_id->pos.order",
+          "product_id->product.product",
+          "tax_ids->account.tax",
+          "combo_parent_id->pos.order.line",
+          "refunded_orderline_id->pos.order.line"
+        ]
+      },
+      {
+        "_name": "pos.session",
+        "_description": "Point of Sale Session",
+        "fields": 30,
+        "relations": [
+          "config_id->pos.config",
+          "user_id->res.users",
+          "order_ids->pos.order",
+          "move_id->account.move",
+          "statement_line_ids->account.bank.statement.line",
+          "picking_ids->stock.picking",
+          "payment_method_ids->pos.payment.method"
+        ]
+      },
+      {
+        "_name": "pos.config",
+        "_description": "Point of Sale Configuration",
+        "fields": 98,
+        "relations": [
+          "picking_type_id->stock.picking.type",
+          "journal_id->account.journal",
+          "current_session_id->pos.session",
+          "payment_method_ids->pos.payment.method",
+          "pricelist_id->product.pricelist",
+          "warehouse_id->stock.warehouse"
+        ]
+      },
+      {
+        "_name": "pos.payment",
+        "_description": "Point of Sale Payments",
+        "fields": 25,
+        "relations": [
+          "pos_order_id->pos.order",
+          "payment_method_id->pos.payment.method",
+          "session_id->pos.session",
+          "account_move_id->account.move"
+        ]
+      },
+      {
+        "_name": "pos.payment.method",
+        "_description": "Point of Sale Payment Methods",
+        "fields": 20,
+        "relations": [
+          "journal_id->account.journal",
+          "receivable_account_id->account.account",
+          "config_ids->pos.config"
+        ]
+      },
+      {
+        "_name": "pos.category",
+        "_description": "Point of Sale Category",
+        "fields": 10,
+        "relations": [
+          "parent_id->pos.category",
+          "child_ids->pos.category"
+        ]
+      }
+    ],
+    "routes": [
+      {
+        "paths": ["/pos/web", "/pos/ui"],
+        "auth": "user",
+        "type": "http"
+      },
+      {
+        "paths": ["/pos/ui/<config_id>", "/pos/ui/<config_id>/<path:subpath>"],
+        "auth": "user",
+        "type": "http"
+      },
+      {
+        "paths": ["/pos/service-worker.js"],
+        "auth": "user",
+        "type": "http"
+      },
+      {
+        "paths": ["/pos/ping"],
+        "auth": "user",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": ["/pos_customer_display/<id_>/<device_uuid>"],
+        "auth": "public",
+        "type": "http"
+      },
+      {
+        "paths": ["/pos/ticket", "/pos/ticket/validate"],
+        "auth": "public",
+        "type": "http"
+      },
+      {
+        "paths": ["/pos/sale_details_report"],
+        "auth": "user",
+        "type": "http"
+      }
+    ],
+    "security": {
+      "access_rules": 54,
+      "record_rules": 12,
+      "groups": 3
+    },
+    "views": {
+      "form": 14,
+      "list": 16,
+      "kanban": 5,
+      "search": 7,
+      "pivot": 2,
+      "graph": 1
+    },
+    "frontend": {
+      "present": true,
+      "js_files": 166,
+      "xml_templates": 78,
+      "owl_components": [
+        "Chrome",
+        "Navbar",
+        "ProductScreen",
+        "PaymentScreen",
+        "ReceiptScreen",
+        "TicketScreen",
+        "ActionScreen",
+        "LoginScreen",
+        "FeedbackScreen",
+        "Numpad",
+        "OrderDisplay",
+        "ControlButtons",
+        "CategorySelector",
+        "ProductCard",
+        "ClosePosPopup",
+        "OpeningControlPopup",
+        "CashMovePopup",
+        "MoneyDetailsPopup",
+        "ComboConfiguratorPopup",
+        "CustomerDisplay",
+        "CustomerFacingQR",
+        "DebugWidget",
+        "CriticalPOSError"
+      ],
+      "registry_adds": [
+        "services:pos",
+        "services:pos_data",
+        "services:pos_router",
+        "services:barcode_reader",
+        "services:hardware_proxy",
+        "services:pos_scale",
+        "services:printer",
+        "services:number_buffer",
+        "services:renderer",
+        "services:report",
+        "services:customer_display_data",
+        "pos_pages:ProductScreen",
+        "pos_pages:PaymentScreen",
+        "pos_pages:ReceiptScreen",
+        "pos_pages:TicketScreen",
+        "pos_pages:LoginScreen",
+        "pos_pages:ActionScreen",
+        "pos_pages:FeedbackScreen",
+        "pos_pages:SaverScreen",
+        "error_handlers:pos-offlineErrorHandler",
+        "error_handlers:pos-rpcErrorHandler",
+        "error_handlers:pos-defaultErrorHandler",
+        "main_components:DebugWidget",
+        "main_components:RenderContainer",
+        "views:pos_config_kanban_view",
+        "web_tour.tours:point_of_sale_tour"
+      ],
+      "patches": [
+        "AccountMoveService.prototype",
+        "ConfirmationDialog.prototype",
+        "SoundEffects.prototype",
+        "actionService",
+        "router",
+        "utils"
+      ],
+      "services": [
+        "pos",
+        "pos_data",
+        "pos_router",
+        "barcode_reader",
+        "hardware_proxy",
+        "pos_scale",
+        "printer",
+        "renderer",
+        "customer_display_data"
+      ],
+      "asset_bundles": {
+        "point_of_sale._assets_pos": 43,
+        "point_of_sale.base_app": 24,
+        "point_of_sale.base_tests": 8,
+        "point_of_sale.customer_display_assets": 7,
+        "point_of_sale.customer_display_assets_test": 6,
+        "point_of_sale.assets_debug": 4,
+        "point_of_sale.assets_prod": 2,
+        "point_of_sale.assets_prod_dark": 1,
+        "point_of_sale.assets_web_dark": 1,
+        "web.assets_backend": 9,
+        "web.assets_tests": 5,
+        "web.assets_unit_tests_setup": 5,
+        "web.assets_unit_tests": 1
+      }
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": true,
+      "endpoints": [
+        "https://www.odoo.com/app/point-of-sale-shop"
+      ],
+      "files": [
+        "__manifest__.py"
+      ]
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    },
+    "behavioral_notes": [
+      {
+        "element": "pos.order.sync_from_ui / _process_order / _process_saved_order",
+        "observation": "POS orders are created in the OWL browser app while offline and pushed to the server via the `sync_from_ui` RPC, which calls `_process_order` (create-or-update keyed by uuid; draft orders may be overwritten, non-draft are discarded as duplicates). On a non-draft, non-cancel order `_process_saved_order` runs `action_pos_order_paid` -> `_create_order_picking` (real-time stock.picking unless `update_stock_at_closing`) -> `_compute_total_cost_in_real_time`, and if `to_invoice` it calls `_generate_pos_order_invoice` to post an account.move. None of this offline-create-then-sync semantics is visible in metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "pos.session.action_pos_session_open / post_closing_cash_details / action_pos_session_closing_control / _validate_session",
+        "observation": "A session is the cash-control + accounting envelope around a day of selling. On open, if `config_id.cash_control`, the opening float is seeded from the previous session's `cash_register_balance_end_real`. Closing (`action_pos_session_closing_control`) blocks while draft orders exist, counts cash via `post_closing_cash_details`, then `_validate_session` creates pickings at closing (if `update_stock_at_closing`), computes costs, and calls `_create_account_move` which builds one consolidated account.move with receivable/cash/pay-later/invoice/stock-valuation lines and reconciles them; an unbalanced move rolls back and opens the close wizard. Cash in/out (`try_cash_in_out`) writes account.bank.statement.line records gated by `_has_cash_move_permission`. These multi-model side-effects are pure Python.",
+        "source": "code-read"
+      },
+      {
+        "element": "pos.config + module_pos_* feature flags",
+        "observation": "pos.config is a fat (~98-field) terminal profile that wires the till to a stock.picking.type, sales journal, invoice journal, pricelist, payment methods and hardware (cash drawer / scale / printer / IoT proxy). Many `module_pos_*` Boolean fields (pos_restaurant, pos_hr, pos_discount, pos_avatax, plus payment add-ons pos_adyen/pos_stripe/pos_viva_com/pos_razorpay/pos_mercado_pago etc. on res.config.settings) are install-triggers: toggling them installs the corresponding bridge module, so a single config silently extends the schema/behavior of the whole subsystem.",
+        "source": "code-read"
+      },
+      {
+        "element": "frontend (offline-first OWL POS app) -- gap #3 exemplar",
+        "observation": "The entire POS UI is a standalone OWL single-page app served at /pos/ui (entry: static/src/app/main.js + pos_app.js, root component Chrome) with its own client-side ORM (static/src/app/models/related_models/) persisting to IndexedDB (models/utils/indexed_db.js) and a service-worker, so the cashier keeps ringing sales with no network. 166 JS files / 78 XML templates / ~43 components in the point_of_sale._assets_pos bundle, ~30 registry services/screens, dedicated offline/rpc error handlers, plus a second customer_display app. Almost none of this client logic (screen flow, buffered orders, offline queue, hardware proxy) is reverse-engineerable from Python metadata.",
+        "source": "static"
+      }
+    ]
+  },
+  "it_architecture": {
+    "application": "point_of_sale (Point of Sale application component: backend ORM + offline OWL POS terminal app)",
+    "software_services": [
+      "/pos/web | /pos/ui (load the POS terminal SPA)",
+      "/pos/ui/<config_id> (open a specific till)",
+      "/pos/service-worker.js (offline service worker)",
+      "/pos/ping (jsonrpc liveness check)",
+      "/pos_customer_display/<id_>/<device_uuid> (customer-facing display)",
+      "/pos/ticket | /pos/ticket/validate (public receipt lookup/validate)",
+      "/pos/sale_details_report"
+    ],
+    "data_objects": [
+      "pos.order",
+      "pos.order.line",
+      "pos.session",
+      "pos.config",
+      "pos.payment",
+      "pos.payment.method",
+      "pos.category",
+      "pos.bill",
+      "pos.preset",
+      "pos.printer",
+      "pos.pack.operation.lot",
+      "report.pos.order"
+    ],
+    "logical_data_erm": [
+      "pos.config -> pos.session (current_session_id / session_ids)",
+      "pos.session -> pos.order (order_ids)",
+      "pos.order -> pos.order.line (lines)",
+      "pos.order -> pos.payment (payment_ids)",
+      "pos.payment -> pos.payment.method",
+      "pos.order -> account.move (account_move, invoice)",
+      "pos.session -> account.move (move_id, closing entry)",
+      "pos.order -> stock.picking (picking_ids)",
+      "pos.session -> account.bank.statement.line (cash moves)"
+    ],
+    "information_flows": [
+      "depends: stock_account, resource, barcodes, digest, iot_base, partner_autocomplete, phone_validation, html_editor, google_address_autocomplete",
+      "side-effect: pos.order.sync_from_ui -> create/update pos.order -> stock.picking (delivery) [+ account.move if to_invoice]",
+      "side-effect: pos.session close (_validate_session -> _create_account_move) -> consolidated account.move + reconciled receivable/cash/stock-valuation lines [+ pickings at closing]",
+      "side-effect: cash in/out (try_cash_in_out) -> account.bank.statement.line",
+      "offline path: OWL app persists orders to IndexedDB and replays them to /pos via sync_from_ui when reconnected"
+    ],
+    "frontend_components": [
+      "Chrome",
+      "Navbar",
+      "ProductScreen",
+      "PaymentScreen",
+      "ReceiptScreen",
+      "TicketScreen",
+      "ActionScreen",
+      "LoginScreen",
+      "FeedbackScreen",
+      "Numpad",
+      "OrderDisplay",
+      "ControlButtons",
+      "CategorySelector",
+      "ProductCard",
+      "ClosePosPopup",
+      "OpeningControlPopup",
+      "CashMovePopup",
+      "MoneyDetailsPopup",
+      "ComboConfiguratorPopup",
+      "CustomerDisplay"
+    ]
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Operate Point-of-Sale Checkout (ring up & tender sales)",
+      "Manage Till Sessions & Cash Control (open/close, count, cash in/out)",
+      "Accept Multi-method Payments (cash, card terminal, QR, pay-later)",
+      "Issue Receipts & Invoices",
+      "Process Refunds/Returns at the till",
+      "Fulfil & Decrement Stock from the sale",
+      "Configure Tills, Categories, Pricelists & Hardware",
+      "Point-of-Sale Sales Analysis"
+    ],
+    "value_streams": [
+      "Sell-at-Counter: open session -> scan/select products -> tender payment -> print receipt / invoice -> deliver goods (stock move) -> close session (cash count + journal entry)"
+    ],
+    "information_concepts": [
+      "pos.order",
+      "pos.order.line",
+      "pos.session",
+      "pos.config",
+      "pos.payment",
+      "pos.payment.method",
+      "pos.category",
+      "res.partner (customer)",
+      "product.product (sold item)"
+    ],
+    "organization": [
+      "group_pos_user",
+      "group_pos_manager",
+      "group_pos_preset"
+    ],
+    "products": [],
+    "policies": [
+      "12 record rules: multi-company + session/own-document scoping on pos.order, pos.session, pos.payment",
+      "cash in/out and cash-move delete gated by _has_cash_move_permission / _has_cash_delete_permission",
+      "cannot close a session while draft orders remain; maximum cash difference can be enforced (set_maximum_difference / amount_authorized_diff)"
+    ],
+    "stakeholders": [
+      "Cashier / POS User (res.users, group_pos_user)",
+      "POS Manager (res.users, group_pos_manager)",
+      "Customer (res.partner)",
+      "Accountant (consumes session closing entries)"
+    ],
+    "strategy": null,
+    "metrics": [
+      "report.pos.order (Point of Sale Orders analysis: amounts, qty, margin, discount)",
+      "report.point_of_sale.report_saledetails (daily sales / Z-report)",
+      "digest.kpi_pos_total (POS sales in periodic digest)"
+    ]
+  },
+  "classification": {
+    "value_model": "chain",
+    "activity_class": "primary",
+    "apqc_category": "3.0 Market and Sell Products and Services",
+    "rationale": "Point of Sale is a value-chain primary activity: its core act is the retail sell/checkout transaction that converts demand into a paid pos.order, then drives the downstream chain operations -- outbound delivery (stock.picking) and revenue/cash recognition (account.move at session close). Mapped to APQC 3.0 (Market and Sell) because the dominant, originating operation is the in-store sale at the counter (the 3.5 'manage sales orders' family realized as a till), mirroring the `sale` module; the deliver (APQC 4.0 / stock) and accounts-receivable + cash (APQC 9.0 / account) steps are real but are triggered side-effects of the sale, not POS's primary mission. Note the heavy network/frontend character: POS is delivered as an offline-first OWL single-page app with a client-side ORM, IndexedDB queue and hardware/IoT proxy, giving it strong 'shop' (service-encounter) and 'network' (terminal mediating buyer/payment infrastructure) overtones even though the value logic is chain."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "offline-capable POS terminal UI (product/payment/receipt/ticket screens)",
+      "session lifecycle with opening float, cash counting and closing control",
+      "multi payment methods incl. external card terminals (Adyen/Stripe/Viva/Razorpay/Mercado Pago) and QR",
+      "automatic stock delivery (real-time or at session closing) via stock_account",
+      "receipt printing (browser / ePOS / IoT proxy) and customer-facing display",
+      "refunds, tips, pricelists, fiscal positions, combos and product attributes",
+      "consolidated accounting closing entry per session + optional per-order invoicing",
+      "POS sales reporting (orders report, daily Z-report, digest KPI)"
+    ],
+    "typical_fits": [
+      "retail / restaurant counter checkout with cash + card",
+      "single sale -> delivery -> invoice/cash flow per till",
+      "multi-till / multi-company scoping via record rules and pos.config",
+      "feature add-ons toggled via module_pos_* flags (restaurant, hr, discount, avatax)"
+    ],
+    "common_gaps": [
+      "bespoke loyalty / promotion logic beyond standard pricelists and pos_discount",
+      "integration with a non-supported payment terminal or fiscal printer (custom IoT/driver)",
+      "country-specific fiscal/tax certification (signed receipts, fiscal data module)",
+      "custom offline-sync conflict resolution or extra client-side screens (OWL dev, not config)",
+      "non-standard hardware (scales, scanners) outside the hardware_proxy/IoT model"
+    ],
+    "drive_hints": [
+      "odoo shell: env['pos.config'].search([]).mapped(('name','current_session_state'))",
+      "odoo shell: env['pos.session'].search([], limit=5).mapped(('name','state','cash_register_balance_end_real'))",
+      "odoo shell: env['pos.order'].search([], limit=5).mapped(('name','state','amount_total','to_invoice'))",
+      "curl jsonrpc /pos/ping (auth=user) to confirm a live terminal heartbeat",
+      "browse /pos/ui/<config_id> to launch the OWL terminal app"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "stakeholders": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Exact pos.order state machine (draft/paid/done/invoiced/cancel) and which transitions the OWL app drives vs. the server.",
+    "How update_stock_at_closing vs real-time picking is decided per company/config and its inventory-valuation impact.",
+    "Full set of account.move lines and reconciliations produced by _create_account_move at session close (per payment method / stock valuation).",
+    "Behavior of the offline IndexedDB queue under conflict (two devices, same uuid) and the rescue-session recovery path.",
+    "Which module_pos_* add-ons are present in this deployment and how they extend the base schema/UI."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/point_of_sale.facts.json",
+    "tools": [
+      "code-read",
+      "extract_frontend.py",
+      "extract_module.py",
+      "extract_runtime.sh",
+      "run-odoo (odoo shell)"
+    ],
+    "odoo_version": "19.0"
+  }
+}

@@ -1,0 +1,254 @@
+{
+  "subsystem": "auth_totp",
+  "evidence": {
+    "manifest": {
+      "name": "Two-Factor Authentication (TOTP)",
+      "category": "Extra Tools",
+      "depends": [
+        "web"
+      ],
+      "auto_install": true,
+      "application": false
+    },
+    "models": [
+      {
+        "_name": "auth.totp.rate.limit.log",
+        "_description": "TOTP rate limit logs",
+        "fields": 3,
+        "relations": [
+          "user_id->res.users"
+        ]
+      },
+      {
+        "_name": "auth_totp.device",
+        "_description": "Authentication Device",
+        "fields": 0,
+        "relations": [
+          "_inherit res.users.apikeys (user_id->res.users via apikeys table)"
+        ]
+      },
+      {
+        "_name": "auth_totp.wizard",
+        "_description": "2-Factor Setup Wizard",
+        "fields": 5,
+        "relations": [
+          "user_id->res.users"
+        ]
+      },
+      {
+        "_name": "res.users (extension)",
+        "_description": "Adds totp_secret, totp_last_counter, totp_enabled, totp_trusted_device_ids + MFA hooks",
+        "fields": 4,
+        "relations": [
+          "totp_trusted_device_ids->auth_totp.device"
+        ]
+      }
+    ],
+    "routes": [
+      {
+        "paths": [
+          "/web/login/totp"
+        ],
+        "auth": "public",
+        "type": "http"
+      }
+    ],
+    "security": {
+      "access_rules": 3,
+      "record_rules": 4,
+      "groups": 0
+    },
+    "views": {
+      "form": 2,
+      "list": 0,
+      "tree": 0,
+      "kanban": 0,
+      "search": 0,
+      "pivot": 0,
+      "graph": 0,
+      "calendar": 0,
+      "activity": 0
+    },
+    "frontend": {
+      "present": true,
+      "js_files": 0,
+      "xml_templates": 0,
+      "owl_components": [],
+      "registry_adds": [],
+      "patches": [],
+      "services": [],
+      "asset_bundles": {
+        "web.assets_tests": 1,
+        "web.assets_backend": 1
+      }
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": true,
+      "endpoints": [],
+      "files": []
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    },
+    "behavioral_notes": [
+      {
+        "element": "res.users._totp_try_setting / action_totp_enable_wizard / auth_totp.wizard (secret enrolment)",
+        "observation": "Enrolment is a self-service, identity-checked flow. action_totp_enable_wizard (guarded by @check_identity and a 'yourself only' UserError) mints a fresh 160-bit secret with os.urandom(TOTP_SECRET_SIZE//8), base32-encodes it, and spawns the auth_totp.wizard. The wizard's _compute_qrcode builds an 'otpauth://totp/{issuer}:{login}?secret=..&algorithm=SHA1&digits=6&period=30' URI and renders it to a PNG QR via the qrcode lib for scanning by Google Authenticator/Authy. wizard.enable() -> res.users._totp_try_setting(secret, code): it refuses if totp_enabled already or self != env.user, verifies the typed code against the secret with TOTP(...).match, and only on success writes totp_secret (groups=NO_ACCESS, stored via raw _inverse_token UPDATE bypassing ORM cache) and seeds totp_last_counter. It then recomputes the session token (_compute_session_token) so the secret-change cache clear does not log the user out. Secret is wiped from the transient wizard post-enable.",
+        "source": "code-read"
+      },
+      {
+        "element": "res.users._check_credentials(type='totp') / _mfa_type / _mfa_url (login 2FA challenge)",
+        "observation": "The login 2FA gate. After password auth, _mfa_type() returns 'totp' when totp_enabled and _mfa_url() returns '/web/login/totp', so web's login flow holds the user at pre_uid (not yet a full session) and redirects to the TOTP form instead of finalizing. controllers/home.web_totp POSTs the code into res.users._check_credentials({'type':'totp','token':int(code)}, ...): it b32decodes totp_secret and calls TOTP(key).match(token); a miss raises AccessDenied('Verification failed, please double-check the 6-digit code'); a replay (match <= totp_last_counter) raises AccessDenied('please use the latest 6-digit code'). Only on success is totp_last_counter advanced and request.session.finalize(env) called to elevate pre_uid into an authenticated session. The whole exchange is wrapped in user._assert_can_auth and _totp_rate_limit('code_check') caps it at 5 verifications/hour/user (purged on success); a sibling 'send_email' limit (5/hr) exists for the email-OTP variant. Enabling TOTP also flips _rpc_api_keys_only() True, forbidding password-based RPC.",
+        "source": "code-read"
+      },
+      {
+        "element": "auth_totp.device 'browser' trusted-device cookie (_generate / KEY_CRYPT_CONTEXT.verify)",
+        "observation": "auth_totp.device inherits res.users.apikeys (_auto=False, secret 'key' column) to reuse the hashed-secret machinery for 'remember this device'. On a successful TOTP login with remember=1, controllers/home calls auth_totp.device.sudo()._generate('browser', name, expiry): it generates a 20-byte os.urandom hex token, stores only KEY_CRYPT_CONTEXT.hash(token) (pbkdf2_sha512, 6000 rounds) plus an 8-hex-digit index, and the *plaintext* token is set as the httponly, SameSite=Lax 'td_id' cookie (max_age = auth_totp.trusted_device_age ICP, default 90 days; device named '<browser> on <platform> (<city>, <country>)' via GeoIP). On a later GET the cookie is verified by _check_credentials_for_uid(scope='browser', key, uid) -> _check_apikey_credentials, which looks up by index then does a timing-safe KEY_CRYPT_CONTEXT.verify(key, stored_hash) (passlib's constant-time compare, the consteq equivalent) and, only on a uid match, request.session.finalize() skips the TOTP prompt entirely. Devices are revoked on TOTP disable, on change_password (_revoke_all_devices), and via revoke_all_devices().",
+        "source": "code-read"
+      },
+      {
+        "element": "models/totp.py TOTP.match + hotp (RFC 6238/4226 algorithm)",
+        "observation": "TOTP is implemented in-tree from stdlib (no pyotp dependency). hotp(secret, counter) packs the counter big-endian (struct '>Q'), computes hmac.new(secret, C, sha1).digest(), takes the RFC 4226 dynamic-truncation offset from the last nibble, reads a 31-bit big-endian int and mods 10**6 -> a 6-digit code. TOTP.match() turns wall-clock time into counters with a +/-30s fuzz window (TIMESTEP=30) and returns the matching counter (used as totp_last_counter to block replay) or None. Parameters are fixed (sha1 / 6 digits / 30s) for Google Authenticator compatibility. This pure-crypto core is wholly invisible to ORM/AST metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "frontend (static assets)",
+        "observation": "No OWL components, JS modules, registry adds, services or patches: the only client footprint is static/src/scss/res_users_view_form.scss (one rule, .o_auth_2fa_btn font-size) plus QWeb login templates (views/templates.xml: auth_totp.auth_totp_form) and JS browser tests (static/tests/totp_flow.js, apikeys_flow.js). Asset bundles touched: web.assets_backend (1, the scss) and web.assets_tests (1). The 2FA enable/disable UI is server-rendered form views + a wizard dialog, not a custom OWL component.",
+        "source": "static"
+      }
+    ]
+  },
+  "it_architecture": {
+    "application": "auth_totp (Two-Factor Authentication via TOTP: authenticator-app second factor + trusted-device opt-out, layered on the web login flow)",
+    "software_services": [
+      "/web/login/totp (public HTTP: TOTP challenge form GET/POST, trusted-device cookie check)"
+    ],
+    "data_objects": [
+      "auth.totp.rate.limit.log",
+      "auth_totp.device",
+      "auth_totp.wizard"
+    ],
+    "logical_data_erm": [
+      "res.users -1::N-> auth_totp.device (totp_trusted_device_ids; trusted browsers)",
+      "auth.totp.rate.limit.log -> res.users (per-user/IP throttle ledger)",
+      "auth_totp.wizard -> res.users (transient enrolment session)",
+      "auth_totp.device -inherits-> res.users.apikeys (hashed-secret 'key' table)"
+    ],
+    "information_flows": [
+      "depends: web (extends web's login controller + res.users auth hooks)",
+      "enrol: action_totp_enable_wizard -> auth_totp.wizard (otpauth QR) -> _totp_try_setting -> res.users.totp_secret (+ session token refresh)",
+      "challenge: web login -> _mfa_type/_mfa_url='/web/login/totp' -> home.web_totp -> res.users._check_credentials(type=totp) -> TOTP.match -> session.finalize | AccessDenied",
+      "trust: web_totp(remember) -> auth_totp.device._generate('browser') -> httponly 'td_id' cookie -> later GET verify via _check_apikey_credentials -> skip prompt",
+      "throttle: _check_credentials/email-OTP -> _totp_rate_limit -> auth.totp.rate.limit.log (5/hr code_check, 5/hr send_email)",
+      "revoke: action_totp_disable / change_password / revoke_all_devices -> auth_totp.device._remove",
+      "side-effect: totp_enabled=True -> _rpc_api_keys_only()=True (password RPC disabled, API keys required)"
+    ],
+    "frontend_components": []
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Two-Factor Authentication (TOTP authenticator-app second factor)",
+      "TOTP Secret Enrolment & Provisioning (QR / otpauth URI)",
+      "Login MFA Challenge & Verification (replay-protected)",
+      "Trusted-Device Management (remember-this-browser opt-out)",
+      "Authentication Rate-Limiting / Brute-Force Throttling",
+      "Administrative 2FA Revocation (disable + device revoke)"
+    ],
+    "value_streams": [
+      "Enrol-to-Protected: enable wizard -> scan QR -> verify code -> account hardened with second factor",
+      "Login-to-Session: password -> TOTP challenge -> code/trusted-cookie verify -> finalized authenticated session"
+    ],
+    "information_concepts": [
+      "auth.totp.rate.limit.log",
+      "auth_totp.device",
+      "auth_totp.wizard",
+      "res.users.totp_secret (shared HOTP key)",
+      "td_id trusted-device cookie / token"
+    ],
+    "organization": [],
+    "policies": [
+      "4 record rules: users see/manage only their own trusted devices/wizard ([('user_id','=',user.id)]); public users blocked from devices ([(0,'=',1)]); administrators (base.group_system) may view devices to revoke",
+      "Rate-limit policy: 5 code verifications/hour and 5 auth-mails/hour per user (TOTP_RATE_LIMITS), AccessDenied on breach",
+      "Replay policy: each accepted counter must exceed totp_last_counter (one-time use per 30s step)",
+      "Disable action restricted to self or base.group_erp_manager / system; 2FA forces API-key-only RPC"
+    ],
+    "products": [],
+    "stakeholders": [
+      "End user / employee (enrols and authenticates with a second factor)",
+      "Portal user (read access to own trusted devices)",
+      "Security administrator / ERP manager (enforces and revokes 2FA, audits rate-limit logs)",
+      "Module developer (consumes _mfa_type/_mfa_url and _check_credentials extension points)"
+    ],
+    "strategy": null,
+    "metrics": [
+      "auth.totp.rate.limit.log rows per user/IP (failed-attempt / abuse signal)",
+      "_logger 2FA audit events (enable/disable/check SUCCESS|FAIL|REUSE|REJECT) for the security log trail",
+      "count of users with totp_enabled (2FA adoption / coverage)"
+    ]
+  },
+  "classification": {
+    "value_model": "support",
+    "activity_class": "support",
+    "apqc_category": "8.0 Manage Information Technology",
+    "rationale": "auth_totp is IT security infrastructure (Porter support activity; Stabell & Fjeldstad 'support'). It hardens identity & access and owns no business object of its own: its three tiny models are a transient enrolment wizard, a hashed trusted-device token (reusing res.users.apikeys), and a rate-limit ledger — it exists solely to add a second authentication factor to the web login that EVERY other module sits behind (auth_install=true, depends only on web). It creates no document chain, holds no customer/order/product/ledger data, and produces no primary-activity output, so it is classified 'support' rather than chain/shop/network. APQC 8.0 'Manage Information Technology' is the precise fit: this is the 'manage IT security, privacy and data protection' / 'identity & access management' capability — a concrete running access-control runtime (TOTP/HOTP crypto, MFA challenge controller, trusted-device cookies, brute-force throttling). 11.0 'Manage Enterprise Risk, Compliance, Remediation and Resiliency' was considered because 2FA mitigates account-takeover risk and supports compliance mandates, but rejected: 11.0 covers the governance layer (risk registers, control frameworks, audits, policy management), whereas auth_totp is the technical *implementation* of an access control that IT operates and delivers — the build/run of a security mechanism, which APQC places under 8.0 (Develop and manage IT security, privacy and data protection / Manage IT security). The classification mirrors the sibling auth_* identity modules and the web framework record (both 8.0/support)."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "TOTP (RFC 6238) authenticator-app second factor, in-tree HOTP/SHA1/6-digit/30s, Google Authenticator-compatible otpauth QR enrolment",
+      "Login MFA challenge wired into the web login flow via _mfa_type/_mfa_url and a public /web/login/totp controller",
+      "Replay protection (monotonic totp_last_counter) and +/-30s clock-skew window",
+      "Trusted-device 'remember this browser' via httponly SameSite=Lax cookie backed by a hashed (pbkdf2_sha512) token, default 90-day expiry (auth_totp.trusted_device_age ICP)",
+      "Per-user/IP rate limiting (5 code checks/hr, 5 auth mails/hr) with an auditable log",
+      "Self-service enable/disable plus administrator revocation (group_erp_manager/system) and revoke-all-devices",
+      "Auto-forces API-key-only RPC once 2FA is enabled (no password RPC)",
+      "Full security audit logging of enable/disable/check outcomes"
+    ],
+    "typical_fits": [
+      "Mandating 2FA for sensitive/admin users out of the box (no custom code)",
+      "Letting users self-enrol with any standard authenticator app (Google Authenticator, Authy, 1Password, FreeOTP)",
+      "Reducing prompt fatigue with trusted-device opt-out on personal browsers",
+      "Tuning trusted-device lifetime via the auth_totp.trusted_device_age system parameter"
+    ],
+    "common_gaps": [
+      "No org-wide enforcement policy / 'require 2FA for group X' toggle out of the box (needs config or auth_totp_mail-style add-on)",
+      "Email-OTP delivery is provided by the separate auth_totp_mail module, not this base module",
+      "Fixed algorithm (SHA1/6/30) — no UI to change digits/period/hash",
+      "No SMS or hardware-token (WebAuthn/passkey) factor here — separate auth_passkey module",
+      "No self-service recovery/backup-codes flow (admin disable is the reset path)"
+    ],
+    "drive_hints": [
+      "odoo shell: u = env['res.users'].browse(2); u._mfa_type(); u.totp_enabled  # inspect a user's 2FA state",
+      "odoo shell: from odoo.addons.auth_totp.models.totp import TOTP; import base64,time; TOTP(base64.b32decode(secret)).match(code)  # verify a code against a secret",
+      "odoo shell: env['auth.totp.rate.limit.log'].search_read([], ['user_id','ip','limit_type','create_date'], limit=5)  # inspect throttle ledger",
+      "curl -i 'http://localhost:8069/web/login/totp'  # without a pre_uid session it 303-redirects to /web/login (proves the gate)",
+      "odoo shell: env['res.users'].browse(2).totp_trusted_device_ids.mapped('name')  # list a user's trusted devices"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Interplay with auth_totp_mail (email-OTP 'send_email' rate-limit branch) and auth_totp_portal is referenced here but lives in sibling modules — not fully traced.",
+    "Real-world trusted-device cookie lifetime / adoption and rate-limit hit rates require runtime data (extract_runtime not run; models empty at capture).",
+    "Behavior of _assert_can_auth (inherited from base res.users) bounding the overall login attempt budget is referenced but defined upstream in base."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/auth_totp.facts.json",
+    "tools": [
+      "code-read",
+      "extract_module.py",
+      "extract_frontend.py"
+    ],
+    "odoo_version": "19.0"
+  }
+}

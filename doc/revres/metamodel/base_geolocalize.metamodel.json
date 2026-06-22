@@ -1,0 +1,267 @@
+{
+  "subsystem": "base_geolocalize",
+  "evidence": {
+    "manifest": {
+      "name": "Partners Geolocation",
+      "category": "Sales/Sales",
+      "summary": null,
+      "depends": [
+        "base_setup"
+      ],
+      "auto_install": false,
+      "application": false,
+      "version": "2.1",
+      "license": "LGPL-3",
+      "data_files": 5,
+      "demo_files": 0
+    },
+    "models": [
+      {
+        "_name": "base.geo_provider",
+        "_inherit": null,
+        "_description": "Geo Provider",
+        "fields": 2,
+        "relations": []
+      },
+      {
+        "_name": "base.geocoder",
+        "_inherit": null,
+        "_description": "Geo Coder (AbstractModel)",
+        "fields": 0,
+        "relations": []
+      },
+      {
+        "_name": null,
+        "_inherit": "res.partner",
+        "_description": "(extension)",
+        "fields": 1,
+        "relations": [
+          "partner_latitude / partner_longitude reset on address write",
+          "date_localization (Geolocation Date)"
+        ]
+      },
+      {
+        "_name": null,
+        "_inherit": "res.config.settings",
+        "_description": "(extension)",
+        "fields": 3,
+        "relations": [
+          "geoloc_provider_id->base.geo_provider (config_parameter base_geolocalize.geo_provider)"
+        ]
+      }
+    ],
+    "routes": [],
+    "security": {
+      "access_rules": 1,
+      "record_rules": 0,
+      "groups": 0
+    },
+    "views": {
+      "form": 1,
+      "list": 0,
+      "tree": 0,
+      "kanban": 0,
+      "search": 0,
+      "pivot": 0,
+      "graph": 0,
+      "calendar": 0,
+      "activity": 0
+    },
+    "frontend": {
+      "present": false,
+      "js_files": 0,
+      "xml_templates": 0,
+      "owl_components": [],
+      "registry_adds": [],
+      "patches": [],
+      "services": [],
+      "asset_bundles": {}
+    },
+    "integrations": {
+      "http_call_sites": 3,
+      "sdk_imports": [
+        "requests"
+      ],
+      "uses_api_keys": true,
+      "endpoints": [
+        "https://maps.googleapis.com/maps/api/geocode/json",
+        "https://nominatim.openstreetmap.org/reverse",
+        "https://nominatim.openstreetmap.org/search"
+      ],
+      "files": [
+        "models/base_geocoder.py"
+      ]
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    },
+    "behavioral_notes": [
+      {
+        "element": "res.partner.geo_localize / _geo_localize -> base.geocoder.geo_find",
+        "observation": "geo_localize() iterates the selected partners (with_context lang='en_US'), builds an address string via base.geocoder.geo_query_address(street,zip,city,state,country) and calls _geo_localize -> geo_find, which dispatches on the configured provider's tech_name to _call_openstreetmap (default Nominatim) or _call_googlemap and performs an OUTBOUND HTTP GET to resolve the address to a (latitude, longitude) tuple. On success it writes partner_latitude, partner_longitude and date_localization=today; on failure (None) it accumulates the partner and pushes a 'danger' bus simple_notification listing the unmatched display_names. A first-pass full-address lookup falls back to a coarser city/state/country lookup if the precise one returns None. It is a no-op during import_file / current_test / registry-not-ready / install_demo unless force_geo_localize is set.",
+        "source": "code-read"
+      },
+      {
+        "element": "base.geocoder provider selection + API key (ir.config_parameter)",
+        "observation": "The active provider is resolved by _get_provider() from ir.config_parameter 'base_geolocalize.geo_provider' (a base.geo_provider id), falling back to the first base.geo_provider record. res.config.settings exposes geoloc_provider_id (config_parameter base_geolocalize.geo_provider) and geoloc_provider_googlemap_key (config_parameter base_geolocalize.google_map_api_key); get_google_map_api_key(env) sudo-reads that param. _call_googlemap raises a UserError if no API key is set and surfaces Google billing/error messages; provider method names are built dynamically (getattr(self,'_call_'+tech_name) and '_geo_query_address_'+provider), so adding a provider is a record + matching method, not metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "res.partner.write address-change invalidation + date_localization field",
+        "observation": "ResPartner.write() resets partner_latitude/partner_longitude to 0.0 whenever any of street/zip/city/state_id/country_id changes (and the geo fields are not themselves being set), so stale coordinates never outlive the address they were computed from. The module adds date_localization (Date, 'Geolocation Date') marking when the partner was last geocoded; partner_latitude/partner_longitude themselves live on the base res.partner. This keep-coordinates-consistent-with-address rule is pure Python, invisible to field metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "geocode error handling (geo_find / _raise_query_error / _call_*)",
+        "observation": "geo_find wraps the provider call: an AttributeError (no _call_<provider> method) raises UserError 'Provider %s is not implemented'; a propagated UserError is re-raised; any other Exception is swallowed (logged at debug) and returns None so a single bad address does not abort a batch. Inside the provider calls, transport exceptions go through _raise_query_error -> UserError('Error with geolocation server: ...'); non-200 responses are logged as warnings; Google ZERO_RESULTS returns None and non-OK status raises a UserError with billing guidance. _call_openstreetmap_reverse is explicitly disabled (raises UserError) under test_enable/current_test to avoid live network calls in CI.",
+        "source": "code-read"
+      },
+      {
+        "element": "frontend (OWL/JS)",
+        "observation": "No frontend assets: present=false, 0 JS files, 0 XML/OWL templates, 0 OWL components, 0 registry adds, 0 patches, no asset bundles. The only UI is one inherited res.config.settings form (provider + Google key) and the standard partner action that triggers geo_localize; all logic is server-side ORM + outbound HTTP.",
+        "source": "static"
+      },
+      {
+        "element": "external integrations",
+        "observation": "3 outbound HTTP call sites in models/base_geocoder.py; SDK ['requests']; uses_api_keys=True (Google Maps geocoding key via ir.config_parameter base_geolocalize.google_map_api_key). Endpoints: https://nominatim.openstreetmap.org/search (default forward geocode), https://nominatim.openstreetmap.org/reverse (reverse geocode for _get_localisation), https://maps.googleapis.com/maps/api/geocode/json (Google provider). Nominatim calls send a User-Agent 'Odoo (http://www.odoo.com/contactus)' per OSM usage policy.",
+        "source": "static"
+      }
+    ]
+  },
+  "it_architecture": {
+    "application": "base_geolocalize (Partners Geolocation: address->lat/long enrichment via an external geocoding provider; owns base.geo_provider + base.geocoder, extends res.partner/res.config.settings)",
+    "software_services": [
+      "(no HTTP routes; exposed as ORM services: res.partner.geo_localize(), base.geocoder.geo_find()/geo_query_address())"
+    ],
+    "data_objects": [
+      "base.geo_provider",
+      "base.geocoder"
+    ],
+    "logical_data_erm": [
+      "res.config.settings.geoloc_provider_id -> base.geo_provider (config_parameter base_geolocalize.geo_provider)",
+      "base.geocoder (AbstractModel) -> base.geo_provider (via _get_provider, ir.config_parameter)",
+      "res.partner.partner_latitude/partner_longitude/date_localization (extension; coordinates reset on address change)"
+    ],
+    "information_flows": [
+      "depends: base_setup",
+      "side-effect: res.partner.geo_localize() -> base.geocoder.geo_find() -> outbound HTTPS GET to provider (Nominatim/Google) -> write partner_latitude/partner_longitude/date_localization",
+      "side-effect: res.partner.write(address fields) -> reset partner_latitude/partner_longitude = 0.0 (invalidate stale coordinates)",
+      "config: ir.config_parameter base_geolocalize.geo_provider + base_geolocalize.google_map_api_key drive provider selection and Google auth",
+      "outbound: GET https://nominatim.openstreetmap.org/search (default forward geocode)",
+      "outbound: GET https://nominatim.openstreetmap.org/reverse (reverse geocode, _get_localisation)",
+      "outbound: GET https://maps.googleapis.com/maps/api/geocode/json (Google provider, requires API key)",
+      "failure: unmatched partners -> bus _bus_send('simple_notification', danger) to the calling user"
+    ],
+    "frontend_components": [],
+    "external_integrations": {
+      "http_call_sites": 3,
+      "sdk_imports": [
+        "requests"
+      ],
+      "uses_api_keys": true,
+      "endpoints": [
+        "https://nominatim.openstreetmap.org/search",
+        "https://nominatim.openstreetmap.org/reverse",
+        "https://maps.googleapis.com/maps/api/geocode/json"
+      ]
+    }
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Geocode Partner Address to GPS Coordinates (latitude/longitude)",
+      "Reverse Geocode Coordinates to a Human Location (city/postcode/country)",
+      "Pluggable Geo-Provider Selection (OpenStreetMap Nominatim / Google Maps)",
+      "Geo-Provider Credential & Setting Management (API key via ir.config_parameter)",
+      "Address-Change Coordinate Invalidation (keep lat/long consistent with the address)"
+    ],
+    "value_streams": [
+      "Address-to-Coordinates enrichment: select partner(s) -> build address string -> call configured provider over HTTP -> resolve (lat,long) -> stamp partner_latitude/partner_longitude/date_localization (or notify unmatched) -> coordinates available to downstream mapping/territory/routing features"
+    ],
+    "information_concepts": [
+      "base.geo_provider (the configurable geocoding provider record: tech_name + name)",
+      "res.partner (extended: partner_latitude, partner_longitude, date_localization — owns no new business entity)"
+    ],
+    "organization": [],
+    "products": [],
+    "policies": [
+      "On res.partner.write, changing street/zip/city/state_id/country_id resets partner_latitude/partner_longitude to 0.0 unless coordinates are set explicitly",
+      "geo_localize is skipped during import_file / tests / registry-not-ready / install_demo unless context force_geo_localize is set (avoid bulk live calls on load)",
+      "Reverse OpenStreetMap calls are disabled under test_enable/current_test to prevent live network in CI",
+      "Google provider requires base_geolocalize.google_map_api_key (UserError if missing); provider id stored as ir.config_parameter"
+    ],
+    "stakeholders": [
+      "Salesperson / CRM user (partner mapping, territory assignment, nearest-partner search)",
+      "System administrator (selects provider + sets Google API key in Settings)",
+      "OpenStreetMap Nominatim (default geocoding service provider)",
+      "Google Maps Geocoding API (optional paid provider)",
+      "res.partner whose address is geocoded"
+    ],
+    "strategy": null,
+    "metrics": [
+      "date_localization (last-geocoded date per partner — coverage/freshness of geocoding)"
+    ]
+  },
+  "classification": {
+    "value_model": "support",
+    "activity_class": "support",
+    "apqc_category": "8.0 Manage Information Technology",
+    "rationale": "base_geolocalize is a master-data enrichment / external-integration utility: it owns no business object of its own (only the technical base.geo_provider record and the base.geocoder AbstractModel) and exists to call an outside geocoding service to add latitude/longitude/date_localization to res.partner. By Stabell & Fjeldstad it is a pure 'support' value model — firm IT infrastructure (data enrichment via an external service interface), not a primary value-creating chain/shop/network activity: it transforms no document, resolves no customer engagement, and mediates no exchange between parties. APQC 8.0 'Manage Information Technology' fits best because the module is a data-management / external-integration service (provider configuration, API-key handling, outbound HTTP enrichment of master data). The category metadata says Sales/Sales (the data primarily feeds CRM/Sales mapping), but the module itself is infrastructure that enriches the partner record rather than running a sales activity, so 8.0 is chosen as the dominant character with the Sales consumption noted as context."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "Forward geocoding of partner addresses to (lat,long) via OpenStreetMap Nominatim out of the box (no key)",
+      "Optional Google Maps geocoding provider (requires API key set in Settings)",
+      "Pluggable provider model (base.geo_provider + dynamic _call_<tech_name> / _geo_query_address_<provider> dispatch)",
+      "Reverse geocoding (coordinates -> city/postcode/country) used by _get_localisation",
+      "Automatic stale-coordinate invalidation when a partner address changes",
+      "Per-partner geolocation date stamp (date_localization)",
+      "Batch geo_localize action with user notification of unmatched partners"
+    ],
+    "typical_fits": [
+      "Default OSM Nominatim geocoding with zero configuration for low-volume use",
+      "Switching to Google Maps by selecting the provider and entering the API key in Settings",
+      "Coordinates consumed downstream by CRM partner maps / territory assignment / nearest-partner search"
+    ],
+    "common_gaps": [
+      "Bulk / scheduled re-geocoding (no shipped cron; geo_localize is on-demand on selected records)",
+      "Nominatim usage-policy rate limiting (1 req/s, mandatory User-Agent) on large datasets — no built-in throttling/queue",
+      "Additional providers (HERE, Mapbox, Bing) require a new base.geo_provider record + matching _call_ method",
+      "Geocoding result quality/confidence is not stored — only the raw lat/long and a date",
+      "No caching of geocode results; identical addresses are re-queried each run"
+    ],
+    "drive_hints": [
+      "odoo shell: env['base.geo_provider'].search([]).mapped(('name','tech_name'))  # available providers",
+      "odoo shell: env['ir.config_parameter'].sudo().get_param('base_geolocalize.geo_provider')  # selected provider id",
+      "odoo shell: env['base.geocoder'].geo_query_address(street='1 Infinite Loop', city='Cupertino', state='California', country='United States')  # build the query string",
+      "odoo shell: p = env['res.partner'].create({'name':'Geo Test','street':'1 Infinite Loop','city':'Cupertino','country_id':env.ref('base.us').id}); p.with_context(force_geo_localize=True).geo_localize(); (p.partner_latitude, p.partner_longitude, p.date_localization)  # outbound geocode then read coordinates",
+      "odoo shell: env['ir.config_parameter'].sudo().set_param('base_geolocalize.google_map_api_key','...')  # enable the Google provider"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Which downstream modules actually consume partner_latitude/partner_longitude (CRM partner assignment / website_crm_partner_assign map, delivery routing?) — not visible from this module alone.",
+    "How are Nominatim rate limits / Terms of Use handled in production batch geocoding (no throttling or cron shipped here)?",
+    "Exact set of seeded base.geo_provider records and their tech_names (openstreetmap vs googlemap) loaded by the 5 data files.",
+    "Whether partner_latitude/partner_longitude are defined in this module or in a base/CRM dependency (this module adds only date_localization and resets the coordinates)."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/base_geolocalize.facts.json",
+    "tools": [
+      "apqc_odoo_map.tsv",
+      "code-read (models/base_geocoder.py, models/res_partner.py, models/res_config_settings.py)",
+      "extract_frontend.py (frontend/base_geolocalize.frontend.json)",
+      "extract_module.py"
+    ],
+    "odoo_version": "19.0"
+  }
+}

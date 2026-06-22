@@ -1,0 +1,436 @@
+{
+  "subsystem": "base",
+  "evidence": {
+    "manifest": {
+      "name": "Base",
+      "category": "Hidden",
+      "depends": [],
+      "auto_install": true,
+      "application": false,
+      "version": "1.3",
+      "license": "LGPL-3",
+      "data_files": 65,
+      "demo_files": 7
+    },
+    "models": [
+      {
+        "_name": "ir.model",
+        "_description": "Models",
+        "fields": 15,
+        "relations": [
+          "field_id->ir.model.fields",
+          "access_ids->ir.model.access",
+          "rule_ids->ir.rule",
+          "view_ids->ir.ui.view"
+        ]
+      },
+      {
+        "_name": "ir.model.fields",
+        "_description": "Fields",
+        "fields": 42,
+        "relations": [
+          "model_id->ir.model",
+          "selection_ids->ir.model.fields.selection",
+          "groups->res.groups"
+        ]
+      },
+      {
+        "_name": "ir.model.data",
+        "_description": "Model Data",
+        "fields": 7,
+        "relations": [
+          "res_id->(Many2oneReference, polymorphic)"
+        ]
+      },
+      {
+        "_name": "ir.model.access",
+        "_description": "Model Access",
+        "fields": 8,
+        "relations": [
+          "model_id->ir.model",
+          "group_id->res.groups"
+        ]
+      },
+      {
+        "_name": "ir.rule",
+        "_description": "Record Rule",
+        "fields": 9,
+        "relations": [
+          "model_id->ir.model",
+          "groups->res.groups"
+        ]
+      },
+      {
+        "_name": "ir.ui.view",
+        "_description": "View",
+        "fields": 21,
+        "relations": [
+          "inherit_id->ir.ui.view",
+          "model_id->ir.model",
+          "group_ids->res.groups"
+        ]
+      },
+      {
+        "_name": "ir.actions.server",
+        "_description": "Server Actions",
+        "fields": 36,
+        "relations": [
+          "model_id->ir.model",
+          "ir_cron_ids->ir.cron"
+        ]
+      },
+      {
+        "_name": "ir.cron",
+        "_description": "Scheduled Actions",
+        "fields": 11,
+        "relations": [
+          "ir_actions_server_id->ir.actions.server",
+          "user_id->res.users"
+        ]
+      },
+      {
+        "_name": "ir.attachment",
+        "_description": "Attachment",
+        "fields": 19,
+        "relations": [
+          "company_id->res.company",
+          "res_id->(Many2oneReference, polymorphic)"
+        ]
+      },
+      {
+        "_name": "ir.module.module",
+        "_description": "Module",
+        "fields": 31,
+        "relations": [
+          "category_id->ir.module.category",
+          "dependencies_id->ir.module.module.dependency",
+          "country_ids->res.country"
+        ]
+      },
+      {
+        "_name": "res.partner",
+        "_description": "Contact",
+        "fields": 40,
+        "relations": [
+          "_inherit: format.address.mixin, format.vat.label.mixin, avatar.mixin, properties.base.definition.mixin"
+        ]
+      },
+      {
+        "_name": "res.users",
+        "_description": "User",
+        "fields": 30,
+        "relations": [
+          "_inherits res.partner via partner_id (delegation)",
+          "company_id->res.company",
+          "company_ids->res.company",
+          "group_ids->res.groups"
+        ]
+      },
+      {
+        "_name": "res.company",
+        "_description": "Companies",
+        "fields": 42,
+        "relations": [
+          "parent_id->res.company",
+          "partner_id->res.partner",
+          "currency_id->res.currency"
+        ]
+      },
+      {
+        "_name": "res.groups",
+        "_description": "Access Groups",
+        "fields": 20,
+        "relations": [
+          "user_ids->res.users",
+          "implied_ids->res.groups",
+          "model_access->ir.model.access"
+        ]
+      },
+      {
+        "_name": "res.currency",
+        "_description": "Currency",
+        "fields": 16,
+        "relations": [
+          "rate_ids->res.currency.rate"
+        ]
+      },
+      {
+        "_name": "res.country",
+        "_description": "Country",
+        "fields": 14,
+        "relations": [
+          "currency_id->res.currency",
+          "state_ids->res.country.state",
+          "country_group_ids->res.country.group"
+        ]
+      },
+      {
+        "_name": "res.lang",
+        "_description": "Languages",
+        "fields": 14,
+        "relations": []
+      }
+    ],
+    "routes": [],
+    "security": {
+      "access_rules": 146,
+      "record_rules": 32,
+      "groups": 12
+    },
+    "views": {
+      "form": 66,
+      "list": 67,
+      "kanban": 9,
+      "search": 39,
+      "calendar": 1
+    },
+    "frontend": {
+      "present": true,
+      "js_files": 0,
+      "xml_templates": 0,
+      "owl_components": [],
+      "registry_adds": [],
+      "patches": [],
+      "services": [],
+      "asset_bundles": {
+        "web.assets_tests": 1
+      }
+    },
+    "integrations": {
+      "http_call_sites": 1,
+      "sdk_imports": [
+        "requests"
+      ],
+      "uses_api_keys": true,
+      "endpoints": [
+        "http://example.com/lib.js",
+        "http://localhost:%s",
+        "http://www.w3.org/1999/xlink",
+        "http://www.w3.org/2000/svg"
+      ],
+      "files": [
+        "models/avatar_mixin.py",
+        "models/ir_actions.py",
+        "models/ir_actions_report.py",
+        "models/ir_asset.py",
+        "models/ir_config_parameter.py"
+      ]
+    },
+    "runtime": {
+      "models_with_data": 43,
+      "models_total_probed": 67,
+      "top": [
+        {"model": "ir.model.data", "rows": 6828},
+        {"model": "res.country.state", "rows": 2131},
+        {"model": "ir.model.fields", "rows": 1645},
+        {"model": "ir.module.module.dependency", "rows": 1400},
+        {"model": "ir.model.fields.selection", "rows": 854},
+        {"model": "ir.module.module", "rows": 670},
+        {"model": "ir.model.constraint", "rows": 376},
+        {"model": "res.country", "rows": 251},
+        {"model": "ir.ui.view", "rows": 229},
+        {"model": "ir.model.access", "rows": 152},
+        {"model": "ir.model", "rows": 129},
+        {"model": "ir.module.category", "rows": 84},
+        {"model": "ir.actions.actions", "rows": 83},
+        {"model": "ir.ui.menu", "rows": 66},
+        {"model": "res.partner.industry", "rows": 21},
+        {"model": "res.groups", "rows": 13},
+        {"model": "res.company", "rows": 1},
+        {"model": "res.currency", "rows": 1},
+        {"model": "res.lang", "rows": 1},
+        {"model": "res.users", "rows": 1}
+      ],
+      "source": "runtime"
+    },
+    "behavioral_notes": [
+      {
+        "element": "ir.model.data._xmlid_lookup / _xmlid_to_res_id",
+        "observation": "XML-IDs ('module.name') are resolved to (res_model, res_id) by a SQL lookup on ir_model_data; this is how ref='module.xml_id' in data files, views and Python resolves to a live database row. Every record loaded from XML/CSV gets an ir.model.data row, which also anchors modular upgrade and clean uninstall. The mapping is pure data, invisible to field metadata. Live: 6828 ir.model.data rows.",
+        "source": "code-read"
+      },
+      {
+        "element": "res.users._inherits = {'res.partner': 'partner_id'}",
+        "observation": "res.users uses delegation inheritance (_inherits), not classical _inherit: a user record transparently exposes its res.partner fields (name, email, lang, address, avatar) through partner_id. A user IS-A partner at the data layer; deleting/merging must account for the shared partner. SELF_READABLE_FIELDS / SELF_WRITEABLE_FIELDS gate what a user may read/write on their own record. Not derivable from field metadata alone.",
+        "source": "code-read"
+      },
+      {
+        "element": "ir.model / ir.model.fields (self-describing metamodel)",
+        "observation": "Odoo's ORM persists its own schema: one ir.model row per model and one ir.model.fields row per field. The registry describes itself in its own tables, which is what makes models/fields introspectable, extensible at runtime (Studio custom fields), and what ir.model.access / ir.rule attach security to via model_id. Live: 129 ir.model + 1645 ir.model.fields rows on a fresh DB.",
+        "source": "code-read"
+      },
+      {
+        "element": "res.company hierarchy (_compute_parent_ids / root_id)",
+        "observation": "res.company is self-referential (parent_id/child_ids) with computed parent_path, parent_ids and root_id; multi-company scoping (company_ids on res.users, company_id on most documents) is enforced via _check_company_domain and record rules defined here. The branch/root company tree underpins multi-company record isolation across the whole ERP. Not visible in metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "runtime bootstrap data (live counts)",
+        "observation": "On a freshly initialized DB base alone populates 43 of 67 probed models: ir.model.data=6828, res.country.state=2131, ir.model.fields=1645, ir.module.module.dependency=1400, ir.model.fields.selection=854, ir.module.module=670, ir.model.constraint=376, res.country=251, ir.ui.view=229, ir.model.access=152, ir.model=129; and exactly 1 res.company (My Company), 1 res.currency (USD), 1 res.lang (en_US), 1 res.users (Administrator). This is the kernel/reference-data substrate every other module builds on.",
+        "source": "runtime"
+      },
+      {
+        "element": "frontend (OWL/JS)",
+        "observation": "base ships effectively zero frontend: 0 JS files, 0 XML/OWL templates, 0 registry adds, 0 patches; only a single web.assets_tests bundle entry. All backend UI (web client, OWL) lives in the separate 'web' module — base is a pure server/ORM/data kernel with no client-side code.",
+        "source": "static"
+      }
+    ]
+  },
+  "it_architecture": {
+    "application": "base (Odoo kernel: ORM, metamodel, security, core resources)",
+    "software_services": [
+      "(no HTTP routes; base exposes the ORM/registry as the in-process service layer, plus ir.http routing hooks consumed by other modules)"
+    ],
+    "data_objects": [
+      "ir.model",
+      "ir.model.fields",
+      "ir.model.data",
+      "ir.model.access",
+      "ir.rule",
+      "ir.ui.view",
+      "ir.actions.server",
+      "ir.cron",
+      "ir.attachment",
+      "ir.module.module",
+      "res.partner",
+      "res.users",
+      "res.company",
+      "res.groups",
+      "res.currency",
+      "res.country",
+      "res.lang"
+    ],
+    "logical_data_erm": [
+      "ir.model.fields -> ir.model",
+      "ir.model.access -> ir.model + res.groups",
+      "ir.rule -> ir.model + res.groups",
+      "res.users -inherits-> res.partner (via partner_id)",
+      "res.users -> res.company (company_id, company_ids)",
+      "res.company -> res.partner + res.currency",
+      "res.company -> res.company (parent_id, self-referential)",
+      "res.country -> res.currency",
+      "ir.model.data -> any model (polymorphic res_id)"
+    ],
+    "information_flows": [
+      "depends: [] (root of the dependency graph; auto_install=true)",
+      "every other module depends on base (transitively) and extends ir.* / res.* models defined here",
+      "side-effect: data-file load -> ir.model.data XML-ID rows enabling ref resolution, upgrade and uninstall",
+      "side-effect: model registration -> ir.model + ir.model.fields rows (self-describing metamodel)",
+      "side-effect: ir.cron drives scheduled actions (ir.actions.server) across all installed modules"
+    ],
+    "frontend_components": []
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Define & Persist the Data Model (ORM metamodel: ir.model / ir.model.fields)",
+      "Manage Access Control & Record Rules (ir.model.access, ir.rule, res.groups)",
+      "Manage Users & Authentication (res.users, API keys, devices, deletion)",
+      "Manage Companies & Multi-Company Structure (res.company)",
+      "Manage Master Contact Data (res.partner)",
+      "Manage Reference Data (currencies, countries, states, languages)",
+      "Module Lifecycle Management (install/upgrade/uninstall via ir.module.module)",
+      "Scheduling & Background Jobs (ir.cron)",
+      "Document/File Storage (ir.attachment)"
+    ],
+    "value_streams": [
+      "Bootstrap-to-Operational: new DB -> base auto-installs -> registry, security primitives, reference data, admin/company seeded -> platform ready for business modules",
+      "Module-Install-to-Available: ir.module.module state transition loads model + data, registers ir.model.data XML-IDs, applies access rules"
+    ],
+    "information_concepts": [
+      "res.partner (contact / party)",
+      "res.company (company)",
+      "res.currency (currency)",
+      "res.country (country)",
+      "res.country.state (state/province)",
+      "res.lang (language)",
+      "res.bank / res.partner.bank (bank, bank account)"
+    ],
+    "organization": [
+      "res.users (the User concept itself, defined here)",
+      "res.groups (the Security Group concept itself, defined here)",
+      "res.groups.privilege (privilege grouping)",
+      "group_user / group_system / group_public / group_portal (seeded base groups)",
+      "Administrator user + My Company (seeded organization primitives)"
+    ],
+    "products": [],
+    "policies": [
+      "146 model-access ACL rules (ir.model.access) governing CRUD per group",
+      "32 record rules (ir.rule) including multi-company row-level isolation",
+      "12 security groups defining the base privilege lattice (implied_ids hierarchy)",
+      "ir.cron autovacuum + portal-user-deletion automation policies"
+    ],
+    "stakeholders": [
+      "Administrator (res.users)",
+      "System / superuser (__system__, SUPERUSER_ID)",
+      "Public user (anonymous/website)",
+      "Every downstream module developer/integrator"
+    ],
+    "strategy": null,
+    "metrics": [
+      "Module Reference report (report.base.report_irmodulereference)",
+      "ir.profile profiling records (performance KPIs)",
+      "ir.logging persisted log entries"
+    ]
+  },
+  "classification": {
+    "value_model": "support",
+    "activity_class": "support",
+    "apqc_category": "8.0 Manage Information Technology (IT)",
+    "rationale": "base is the firm's IT infrastructure expressed in software: it provides the ORM/data model, the security and access-control engine, user/company/identity primitives, module lifecycle, scheduling, and storage. By Stabell & Fjeldstad it is a pure 'support' value model (firm infrastructure / technology development), never a primary value-creating activity. auto_install=true and depends=[] confirm it is the kernel every other subsystem rests on. APQC 8.0 'Manage IT' fits best because base literally implements the application platform, data management, and security administration; an argument exists for 13.0 'Develop and Manage Business Capabilities' since base also DEFINES the Organization domain (res.users/res.groups) and Information-Concept primitives (res.partner/res.company/res.currency), but 8.0 is the dominant character of an ORM+security+module-management kernel, so 8.0 is chosen with 13.0 noted as secondary."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "self-describing ORM metamodel (ir.model / ir.model.fields)",
+      "XML-ID registry for modular data, upgrade and uninstall (ir.model.data)",
+      "model-level ACLs + domain-based record rules (ir.model.access, ir.rule)",
+      "users, groups, privileges, API keys, multi-company (res.users, res.groups, res.company)",
+      "world reference data: currencies, countries+states, languages",
+      "module install/upgrade/uninstall lifecycle (ir.module.module)",
+      "scheduled jobs (ir.cron), attachments/filestore (ir.attachment), sequences, QWeb engine"
+    ],
+    "typical_fits": [
+      "standard partner/company/user model reused unchanged by every module",
+      "group-based security with multi-company record-rule isolation out of the box",
+      "reference data (countries/currencies/langs) shipped and ready"
+    ],
+    "common_gaps": [
+      "custom security groups / record rules for bespoke access policies",
+      "additional reference data or company-specific currency rate feeds",
+      "extending res.partner / res.users via _inherit for industry-specific fields",
+      "external IdP / SSO and advanced password policy (typically add-on modules)"
+    ],
+    "drive_hints": [
+      "odoo shell: env['ir.model'].search_count([])  # number of registered models",
+      "odoo shell: env['res.country'].search_count([])  # ~251 seeded countries",
+      "odoo shell: env['ir.model.data'].search_count([])  # XML-ID registry size (~6828)",
+      "odoo shell: env.ref('base.user_admin').partner_id  # delegation res.users->res.partner"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Exact set and implied_ids hierarchy of the 12 base security groups (names beyond group_user/system/public/portal).",
+    "Full ir.cron schedule shipped by base and the downstream effects of each job.",
+    "Precise res.users deletion / GDPR flow and what it cascades on res.partner.",
+    "base reports http_call_sites=1 and imports 'requests' — which model issues a live outbound HTTP call (likely ir.actions.server webhook or avatar/gravatar fetch)."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/base.facts.json",
+    "tools": [
+      "code-read",
+      "extract_module.py",
+      "extract_frontend.py",
+      "extract_runtime.sh",
+      "run-odoo (odoo shell)"
+    ],
+    "odoo_version": "19.0"
+  }
+}

@@ -1,0 +1,336 @@
+{
+  "subsystem": "hr_holidays_attendance",
+  "evidence": {
+    "manifest": {
+      "name": "HR Attendance Holidays",
+      "category": "Human Resources",
+      "summary": "Attendance Holidays",
+      "description": "Convert employee's extra hours to leave allocations.",
+      "depends": [
+        "hr_attendance",
+        "hr_holidays"
+      ],
+      "auto_install": true,
+      "application": false
+    },
+    "models": [
+      {
+        "_name": "hr.attendance.overtime.line",
+        "_inherit": "hr.attendance.overtime.line",
+        "_description": "Attendance overtime line (extension)",
+        "fields": 1,
+        "relations": [
+          "employee_id->hr.employee (inherited)"
+        ]
+      },
+      {
+        "_name": "hr.attendance.overtime.rule",
+        "_inherit": "hr.attendance.overtime.rule",
+        "_description": "Attendance overtime rule (extension)",
+        "fields": 1,
+        "relations": [
+          "ruleset_id->hr.attendance.overtime.ruleset (inherited)"
+        ]
+      },
+      {
+        "_name": "hr.leave.attendance.report",
+        "_inherit": null,
+        "_description": "Attendance and Leave Analysis Report",
+        "fields": 13,
+        "relations": [
+          "employee_id->hr.employee",
+          "department_id->hr.department",
+          "job_id->hr.job",
+          "schedule_id->resource.calendar",
+          "leave_ids->hr.leave",
+          "attendance_ids->hr.attendance"
+        ]
+      },
+      {
+        "_name": "hr.attendance",
+        "_inherit": "hr.attendance",
+        "_description": "Attendance (extension: overlap SQL index)",
+        "fields": 0,
+        "relations": []
+      },
+      {
+        "_name": "hr.employee",
+        "_inherit": "hr.employee",
+        "_description": "Employee (extension: overtime->leave netting)",
+        "fields": 0,
+        "relations": []
+      },
+      {
+        "_name": "hr.leave",
+        "_inherit": "hr.leave",
+        "_description": "Time Off (extension: overtime_deductible)",
+        "fields": 2,
+        "relations": [
+          "holiday_status_id->hr.leave.type (inherited)",
+          "employee_id->hr.employee (inherited)"
+        ]
+      },
+      {
+        "_name": "hr.leave.accrual.level",
+        "_inherit": "hr.leave.accrual.level",
+        "_description": "Accrual Plan Level (extension: Per Hour Worked frequency)",
+        "fields": 1,
+        "relations": [
+          "accrual_plan_id->hr.leave.accrual.plan (inherited)"
+        ]
+      },
+      {
+        "_name": "hr.leave.allocation",
+        "_inherit": "hr.leave.allocation",
+        "_description": "Time Off Allocation (extension: overtime_deductible)",
+        "fields": 2,
+        "relations": [
+          "holiday_status_id->hr.leave.type (inherited)",
+          "employee_id->hr.employee (inherited)"
+        ]
+      },
+      {
+        "_name": "hr.leave.type",
+        "_inherit": "hr.leave.type",
+        "_description": "Time Off Type (extension: Deduct Extra Hours)",
+        "fields": 1,
+        "relations": []
+      },
+      {
+        "_name": "ir.ui.menu",
+        "_inherit": "ir.ui.menu",
+        "_description": "Menu (extension)",
+        "fields": 0,
+        "relations": []
+      },
+      {
+        "_name": "resource.calendar.leaves",
+        "_inherit": "resource.calendar.leaves",
+        "_description": "Calendar Leave (extension: re-trigger overtime recompute)",
+        "fields": 0,
+        "relations": [
+          "holiday_id->hr.leave (inherited)"
+        ]
+      }
+    ],
+    "routes": [],
+    "security": {
+      "access_rules": 1,
+      "record_rules": 0,
+      "groups": 0
+    },
+    "views": {
+      "form": 1,
+      "list": 4,
+      "tree": 0,
+      "kanban": 0,
+      "search": 1,
+      "pivot": 1,
+      "graph": 0,
+      "calendar": 0,
+      "activity": 0
+    },
+    "frontend": {
+      "present": true,
+      "js_files": 1,
+      "xml_templates": 3,
+      "owl_components": [
+        "ExtraHoursSummary"
+      ],
+      "registry_adds": [
+        "views:extra_hours_list_view"
+      ],
+      "patches": [],
+      "services": [],
+      "asset_bundles": {
+        "web.assets_backend": 1
+      }
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": false,
+      "endpoints": [],
+      "files": []
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    },
+    "behavioral_notes": [
+      {
+        "element": "hr.leave.type.overtime_deductible + requires_allocation (the overtime-deductible leave type)",
+        "observation": "hr.leave.type gains a Boolean 'overtime_deductible' (Deduct Extra Hours). Two configurations exist. (1) overtime_deductible AND NOT requires_allocation: a self-service 'extra hours' type with no formal allocation; hr.leave.type.get_allocation_data injects a synthetic balance for it whose remaining_leaves/max_leaves/virtual_remaining_leaves all equal the employee's unspent compensable overtime (_get_deductible_employee_overtime), and _compute_display_name appends '(N hours available)' to the type name so the employee sees the spendable overtime directly. (2) overtime_deductible AND requires_allocation: a manager allocates an explicit hr.leave.allocation that is funded by overtime; hr.leave.allocation.default_get under context deduct_extra_hours preselects exactly this type (employee_requests-filtered for self-request flows). The single Boolean therefore re-routes the whole allocation/balance computation; it is invisible in metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "hr.employee._get_deductible_employee_overtime (accumulated overtime -> leave balance conversion)",
+        "observation": "This is the core conversion, and there is no stored 'balance' field. It builds a per-employee float by _read_group netting three populations: (+) approved hr.attendance.overtime.line rows flagged compensable_as_leave=True, summed over manual_duration; (-) number_of_hours of hr.leave on overtime_deductible & NOT requires_allocation types not in {refuse,cancel}; (-) number_of_hours_display of hr.leave.allocation on overtime_deductible types in {confirm,validate,validate1}. The result is the unspent compensable overtime still convertible into time off. hr.attendance.overtime.rule.compensable_as_leave ('Give back as time off') marks which overtime rule feeds the pool (propagated to the line via _extra_overtime_vals); when a paid+compensable rule sums into a ruleset its amount_rate is recombined so the hours are banked, not paid out.",
+        "source": "code-read"
+      },
+      {
+        "element": "resource.calendar.leaves.create/write/unlink -> _update_attendances_overtime (recompute when attendance/overtime changes)",
+        "observation": "Because validating a leave writes a resource.calendar.leaves blocking entry (the hr_holidays mechanism), this module patches resource.calendar.leaves so create/write/unlink re-search every overlapping hr.attendance (_get_attendance_domain, by resource/company/calendar over the leave date window) and call hr.attendance._update_overtime(). Writing or removing a leave block therefore retroactively recomputes the affected days' overtime lines, keeping the compensable-overtime pool consistent whenever attendances or leave coverage change. hr.attendance.init() adds a composite (check_in, check_out, employee_id) SQL index purely to keep this overlap re-search cheap. None of this re-trigger wiring is visible in metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "hr.leave._compute_employee_overtime / _check_overtime_deductible & hr.leave.allocation._check_employee_overtime_balance (remaining-leave compute that nets overtime + guard)",
+        "observation": "hr.leave and hr.leave.allocation each expose a computed employee_overtime float = _get_deductible_employee_overtime()[employee], i.e. the remaining overtime after this request. On create/write (and action_approve / action_reset_confirm for leaves), _check_overtime_deductible / _check_employee_overtime_balance recompute the net balance and raise ValidationError ('You do not have enough extra hours to request this leave' for self, or '...does not have enough overtime hours...' for managers) when it would go negative, so an employee can never spend more leave than the overtime they accumulated. This availability gate is pure Python.",
+        "source": "code-read"
+      },
+      {
+        "element": "hr.leave.accrual.level.frequency 'worked_hours' + hr.leave.allocation._get_accrual_plan_level_work_entry_prorata (accrue allocation from hours actually worked)",
+        "observation": "hr.leave.accrual.level adds a 'worked_hours' (Per Hour Worked) accrual frequency (forbidden when accrued_gain_time=='start'; _compute_frequency coerces it back to 'hourly' there, and _check_worked_hours raises otherwise). When an accrual level uses it, hr.leave.allocation._get_accrual_plan_level_work_entry_prorata sudo-searches hr.attendance overlapping the accrual window and sums attendance._get_worked_hours_in_range, so the number_of_days granted by the accrual cron is pro-rated by hours actually clocked rather than by elapsed calendar time. This ties allocation accrual directly to attendance worked hours.",
+        "source": "code-read"
+      },
+      {
+        "element": "frontend (OWL/JS) — ExtraHoursSummary",
+        "observation": "1 JS file, 3 XML templates, one OWL component (ExtraHoursSummary) registered as view widget 'extra_hours_list_view' on web.assets_backend. It renders the employee's compensable / not-compensable / unspent-compensable overtime totals (fed by hr.employee.get_overtime_data_by_employee) above the extra-hours list. No registry patches, services, or outbound integrations. Static-only, not in Python metadata.",
+        "source": "static"
+      }
+    ]
+  },
+  "it_architecture": {
+    "application": "hr_holidays_attendance (Time Off <-> Attendances bridge; auto_install glue, no standalone application)",
+    "software_services": [],
+    "data_objects": [
+      "hr.attendance.overtime.line",
+      "hr.attendance.overtime.rule",
+      "hr.leave.attendance.report",
+      "hr.attendance",
+      "hr.employee",
+      "hr.leave",
+      "hr.leave.accrual.level",
+      "hr.leave.allocation",
+      "hr.leave.type",
+      "resource.calendar.leaves"
+    ],
+    "logical_data_erm": [
+      "hr.leave.type.overtime_deductible -> flags leave types funded by overtime",
+      "hr.attendance.overtime.rule.compensable_as_leave -> hr.attendance.overtime.line.compensable_as_leave (which overtime converts to leave)",
+      "hr.leave.allocation -> hr.leave.type (overtime_deductible allocation funded by overtime)",
+      "hr.leave -> hr.leave.type (no-allocation overtime_deductible leave spends overtime)",
+      "hr.leave.accrual.level (frequency=worked_hours) -> hr.attendance (accrue allocation from worked hours)",
+      "resource.calendar.leaves -> hr.attendance (leave block re-triggers overtime recompute)",
+      "hr.leave.attendance.report -> hr.leave + hr.attendance (expected/worked/leave hours analysis)"
+    ],
+    "information_flows": [
+      "depends: hr_attendance, hr_holidays",
+      "side-effect: hr.attendance.overtime.line(compensable_as_leave, approved) -> credits hr.employee._get_deductible_employee_overtime balance",
+      "side-effect: hr.leave (overtime_deductible, non-allocation) -> debits the overtime balance (number_of_hours)",
+      "side-effect: hr.leave.allocation (overtime_deductible, confirm/validate/validate1) -> debits the overtime balance (number_of_hours_display)",
+      "side-effect: hr.leave.type.get_allocation_data -> injects synthetic remaining/max_leaves = unspent overtime into the Time Off dashboard",
+      "side-effect: hr.leave / hr.leave.allocation create/write/approve -> _check_overtime_deductible / _check_employee_overtime_balance block when net balance < 0",
+      "side-effect: resource.calendar.leaves create/write/unlink -> hr.attendance._update_overtime over overlapping window",
+      "side-effect: hr.leave.accrual.level 'worked_hours' -> _get_accrual_plan_level_work_entry_prorata sums hr.attendance worked hours into accrual"
+    ],
+    "frontend_components": [
+      "ExtraHoursSummary"
+    ]
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Convert Compensable Overtime / Extra Hours into Time Off",
+      "Configure Overtime-Deductible Leave Types & Allocations",
+      "Accrue Leave Allocation from Hours Actually Worked",
+      "Enforce Overtime Balance on Leave Requests & Allocations",
+      "Recompute Overtime when Leave Coverage Changes",
+      "Attendance vs Leave Hours Analysis & Extra-Hours Summary"
+    ],
+    "value_streams": [
+      "Earn-overtime-to-time-off: attendance overtime line (compensable_as_leave, approved) -> unspent overtime balance -> overtime_deductible leave / allocation -> resource.calendar.leaves block",
+      "Worked-hours accrual: hr.attendance worked hours -> accrual level 'worked_hours' pro-rata -> hr.leave.allocation.number_of_days"
+    ],
+    "information_concepts": [
+      "hr.attendance.overtime.line (compensable_as_leave)",
+      "hr.attendance.overtime.rule (compensable_as_leave)",
+      "hr.leave.type (overtime_deductible)",
+      "hr.leave (overtime_deductible)",
+      "hr.leave.allocation (overtime_deductible)",
+      "hr.leave.accrual.level (worked_hours frequency)",
+      "hr.employee (unspent overtime balance)",
+      "hr.leave.attendance.report (expected/worked/leave hours)"
+    ],
+    "organization": [],
+    "products": [],
+    "policies": [
+      "compensable_as_leave on the overtime rule/line decides which extra hours become time off",
+      "overtime_deductible leave/allocation may not exceed the employee's net compensable overtime (_check_overtime_deductible / _check_employee_overtime_balance)",
+      "accrued_gain_time='start' forbids the 'worked_hours' accrual frequency (coerced to 'hourly')",
+      "only an Officer/Administrator (group_hr_holidays_user) may edit allocation duration once past draft/confirm",
+      "resource.calendar.leaves changes force overtime recompute over affected attendances"
+    ],
+    "stakeholders": [
+      "Employee (earns extra hours, spends them as time off)",
+      "Time Off Officer / HR (group_hr_holidays_user — approves overtime-deductible allocations & leaves)",
+      "Attendance Officer (approves compensable overtime lines upstream in hr_attendance)"
+    ],
+    "strategy": null,
+    "metrics": [
+      "hr.leave.attendance.report (expected_hours / worked_hours / leave_hours / difference_hours by employee/department/job/schedule)",
+      "hr.employee.get_overtime_data_by_employee (compensable / not_compensable / unspent_compensable overtime)",
+      "ExtraHoursSummary widget totals on the extra-hours list"
+    ]
+  },
+  "classification": {
+    "value_model": "support",
+    "activity_class": "support",
+    "apqc_category": "7.0 Develop and Manage Human Capital",
+    "rationale": "hr_holidays_attendance is an internal HR time-administration bridge (auto_install=True, application=False) that wires Attendances to Time Off so accumulated compensable overtime / extra hours can be converted into leave. Per Stabell & Fjeldstad it is a support value configuration with no value stream of its own: it administers the workforce (it neither converts demand into a delivered product/service nor mediates an exchange), reconciling two HR support modules whose own classification is also support/7.0. It declares no model of its own except an analysis report (hr.leave.attendance.report) plus 8 _inherit-only extensions, owns no routes/groups/products, and exists only to make the overtime->allocation netting concrete. APQC PCF category 7.0 Develop and Manage Human Capital (time & attendance / leave administration) covers exactly this workforce time-off administration; it sits between its parents hr_attendance (7.0/support) and hr_holidays (7.0/support)."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "mark a leave type 'Deduct Extra Hours' so approved time off draws down compensable overtime",
+      "show an employee's spendable overtime as available hours on the Time Off dashboard / type name",
+      "allocate overtime-funded leave (requires_allocation) with officer validation",
+      "accrue leave allocation 'Per Hour Worked' pro-rated by real attendance hours",
+      "block leave/allocation requests that exceed the employee's net compensable overtime",
+      "auto-recompute overtime when a leave block is created/edited/removed",
+      "Attendance & Leave Analysis pivot report (expected vs worked vs leave hours)"
+    ],
+    "typical_fits": [
+      "time-in-lieu / TOIL: convert approved overtime into extra paid leave",
+      "no-allocation self-service spend of accumulated extra hours",
+      "manager-allocated overtime banks with HR approval",
+      "hours-worked accrual for part-time / variable schedules"
+    ],
+    "common_gaps": [
+      "which overtime rules are compensable vs paid out (needs hr_attendance overtime ruleset config)",
+      "country-specific TOIL caps, expiry and payout-on-termination rules",
+      "rounding / unit conversion between overtime hours and leave units (day/half-day/hour)",
+      "payroll treatment of compensated vs paid overtime (separate payroll app)"
+    ],
+    "drive_hints": [
+      "odoo shell: env['hr.employee'].search([], limit=5)._get_deductible_employee_overtime()  # net spendable overtime per employee",
+      "odoo shell: env['hr.leave.type'].search([('overtime_deductible','=',True)]).mapped(('name','requires_allocation'))",
+      "odoo shell: env['hr.attendance.overtime.line'].search([('compensable_as_leave','=',True),('status','=','approved')], limit=5).mapped(('employee_id.name','manual_duration'))",
+      "odoo shell: env['hr.employee'].search([], limit=3).get_overtime_data_by_employee()",
+      "odoo shell: env['hr.leave.attendance.report'].read_group([], ['expected_hours:sum','worked_hours:sum','leave_hours:sum'], ['employee_id'])"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Exact unit/rounding conversion when overtime hours are spent against day/half-day leave types.",
+    "How compensated (given-back) overtime is excluded from paid overtime in downstream payroll / work-entry generation.",
+    "End-of-period expiry or carryover of unspent compensable overtime, and payout on contract termination.",
+    "Interaction of the 'worked_hours' accrual prorata with multi-timezone / flexible calendars and the accrual cron's lastcall/nextcall window."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/hr_holidays_attendance.facts.json",
+    "tools": [
+      "code-read",
+      "extract_module.py",
+      "extract_frontend.py"
+    ],
+    "odoo_version": "19.0"
+  }
+}

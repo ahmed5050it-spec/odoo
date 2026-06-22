@@ -1,0 +1,302 @@
+{
+  "subsystem": "website_event_booth",
+  "evidence": {
+    "manifest": {
+      "name": "Online Event Booths",
+      "category": "Marketing/Events",
+      "version": "1.0",
+      "summary": "Events, display your booths on your website",
+      "depends": [
+        "website_event",
+        "event_booth"
+      ],
+      "auto_install": true,
+      "application": false
+    },
+    "models": [
+      {
+        "_name": "event.event",
+        "_description": "(inherit) booth website page + exhibition map + booth menu",
+        "_inherit": "event.event",
+        "fields": 3,
+        "relations": [
+          "booth_menu_ids->website.event.menu"
+        ]
+      },
+      {
+        "_name": "event.type",
+        "_description": "(inherit) booth_menu template flag",
+        "_inherit": "event.type",
+        "fields": 1,
+        "relations": []
+      },
+      {
+        "_name": "website.event.menu",
+        "_description": "(inherit) adds 'booth' menu_type",
+        "_inherit": "website.event.menu",
+        "fields": 1,
+        "relations": []
+      }
+    ],
+    "routes": [
+      {
+        "paths": [
+          "/event/<model(\"event.event\"):event>/booth"
+        ],
+        "auth": "public",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/event/<model(\"event.event\"):event>/booth/register"
+        ],
+        "auth": "public",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/event/<model(\"event.event\"):event>/booth/register_form"
+        ],
+        "auth": "public",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/event/<model(\"event.event\"):event>/booth/confirm"
+        ],
+        "auth": "public",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/event/booth/check_availability"
+        ],
+        "auth": "public",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/event/booth_category/get_available_booths"
+        ],
+        "auth": "public",
+        "type": "jsonrpc"
+      }
+    ],
+    "security": {
+      "access_rules": 4,
+      "record_rules": 1,
+      "groups": 0
+    },
+    "views": {
+      "form": 2,
+      "list": 0,
+      "search": 0,
+      "kanban": 0,
+      "pivot": 0,
+      "graph": 0,
+      "calendar": 0,
+      "activity": 0
+    },
+    "frontend": {
+      "present": true,
+      "js_files": 1,
+      "xml_templates": 1,
+      "owl_components": [],
+      "registry_adds": [
+        "public.interactions:website_event_booth.booth_registration"
+      ],
+      "patches": [],
+      "services": [],
+      "asset_bundles": {
+        "web.assets_frontend": 3
+      }
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": false,
+      "endpoints": [],
+      "files": []
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    },
+    "behavioral_notes": [
+      {
+        "element": "WebsiteEventBoothController.event_booth_main (/event/<event>/booth)",
+        "observation": "The public storefront page (http, auth=public, website=True) renders website_event_booth.event_booth_registration. _prepare_booth_main_values reads event.sudo().event_booth_category_available_ids (categories that still have available booths) and event_booth_ids, picks a default/selected booth category, and passes hide_sponsors + open event slots. has_access('read') is checked first (raising Forbidden), and the public ir.rule (event_id.website_published=True) plus the access_event_booth_public read grant make backend event.booth rows browsable by anonymous visitors. This is the exhibitor-facing 'Become exhibitor' page; the controller assembles the booth catalog, not metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "WebsiteEventBoothController booth selection flow (booth/register -> booth/register_form)",
+        "observation": "Booth picking is a two-hop POST->GET. booth/register (POST) re-parses request.httprequest.form.getlist('event_booth_ids') (because request.params only keeps the first checkbox) and redirects to booth/register_form with booth_ids (comma-joined) + booth_category_id in the query string. booth/register_form (GET) browses the chosen event.booth.category and the selected event.booth recordset, then _prepare_booth_contact_form_values pre-fills default_contact from request.env.user.partner_id (logged user) or website.visitor._get_visitor_from_request() (anonymous, by email), and renders website_event_booth.event_booth_registration_details (the contact form). The booth-category selection drives which booths are offered. None of this PRG hand-off is in metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "WebsiteEventBoothController.event_booth_registration_confirm (/event/<event>/booth/confirm)",
+        "observation": "The confirm POST is the bridge's core write. _get_requested_booths re-queries event.booth as sudo with event_id + state='available' + id in posted ids, and rejects the order (returns empty) if any requested id is gone or the booths span more than one booth_category_id (anti-tamper / race guard). _check_booth_registration_values blocks empty selections (boothError) and, for public users, refuses an email that already matches an existing res.partner (existingPartnerError -> sign-in prompt). _prepare_booth_registration_partner_values resolves the exhibitor: for public users event.sudo()._partner_find_from_emails_single creates/finds a res.partner from contact_email with name/phone; logged users reuse user.partner_id. It then calls booths.action_confirm(booth_values), which (in event_booth) flips each booth state available->unavailable and posts a booked note on the event chatter. So an anonymous visitor assigns and books real event.booth rows. Returns a JSON success payload (event_name + contact) consumed by the JS. Invisible to metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "check_availability + get_available_booths (jsonrpc endpoints)",
+        "observation": "Two public jsonrpc routes back the live UX. /event/booth/check_availability browses the posted event_booth_ids and returns the subset whose is_available is False, letting the JS flag race-lost booths in red before final submit. /event/booth_category/get_available_booths searches event.booth (event_id + booth_category_id + state='available') and returns [{id,name}], so the client repopulates the booth checkbox list when the exhibitor switches category without a full page reload. Both run sudo. This client/server availability protocol is pure controller code.",
+        "source": "code-read"
+      },
+      {
+        "element": "event.event booth website-menu wiring (_get_website_menu_entries / _update_website_menus / booth_menu)",
+        "observation": "The event.event inherit adds an exhibition_map Image, a booth_menu Boolean (computed from event_type.booth_menu or website_menu) and booth_menu_ids (website.event.menu filtered menu_type='booth'). _get_website_menu_entries appends a ('Become exhibitor', '/event/<slug>/booth', ... 'booth') entry, and _update_website_menus / _get_menu_type_field_matching / _get_menu_update_fields hook the generic website_event menu-sync so toggling booth_menu creates or unlinks the per-event 'Become exhibitor' website.menu + website.event.menu rows (menu_type 'booth', ondelete cascade). copy_event_menus re-parents booth menus on event duplication. A live-navigation side-effect not in the schema.",
+        "source": "code-read"
+      },
+      {
+        "element": "frontend public.interaction website_event_booth.booth_registration (static)",
+        "observation": "1 JS file (booth_registration.js) registers a public.interactions BoothRegistration on .o_wbooth_registration plus 1 client XML template file; no OWL components, 3 web.assets_frontend entries. The interaction drives category radio change -> rpc get_available_booths (cached per category) -> client-side renderAt of event_booth_checkbox_list, disables submit until a booth is checked, calls rpc check_availability before submit (flags unavailable booths red), then on the contact step posts FormData to booth/confirm via http_service.post and renders event_booth_registration_complete inline on success or shows boothError/boothCategoryError/existingPartnerError messages. Entirely client-side, outside Python metadata.",
+        "source": "static"
+      }
+    ]
+  },
+  "it_architecture": {
+    "application": "website_event_booth (Online Event Booths website bridge application component, extends website_event + event_booth)",
+    "software_services": [
+      "/event/<event>/booth -- public booth storefront page (catalog by available category)",
+      "/event/<event>/booth/register -- POST booth selection, PRG redirect to contact form",
+      "/event/<event>/booth/register_form -- GET exhibitor contact form (prefilled)",
+      "/event/<event>/booth/confirm -- POST: find/create partner + action_confirm booths (book)",
+      "/event/booth/check_availability (jsonrpc) -- return unavailable booths among a selection",
+      "/event/booth_category/get_available_booths (jsonrpc) -- list available booths for a category"
+    ],
+    "data_objects": [
+      "event.event",
+      "event.type",
+      "website.event.menu",
+      "event.booth",
+      "event.booth.category",
+      "res.partner",
+      "website.visitor"
+    ],
+    "logical_data_erm": [
+      "event.event -> website.event.menu (booth_menu_ids, menu_type='booth')",
+      "event.event -> event.booth.category (event_booth_category_available_ids, available categories)",
+      "event.event -> event.booth (event_booth_ids)",
+      "event.booth -> event.booth.category (booth_category_id)",
+      "event.booth -> res.partner (partner_id, exhibitor/renter on confirm)",
+      "website.event.menu -> website.menu (per-event 'Become exhibitor' nav)"
+    ],
+    "information_flows": [
+      "depends: website_event, event_booth",
+      "side-effect: POST /booth/confirm -> _partner_find_from_emails_single (create/find res.partner) -> event.booth.action_confirm -> booth state available->unavailable + booked note on event chatter (event_booth)",
+      "side-effect: event.booth_menu toggle -> _update_website_menus -> create/unlink website.menu + website.event.menu ('booth') 'Become exhibitor' entry",
+      "flow: category radio -> jsonrpc get_available_booths -> client booth list; pre-submit jsonrpc check_availability -> race-loss flagging",
+      "guard: _get_requested_booths re-checks state='available' + single booth_category + ids match (anti-tamper); public email collision -> existingPartnerError sign-in prompt"
+    ],
+    "frontend_components": [
+      "public.interactions:website_event_booth.booth_registration (BoothRegistration on .o_wbooth_registration)"
+    ]
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Publish Booths to the Event Website (exhibition map, 'Become exhibitor' page)",
+      "Online Booth Catalog Browsing by Category (available booths only)",
+      "Online Self-Service Booth Selection (category -> booth checkbox list)",
+      "Capture Exhibitor Contact Details (anonymous & logged visitors)",
+      "Confirm & Book a Booth Online (partner find/create -> action_confirm)",
+      "Live Booth Availability Checking (race-loss & category refresh)"
+    ],
+    "value_streams": [
+      "Browse-to-Booked-Booth: exhibitor opens /event/<id>/booth -> selects booth category -> picks available booth(s) -> submits contact form -> booth/confirm finds/creates partner and action_confirm books the booth (available->unavailable) -> inline success confirmation"
+    ],
+    "information_concepts": [
+      "event.event (booth-published event)",
+      "event.booth (online-bookable booth)",
+      "event.booth.category (booth offering)",
+      "website.event.menu (booth menu)",
+      "res.partner (exhibitor)",
+      "website.visitor"
+    ],
+    "organization": [
+      "base.group_public (read available booths/categories on website)",
+      "base.group_portal (read)"
+    ],
+    "products": [],
+    "policies": [
+      "1 record rule: public/portal may read event.booth only where event_id.website_published=True (frontend exposure gate)",
+      "4 access rules: public/portal/employee read on event.booth, public read on event.booth.category; no write/create for public (booking done sudo via action_confirm)",
+      "anti-tamper guard: _get_requested_booths requires booths still available, ids match, and exactly one booth_category before confirming",
+      "public-email collision policy: an existing res.partner email is refused (existingPartnerError) and the visitor is asked to sign in",
+      "booth_menu auto-managed from event_type.booth_menu / website_menu, syncing the 'Become exhibitor' website navigation"
+    ],
+    "stakeholders": [
+      "Prospective Exhibitor (public/website visitor)",
+      "Exhibitor / Booth Renter (res.partner)",
+      "Event Organizer / Website Editor (res.users)",
+      "Event Manager (event.group_event_manager, inherited)"
+    ],
+    "strategy": null,
+    "metrics": [
+      "available booth categories per event (event_booth_category_available_ids, frontend-facing)",
+      "online booth bookings (event.booth flipped to unavailable via /booth/confirm)",
+      "booth availability checks / category refresh rpc volume (storefront engagement)"
+    ]
+  },
+  "classification": {
+    "value_model": "network",
+    "activity_class": "primary",
+    "apqc_category": "3.0 Market and Sell Products and Services",
+    "rationale": "website_event_booth is the BRIDGE that fuses two value networks: website_event (the public web-presence/registration channel) and event_booth (the booth-capacity mediation layer of the event network). Its reason to exist is to turn the website into the public booth SALES channel -- it publishes booths as a 'Become exhibitor' storefront page, operates the catalog of available booth categories, and runs the self-service /event/<id>/booth -> /booth/register -> /booth/confirm flow that finds/creates a res.partner and books real event.booth rows (state available->unavailable) from anonymous visitors. This is mediating-technology logic (Stabell & Fjeldstad value network): connecting an open population of prospective exhibitors to a fixed pool of event booth capacity and matching them, with live availability rollups and race-loss guards -- not a sequential input->output transformation (chain) nor case-by-case problem solving (shop). activity_class is primary because online exhibitor acquisition and booth booking is a customer-facing demand/sell activity, not back-office support. apqc_category 3.0 Market and Sell Products and Services is the closest PCF home, inherited from both parents: the bridge's purpose is the public market/sell motion -- marketing booth space and selling/allocating it to exhibitors online; the paid checkout/invoicing portion lives in the separate event_booth_sale addon, so this module covers the website catalog + online assignment portion of that sell process."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "public 'Become exhibitor' booth page at /event/<id>/booth with exhibition map and booth-category catalog",
+      "auto-generated per-event booth website menu (menu_type 'booth') from booth_menu / event-type flag",
+      "online booth-category selection with live available-booth list (jsonrpc, no page reload)",
+      "two-step self-service booking: pick booths -> exhibitor contact form -> confirm",
+      "anonymous-friendly partner resolution (find/create res.partner from contact email) on confirm",
+      "live availability/race-loss checking and inline success confirmation"
+    ],
+    "typical_fits": [
+      "trade shows / conferences letting exhibitors reserve a stand online",
+      "capacity-limited booth catalogs with live sold-out enforcement on the website",
+      "marketing-driven exhibitor landing pages reusing the event website + booth categories"
+    ],
+    "common_gaps": [
+      "paid online booth checkout / invoicing and per-category pricing (needs event_booth_sale)",
+      "visual floor-plan / spatial stand picker (not in standard -- only a checkbox list)",
+      "custom exhibitor onboarding fields/steps beyond contact name/email/phone",
+      "approval workflow before a booth is booked (confirm is immediate available->unavailable)"
+    ],
+    "drive_hints": [
+      "curl -s http://localhost:8069/event  (find a published event, then open /event/<id>/booth)",
+      "curl -s 'http://localhost:8069/event/<id>/booth' | grep -i o_wbooth  (booth storefront markup)",
+      "odoo shell: env['event.event'].search([('booth_menu','=',True),('website_published','=',True)]).mapped(('name','event_booth_category_available_ids.name'))",
+      "odoo shell: env['event.booth'].search([('state','=','available')], limit=5).mapped(('name','booth_category_id.name','event_id.name'))",
+      "odoo shell: env['website.event.menu'].search([('menu_type','=','booth')], limit=5).mapped(('event_id','menu_id.url'))"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "stakeholders": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Exact downstream when event_booth_sale is also installed -- does /booth/confirm route through a sale.order / paid cart instead of a direct action_confirm booking?",
+    "Whether a reserved/pending intermediate booth state is introduced under paid checkout, vs the binary available->unavailable used here.",
+    "Runtime row counts for online booth bookings (partner set via website) were not captured (extract_runtime.sh not run)."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/website_event_booth.facts.json",
+    "tools": [
+      "code-read",
+      "extract_frontend.py",
+      "extract_module.py",
+      "Grep",
+      "Read"
+    ],
+    "odoo_version": "19.0"
+  }
+}

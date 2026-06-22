@@ -1,0 +1,223 @@
+{
+  "subsystem": "test_mail_full",
+  "evidence": {
+    "manifest": {
+      "name": "Mail Tests (Full)",
+      "category": "Hidden",
+      "depends": [
+        "mail",
+        "mail_bot",
+        "portal",
+        "rating",
+        "mass_mailing",
+        "mass_mailing_sms",
+        "phone_validation",
+        "sms",
+        "test_mail",
+        "test_mail_sms",
+        "test_mass_mailing"
+      ],
+      "auto_install": false,
+      "application": false
+    },
+    "models": [
+      {
+        "_name": "mail.test.portal",
+        "_description": "Chatter Model for Portal",
+        "fields": 3
+      },
+      {
+        "_name": "mail.test.portal.no.partner",
+        "_description": "Chatter Model for Portal (no partner field)",
+        "fields": 1
+      },
+      {
+        "_name": "mail.test.portal.public.access.action",
+        "_description": "Portal Public Access Action",
+        "fields": 0
+      },
+      {
+        "_name": "mail.test.rating",
+        "_description": "Rating Model (ticket-like)",
+        "fields": 7
+      },
+      {
+        "_name": "mail.test.rating.thread",
+        "_description": "Model for testing rating without the rating mixin",
+        "fields": 3
+      },
+      {
+        "_name": "mail.test.rating.thread.read",
+        "_description": "Read-post rating model",
+        "fields": 0
+      }
+    ],
+    "routes": [
+      {
+        "paths": [
+          "/my/test_portal/<int:res_id>"
+        ],
+        "auth": "public",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/my/test_portal_records/<int:res_id>"
+        ],
+        "auth": "public",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/my/test_portal_rating_records/<int:res_id>"
+        ],
+        "auth": "public",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/test_portal/public_type/<int:res_id>"
+        ],
+        "auth": "public",
+        "type": "http"
+      }
+    ],
+    "security": {
+      "access_rules": 12,
+      "record_rules": 2,
+      "groups": 0
+    },
+    "views": {
+      "form": 0,
+      "list": 0,
+      "tree": 0,
+      "kanban": 0,
+      "search": 0,
+      "pivot": 0,
+      "graph": 0,
+      "calendar": 0,
+      "activity": 0
+    },
+    "frontend": {
+      "present": false,
+      "js_files": 0,
+      "xml_templates": 0,
+      "owl_components": [],
+      "registry_adds": [],
+      "patches": [],
+      "services": [],
+      "asset_bundles": {
+        "web.assets_unit_tests": 2,
+        "web.assets_tests": 1
+      }
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": true,
+      "endpoints": [],
+      "files": []
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    },
+    "behavioral_notes": [
+      {
+        "element": "thin module",
+        "observation": "6 models, 4 routes, 2606 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
+        "source": "ast"
+      }
+    ]
+  },
+  "it_architecture": {
+    "application": "test_mail_full (Mail Tests (Full))",
+    "software_services": [
+      "/my/test_portal/<int:res_id>",
+      "/my/test_portal_rating_records/<int:res_id>",
+      "/my/test_portal_records/<int:res_id>",
+      "/test_portal/public_type/<int:res_id>"
+    ],
+    "data_objects": [
+      "mail.test.portal",
+      "mail.test.portal.no.partner",
+      "mail.test.portal.public.access.action",
+      "mail.test.rating",
+      "mail.test.rating.thread",
+      "mail.test.rating.thread.read"
+    ],
+    "logical_data_erm": [
+      "mail.test.portal -> res.partner",
+      "mail.test.portal -> res.users",
+      "mail.test.rating -> res.company",
+      "mail.test.rating -> res.partner",
+      "mail.test.rating -> res.users",
+      "mail.test.rating.thread -> res.partner",
+      "mail.test.rating.thread -> res.users"
+    ],
+    "information_flows": [
+      "depends: mail, mail_bot, portal, rating, mass_mailing, mass_mailing_sms, phone_validation, sms, test_mail, test_mail_sms, test_mass_mailing"
+    ],
+    "frontend_components": []
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Mail Tests (Full)"
+    ],
+    "value_streams": [],
+    "information_concepts": [
+      "mail.test.portal",
+      "mail.test.portal.no.partner",
+      "mail.test.portal.public.access.action",
+      "mail.test.rating",
+      "mail.test.rating.thread",
+      "mail.test.rating.thread.read"
+    ],
+    "organization": [],
+    "products": [],
+    "policies": [
+      "2 record rules"
+    ],
+    "stakeholders": [],
+    "strategy": null,
+    "metrics": []
+  },
+  "classification": {
+    "value_model": "support",
+    "activity_class": "support",
+    "apqc_category": "13.0 Develop and Manage Business Capabilities",
+    "rationale": "test_mail_full: thin support/support module (auto-architect baseline)."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "Mail Tests (Full)"
+    ],
+    "typical_fits": [],
+    "common_gaps": [],
+    "drive_hints": [
+      "odoo shell: env['mail.test.portal'].search([],limit=3)"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/test_mail_full.facts.json",
+    "tools": [
+      "extract_module.py",
+      "extract_frontend.py",
+      "gen_thin.py"
+    ],
+    "odoo_version": "19.0"
+  }
+}

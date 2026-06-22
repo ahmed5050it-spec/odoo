@@ -1,0 +1,281 @@
+{
+  "subsystem": "website_links",
+  "evidence": {
+    "manifest": {
+      "name": "Link Tracker",
+      "category": "Website/Website",
+      "summary": "Generate trackable & short URLs",
+      "depends": [
+        "website",
+        "link_tracker"
+      ],
+      "auto_install": true,
+      "application": false
+    },
+    "models": [
+      {
+        "_name": "link.tracker",
+        "_inherit": "link.tracker",
+        "_description": "(inherit-only) adds website-aware short_url_host + visit-statistics action",
+        "fields": 0,
+        "methods": 2,
+        "relations": []
+      }
+    ],
+    "routes": [
+      {
+        "paths": [
+          "/website_links/new"
+        ],
+        "auth": "user",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/website_links/add_code"
+        ],
+        "auth": "user",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/website_links/recent_links"
+        ],
+        "auth": "user",
+        "type": "jsonrpc"
+      },
+      {
+        "paths": [
+          "/r"
+        ],
+        "auth": "user",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/r/<string:code>+"
+        ],
+        "auth": "user",
+        "type": "http"
+      }
+    ],
+    "security": {
+      "access_rules": 3,
+      "record_rules": 0,
+      "groups": 0
+    },
+    "views": {
+      "form": 1,
+      "list": 0,
+      "kanban": 0,
+      "search": 0,
+      "pivot": 0,
+      "graph": 0,
+      "calendar": 0,
+      "activity": 0
+    },
+    "behavioral_notes": [
+      {
+        "element": "WebsiteUrl.create_shorten_url (/website_links/new) -> link.tracker.search_or_create",
+        "observation": "The jsonrpc POST /website_links/new is the link-builder's create endpoint: it rejects empty url ({'error':'empty_url'}) then calls link.tracker.search_or_create([post]).read() with the post dict carrying url + optional label/campaign_id/medium_id/source_id (UTM ids resolved client-side via the WebsiteLinksTagsWrapper find_or_create_record). search_or_create (in the parent link_tracker module) validates/normalizes the URL, back-fills defaults, builds a dedup key over LINK_TRACKER_UNIQUE_FIELDS and either returns the existing matching tracker or creates a new one -- so creating the 'same' URL+UTM combo twice yields the same short link rather than a duplicate. The returned read() dict (short_url, short_url_host, code, count, ...) is what the OWL UI renders. This find-or-create / dedup semantics is invisible to metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "WebsiteUrl.recent_links (/website_links/recent_links) -> link.tracker.recent_links + click stats",
+        "observation": "/website_links/recent_links proxies link.tracker.recent_links(filter, limit) which search_reads trackers ordered by one of three filters: 'newest' (create_date DESC), 'most-clicked' (count!=0, count DESC) or 'recently-used' (count!=0, write_date DESC); an unknown filter returns {'Error':...}. The 'count' field is link.tracker's stored/aggregated click count computed from link.tracker.click rows, so the recent-links panel surfaces live click statistics per link. The per-link stats page route /r/<code>+ renders website_links.graphs from code.link_id.read()[0], feeding the WebsiteLinksCharts OWL interaction (all-time/last-month/last-week clicks + per-country pie charts).",
+        "source": "code-read"
+      },
+      {
+        "element": "Short-code redirect dependency on link_tracker (/r/<code>) + WebsiteUrl.statistics_shorten_url (/r/<code>+)",
+        "observation": "website_links itself does NOT own the click-recording redirect: the public route /r/<string:code> lives in the parent link_tracker controller and on each hit calls link.tracker.click.sudo().add_click(code, ...) (geoip country, UTM context) then redirects (get_url_from_code -> redirected_url). website_links only adds the authenticated /r/<code>+ statistics page (and /r, the builder landing page rendering website_links.page_shorten_url). Thus the short link's value chain spans two modules: link_tracker = capture+redirect, website_links = the website UI to mint links and read their stats. The '+' suffix on the route is the convention separating a redirect (/r/CODE) from its stats view (/r/CODE+).",
+        "source": "code-read"
+      },
+      {
+        "element": "WebsiteUrl.add_code (/website_links/add_code) + link.tracker.code editing",
+        "observation": "/website_links/add_code lets a designer rename a link's short code: it resolves the existing link via the init_code's link.tracker.code, then creates a new link.tracker.code row (UNIQUE(code) constraint) pointing at the same link_id unless that code already exists for the link. A link can therefore carry multiple short codes all resolving to one destination. Driven from the WebsiteLinksCodeEditor public.interaction on the stats page.",
+        "source": "code-read"
+      },
+      {
+        "element": "link_tracker.LinkTracker._compute_short_url_host (website override)",
+        "observation": "website_links overrides _compute_short_url_host so the short-URL host is the *current website's* base URL (website.get_current_website()) when it matches the company's website_id, else the company base URL -- making generated /r/ links multi-website aware rather than using the raw system base_url. action_visit_page_statistics returns an act_url to short_url + '+' (new window), the backend hook into the same stats page.",
+        "source": "code-read"
+      },
+      {
+        "element": "frontend (OWL/JS link-builder UI) -- metadata gap #3",
+        "observation": "The whole link-builder UX is client-side: 5 JS files, 2 XML templates, one OWL component (WebsiteLinksTagsWrapper, the UTM campaign/medium/source autocomplete-and-create selector) and three public.interactions (WebsiteLinks = the create form + recent-links list, WebsiteLinksCharts = Chart.js clicks/countries graphs, WebsiteLinksCodeEditor = inline short-code rename). A website.assets_editor service registers the 'Link Tracker' custom menu (website_custom_menus:website_links.menu_link_tracker). Routes return JSON/read() dicts and QWeb shells; the interactive builder, clipboard copy, notifications and charts exist only in static/src -- entirely outside Python model metadata.",
+        "source": "static"
+      }
+    ],
+    "frontend": {
+      "present": true,
+      "js_files": 5,
+      "xml_templates": 2,
+      "owl_components": [
+        "WebsiteLinksTagsWrapper"
+      ],
+      "registry_adds": [
+        "public.interactions:website_links.WebsiteLinks",
+        "public.interactions:website_links.WebsiteLinksCharts",
+        "public.interactions:website_links.WebsiteLinksCodeEditor",
+        "website_custom_menus:website_links.menu_link_tracker"
+      ],
+      "patches": [],
+      "services": [],
+      "asset_bundles": {
+        "web.assets_frontend": 4,
+        "web.assets_tests": 1,
+        "website.assets_editor": 1
+      }
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": false,
+      "endpoints": [],
+      "files": []
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    }
+  },
+  "it_architecture": {
+    "application": "website_links (Link Tracker -- website-facing trackable/short-URL builder UI)",
+    "software_services": [
+      "/website_links/new (jsonrpc: create-or-find a tracked short link from url + UTM ids)",
+      "/website_links/recent_links (jsonrpc: list links by newest / most-clicked / recently-used with click counts)",
+      "/website_links/add_code (jsonrpc: add an alternate short code to a link)",
+      "/r (http: link-builder landing page, website_links.page_shorten_url)",
+      "/r/<code>+ (http: per-link click statistics page, website_links.graphs)"
+    ],
+    "data_objects": [
+      "link.tracker (inherited)",
+      "link.tracker.code (from link_tracker)",
+      "link.tracker.click (from link_tracker)",
+      "utm.campaign / utm.source / utm.medium (referenced)"
+    ],
+    "logical_data_erm": [
+      "link.tracker -> utm.campaign / utm.source / utm.medium (UTM tagging via utm.mixin)",
+      "link.tracker.code -> link.tracker (alternate short codes, ondelete cascade)",
+      "link.tracker.click -> link.tracker (click events, source of 'count' stats)",
+      "link.tracker.click -> utm.campaign (related, stored for campaign click aggregation)",
+      "link.tracker.short_url_host -> website.get_current_website() (multi-website base URL)"
+    ],
+    "information_flows": [
+      "depends: website, link_tracker (-> link_tracker depends on utm)",
+      "side-effect: POST /website_links/new -> link.tracker.search_or_create -> find-or-create tracker (dedup on url+UTM) -> read() back to OWL UI",
+      "side-effect: public GET /r/<code> (owned by link_tracker) -> link.tracker.click.add_click (geoip country, UTM) -> redirect to destination URL",
+      "flow: /website_links/recent_links + /r/<code>+ read link.tracker 'count' aggregated from link.tracker.click rows -> click/country charts",
+      "side-effect: /website_links/add_code -> new link.tracker.code row (UNIQUE code) reusing one link_id"
+    ],
+    "frontend_components": [
+      "WebsiteLinksTagsWrapper (UTM campaign/medium/source autocomplete + find-or-create selector)",
+      "WebsiteLinks (public.interaction: create-link form + recent-links list)",
+      "WebsiteLinksCharts (public.interaction: all-time/month/week click + per-country charts)",
+      "WebsiteLinksCodeEditor (public.interaction: inline short-code rename)"
+    ]
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Mint UTM-Tagged Trackable / Short Links (self-service website UI)",
+      "Tag Links to Marketing Campaign / Source / Medium",
+      "Track & Report Link Clicks (counts, time windows, geography)",
+      "Manage Short Codes (alternate / custom codes per link)"
+    ],
+    "value_streams": [
+      "Link-to-Insight: enter URL + pick UTM campaign/source/medium -> find-or-create link.tracker -> share /r/<code> -> each click recorded (add_click, geoip) -> recent-links + per-link charts surface click/country stats"
+    ],
+    "information_concepts": [
+      "link.tracker (tracked link)",
+      "link.tracker.code (short code)",
+      "link.tracker.click (click event)",
+      "utm.campaign / utm.source / utm.medium (attribution tags)"
+    ],
+    "organization": [
+      "website.group_website_designer (sole ACL group for link.tracker / code / click)"
+    ],
+    "products": [],
+    "policies": [
+      "all 3 ir.model.access rules grant full CRUD only to website.group_website_designer",
+      "search_or_create dedups on LINK_TRACKER_UNIQUE_FIELDS so identical url+UTM combos collapse to one link",
+      "link.tracker.code UNIQUE(code) constraint; recent_links 'most-clicked'/'recently-used' filter to count!=0",
+      "short_url_host bound to current website's base URL when it matches the company website (multi-website scoping)"
+    ],
+    "stakeholders": [
+      "Website designer / marketer (link creator, res.users in group_website_designer)",
+      "Marketing campaign owner (consumes click attribution on utm.campaign)",
+      "Link recipient / web visitor (anonymous click subject of /r/<code>)"
+    ],
+    "strategy": null,
+    "metrics": [
+      "link.tracker.count (clicks per link)",
+      "all-time / last-month / last-week click totals (WebsiteLinksCharts)",
+      "clicks-per-country pie charts",
+      "utm.campaign.click_count (aggregated across links by link_tracker)"
+    ]
+  },
+  "classification": {
+    "value_model": "network",
+    "activity_class": "primary",
+    "apqc_category": "3.0 Market and Sell Products and Services",
+    "rationale": "website_links is a mediating-technology (Stabell & Fjeldstad value network) layer for marketing-link distribution: it provisions short /r/<code> links that mediate between a campaign and an open population of recipients/visitors, linking the two parties and capturing each contact (click) for attribution. Its worth grows with the number of links shared and the audience reached -- the network signature -- rather than a sequential transformation (chain) or a diagnostic problem-solving cycle (shop). activity_class is primary because minting and operating the tracked-link channel (the create/redirect/measure service the website UI delivers) is the value the module exists to produce, not a back-office support function. apqc_category 3.0 Market and Sell Products and Services because the artifact is campaign reach/attribution tooling -- UTM-tagged trackable links to measure marketing-channel effectiveness and feed campaign click stats -- squarely demand-side marketing measurement. Note utm (the reference-data mixin) is classed support, but website_links is the public-facing operational tool that distributes and measures the links, hence primary here."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "self-service website page (/r) to generate short trackable URLs with UTM campaign/source/medium",
+      "find-or-create dedup so the same url+UTM yields one stable short link",
+      "click capture + redirect via /r/<code> (geoip country, UTM context)",
+      "recent-links panel with newest / most-clicked / recently-used filters and live click counts",
+      "per-link statistics page (/r/<code>+) with all-time/month/week click and per-country charts",
+      "custom / alternate short codes per link",
+      "multi-website-aware short URL host"
+    ],
+    "typical_fits": [
+      "marketers minting tracked links for campaigns, ads and social posts",
+      "attributing inbound traffic to a campaign/source/medium for reporting",
+      "sharing branded short links and reading click/geography stats",
+      "feeding utm.campaign click_count from distributed links"
+    ],
+    "common_gaps": [
+      "no built-in QR-code, A/B link rotation, or expiry/scheduling of links",
+      "click analytics limited to count + country/time-window (no device/referrer breakdown out of box)",
+      "designer-group gated -- no portal/public self-service link creation for non-staff",
+      "no native integration to external URL shorteners or GA event push (UTM params only)",
+      "bot/duplicate-click filtering and unique-visitor metrics not provided"
+    ],
+    "drive_hints": [
+      "odoo shell: env['link.tracker'].search_or_create([{'url':'https://odoo.com','campaign_id':False}]).read(['short_url','code'])",
+      "odoo shell: env['link.tracker'].recent_links('most-clicked', 5)",
+      "curl -i 'http://localhost:8069/r/<CODE>'  # public redirect, registers a link.tracker.click",
+      "curl -s 'http://localhost:8069/r/<CODE>+'  # authenticated per-link stats page (graphs)",
+      "odoo shell: env['link.tracker'].search([],limit=5).mapped(lambda l:(l.short_url,l.count))"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "stakeholders": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Live row counts for link.tracker / link.tracker.click were not captured (runtime models_with_data=0).",
+    "Exact set of downstream modules that mint links via search_or_create / convert_links (mass_mailing, social, etc.) is resolvable only with those modules installed.",
+    "Whether geoip is configured in the target deployment (country charts depend on it)."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/website_links.facts.json",
+    "tools": [
+      "code-read",
+      "extract_frontend.py",
+      "extract_module.py",
+      "Grep",
+      "Read"
+    ],
+    "odoo_version": "19.0"
+  }
+}

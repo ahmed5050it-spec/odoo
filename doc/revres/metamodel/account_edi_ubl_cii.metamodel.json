@@ -1,0 +1,266 @@
+{
+  "subsystem": "account_edi_ubl_cii",
+  "evidence": {
+    "manifest": {
+      "name": "Import/Export electronic invoices with UBL/CII",
+      "category": "Accounting/Accounting",
+      "depends": [
+        "account"
+      ],
+      "auto_install": true,
+      "application": false
+    },
+    "models": [
+      {
+        "_name": "account.edi.common",
+        "_description": "Common functions for EDI documents: generate the data, the constraints, etc",
+        "fields": 0,
+        "relations": []
+      },
+      {
+        "_name": "account.edi.ubl",
+        "_description": "Base helpers for UBL",
+        "fields": 0,
+        "relations": [
+          "_inherit->account.edi.common"
+        ]
+      },
+      {
+        "_name": "account.edi.xml.ubl_20",
+        "_description": "UBL 2.0",
+        "fields": 0,
+        "relations": [
+          "_inherit->account.edi.ubl"
+        ]
+      },
+      {
+        "_name": "account.edi.xml.cii",
+        "_description": "Factur-x/XRechnung CII 2.2.0",
+        "fields": 0,
+        "relations": [
+          "_inherit->account.edi.common"
+        ]
+      },
+      {
+        "_name": "account.edi.xml.ubl_bis3",
+        "_description": "UBL BIS Billing 3.0.12",
+        "fields": 0,
+        "relations": [
+          "_inherit->account.edi.xml.ubl_21",
+          "_inherit->account.edi.ubl_pint_eu"
+        ]
+      },
+      {
+        "_name": "account.move",
+        "_description": "(extension) e-invoice XML attachment + import/export entry points",
+        "fields": 3,
+        "relations": [
+          "ubl_cii_xml_id->ir.attachment"
+        ]
+      },
+      {
+        "_name": "account.move.send",
+        "_description": "(extension) embeds UBL/CII XML into the sent PDF/email",
+        "fields": 0,
+        "relations": []
+      },
+      {
+        "_name": "account.tax",
+        "_description": "(extension) UBL/CII tax category + exemption reason codes",
+        "fields": 3,
+        "relations": []
+      },
+      {
+        "_name": "res.partner",
+        "_description": "(extension) invoice EDI format + Peppol endpoint/EAS",
+        "fields": 6,
+        "relations": []
+      }
+    ],
+    "routes": [],
+    "security": {
+      "access_rules": 0,
+      "record_rules": 0,
+      "groups": 0
+    },
+    "views": {
+      "form": 0,
+      "list": 0,
+      "kanban": 0,
+      "pivot": 0,
+      "graph": 0,
+      "calendar": 0,
+      "activity": 0
+    },
+    "behavioral_notes": [
+      {
+        "element": "account.move._get_import_file_type / _get_edi_decoder",
+        "observation": "Inbound XML routing: _get_import_file_type sniffs the root tag, UBLVersionID and CustomizationID of the parsed xml_tree to pick the right format model (e.g. CII -> account.edi.xml.cii; 'xrechnung' in CustomizationID -> ubl_de; the en16931/peppol billing:3.0 CustomizationID -> ubl_bis3). _get_edi_decoder then returns the matching model's _import_invoice_ubl_cii as the decoder with priority 20. This dispatch logic is pure Python and invisible in metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "account.edi.xml.ubl_20._export_invoice",
+        "observation": "UBL export pipeline: validates the tax structure, builds a structured document_node dict via _get_invoice_node (header, AccountingSupplierParty, lines, LegalMonetaryTotal, tax subtotals), selects an Invoice/CreditNote/DebitNote template + nsmap (cac/cbc/ext), evaluates _export_invoice_constraints (EN16931 business rules like BR-08/BR-09/BR-CO-26), then renders bytes with dict_to_xml. Returns a (xml_bytes, errors_set) tuple, so a structurally-invalid invoice is reported rather than silently shipped.",
+        "source": "code-read"
+      },
+      {
+        "element": "account.edi.common._import_invoice_ubl_cii",
+        "observation": "Inbound parse-to-record: refuses to decode onto a move that already has invoice lines, derives move_type and qty_factor (credit-note sign flip) from the tree, prefixes out_/in_ from the journal type, then _import_fill_invoice walks the XML (xpath via _find_value) to retrieve-or-create the partner (_import_partner, matched on VAT/Peppol EAS+endpoint), set currency, bank and lines; afterwards _correct_invoice_tax_amount overrides Odoo-computed tax when it is <0.05 off the XML total, the source attachment is stamped onto ubl_cii_xml_file, and embedded AdditionalDocumentReference PDFs are extracted as attachments. None of this side-effect chain is visible in metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "account.move.send._hook_invoice_document_after_pdf_report_render",
+        "observation": "PDF<->XML round-trip on send: after the invoice PDF is rendered the hook post-processes the UBL XML and, for facturx/zugferd, always silently embeds a Factur-X XML inside the PDF (PDF/A-3) so the receiver can recover the structured data from the PDF alone. The XML is also added as an extra mail attachment via _get_invoice_extra_attachments. This is a generation side-effect of posting/sending, not a stored field.",
+        "source": "code-read"
+      },
+      {
+        "element": "res.partner._get_edi_builder / _get_ubl_cii_edi_format",
+        "observation": "Format-to-builder strategy table: the recipient partner's invoice_edi_format (xrechnung, facturx/zugferd, ubl_a_nz, nlcius, ubl_bis3, ubl_sg) maps to the concrete abstract export model that builds its XML; facturx and zugferd share account.edi.xml.cii. account.move._need_ubl_cii_xml gates export to sale documents / self-billing whose partner format is a real UBL/CII format. The localisation-specific format selection is code, not declarative configuration.",
+        "source": "code-read"
+      },
+      {
+        "element": "frontend (OWL/JS)",
+        "observation": "No OWL components, JS files, registry adds or patches; the only asset is one backend SCSS bundle entry (web.assets_backend). The module is a headless EDI engine driven entirely from the existing Accounting UI (invoice form Send/Print, journal Advanced Settings, partner & tax form fields added via 3 static XML views).",
+        "source": "static"
+      }
+    ],
+    "frontend": {
+      "present": true,
+      "js_files": 0,
+      "xml_templates": 0,
+      "owl_components": [],
+      "registry_adds": [],
+      "patches": [],
+      "services": [],
+      "asset_bundles": {
+        "web.assets_backend": 1
+      }
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": false,
+      "endpoints": [],
+      "files": []
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    }
+  },
+  "it_architecture": {
+    "application": "account_edi_ubl_cii (UBL/CII electronic-invoicing engine, extends Accounting)",
+    "software_services": [],
+    "data_objects": [
+      "account.edi.common",
+      "account.edi.ubl",
+      "account.edi.xml.ubl_20",
+      "account.edi.xml.cii",
+      "account.edi.xml.ubl_bis3"
+    ],
+    "logical_data_erm": [
+      "account.move -> ir.attachment (ubl_cii_xml_id)",
+      "account.edi.ubl -> account.edi.common (_inherit)",
+      "account.edi.xml.ubl_20 -> account.edi.ubl (_inherit)",
+      "account.edi.xml.cii -> account.edi.common (_inherit)",
+      "account.edi.xml.ubl_bis3 -> account.edi.xml.ubl_21 + account.edi.ubl_pint_eu (_inherit)"
+    ],
+    "information_flows": [
+      "depends: account",
+      "side-effect: account.move.send (post/print) -> builder._export_invoice -> UBL/CII XML attachment embedded in invoice PDF (PDF/A-3 Factur-X)",
+      "side-effect: inbound XML/PDF -> _get_edi_decoder -> _import_invoice_ubl_cii -> account.move + account.move.line (+ retrieve/create res.partner)",
+      "side-effect: _import_fill_invoice -> _correct_invoice_tax_amount overrides computed account.tax amounts to match the XML"
+    ],
+    "frontend_components": []
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Export Electronic Invoices (UBL / CII / Factur-X)",
+      "Import Electronic Invoices (parse XML/PDF into vendor bills & customer invoices)",
+      "E-invoicing Format Compliance (EN16931, Peppol BIS 3, XRechnung, NLCIUS, Factur-X, A-NZ, SG)",
+      "Map Tax Categories & Exemption Reasons to UBL/CII codes"
+    ],
+    "value_streams": [
+      "Outbound: posted invoice -> chosen EDI format -> validated UBL/CII XML -> XML embedded in PDF / emailed to customer",
+      "Inbound: received XML or Factur-X PDF -> format detection -> parsed account.move (bill/invoice) with partner, lines, taxes"
+    ],
+    "information_concepts": [
+      "account.move (invoice carrying the UBL/CII XML)",
+      "account.tax (UBL/CII tax category + exemption code)",
+      "res.partner (invoice EDI format, Peppol EAS/endpoint)",
+      "ir.attachment (the UBL/CII XML document)"
+    ],
+    "organization": [],
+    "products": [],
+    "policies": [
+      "EDI format selection driven by partner invoice_edi_format / journal advanced settings",
+      "Export constraints enforce EN16931 / format business rules (BR-*) before a document is emitted",
+      "Auto-install with account: every Accounting database gains UBL/CII import-export by default"
+    ],
+    "stakeholders": [
+      "Seller / Accountant (issues compliant e-invoices)",
+      "Customer / Buyer (receives machine-readable invoice)",
+      "Vendor (sends bills imported automatically)",
+      "Tax / Regulatory authority (Chorus Pro, Peppol network, national mandates)"
+    ],
+    "strategy": null,
+    "metrics": []
+  },
+  "classification": {
+    "value_model": "support",
+    "activity_class": "support",
+    "apqc_category": "9.0 Manage Financial Resources",
+    "rationale": "account_edi_ubl_cii is a support activity: it adds no primary-chain value of its own but enforces e-invoicing compliance and feeds the accounting back-office. It serializes/parses invoices to and from legally mandated formats (EN16931, Peppol BIS 3, Factur-X, XRechnung, NLCIUS) around account.move, with no models, routes, or UI of its own beyond Accounting. It supports APQC 9.0 Manage Financial Resources (specifically 9.2 receivables / 9.5 payables document exchange) rather than producing, selling, or delivering. value_model 'support' per Stabell & Fjeldstad: it is an infrastructure/compliance enabler for the firm's invoicing rather than a value chain, shop, or network in its own right."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "Export invoices as UBL Bis 3 / EHF3, NLCIUS, XRechnung (UBL), Factur-X & XRechnung (CII), E-FFF, A-NZ, SG",
+      "Embed the UBL/CII XML inside the invoice PDF (PDF/A-3 Factur-X) for portability",
+      "Auto-detect inbound format from CustomizationID/UBLVersionID/root tag and import into account.move",
+      "Retrieve-or-create the partner on import (VAT / Peppol EAS+endpoint matching)",
+      "Validate exports against EN16931 / format business rules and surface the errors",
+      "Per-journal / per-partner format selection"
+    ],
+    "typical_fits": [
+      "EU/EEA company that must issue and receive standards-compliant e-invoices",
+      "Factur-X / ZUGFeRD PDF round-trip with French (Chorus Pro) or German (XRechnung) counterparties",
+      "Peppol BIS 3 exchange where the partner Peppol endpoint/EAS is known",
+      "Automatic vendor-bill creation from emailed XML/Factur-X via an invoicing alias"
+    ],
+    "common_gaps": [
+      "Actual Peppol Access Point transmission (this module only builds/parses the XML; network delivery is a separate Peppol module)",
+      "Country-specific mandates beyond the bundled CIUS (clearance models, new national formats)",
+      "Custom tax-category / exemption-reason mappings for edge regimes",
+      "Bespoke field mappings or extra UBL extensions not covered by the standard builders"
+    ],
+    "drive_hints": [
+      "odoo shell: inv = env['account.move'].search([('move_type','=','out_invoice'),('state','=','posted')], limit=1); print(env['res.partner']._get_edi_builder('ubl_bis3')._export_invoice(inv)[1])  # errors set",
+      "odoo shell: builder = env['account.edi.xml.cii']; xml, errs = builder._export_invoice(inv); print(xml[:400])  # Factur-X CII XML head",
+      "UI: open a posted customer invoice -> Print/Send -> the UBL/CII XML is generated and embedded in the PDF; or 'Export XML' on the print menu (action_invoice_download_ubl)"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Full list of EN16931 / format constraints enforced per builder and how errors are surfaced to the user on send.",
+    "Exact partner-matching precedence (Peppol EAS+endpoint vs VAT vs name) during import.",
+    "How the embedded-PDF Factur-X path interacts with wkhtmltopdf vs the test-mode attachment fallback."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/account_edi_ubl_cii.facts.json",
+    "tools": [
+      "code-read",
+      "extract_frontend.py",
+      "extract_module.py"
+    ],
+    "odoo_version": "19.0"
+  }
+}

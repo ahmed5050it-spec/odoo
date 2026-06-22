@@ -1,0 +1,473 @@
+{
+  "subsystem": "project",
+  "evidence": {
+    "manifest": {
+      "name": "Project",
+      "category": "Services/Project",
+      "depends": [
+        "analytic",
+        "base_setup",
+        "mail",
+        "portal",
+        "rating",
+        "resource",
+        "web",
+        "web_tour",
+        "digest"
+      ],
+      "auto_install": false,
+      "application": true
+    },
+    "models": [
+      {
+        "_name": "project.project",
+        "_description": "Project",
+        "fields": 53,
+        "relations": [
+          "partner_id->res.partner",
+          "user_id->res.users",
+          "account_id->account.analytic.account",
+          "stage_id->project.project.stage",
+          "tasks->project.task",
+          "milestone_ids->project.milestone",
+          "update_ids->project.update"
+        ]
+      },
+      {
+        "_name": "project.task",
+        "_description": "Task",
+        "fields": 73,
+        "relations": [
+          "project_id->project.project",
+          "stage_id->project.task.type",
+          "parent_id->project.task",
+          "child_ids->project.task",
+          "depend_on_ids->project.task",
+          "milestone_id->project.milestone",
+          "user_ids->res.users",
+          "partner_id->res.partner",
+          "recurrence_id->project.task.recurrence"
+        ]
+      },
+      {
+        "_name": "project.task.type",
+        "_description": "Task Stage",
+        "fields": 15,
+        "relations": [
+          "project_ids->project.project",
+          "mail_template_id->mail.template",
+          "rating_template_id->mail.template"
+        ]
+      },
+      {
+        "_name": "project.milestone",
+        "_description": "Project Milestone",
+        "fields": 13,
+        "relations": [
+          "project_id->project.project",
+          "task_ids->project.task"
+        ]
+      },
+      {
+        "_name": "project.update",
+        "_description": "Project Update",
+        "fields": 14,
+        "relations": [
+          "project_id->project.project",
+          "user_id->res.users"
+        ]
+      },
+      {
+        "_name": "project.task.recurrence",
+        "_description": "Task Recurrence",
+        "fields": 5,
+        "relations": [
+          "task_ids->project.task"
+        ]
+      },
+      {
+        "_name": "report.project.task.user",
+        "_description": "Tasks Analysis",
+        "fields": 34,
+        "relations": [
+          "project_id->project.project",
+          "task_id->project.task",
+          "stage_id->project.task.type"
+        ]
+      },
+      {
+        "_name": "project.task.burndown.chart.report",
+        "_description": "Burndown Chart",
+        "fields": 13,
+        "relations": [
+          "project_id->project.project",
+          "milestone_id->project.milestone"
+        ]
+      }
+    ],
+    "routes": [
+      {
+        "paths": [
+          "/my/projects",
+          "/my/projects/page/<int:page>"
+        ],
+        "auth": "user",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/my/projects/<int:project_id>/task/<int:task_id>"
+        ],
+        "auth": "public",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/my/projects/<int:project_id>/project_sharing",
+          "/my/projects/<int:project_id>/project_sharing/<path:subpath>"
+        ],
+        "auth": "user",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/my/projects/<int:project_id>/task/<int:task_id>/subtasks"
+        ],
+        "auth": "user",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/my/tasks",
+          "/my/tasks/page/<int:page>"
+        ],
+        "auth": "user",
+        "type": "http"
+      },
+      {
+        "paths": [
+          "/project_sharing/attachment/add_image"
+        ],
+        "auth": "user",
+        "type": "http"
+      }
+    ],
+    "security": {
+      "access_rules": 55,
+      "record_rules": 31,
+      "groups": 6
+    },
+    "views": {
+      "form": 16,
+      "list": 22,
+      "kanban": 12,
+      "search": 7,
+      "pivot": 1,
+      "graph": 1,
+      "calendar": 2,
+      "activity": 2
+    },
+    "behavioral_notes": [
+      {
+        "element": "project.task.write (stage change)",
+        "observation": "Writing stage_id sets date_last_stage_update; via _track_template_for_subtype/_creation_subtype the new stage's mail_template_id is emailed, and tasks whose stage has rating_active and rating_status='stage' trigger _send_task_rating_mail(force_send=True) (line 1346). Stage transitions, not just data, drive notifications.",
+        "source": "code-read"
+      },
+      {
+        "element": "project.task.rating_apply (cyclical solve loop)",
+        "observation": "When a customer submits a rating on a task whose stage has auto_validation_state, rating_apply writes task state to '03_approved' if rating >= RATING_LIMIT_SATISFIED else '02_changes_requested' (lines 2125-2133). Satisfaction feedback is wired back into the workflow state - the value-shop solve/evaluate cycle.",
+        "source": "code-read"
+      },
+      {
+        "element": "project.task.recurrence._create_next_occurrences_values",
+        "observation": "Recurring tasks regenerate the next occurrence by copying the task and recursively re-creating its child_ids (subtasks) with date fields shifted by the recurrence delta (lines 91-116). This is the cyclical task/subtask regeneration loop, invisible to metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "project.task._track_subtype",
+        "observation": "Maps the Selection state ('1_done','1_canceled','01_in_progress','03_approved','02_changes_requested','04_waiting_normal') to distinct mail.message subtypes; stage_id changes emit mt_task_stage. The chatter audit trail is state-machine driven, not stored in metadata (lines 1613-1628).",
+        "source": "code-read"
+      },
+      {
+        "element": "project.task.type._send_rating_all (cron) / rating_request_deadline",
+        "observation": "A scheduled cron walks stages with rating_status='periodic' and calls project_ids.task_ids._send_task_rating_mail(); rating_request_deadline is computed from rating_status_period (lines 81-85, 229-236). Periodic reputation polling is automation, not a field value.",
+        "source": "code-read"
+      },
+      {
+        "element": "frontend (OWL/JS)",
+        "observation": "119 JS files, 14 OWL components, 40 registry registrations, 11 patches; asset bundles ['web.assets_backend', 'web.assets_web_dark', 'web.assets_backend_lazy'].",
+        "source": "static"
+      }
+    ],
+    "frontend": {
+      "present": true,
+      "js_files": 119,
+      "xml_templates": 38,
+      "owl_components": [
+        "ProjectMany2OneField",
+        "ProjectMilestone",
+        "ProjectProfitability",
+        "ProjectRightSidePanel",
+        "ProjectRightSidePanelSection",
+        "ProjectSharingWebClient",
+        "ProjectTaskCalendarListToPlan",
+        "ProjectTaskTemplateDropdown",
+        "ProjectTemplateButtons",
+        "ProjectTemplateDropdown",
+        "SubtaskCounter",
+        "SubtaskCreate",
+        "SubtaskKanbanList",
+        "TaskStageWithStateSelection"
+      ],
+      "registry_adds": [
+        "actions:project_show_template_notification",
+        "actions:project_show_template_undo_confirmation_dialog",
+        "actions:project_template_show_notification",
+        "actions:project_template_show_undo_confirmation_dialog",
+        "actions:project_to_template_redirection_action",
+        "fields:depend_on_ids_one2many",
+        "fields:name_with_subtask_count",
+        "fields:notebook_task_one2many",
+        "fields:priority_switch",
+        "fields:project",
+        "fields:project_is_favorite",
+        "fields:project_state_selection",
+        "fields:project_task_state_selection",
+        "fields:status_with_color",
+        "fields:subtasks_one2many",
+        "fields:task_done_checkmark",
+        "fields:task_stage_with_state_selection",
+        "form_compilers:portal_chatter_compiler",
+        "kanban_examples:project",
+        "public.interactions:project.project_rating_image",
+        "view_widgets:subtask_counter",
+        "view_widgets:subtask_kanban_list",
+        "views:analytic_account_form_view",
+        "views:analytic_account_list_view",
+        "views:project_project_activity",
+        "views:project_project_form",
+        "views:project_project_kanban",
+        "views:project_project_list",
+        "views:project_task_activity",
+        "views:project_task_analysis_graph",
+        "views:project_task_analysis_pivot",
+        "views:project_task_calendar",
+        "views:project_task_form",
+        "views:project_task_graph",
+        "views:project_task_kanban",
+        "views:project_task_list",
+        "views:project_task_pivot",
+        "views:project_update_kanban",
+        "views:project_update_list",
+        "web_tour.tours:project_tour"
+      ],
+      "patches": [
+        "Chatter.prototype",
+        "CommonRenderer.prototype",
+        "Composer.prototype",
+        "ComposerAction.prototype",
+        "FollowerList.prototype",
+        "FormCompiler.prototype",
+        "Message.prototype",
+        "SuggestionService.prototype",
+        "Thread.prototype",
+        "View.prototype",
+        "router"
+      ],
+      "services": [
+        "Tasks",
+        "action_get_list_view",
+        "action_view_tasks",
+        "action_view_tasks_from_project_milestone",
+        "closed_subtask_count",
+        "is_toggle_mode",
+        "project_id",
+        "state",
+        "state_readonly",
+        "subtask_count",
+        "useCalendarTaskToPlanDraggable"
+      ],
+      "asset_bundles": {
+        "web.assets_backend": 20,
+        "web.assets_web_dark": 1,
+        "web.assets_backend_lazy": 9,
+        "web.assets_frontend": 2,
+        "web.assets_unit_tests": 3,
+        "web.assets_tests": 1,
+        "project.webclient": 106
+      }
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": true,
+      "endpoints": [
+        "https://www.odoo.com/app/project"
+      ],
+      "files": [
+        "__manifest__.py"
+      ]
+    }
+  },
+  "it_architecture": {
+    "application": "project (Project management application component)",
+    "software_services": [
+      "/my/projects/*",
+      "/my/tasks/*",
+      "/my/projects/<id>/project_sharing/*",
+      "/project_sharing/attachment/add_image"
+    ],
+    "data_objects": [
+      "project.project",
+      "project.task",
+      "project.task.type",
+      "project.milestone",
+      "project.update",
+      "project.task.recurrence",
+      "report.project.task.user"
+    ],
+    "logical_data_erm": [
+      "project.task -> project.project",
+      "project.task -> project.task.type (stage)",
+      "project.task -> project.task (parent_id/child_ids subtasks)",
+      "project.task -> project.task (depend_on_ids dependencies)",
+      "project.task -> project.milestone",
+      "project.project -> account.analytic.account",
+      "project.milestone -> project.project"
+    ],
+    "information_flows": [
+      "depends: analytic, mail, portal, rating, resource, digest",
+      "side-effect: task stage change -> stage mail.template send + rating mail trigger",
+      "side-effect: rating_apply -> task state (approved/changes_requested) when auto_validation_state",
+      "side-effect: recurrence -> copy task + subtasks shifted by delta",
+      "project.project -> account.analytic.account (cost/profitability anchor)"
+    ],
+    "frontend_components": [
+      "ProjectMany2OneField",
+      "ProjectMilestone",
+      "ProjectProfitability",
+      "ProjectRightSidePanel",
+      "ProjectRightSidePanelSection",
+      "ProjectSharingWebClient",
+      "ProjectTaskCalendarListToPlan",
+      "ProjectTaskTemplateDropdown",
+      "ProjectTemplateButtons",
+      "ProjectTemplateDropdown",
+      "SubtaskCounter",
+      "SubtaskCreate",
+      "SubtaskKanbanList",
+      "TaskStageWithStateSelection"
+    ]
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Plan & Organize Projects",
+      "Manage Tasks through Stages (kanban)",
+      "Decompose Work into Subtasks & Dependencies",
+      "Track Milestones & Project Updates",
+      "Recurring Task Generation",
+      "Collect Customer Satisfaction Ratings",
+      "Share Projects/Tasks with Portal Collaborators",
+      "Task & Burndown Analysis"
+    ],
+    "value_streams": [
+      "Engagement-to-Delivery: project created -> tasks staged -> subtasks/dependencies solved -> rating/approval -> milestones reached -> project closed"
+    ],
+    "information_concepts": [
+      "project.project",
+      "project.task",
+      "project.task.type (stage)",
+      "project.milestone",
+      "project.update",
+      "res.partner (customer)",
+      "account.analytic.account (cost object)"
+    ],
+    "organization": [
+      "group_project_user",
+      "group_project_manager",
+      "group_project_stages",
+      "group_project_recurring_tasks",
+      "group_project_task_dependencies",
+      "group_project_milestone"
+    ],
+    "products": [],
+    "policies": [
+      "31 record rules: portal/collaborator visibility (privacy_visibility), own-task and project-membership scoping, multi-company",
+      "auto_validation_state: rating drives task approval state",
+      "rating_status periodic/stage automation"
+    ],
+    "stakeholders": [
+      "Customer (res.partner)",
+      "Assignee (res.users user_ids)",
+      "Project Manager (res.users user_id)",
+      "Portal Collaborator (project.collaborator)"
+    ],
+    "strategy": null,
+    "metrics": [
+      "report.project.task.user (Tasks Analysis: working hours/days open-close, delay, rating_avg)",
+      "project.task.burndown.chart.report",
+      "task_completion_percentage / milestone_progress",
+      "rating_avg (reputation)",
+      "digest kpi_project_task_opened"
+    ]
+  },
+  "classification": {
+    "value_model": "shop",
+    "activity_class": "primary",
+    "apqc_category": "5.0 Deliver Services",
+    "rationale": "project is a value-shop (intensive technology): it organizes resources around solving each engagement as a unique problem rather than a fixed throughput line. The work is cyclical - tasks move through stages, decompose into subtasks and dependencies, and loop through solve/evaluate via customer ratings that feed back into approval state (auto_validation_state). It is a primary activity delivering services (APQC 5.0 Deliver Services / service delivery and case-work), with cost anchored to account.analytic.account. The dominant value driver is reputation: rating collection (rating mixin, periodic/stage rating mails, rating_avg) signals that perceived quality of the solution, not unit cost, governs value."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "project/task lifecycle with configurable kanban stages",
+      "subtasks, task dependencies and milestones",
+      "recurring tasks",
+      "customer rating collection (per-stage and periodic)",
+      "project updates and status (on track/at risk/off track)",
+      "portal sharing & collaborators",
+      "task & burndown analytics",
+      "analytic-account cost link"
+    ],
+    "typical_fits": [
+      "staged kanban task management with assignees and deadlines",
+      "milestone-tracked delivery with project status updates",
+      "customer satisfaction ratings driving stage approval",
+      "portal collaboration on shared projects/tasks"
+    ],
+    "common_gaps": [
+      "timesheet/billing (needs hr_timesheet / sale_timesheet modules)",
+      "Gantt scheduling and capacity planning (enterprise)",
+      "industry-specific task workflows beyond stage/state machine",
+      "custom SLA/escalation policies on rotting tasks"
+    ],
+    "drive_hints": [
+      "odoo shell: env['project.task'].search([], limit=5).mapped(('name','stage_id.name','state'))",
+      "odoo shell: env['project.task.type'].search([('rating_active','=',True)]).mapped(('name','rating_status'))",
+      "curl http /my/tasks (auth=user) to view portal task list"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Exact project.task state machine transitions across the six states and which are user vs automation driven.",
+    "Full set of compute methods behind working_hours/days_open-close and delay_endings_days analytics.",
+    "How project_sharing portal routes map to task create/write permissions for collaborators with limited_access."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/project.facts.json",
+    "tools": [
+      "code-read",
+      "extract_frontend.py",
+      "extract_module.py"
+    ],
+    "odoo_version": "19.0"
+  }
+}

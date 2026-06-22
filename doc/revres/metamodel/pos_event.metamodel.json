@@ -1,0 +1,318 @@
+{
+  "subsystem": "pos_event",
+  "evidence": {
+    "manifest": {
+      "name": "POS - Event",
+      "category": "Technical",
+      "summary": "Link module between Point of Sale and Event",
+      "depends": [
+        "point_of_sale",
+        "event_product"
+      ],
+      "auto_install": true,
+      "application": false
+    },
+    "models": [
+      {
+        "_name": "event.registration",
+        "_description": "(extension) Event Registration + pos.load.mixin",
+        "fields": 2,
+        "relations": [
+          "pos_order_line_id->pos.order.line",
+          "pos_order_id->pos.order.line.order_id (related)"
+        ]
+      },
+      {
+        "_name": "pos.order",
+        "_description": "(extension) Point of Sale Orders",
+        "fields": 1,
+        "relations": [
+          "lines->pos.order.line",
+          "lines.event_registration_ids->event.registration"
+        ]
+      },
+      {
+        "_name": "pos.order.line",
+        "_description": "(extension) Point of Sale Order Lines",
+        "fields": 2,
+        "relations": [
+          "event_ticket_id->event.event.ticket",
+          "event_registration_ids->event.registration"
+        ]
+      },
+      {
+        "_name": "event.event",
+        "_description": "(extension) Event + pos.load.mixin",
+        "fields": 1,
+        "relations": [
+          "event_ticket_ids->event.event.ticket",
+          "event_slot_ids->event.slot"
+        ]
+      },
+      {
+        "_name": "event.event.ticket",
+        "_description": "(extension) Event Ticket + pos.load.mixin",
+        "fields": 0,
+        "relations": [
+          "product_id->product.product",
+          "event_id->event.event"
+        ]
+      },
+      {
+        "_name": "event.slot",
+        "_description": "(extension) Event Slot + pos.load.mixin",
+        "fields": 0,
+        "relations": [
+          "event_id->event.event"
+        ]
+      },
+      {
+        "_name": "event.question",
+        "_description": "(extension) Event Question + pos.load.mixin",
+        "fields": 0,
+        "relations": [
+          "answer_ids->event.question.answer"
+        ]
+      }
+    ],
+    "routes": [],
+    "security": {
+      "access_rules": 3,
+      "record_rules": 0,
+      "groups": 0
+    },
+    "views": {
+      "form": 0,
+      "list": 0,
+      "tree": 0,
+      "kanban": 0,
+      "search": 0,
+      "pivot": 0,
+      "graph": 0,
+      "calendar": 0,
+      "activity": 0
+    },
+    "frontend": {
+      "present": true,
+      "js_files": 11,
+      "xml_templates": 6,
+      "owl_components": [
+        "EventConfiguratorPopup",
+        "EventRegistrationPopup",
+        "EventSlotSelectionPopup"
+      ],
+      "registry_adds": [],
+      "patches": [
+        "DataServiceOptions.prototype",
+        "PosOrder.prototype",
+        "PosOrderline.prototype",
+        "PosStore.prototype",
+        "ProductCard.prototype",
+        "ProductScreen.prototype",
+        "ProductTemplate.prototype",
+        "ReceiptScreen.prototype"
+      ],
+      "services": [],
+      "asset_bundles": {
+        "point_of_sale._assets_pos": 1,
+        "web.assets_tests": 1,
+        "web.assets_unit_tests": 1
+      }
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": false,
+      "endpoints": [],
+      "files": []
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    },
+    "behavioral_notes": [
+      {
+        "element": "pos.order.line.event_ticket_id / event.registration.pos_order_line_id (the bridge link)",
+        "observation": "The whole module hangs off two added relations: pos.order.line gains event_ticket_id (Many2one event.event.ticket) and a One2many event_registration_ids, and event.registration gains pos_order_line_id (Many2one pos.order.line, ondelete='cascade') plus a related pos_order_id. So a sold ticket is an ordinary POS order line whose product is the ticket's product_id, and each attendee is an event.registration cascade-linked to that line. This bridge wiring -- not a new transaction model, just two FKs joining the pos.order chain to the event.registration network -- is the module's entire data contribution and is the only part visible in metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "event.registration created from the POS OWL ProductScreen (client-side ORM), not the server",
+        "observation": "Selling a ticket is driven in the browser: ProductScreen.prototype is patched (static/src/app/screens/product_screen/product_screen.js) so addProductToOrder, when product.event_id is set, blocks the normal add and runs an event flow -- EventSlotSelectionPopup (multi-slot only) -> EventConfiguratorPopup (pick ticket qty against live availabilityPerTicket) -> EventRegistrationPopup (collect per-attendee name/email/phone + question answers). It then calls pos.addLineToCurrentOrder({product_id: ticket.product_id, qty, event_ticket_id, event_slot_id}) and, per attendee, this.pos.models['event.registration'].create({event_id, event_ticket_id, event_slot_id, pos_order_line_id: line, partner_id, registration_answer_ids:[...]}). Registrations therefore originate in the offline client model graph and are persisted server-side on order sync. None of this client orchestration is reverse-engineerable from Python metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "event.registration.create/write -> _update_available_seat -> pos.config._update_events_seats -> _notify('UPDATE_AVAILABLE_SEATS')",
+        "observation": "event.registration.create() (after _populate_creation_vals copies partner/identity from the POS line) and write() both call _update_available_seat(), which sudo-searches every non-closed pos.session and calls config_id._update_events_seats(event). pos.config._update_events_seats builds per-event/per-ticket/per-slot seats_available payloads and pushes them to all open tills via record._notify('UPDATE_AVAILABLE_SEATS', data) (the POS bus). Effect: selling/refunding a ticket on one terminal (or on the website) live-broadcasts remaining seats to every other open POS terminal so two cashiers cannot oversell. This cross-session real-time side-effect is pure Python and invisible to metadata.",
+        "source": "code-read"
+      },
+      {
+        "element": "event.registration._compute_registration_status (status slaved to the POS order)",
+        "observation": "pos_event overrides _compute_registration_status (depends on pos_order_id.state/currency_id/amount_total): if the linked pos.order is cancelled the registration.state becomes 'cancel'; if the order total is zero (float_is_zero) sale_status='free' and state='open'; otherwise sale_status='sold' and state='open'. So registration lifecycle and paid/free status are driven by the POS order rather than the event desk -- the ticket becomes a confirmed seat the moment it is rung up at the till.",
+        "source": "code-read"
+      },
+      {
+        "element": "pos.order.action_pos_order_paid -> send_paid_order_mail; refund via _process_order -> cancel registrations",
+        "observation": "On payment, pos.order.action_pos_order_paid() is extended: for paid/done/invoiced orders it gathers lines carrying an event_ticket_id and calls send_paid_order_mail, which for each registration with an email calls registration.action_send_badge_email() (attendee gets badge/ticket by mail). Symmetrically, _process_order detects refunded order lines whose event_registration_ids exist and writes state='cancel' on the corresponding registrations (capped by refunded qty minus already-cancelled). pos.order also exposes attendee_count, action_view_attendee_list, print_event_tickets and print_event_badges report actions. These selling/refund-to-attendance side effects live only in Python.",
+        "source": "code-read"
+      },
+      {
+        "element": "pos.session._load_pos_data_models / pos.load.mixin on all event.* models",
+        "observation": "pos.session._load_pos_data_models is extended to ship event.event.ticket, event.event, event.slot, event.registration, event.question, event.question.answer and event.registration.answer into the POS bootstrap payload, and every one of those models _inherit's pos.load.mixin with _load_pos_data_domain/_fields (e.g. event.event.ticket only loads tickets for not-finished events of the till's company within the sale window). _load_pos_data_relations also forces compute=False on the registration identity fields so the client can send them. This is how the offline POS gets a usable copy of the event/ticket catalogue; it is configuration of the data-loading framework, not visible as schema.",
+        "source": "code-read"
+      },
+      {
+        "element": "frontend (OWL/JS) -- POS event-selling screens, static",
+        "observation": "11 JS files / 6 XML templates / 3 OWL components (EventConfiguratorPopup, EventRegistrationPopup, EventSlotSelectionPopup) loaded into the point_of_sale._assets_pos bundle; no new screens or registry services, instead 8 prototype patches (ProductScreen, ProductCard, ReceiptScreen, PosStore, PosOrder, PosOrderline, ProductTemplate, DataServiceOptions) that splice the ticket-selection dialog flow and badge/ticket printing into the existing POS terminal app. ProductScreen.products is also filtered to hide service_tracking=='event' products from the normal grid. No external HTTP / SDK / api-key usage (gap #7 empty).",
+        "source": "static"
+      }
+    ]
+  },
+  "it_architecture": {
+    "application": "pos_event (bridge application component linking the Point of Sale terminal to Events/ticketing; auto_install when point_of_sale and event_product are both present)",
+    "software_services": [
+      "(no own HTTP/JSON-RPC routes; rides the point_of_sale /pos/ui terminal app and the pos.order sync_from_ui RPC)"
+    ],
+    "data_objects": [
+      "event.registration (ext: pos_order_line_id / pos_order_id)",
+      "pos.order (ext: attendee_count)",
+      "pos.order.line (ext: event_ticket_id / event_registration_ids)",
+      "event.event (ext: image_1024 + pos.load.mixin)",
+      "event.event.ticket (ext: pos.load.mixin)",
+      "event.slot (ext: pos.load.mixin)",
+      "event.question (ext: pos.load.mixin)"
+    ],
+    "logical_data_erm": [
+      "pos.order.line -> event.event.ticket (event_ticket_id)",
+      "pos.order.line -> event.registration (event_registration_ids, one per attendee)",
+      "event.registration -> pos.order.line (pos_order_line_id, ondelete=cascade)",
+      "event.registration -> pos.order (pos_order_id, related)",
+      "event.event.ticket -> product.product (ticket sold as a POS product line)",
+      "event.event.ticket -> event.event",
+      "event.event -> event.slot (multi-slot capacity)"
+    ],
+    "information_flows": [
+      "depends: point_of_sale, event_product",
+      "side-effect: POS ProductScreen ticket flow -> addLineToCurrentOrder(event_ticket_id) + event.registration.create(pos_order_line_id) in the offline client, persisted on order sync",
+      "side-effect: event.registration.create/write -> _update_available_seat -> pos.config._update_events_seats -> _notify('UPDATE_AVAILABLE_SEATS') broadcast to all open tills (anti-oversell)",
+      "side-effect: pos.order.action_pos_order_paid -> send_paid_order_mail -> registration.action_send_badge_email (attendee badge email)",
+      "side-effect: refund (pos.order._process_order) -> event.registration.write(state='cancel') for refunded ticket lines",
+      "data-load: pos.session._load_pos_data_models ships event.event/ticket/slot/question/registration into the POS bootstrap via pos.load.mixin"
+    ],
+    "frontend_components": [
+      "EventConfiguratorPopup",
+      "EventRegistrationPopup",
+      "EventSlotSelectionPopup"
+    ]
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Sell Event Tickets at the Counter (ring a ticket as a POS order line)",
+      "Capture Attendee Registrations & Answers at point of sale",
+      "Select Ticket Type & Time Slot with live seat availability",
+      "Enforce Seat Capacity Across Tills (real-time anti-oversell broadcast)",
+      "Issue Badges / Tickets from the POS (print + email on payment)",
+      "Cancel Registrations on POS Refund"
+    ],
+    "value_streams": [
+      "Sell-Ticket-at-Counter: pick event product -> choose slot/ticket against live seats -> collect attendee details -> add POS line + create event.registration -> tender payment -> email/print badge (refund -> cancel registration)"
+    ],
+    "information_concepts": [
+      "event.registration",
+      "pos.order",
+      "pos.order.line",
+      "event.event",
+      "event.event.ticket",
+      "event.slot",
+      "event.question",
+      "product.product (ticket product)"
+    ],
+    "organization": [
+      "point_of_sale.group_pos_user (read/write/create event.registration; read event.event / event.event.ticket)"
+    ],
+    "products": [],
+    "policies": [
+      "3 access rules grant group_pos_user CRU on event.registration and read-only on event.event / event.event.ticket; no own record rules (inherits point_of_sale + event scoping)",
+      "registration.state/sale_status are slaved to the linked pos.order (cancel if order cancelled; free if total is zero; else sold/open)",
+      "seat availability enforced both client-side (EventConfiguratorPopup against availabilityPerTicket) and server-side (inherited event seat-availability @api.constrains raised on registration create)",
+      "event.event.ticket load domain restricts POS tickets to not-finished events of the till's company within the start/end sale window"
+    ],
+    "stakeholders": [
+      "Cashier / POS User (point_of_sale.group_pos_user)",
+      "Attendee (res.partner / registration, receives badge)",
+      "Event Organizer (consumes seats sold via POS)",
+      "Customer at the counter (res.partner on the pos.order)"
+    ],
+    "strategy": null,
+    "metrics": [
+      "pos.order.attendee_count (attendees sold per order)",
+      "seats_available / seats_used per event, ticket and slot (kept live across tills)",
+      "registration sale_status free vs sold (inherited from POS order total)"
+    ]
+  },
+  "classification": {
+    "value_model": "chain",
+    "activity_class": "primary",
+    "apqc_category": "3.0 Market and Sell Products and Services",
+    "rationale": "pos_event is the BRIDGE module wiring point_of_sale <-> event (auto_install when point_of_sale + event_product are both present). Classified chain because its originating, dominant operation is a value-chain retail sell: a ticket is rung up as an ordinary pos.order.line (its product_id) and tendered like any other item at the till -- pos_event simply extends the POS checkout transaction so that paying for that line also creates event.registration attendee rows (mirroring how sale order confirmation spawns downstream documents). The act it adds value to is the in-store sale (the Market-and-Sell primary activity of point_of_sale and sale), and the registrations are a triggered side-effect of that sale, not a separate mediation business. The thing it bridges INTO -- the event subsystem -- is a value network (membership/seat-capacity mediation), so this module is precisely the seam between the POS chain and the event network; but the module's own value logic and code centre of gravity (POS order line, action_pos_order_paid, refund-to-cancel, badge email) sit on the chain/selling side, so 'chain' is the correct primary call over 'network'. APQC 3.0 Market and Sell is the home because selling a ticket at the counter is a sell motion realized as a till (the 3.5 manage-sales-orders family as a POS line), consistent with the sale and point_of_sale records; downstream attendance/communications belong to the event module, not here."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "sell event tickets directly on the POS as product lines (event_product ticket products)",
+      "in-POS ticket-type and time-slot selection with live remaining-seat display",
+      "per-attendee registration capture (name/email/phone) and event question answers at the till",
+      "real-time seat-availability broadcast across all open POS sessions (anti-oversell)",
+      "automatic badge/ticket email on payment and badge/ticket report printing from the order",
+      "registration cancellation when a ticket line is refunded",
+      "registration paid/free status derived from the POS order total"
+    ],
+    "typical_fits": [
+      "box-office / on-site walk-up ticket sales at a counter (conferences, fairs, venues)",
+      "mixed carts: tickets sold alongside ordinary retail products in one POS order and one payment",
+      "free and paid tickets on the same till with status auto-derived from the order total",
+      "multi-slot, capacity-limited events with cross-terminal oversell protection"
+    ],
+    "common_gaps": [
+      "online / website ticket checkout (that is website_event_sale, not pos_event)",
+      "assigned-seating / seat-map selection beyond ticket-type + slot quantity",
+      "custom badge layouts or bespoke check-in flows (handled in the event module / reports)",
+      "loyalty, vouchers or promotions on tickets beyond standard POS pricelists",
+      "bespoke attendee-question types beyond the event.question simple_choice/text set in the POS popups"
+    ],
+    "drive_hints": [
+      "odoo shell: env['pos.order.line'].search([('event_ticket_id','!=',False)], limit=5).mapped(('order_id.name','event_ticket_id.name','qty'))",
+      "odoo shell: env['event.registration'].search([('pos_order_id','!=',False)], limit=5).mapped(('name','state','sale_status','pos_order_id.name'))",
+      "odoo shell: env['pos.order'].search([('attendee_count','>',0)], limit=5).mapped(('name','state','attendee_count'))",
+      "odoo shell: env['event.event.ticket'].search([('product_id.service_tracking','=','event')], limit=5).mapped(('name','event_id.name','seats_available'))",
+      "browse /pos/ui/<config_id>, add an event product to the order to trigger the slot/ticket/registration popups"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "stakeholders": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Exact ordering of client-side event.registration.create vs server persistence on order sync, and how unsynced registrations are deduplicated against the live seat broadcast (getTicketMaxQty subtracts unsynced registrations client-side).",
+    "Whether a server-side seat-availability @api.constrains can still reject a registration after the POS line was tendered offline (oversell race between two terminals).",
+    "How badge email / ticket+badge report printing behave for free vs paid orders and partial refunds.",
+    "Interaction with pos.order invoicing: whether a ticket line on a to_invoice order changes registration sale_status or downstream event reporting."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/pos_event.facts.json",
+    "tools": [
+      "code-read",
+      "extract_frontend.py",
+      "extract_module.py",
+      "extract_runtime.sh",
+      "run-odoo (odoo shell)"
+    ],
+    "odoo_version": "19.0"
+  }
+}

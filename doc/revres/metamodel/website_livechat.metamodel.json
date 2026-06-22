@@ -1,0 +1,154 @@
+{
+  "subsystem": "website_livechat",
+  "evidence": {
+    "manifest": {
+      "name": "Website Live Chat",
+      "category": "Website/Live Chat",
+      "depends": [
+        "website",
+        "im_livechat"
+      ],
+      "auto_install": true,
+      "application": false
+    },
+    "models": [],
+    "routes": [
+      {
+        "paths": [
+          "/chatbot/<model("
+        ],
+        "auth": null,
+        "type": null
+      }
+    ],
+    "security": {
+      "access_rules": 2,
+      "record_rules": 0,
+      "groups": 0
+    },
+    "views": {
+      "form": 1,
+      "list": 0,
+      "tree": 0,
+      "kanban": 0,
+      "search": 0,
+      "pivot": 0,
+      "graph": 0,
+      "calendar": 0,
+      "activity": 0
+    },
+    "frontend": {
+      "present": true,
+      "js_files": 6,
+      "xml_templates": 1,
+      "owl_components": [],
+      "registry_adds": [],
+      "patches": [
+        "ChannelMember.prototype",
+        "DiscussContent.prototype",
+        "LivechatChannelInfoList.prototype",
+        "NewContentSystrayItem.prototype",
+        "Thread.prototype",
+        "WebsiteVisitor.prototype"
+      ],
+      "services": [],
+      "asset_bundles": {
+        "im_livechat.assets_embed_core": 2,
+        "im_livechat.embed_assets_unit_tests_setup": 6,
+        "mail.assets_public": 1,
+        "website.assets_wysiwyg": 1,
+        "website.assets_editor": 1,
+        "web.assets_frontend": 2,
+        "web.assets_backend": 2,
+        "web.assets_unit_tests": 2,
+        "web.assets_tests": 1
+      }
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": true,
+      "endpoints": [],
+      "files": []
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    },
+    "behavioral_notes": [
+      {
+        "element": "frontend (OWL/JS)",
+        "observation": "6 JS files, 0 OWL components, 0 registry adds; bundles ['im_livechat.assets_embed_core', 'im_livechat.embed_assets_unit_tests_setup', 'mail.assets_public'].",
+        "source": "static"
+      },
+      {
+        "element": "thin module",
+        "observation": "0 models, 1 routes, 1956 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
+        "source": "ast"
+      }
+    ]
+  },
+  "it_architecture": {
+    "application": "website_livechat (Website Live Chat)",
+    "software_services": [
+      "/chatbot/<model("
+    ],
+    "data_objects": [],
+    "logical_data_erm": [],
+    "information_flows": [
+      "depends: website, im_livechat"
+    ],
+    "frontend_components": []
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Website Live Chat"
+    ],
+    "value_streams": [],
+    "information_concepts": [],
+    "organization": [],
+    "products": [],
+    "policies": [],
+    "stakeholders": [],
+    "strategy": null,
+    "metrics": []
+  },
+  "classification": {
+    "value_model": "network",
+    "activity_class": "primary",
+    "apqc_category": "3.0 Market and Sell Products and Services",
+    "rationale": "website_livechat: thin network/primary module (auto-architect baseline)."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "Website Live Chat"
+    ],
+    "typical_fits": [],
+    "common_gaps": [],
+    "drive_hints": [
+      "n/a"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/website_livechat.facts.json",
+    "tools": [
+      "extract_module.py",
+      "extract_frontend.py",
+      "gen_thin.py"
+    ],
+    "odoo_version": "19.0"
+  }
+}

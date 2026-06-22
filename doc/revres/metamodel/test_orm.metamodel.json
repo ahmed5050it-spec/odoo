@@ -1,0 +1,934 @@
+{
+  "subsystem": "test_orm",
+  "evidence": {
+    "manifest": {
+      "name": "Test ORM",
+      "category": "Hidden/Tests",
+      "depends": [
+        "base",
+        "web",
+        "web_tour"
+      ],
+      "auto_install": false,
+      "application": false
+    },
+    "models": [
+      {
+        "_name": "decimal.precision.test",
+        "_description": "Decimal Precision Test",
+        "fields": 3
+      },
+      {
+        "_name": "domain.bool",
+        "_description": "Boolean Domain",
+        "fields": 3
+      },
+      {
+        "_name": "test_orm.any.child",
+        "_description": "Any Child",
+        "fields": 4
+      },
+      {
+        "_name": "test_orm.any.parent",
+        "_description": "Any Parent",
+        "fields": 2
+      },
+      {
+        "_name": "test_orm.any.tag",
+        "_description": "Any tag",
+        "fields": 2
+      },
+      {
+        "_name": "test_orm.attachment",
+        "_description": "Attachment",
+        "fields": 3
+      },
+      {
+        "_name": "test_orm.attachment.host",
+        "_description": "Attachment Host",
+        "fields": 5
+      },
+      {
+        "_name": "test_orm.autovacuumed",
+        "_description": "test_orm.autovacuumed",
+        "fields": 1
+      },
+      {
+        "_name": "test_orm.bar",
+        "_description": "Test ORM Bar",
+        "fields": 6
+      },
+      {
+        "_name": "test_orm.binary_svg",
+        "_description": "Test SVG upload",
+        "fields": 4
+      },
+      {
+        "_name": "test_orm.cascade",
+        "_description": "Test ORM Cascade",
+        "fields": 3
+      },
+      {
+        "_name": "test_orm.category",
+        "_description": "Test ORM Category",
+        "fields": 9
+      },
+      {
+        "_name": "test_orm.city",
+        "_description": "City, ordered by country then name",
+        "fields": 2
+      },
+      {
+        "_name": "test_orm.company",
+        "_description": "Test ORM Company",
+        "fields": 12
+      },
+      {
+        "_name": "test_orm.company.attr",
+        "_description": "Test ORM Company Attribute",
+        "fields": 3
+      },
+      {
+        "_name": "test_orm.compute.container",
+        "_description": "test_orm.compute.container",
+        "fields": 4
+      },
+      {
+        "_name": "test_orm.compute.created",
+        "_description": "test_orm.compute.created",
+        "fields": 2
+      },
+      {
+        "_name": "test_orm.compute.creator",
+        "_description": "test_orm.compute.creator",
+        "fields": 2
+      },
+      {
+        "_name": "test_orm.compute.dynamic.depends",
+        "_description": "Computed field with dynamic dependencies",
+        "fields": 4
+      },
+      {
+        "_name": "test_orm.compute.inverse",
+        "_description": "Model with a computed inversed field",
+        "fields": 5
+      },
+      {
+        "_name": "test_orm.compute.member",
+        "_description": "test_orm.compute.member",
+        "fields": 6
+      },
+      {
+        "_name": "test_orm.compute.onchange",
+        "_description": "Compute method as an onchange",
+        "fields": 8
+      },
+      {
+        "_name": "test_orm.compute.onchange.line",
+        "_description": "Line-like model for test_orm.compute.onchange",
+        "fields": 3
+      },
+      {
+        "_name": "test_orm.compute.readonly",
+        "_description": "Model with a computed readonly field",
+        "fields": 2
+      },
+      {
+        "_name": "test_orm.compute.readwrite",
+        "_description": "Model with a computed non-readonly field",
+        "fields": 2
+      },
+      {
+        "_name": "test_orm.compute.sudo",
+        "_description": "Model with a compute_sudo field",
+        "fields": 1
+      },
+      {
+        "_name": "test_orm.compute.unassigned",
+        "_description": "Model with computed fields left unassigned",
+        "fields": 5
+      },
+      {
+        "_name": "test_orm.compute_editable",
+        "_description": "test_orm.compute_editable",
+        "fields": 2
+      },
+      {
+        "_name": "test_orm.compute_editable.line",
+        "_description": "test_orm.compute_editable.line",
+        "fields": 6
+      },
+      {
+        "_name": "test_orm.computed.modifier",
+        "_description": "Test onchange and compute for automatically added invisible fields",
+        "fields": 5
+      },
+      {
+        "_name": "test_orm.computed_inverse_one2many",
+        "_description": "A computed/inverse o2m, subset of a main one",
+        "fields": 4
+      },
+      {
+        "_name": "test_orm.computed_inverse_one2many_line",
+        "_description": "Line of a computed/inverse one2many",
+        "fields": 3
+      },
+      {
+        "_name": "test_orm.country",
+        "_description": "Country, ordered by name",
+        "fields": 1
+      },
+      {
+        "_name": "test_orm.course",
+        "_description": "a course",
+        "fields": 7
+      },
+      {
+        "_name": "test_orm.creativework.book",
+        "_description": "Test ORM Creative Work Book",
+        "fields": 2
+      },
+      {
+        "_name": "test_orm.creativework.edition",
+        "_description": "Test ORM Creative Work Edition",
+        "fields": 4
+      },
+      {
+        "_name": "test_orm.creativework.movie",
+        "_description": "Test ORM Creative Work Movie",
+        "fields": 2
+      },
+      {
+        "_name": "test_orm.crew",
+        "_description": "All yaaaaaarrrrr by ship",
+        "fields": 3
+      },
+      {
+        "_name": "test_orm.custom.table_query",
+        "_description": "test_orm.custom.table_query",
+        "fields": 2
+      },
+      {
+        "_name": "test_orm.custom.table_query_sql",
+        "_description": "test_orm.custom.table_query_sql",
+        "fields": 2
+      },
+      {
+        "_name": "test_orm.custom.view",
+        "_description": "test_orm.custom.view",
+        "fields": 2
+      },
+      {
+        "_name": "test_orm.discussion",
+        "_description": "Test ORM Discussion",
+        "fields": 12
+      },
+      {
+        "_name": "test_orm.display",
+        "_description": "Model that overrides display_name",
+        "fields": 1
+      },
+      {
+        "_name": "test_orm.display",
+        "_description": null,
+        "fields": 0
+      },
+      {
+        "_name": "test_orm.emailmessage",
+        "_description": "Test ORM Email Message",
+        "fields": 3
+      },
+      {
+        "_name": "test_orm.employer",
+        "_description": "the employer of a person",
+        "fields": 3
+      },
+      {
+        "_name": "test_orm.empty_char",
+        "_description": "A model to test emtpy char",
+        "fields": 1
+      },
+      {
+        "_name": "test_orm.empty_int",
+        "_description": "A model to test empty int",
+        "fields": 1
+      },
+      {
+        "_name": "test_orm.field_with_caps",
+        "_description": "Model with field defined with capital letters",
+        "fields": 1
+      },
+      {
+        "_name": "test_orm.foo",
+        "_description": "Test ORM Foo",
+        "fields": 4
+      },
+      {
+        "_name": "test_orm.group",
+        "_description": "test_orm.group",
+        "fields": 2
+      },
+      {
+        "_name": "test_orm.hierarchy.head",
+        "_description": "Hierarchy Head",
+        "fields": 1
+      },
+      {
+        "_name": "test_orm.hierarchy.node",
+        "_description": "Hierarchy Node",
+        "fields": 3
+      },
+      {
+        "_name": "test_orm.indexed_translation",
+        "_description": "A model to indexed translated fields",
+        "fields": 1
+      },
+      {
+        "_name": "test_orm.inverse_m2o_ref",
+        "_description": "dummy m2oref inverse model",
+        "fields": 3
+      },
+      {
+        "_name": "test_orm.lesson",
+        "_description": "a lesson of a course (a day typically)",
+        "fields": 6
+      },
+      {
+        "_name": "test_orm.message",
+        "_description": "Test ORM Message",
+        "fields": 15
+      },
+      {
+        "_name": "test_orm.mixed",
+        "_description": "Test ORM Mixed",
+        "fields": 19
+      },
+      {
+        "_name": "test_orm.mixin",
+        "_description": "Dummy mixin model",
+        "fields": 0
+      },
+      {
+        "_name": "test_orm.model.all_access",
+        "_description": "Testing Utilities attrs and groups: if free access rights",
+        "fields": 3
+      },
+      {
+        "_name": "test_orm.model.no_access",
+        "_description": "Testing Utilities attrs and groups: if never access rights",
+        "fields": 2
+      },
+      {
+        "_name": "test_orm.model.some_access",
+        "_description": "Testing Utilities attrs and groups",
+        "fields": 12
+      },
+      {
+        "_name": "test_orm.model2.some_access",
+        "_description": "Testing Utilities attrs and groups sub",
+        "fields": 2
+      },
+      {
+        "_name": "test_orm.model3.some_access",
+        "_description": "Testing Utilities attrs and groups sub sub",
+        "fields": 2
+      },
+      {
+        "_name": "test_orm.model_a",
+        "_description": "Model A",
+        "fields": 3
+      },
+      {
+        "_name": "test_orm.model_active_field",
+        "_description": "A model with active field",
+        "fields": 9
+      },
+      {
+        "_name": "test_orm.model_b",
+        "_description": "Model B",
+        "fields": 3
+      },
+      {
+        "_name": "test_orm.model_binary",
+        "_description": "Test Image field",
+        "fields": 6
+      },
+      {
+        "_name": "test_orm.model_child",
+        "_description": "Model Multicompany child",
+        "fields": 4
+      },
+      {
+        "_name": "test_orm.model_child_m2o",
+        "_description": "dummy model with override write and ValidationError",
+        "fields": 5
+      },
+      {
+        "_name": "test_orm.model_child_nocheck",
+        "_description": "Model Multicompany child",
+        "fields": 3
+      },
+      {
+        "_name": "test_orm.model_constrained_unlinks",
+        "_description": "Model with unlink override that is constrained",
+        "fields": 2
+      },
+      {
+        "_name": "test_orm.model_image",
+        "_description": "Test Image field",
+        "fields": 6
+      },
+      {
+        "_name": "test_orm.model_many2one_reference",
+        "_description": "dummy m2oref model",
+        "fields": 3
+      },
+      {
+        "_name": "test_orm.model_parent",
+        "_description": "Model Multicompany parent",
+        "fields": 2
+      },
+      {
+        "_name": "test_orm.model_parent_m2o",
+        "_description": "dummy model with multiple childs",
+        "fields": 3
+      },
+      {
+        "_name": "test_orm.model_selection_base",
+        "_description": "Model with a base selection field",
+        "fields": 1
+      },
+      {
+        "_name": "test_orm.model_selection_company_dependent",
+        "_description": "Model with a company dependent selection field",
+        "fields": 1
+      },
+      {
+        "_name": "test_orm.model_selection_non_stored",
+        "_description": "Model with non-stored selection field",
+        "fields": 1
+      },
+      {
+        "_name": "test_orm.model_selection_related",
+        "_description": "Model with a related selection field",
+        "fields": 2
+      },
+      {
+        "_name": "test_orm.model_selection_related_updatable",
+        "_description": "Model with an updatable related selection field",
+        "fields": 2
+      },
+      {
+        "_name": "test_orm.model_selection_required",
+        "_description": "Model with a required selection field",
+        "fields": 2
+      },
+      {
+        "_name": "test_orm.model_selection_required_for_write_override",
+        "_description": "Model with required selection field for an extension with write override",
+        "fields": 1
+      },
+      {
+        "_name": "test_orm.model_shared_cache_compute_line",
+        "_description": "model_shared_cache_compute_line",
+        "fields": 3
+      },
+      {
+        "_name": "test_orm.model_shared_cache_compute_parent",
+        "_description": "model_shared_cache_compute_parent",
+        "fields": 3
+      },
+      {
+        "_name": "test_orm.modified",
+        "_description": "A model to check modified trigger",
+        "fields": 3
+      },
+      {
+        "_name": "test_orm.modified.line",
+        "_description": "A model to check modified trigger",
+        "fields": 8
+      },
+      {
+        "_name": "test_orm.monetary_base",
+        "_description": "Monetary Base",
+        "fields": 2
+      },
+      {
+        "_name": "test_orm.monetary_custom",
+        "_description": "Monetary Related Custom",
+        "fields": 3
+      },
+      {
+        "_name": "test_orm.monetary_inherits",
+        "_description": "Monetary Inherits",
+        "fields": 2
+      },
+      {
+        "_name": "test_orm.monetary_order",
+        "_description": "Sales Order",
+        "fields": 3
+      },
+      {
+        "_name": "test_orm.monetary_order_line",
+        "_description": "Sales Order Line",
+        "fields": 2
+      },
+      {
+        "_name": "test_orm.monetary_related",
+        "_description": "Monetary Related",
+        "fields": 4
+      },
+      {
+        "_name": "test_orm.move",
+        "_description": "Move",
+        "fields": 8
+      },
+      {
+        "_name": "test_orm.move_line",
+        "_description": "Move Line",
+        "fields": 3
+      },
+      {
+        "_name": "test_orm.multi",
+        "_description": "Test ORM Multi",
+        "fields": 5
+      },
+      {
+        "_name": "test_orm.multi.line",
+        "_description": "Test ORM Multi Line",
+        "fields": 4
+      },
+      {
+        "_name": "test_orm.multi.line2",
+        "_description": "Test ORM Multi Line 2",
+        "fields": 0
+      },
+      {
+        "_name": "test_orm.multi.tag",
+        "_description": "Test ORM Multi Tag",
+        "fields": 1
+      },
+      {
+        "_name": "test_orm.multi_compute_inverse",
+        "_description": "Test ORM Multi Compute Inverse",
+        "fields": 4
+      },
+      {
+        "_name": "test_orm.one2many",
+        "_description": "A computed editable one2many field with a domain",
+        "fields": 2
+      },
+      {
+        "_name": "test_orm.one2many.line",
+        "_description": "Line of a computed one2many",
+        "fields": 3
+      },
+      {
+        "_name": "test_orm.order",
+        "_description": "test_orm.order",
+        "fields": 2
+      },
+      {
+        "_name": "test_orm.order.line",
+        "_description": "test_orm.order.line",
+        "fields": 7
+      },
+      {
+        "_name": "test_orm.partner",
+        "_description": "Discussion Partner",
+        "fields": 1
+      },
+      {
+        "_name": "test_orm.payment",
+        "_description": "Payment inherits from Move",
+        "fields": 2
+      },
+      {
+        "_name": "test_orm.person",
+        "_description": "a person, can be an author, teacher or attendee of a lesson",
+        "fields": 5
+      },
+      {
+        "_name": "test_orm.person.account",
+        "_description": "an account with credentials for a given person",
+        "fields": 3
+      },
+      {
+        "_name": "test_orm.pirate",
+        "_description": "Yaaarrr",
+        "fields": 2
+      },
+      {
+        "_name": "test_orm.precompute",
+        "_description": "model with precomputed fields",
+        "fields": 8
+      },
+      {
+        "_name": "test_orm.precompute.combo",
+        "_description": "yet another model with precomputed fields",
+        "fields": 4
+      },
+      {
+        "_name": "test_orm.precompute.editable",
+        "_description": "yet another model with precomputed editable fields",
+        "fields": 4
+      },
+      {
+        "_name": "test_orm.precompute.line",
+        "_description": "secondary model with precomputed fields",
+        "fields": 3
+      },
+      {
+        "_name": "test_orm.precompute.monetary",
+        "_description": "a model with precomputed monetary and currency",
+        "fields": 2
+      },
+      {
+        "_name": "test_orm.precompute.readonly",
+        "_description": "a model with precomputed readonly fields",
+        "fields": 4
+      },
+      {
+        "_name": "test_orm.precompute.required",
+        "_description": "a model with precomputed required fields",
+        "fields": 2
+      },
+      {
+        "_name": "test_orm.prefetch",
+        "_description": "A model to check the prefetching of fields (translated and group)",
+        "fields": 11
+      },
+      {
+        "_name": "test_orm.prefetch.line",
+        "_description": "test_orm.prefetch.line",
+        "fields": 2
+      },
+      {
+        "_name": "test_orm.prisoner",
+        "_description": "Yaaarrr minions",
+        "fields": 2
+      },
+      {
+        "_name": "test_orm.recursive",
+        "_description": "Test ORM Recursive",
+        "fields": 5
+      },
+      {
+        "_name": "test_orm.recursive.line",
+        "_description": "test_orm.recursive.line",
+        "fields": 3
+      },
+      {
+        "_name": "test_orm.recursive.order",
+        "_description": "test_orm.recursive.order",
+        "fields": 1
+      },
+      {
+        "_name": "test_orm.recursive.task",
+        "_description": "test_orm.recursive.task",
+        "fields": 2
+      },
+      {
+        "_name": "test_orm.recursive.tree",
+        "_description": "Test ORM Recursive with one2many field",
+        "fields": 4
+      },
+      {
+        "_name": "test_orm.related",
+        "_description": "Test ORM Related",
+        "fields": 26
+      },
+      {
+        "_name": "test_orm.related_bar",
+        "_description": "test_orm.related_bar",
+        "fields": 2
+      },
+      {
+        "_name": "test_orm.related_foo",
+        "_description": "test_orm.related_foo",
+        "fields": 13
+      },
+      {
+        "_name": "test_orm.related_inherits",
+        "_description": "test_orm.related_inherits",
+        "fields": 1
+      },
+      {
+        "_name": "test_orm.related_translation_1",
+        "_description": "A model to test translation for related fields",
+        "fields": 2
+      },
+      {
+        "_name": "test_orm.related_translation_2",
+        "_description": "A model to test translation for related fields",
+        "fields": 6
+      },
+      {
+        "_name": "test_orm.related_translation_3",
+        "_description": "A model to test translation for related fields",
+        "fields": 3
+      },
+      {
+        "_name": "test_orm.req_m2o",
+        "_description": "Required Many2one",
+        "fields": 2
+      },
+      {
+        "_name": "test_orm.req_m2o_transient",
+        "_description": "Transient Model with Required Many2one",
+        "fields": 2
+      },
+      {
+        "_name": "test_orm.selection",
+        "_description": "Selection",
+        "fields": 2
+      },
+      {
+        "_name": "test_orm.shared.compute",
+        "_description": "test_orm.shared.compute",
+        "fields": 3
+      },
+      {
+        "_name": "test_orm.ship",
+        "_description": "Yaaaarrr machine",
+        "fields": 3
+      },
+      {
+        "_name": "test_orm.state_mixin",
+        "_description": "Dummy state mixin model",
+        "fields": 1
+      },
+      {
+        "_name": "test_orm.team",
+        "_description": "Odoo Team",
+        "fields": 3
+      },
+      {
+        "_name": "test_orm.team.member",
+        "_description": "Odoo Developer",
+        "fields": 3
+      },
+      {
+        "_name": "test_orm.transient_model",
+        "_description": "Transient Model",
+        "fields": 0
+      },
+      {
+        "_name": "test_orm.trigger.left",
+        "_description": "model with a related many2one",
+        "fields": 2
+      },
+      {
+        "_name": "test_orm.trigger.middle",
+        "_description": "model linking test_orm.trigger.left and test_orm.trigger.right",
+        "fields": 2
+      },
+      {
+        "_name": "test_orm.trigger.right",
+        "_description": "model with a dependency on the inverse of the related many2one",
+        "fields": 2
+      },
+      {
+        "_name": "test_orm.unsearchable.o2m",
+        "_description": "Test non-stored unsearchable o2m",
+        "fields": 4
+      },
+      {
+        "_name": "test_orm.user",
+        "_description": "test_orm.user",
+        "fields": 3
+      },
+      {
+        "_name": "test_orm.view.str.id",
+        "_description": "test_orm.view.str.id",
+        "fields": 1
+      },
+      {
+        "_name": "test_performance.bacon",
+        "_description": "Test Performance Bacon",
+        "fields": 1
+      },
+      {
+        "_name": "test_performance.base",
+        "_description": "Test Performance Base",
+        "fields": 10
+      },
+      {
+        "_name": "test_performance.eggs",
+        "_description": "Test Performance Eggs",
+        "fields": 1
+      },
+      {
+        "_name": "test_performance.line",
+        "_description": "Test Performance Line",
+        "fields": 2
+      },
+      {
+        "_name": "test_performance.mozzarella",
+        "_description": "Test Performance Mozzarella",
+        "fields": 3
+      },
+      {
+        "_name": "test_performance.simple.minded",
+        "_description": "test_performance.simple.minded",
+        "fields": 4
+      },
+      {
+        "_name": "test_performance.tag",
+        "_description": "Test Performance Tag",
+        "fields": 1
+      }
+    ],
+    "routes": [],
+    "security": {
+      "access_rules": 160,
+      "record_rules": 1,
+      "groups": 0
+    },
+    "views": {
+      "form": 18,
+      "list": 15,
+      "tree": 0,
+      "kanban": 0,
+      "search": 1,
+      "pivot": 0,
+      "graph": 0,
+      "calendar": 0,
+      "activity": 0
+    },
+    "frontend": {
+      "present": false,
+      "js_files": 0,
+      "xml_templates": 0,
+      "owl_components": [],
+      "registry_adds": [],
+      "patches": [],
+      "services": [],
+      "asset_bundles": {
+        "web.assets_tests": 2
+      }
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": false,
+      "endpoints": [],
+      "files": []
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    },
+    "behavioral_notes": [
+      {
+        "element": "thin module",
+        "observation": "153 models, 0 routes, 20848 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
+        "source": "ast"
+      }
+    ]
+  },
+  "it_architecture": {
+    "application": "test_orm (Test ORM)",
+    "software_services": [],
+    "data_objects": [
+      "decimal.precision.test",
+      "domain.bool",
+      "test_orm.any.child",
+      "test_orm.any.parent",
+      "test_orm.any.tag",
+      "test_orm.attachment",
+      "test_orm.attachment.host",
+      "test_orm.autovacuumed",
+      "test_orm.bar",
+      "test_orm.binary_svg",
+      "test_orm.cascade",
+      "test_orm.category",
+      "test_orm.city",
+      "test_orm.company",
+      "test_orm.company.attr",
+      "test_orm.compute.container",
+      "test_orm.compute.created",
+      "test_orm.compute.creator",
+      "test_orm.compute.dynamic.depends",
+      "test_orm.compute.inverse"
+    ],
+    "logical_data_erm": [
+      "test_orm.any.child -> test_orm.any.child",
+      "test_orm.any.child -> test_orm.any.parent",
+      "test_orm.any.child -> test_orm.any.tag",
+      "test_orm.any.parent -> test_orm.any.child",
+      "test_orm.any.tag -> test_orm.any.child",
+      "test_orm.attachment.host -> ir.attachment",
+      "test_orm.attachment.host -> test_orm.attachment",
+      "test_orm.bar -> test_orm.foo",
+      "test_orm.category -> test_orm.category",
+      "test_orm.category -> test_orm.discussion",
+      "test_orm.city -> test_orm.country",
+      "test_orm.company -> res.company"
+    ],
+    "information_flows": [
+      "depends: base, web, web_tour"
+    ],
+    "frontend_components": []
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Test ORM"
+    ],
+    "value_streams": [],
+    "information_concepts": [
+      "decimal.precision.test",
+      "domain.bool",
+      "test_orm.any.child",
+      "test_orm.any.parent",
+      "test_orm.any.tag",
+      "test_orm.attachment"
+    ],
+    "organization": [],
+    "products": [],
+    "policies": [
+      "1 record rules"
+    ],
+    "stakeholders": [],
+    "strategy": null,
+    "metrics": []
+  },
+  "classification": {
+    "value_model": "support",
+    "activity_class": "support",
+    "apqc_category": "13.0 Develop and Manage Business Capabilities",
+    "rationale": "test_orm: thin support/support module (auto-architect baseline)."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "Test ORM"
+    ],
+    "typical_fits": [],
+    "common_gaps": [],
+    "drive_hints": [
+      "odoo shell: env['decimal.precision.test'].search([],limit=3)"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/test_orm.facts.json",
+    "tools": [
+      "extract_module.py",
+      "extract_frontend.py",
+      "gen_thin.py"
+    ],
+    "odoo_version": "19.0"
+  }
+}

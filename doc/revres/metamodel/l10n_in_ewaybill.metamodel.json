@@ -1,0 +1,155 @@
+{
+  "subsystem": "l10n_in_ewaybill",
+  "evidence": {
+    "manifest": {
+      "name": "Indian - E-waybill",
+      "category": "Accounting/Localizations",
+      "depends": [
+        "l10n_in"
+      ],
+      "auto_install": false,
+      "application": false
+    },
+    "models": [
+      {
+        "_name": "l10n.in.ewaybill",
+        "_description": "e-Waybill",
+        "fields": 34
+      },
+      {
+        "_name": "l10n.in.ewaybill.cancel",
+        "_description": "Cancel Ewaybill",
+        "fields": 3
+      },
+      {
+        "_name": "l10n.in.ewaybill.type",
+        "_description": "E-Waybill Document Type",
+        "fields": 6
+      }
+    ],
+    "routes": [],
+    "security": {
+      "access_rules": 4,
+      "record_rules": 1,
+      "groups": 0
+    },
+    "views": {
+      "form": 1,
+      "list": 0,
+      "tree": 0,
+      "kanban": 0,
+      "search": 0,
+      "pivot": 0,
+      "graph": 0,
+      "calendar": 0,
+      "activity": 0
+    },
+    "frontend": {
+      "present": false,
+      "js_files": 0,
+      "xml_templates": 0,
+      "owl_components": [],
+      "registry_adds": [],
+      "patches": [],
+      "services": [],
+      "asset_bundles": {}
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": true,
+      "endpoints": [],
+      "files": []
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    },
+    "behavioral_notes": [
+      {
+        "element": "thin module",
+        "observation": "3 models, 0 routes, 2076 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
+        "source": "ast"
+      }
+    ]
+  },
+  "it_architecture": {
+    "application": "l10n_in_ewaybill (Indian - E-waybill)",
+    "software_services": [],
+    "data_objects": [
+      "l10n.in.ewaybill",
+      "l10n.in.ewaybill.cancel",
+      "l10n.in.ewaybill.type"
+    ],
+    "logical_data_erm": [
+      "l10n.in.ewaybill -> account.move",
+      "l10n.in.ewaybill -> company_id.currency_id",
+      "l10n.in.ewaybill -> ir.attachment",
+      "l10n.in.ewaybill -> l10n.in.ewaybill.type",
+      "l10n.in.ewaybill -> res.company",
+      "l10n.in.ewaybill -> res.partner",
+      "l10n.in.ewaybill.cancel -> l10n.in.ewaybill"
+    ],
+    "information_flows": [
+      "depends: l10n_in"
+    ],
+    "frontend_components": []
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Indian - E-waybill"
+    ],
+    "value_streams": [],
+    "information_concepts": [
+      "l10n.in.ewaybill",
+      "l10n.in.ewaybill.cancel",
+      "l10n.in.ewaybill.type"
+    ],
+    "organization": [],
+    "products": [],
+    "policies": [
+      "1 record rules"
+    ],
+    "stakeholders": [],
+    "strategy": null,
+    "metrics": []
+  },
+  "classification": {
+    "value_model": "support",
+    "activity_class": "support",
+    "apqc_category": "9.0 Manage Financial Resources",
+    "rationale": "l10n_in_ewaybill: thin support/support module (auto-architect baseline)."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "Indian - E-waybill"
+    ],
+    "typical_fits": [],
+    "common_gaps": [],
+    "drive_hints": [
+      "odoo shell: env['l10n.in.ewaybill'].search([],limit=3)"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/l10n_in_ewaybill.facts.json",
+    "tools": [
+      "extract_module.py",
+      "extract_frontend.py",
+      "gen_thin.py"
+    ],
+    "odoo_version": "19.0"
+  }
+}

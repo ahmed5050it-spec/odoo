@@ -1,0 +1,329 @@
+{
+  "subsystem": "test_testing_utilities",
+  "evidence": {
+    "manifest": {
+      "name": "Test testing utilities",
+      "category": "Hidden/Tests",
+      "depends": [
+        "base",
+        "web"
+      ],
+      "auto_install": false,
+      "application": false
+    },
+    "models": [
+      {
+        "_name": "o2m_changes_children",
+        "_description": "o2m_changes_children",
+        "fields": 4
+      },
+      {
+        "_name": "o2m_changes_children.lines",
+        "_description": "o2m_changes_children.lines",
+        "fields": 3
+      },
+      {
+        "_name": "o2m_changes_parent",
+        "_description": "o2m_changes_parent",
+        "fields": 2
+      },
+      {
+        "_name": "o2m_readonly_subfield_child",
+        "_description": "o2m_readonly_subfield_child",
+        "fields": 3
+      },
+      {
+        "_name": "o2m_readonly_subfield_parent",
+        "_description": "O2m_Readonly_Subfield_Parent",
+        "fields": 1
+      },
+      {
+        "_name": "res.config.test",
+        "_description": "Config test",
+        "fields": 3
+      },
+      {
+        "_name": "test_testing_utilities.a",
+        "_description": "Testing Utilities A",
+        "fields": 6
+      },
+      {
+        "_name": "test_testing_utilities.c",
+        "_description": "Testing Utilities C",
+        "fields": 2
+      },
+      {
+        "_name": "test_testing_utilities.d",
+        "_description": "Testing Utilities D",
+        "fields": 2
+      },
+      {
+        "_name": "test_testing_utilities.default",
+        "_description": "Testing Utilities Default",
+        "fields": 3
+      },
+      {
+        "_name": "test_testing_utilities.e",
+        "_description": "Testing Utilities E",
+        "fields": 2
+      },
+      {
+        "_name": "test_testing_utilities.f",
+        "_description": "Testing Utilities F",
+        "fields": 2
+      },
+      {
+        "_name": "test_testing_utilities.g",
+        "_description": "Testing Utilities G",
+        "fields": 1
+      },
+      {
+        "_name": "test_testing_utilities.m2o",
+        "_description": "Testing Utilities Many To One",
+        "fields": 1
+      },
+      {
+        "_name": "test_testing_utilities.onchange_count",
+        "_description": "Test_Testing_UtilitiesOnchange_Count",
+        "fields": 2
+      },
+      {
+        "_name": "test_testing_utilities.onchange_count_sub",
+        "_description": "Test_Testing_UtilitiesOnchange_Count_Sub",
+        "fields": 2
+      },
+      {
+        "_name": "test_testing_utilities.onchange_line",
+        "_description": "Testing Utilities Onchange Line",
+        "fields": 3
+      },
+      {
+        "_name": "test_testing_utilities.onchange_parent",
+        "_description": "Testing Utilities Onchange Parent",
+        "fields": 1
+      },
+      {
+        "_name": "test_testing_utilities.parent",
+        "_description": "Testing Utilities Parent",
+        "fields": 3
+      },
+      {
+        "_name": "test_testing_utilities.readonly",
+        "_description": "Testing Utilities Readonly",
+        "fields": 2
+      },
+      {
+        "_name": "test_testing_utilities.recursive",
+        "_description": "test_testing_utilities.recursive",
+        "fields": 2
+      },
+      {
+        "_name": "test_testing_utilities.ref",
+        "_description": "Testing Utilities ref",
+        "fields": 3
+      },
+      {
+        "_name": "test_testing_utilities.ref.sub",
+        "_description": "Testing Utilities Subtraction",
+        "fields": 5
+      },
+      {
+        "_name": "test_testing_utilities.req_bool",
+        "_description": "test_testing_utilities.req_bool",
+        "fields": 1
+      },
+      {
+        "_name": "test_testing_utilities.sub",
+        "_description": "Testing Utilities Subtraction",
+        "fields": 5
+      },
+      {
+        "_name": "test_testing_utilities.sub2",
+        "_description": "Testing Utilities Subtraction 2",
+        "fields": 2
+      },
+      {
+        "_name": "test_testing_utilities.sub3",
+        "_description": "Testing Utilities Subtraction 3",
+        "fields": 1
+      },
+      {
+        "_name": "test_testing_utilities.sub3",
+        "_description": "Testing Utilities Subtraction 3",
+        "fields": 4
+      },
+      {
+        "_name": "test_testing_utilities.wide",
+        "_description": "test_testing_utilities.wide",
+        "fields": 19
+      },
+      {
+        "_name": "ttu.child",
+        "_description": "ttu.child",
+        "fields": 6
+      },
+      {
+        "_name": "ttu.grandchild",
+        "_description": "ttu.grandchild",
+        "fields": 4
+      },
+      {
+        "_name": "ttu.product",
+        "_description": "ttu.product",
+        "fields": 0
+      },
+      {
+        "_name": "ttu.root",
+        "_description": "ttu.root",
+        "fields": 6
+      }
+    ],
+    "routes": [],
+    "security": {
+      "access_rules": 32,
+      "record_rules": 0,
+      "groups": 0
+    },
+    "views": {
+      "form": 14,
+      "list": 9,
+      "tree": 0,
+      "kanban": 0,
+      "search": 0,
+      "pivot": 0,
+      "graph": 0,
+      "calendar": 0,
+      "activity": 0
+    },
+    "frontend": {
+      "present": false,
+      "js_files": 0,
+      "xml_templates": 0,
+      "owl_components": [],
+      "registry_adds": [],
+      "patches": [],
+      "services": [],
+      "asset_bundles": {}
+    },
+    "integrations": {
+      "http_call_sites": 0,
+      "sdk_imports": [],
+      "uses_api_keys": false,
+      "endpoints": [],
+      "files": []
+    },
+    "runtime": {
+      "models_with_data": 0,
+      "top": []
+    },
+    "behavioral_notes": [
+      {
+        "element": "thin module",
+        "observation": "33 models, 0 routes, 2069 py LOC — baseline record (auto-architect); deep method semantics not code-read.",
+        "source": "ast"
+      }
+    ]
+  },
+  "it_architecture": {
+    "application": "test_testing_utilities (Test testing utilities)",
+    "software_services": [],
+    "data_objects": [
+      "o2m_changes_children",
+      "o2m_changes_children.lines",
+      "o2m_changes_parent",
+      "o2m_readonly_subfield_child",
+      "o2m_readonly_subfield_parent",
+      "res.config.test",
+      "test_testing_utilities.a",
+      "test_testing_utilities.c",
+      "test_testing_utilities.d",
+      "test_testing_utilities.default",
+      "test_testing_utilities.e",
+      "test_testing_utilities.f",
+      "test_testing_utilities.g",
+      "test_testing_utilities.m2o",
+      "test_testing_utilities.onchange_count",
+      "test_testing_utilities.onchange_count_sub",
+      "test_testing_utilities.onchange_line",
+      "test_testing_utilities.onchange_parent",
+      "test_testing_utilities.parent",
+      "test_testing_utilities.readonly"
+    ],
+    "logical_data_erm": [
+      "o2m_changes_children -> o2m_changes_children.lines",
+      "o2m_changes_children -> o2m_changes_parent",
+      "o2m_changes_children.lines -> o2m_changes_children",
+      "o2m_changes_parent -> o2m_changes_children",
+      "o2m_readonly_subfield_child -> o2m_readonly_subfield_parent",
+      "o2m_readonly_subfield_parent -> o2m_readonly_subfield_child",
+      "res.config.test -> res.config",
+      "test_testing_utilities.c -> test_testing_utilities.m2o",
+      "test_testing_utilities.d -> test_testing_utilities.m2o",
+      "test_testing_utilities.default -> test_testing_utilities.sub3",
+      "test_testing_utilities.e -> test_testing_utilities.sub2",
+      "test_testing_utilities.f -> test_testing_utilities.sub2"
+    ],
+    "information_flows": [
+      "depends: base, web"
+    ],
+    "frontend_components": []
+  },
+  "business_architecture": {
+    "capabilities": [
+      "Test testing utilities"
+    ],
+    "value_streams": [],
+    "information_concepts": [
+      "o2m_changes_children",
+      "o2m_changes_children.lines",
+      "o2m_changes_parent",
+      "o2m_readonly_subfield_child",
+      "o2m_readonly_subfield_parent",
+      "res.config.test"
+    ],
+    "organization": [],
+    "products": [],
+    "policies": [],
+    "stakeholders": [],
+    "strategy": null,
+    "metrics": []
+  },
+  "classification": {
+    "value_model": "support",
+    "activity_class": "support",
+    "apqc_category": "13.0 Develop and Manage Business Capabilities",
+    "rationale": "test_testing_utilities: thin support/support module (auto-architect baseline)."
+  },
+  "fit_to_standard": {
+    "standard_capabilities": [
+      "Test testing utilities"
+    ],
+    "typical_fits": [],
+    "common_gaps": [],
+    "drive_hints": [
+      "odoo shell: env['o2m_changes_children'].search([],limit=3)"
+    ]
+  },
+  "reverse_eng_confidence": {
+    "information_concepts": "auto",
+    "organization": "auto",
+    "products": "auto",
+    "capabilities": "inferred",
+    "value_streams": "inferred",
+    "policies": "inferred",
+    "metrics": "inferred",
+    "strategy": "human"
+  },
+  "open_questions": [
+    "Baseline auto-architect record; method semantics + value-stream not deeply code-read."
+  ],
+  "provenance": {
+    "explorer_facts": "doc/revres/facts/test_testing_utilities.facts.json",
+    "tools": [
+      "extract_module.py",
+      "extract_frontend.py",
+      "gen_thin.py"
+    ],
+    "odoo_version": "19.0"
+  }
+}
